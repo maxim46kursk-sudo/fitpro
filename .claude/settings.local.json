@@ -1,7 +1,28 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(gh --version 2>&1)"
+      "PowerShell(gh --version 2>&1)",
+      "PowerShell(New-NetFirewallRule -DisplayName \"Vite Dev Server 5173\" -Direction Inbound -Protocol TCP -LocalPort 5173 -Action Allow -Profile Any 2>&1)",
+      "PowerShell(netsh advfirewall firewall show rule name=\"Vite 5173\" 2>&1)",
+      "PowerShell(\\(Invoke-RestMethod -Uri \"https://api.ipify.org\"\\))",
+      "PowerShell(npx localtunnel --port 5173)",
+      "PowerShell(Get-Process node -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Force)",
+      "PowerShell(Start-Process -FilePath \"cmd.exe\" -ArgumentList \"/c npx localtunnel --port 5173 > C:\\\\Users\\\\maxim\\\\AppData\\\\Local\\\\Temp\\\\lt_url2.txt 2>&1\" -WindowStyle Hidden)",
+      "PowerShell(Start-Process -FilePath \"cmd.exe\" -ArgumentList \"/c npx localtunnel --port 5173 > C:\\\\Users\\\\maxim\\\\AppData\\\\Local\\\\Temp\\\\lt_url3.txt 2>&1\" -WindowStyle Hidden)",
+      "WebFetch(domain:docs.google.com)",
+      "WebFetch(domain:doc-08-3k-sheets.googleusercontent.com)",
+      "WebFetch(domain:doc-00-3k-sheets.googleusercontent.com)",
+      "WebFetch(domain:doc-0o-3k-sheets.googleusercontent.com)",
+      "WebFetch(domain:doc-0g-3k-sheets.googleusercontent.com)",
+      "PowerShell($url = \"https://docs.google.com/spreadsheets/d/1icIX3eM134Fl-utGnwpBXyRmWrpk3PN5Q_xHDH4S5Uo/export?format=csv&gid=0\"; $r = Invoke-WebRequest -Uri $url -MaximumRedirection 5 -UseBasicParsing; $r.Content | Out-File -Encoding utf8 \"C:\\\\Users\\\\maxim\\\\AppData\\\\Local\\\\Temp\\\\pohudenie.csv\"; Write-Output \"Done: $\\($r.Content.Length\\) chars\")",
+      "PowerShell($bytes = [System.IO.File]::ReadAllBytes\\(\"C:\\\\Users\\\\maxim\\\\AppData\\\\Local\\\\Temp\\\\pohudenie.csv\"\\); $text = [System.Text.Encoding]::UTF8.GetString\\($bytes\\); $text | Out-File -Encoding utf8 \"C:\\\\Users\\\\maxim\\\\AppData\\\\Local\\\\Temp\\\\pohudenie_utf8.csv\"; Write-Output \"Done, length=$\\($text.Length\\)\")",
+      "Skill(run)",
+      "Skill(run:*)",
+      "Bash(npx --no -- kill-port 5173)",
+      "Bash(npm run *)",
+      "Bash(curl -s http://localhost:5173/)",
+      "Bash(npx vite *)"
     ]
   }
 }
