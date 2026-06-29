@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import AIAssistant from './AIAssistant'
 import './App.css'
 
 const PUR = '#7F77DD'
@@ -432,7 +433,7 @@ const makeDefaultFolderSlots=()=>{
   const o={}; FOLDERS.forEach(f=>{o[f]=makeDefaultSlots(f)}); return o
 }
 
-function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutActiveChange, pendingAction, onClearPendingAction }) {
+function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutActiveChange, pendingAction, onClearPendingAction, onOpenAI }) {
   const [openFolder,setOpenFolder]=useState(null)
   const [openSlotId,setOpenSlotId]=useState(null)
   const [folderSlots,setFolderSlots]=useState(makeDefaultFolderSlots)
@@ -1282,6 +1283,18 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* ── Плашка AI тренера ── */}
+      {onOpenAI&&(
+        <div onClick={()=>onOpenAI('workout')} style={{ display:'flex',alignItems:'center',gap:12,background:'linear-gradient(135deg,#7F77DD18,#5b54c408)',border:'1.5px solid #7F77DD44',borderRadius:14,padding:'12px 16px',marginBottom:14,cursor:'pointer' }}>
+          <div style={{ width:38,height:38,borderRadius:'50%',background:'linear-gradient(135deg,#7F77DD,#5b54c4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0 }}>✨</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:13,fontWeight:700,color:'#7F77DD' }}>Спросить AI тренера</div>
+            <div style={{ fontSize:11,color:'#9ca3af',marginTop:1 }}>Подберёт вес на следующую тренировку</div>
+          </div>
+          <span style={{ fontSize:18,color:'#7F77DD' }}>›</span>
         </div>
       )}
 
@@ -2168,7 +2181,7 @@ function DateScroller({ value, onChange }) {
 }
 
 // ── Дневник
-function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile }) {
+function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, onOpenAI }) {
   const [section, setSection] = useState(null)
   // tonnage
   const [period,setPeriod]=useState('all')
@@ -2690,6 +2703,18 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         </div>
         <div style={{ flex:1,overflowY:'auto',padding:'14px 16px 32px' }}>
 
+          {/* Плашка AI диетолога */}
+          {onOpenAI&&(
+            <div onClick={()=>onOpenAI('nutrition')} style={{ display:'flex',alignItems:'center',gap:12,background:'linear-gradient(135deg,#1D9E7518,#1D9E7508)',border:'1.5px solid #1D9E7544',borderRadius:14,padding:'12px 16px',marginBottom:14,cursor:'pointer' }}>
+              <div style={{ width:38,height:38,borderRadius:'50%',background:'linear-gradient(135deg,#1D9E75,#157a5b)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0 }}>✨</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:13,fontWeight:700,color:'#1D9E75' }}>Спросить AI диетолога</div>
+                <div style={{ fontSize:11,color:'#9ca3af',marginTop:1 }}>Знает ваш план и остаток калорий</div>
+              </div>
+              <span style={{ fontSize:18,color:'#1D9E75' }}>›</span>
+            </div>
+          )}
+
           {/* Настройка норм */}
           {showGoals&&(
             <Card style={{ marginBottom:14,border:`1.5px solid ${PUR}33` }}>
@@ -3128,6 +3153,7 @@ export default function App() {
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768)
   const [workoutActive,setWorkoutActive]=useState(false)
   const [pendingWorkoutAction,setPendingWorkoutAction]=useState(null)
+  const aiRef=useRef()
 
   useEffect(()=>{
     const fn=()=>setIsMobile(window.innerWidth<768)
@@ -3188,11 +3214,11 @@ export default function App() {
     switch(nav){
       case 'dashboard': return <Dashboard setNav={handleNav} setSC={setSC} />
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} />
-      case 'workouts':  return <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>setEditTarget(null)} onWorkoutActiveChange={setWorkoutActive} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} />
+      case 'workouts':  return <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>setEditTarget(null)} onWorkoutActiveChange={setWorkoutActive} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} onOpenAI={m=>aiRef.current?.open(m)} />
       case 'nutrition': return <NutritionView />
       case 'library':   return <LibraryView customExercises={customExercises} />
       case 'chat':      return <ChatView />
-      case 'progress':  return <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} />
+      case 'progress':  return <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} />
       default:          return null
     }
   }
@@ -3318,6 +3344,7 @@ export default function App() {
           </div>
         </div>
       )}
+      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} />
     </>
   )
 }
