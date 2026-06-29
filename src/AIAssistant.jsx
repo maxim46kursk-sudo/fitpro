@@ -8,7 +8,11 @@ const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMob
   const [messages, setMessages]     = useState([])
   const [input, setInput]           = useState('')
   const [loading, setLoading]       = useState(false)
-  const [apiKey, setApiKey]         = useState(() => import.meta.env.VITE_ANTHROPIC_KEY || localStorage.getItem('fitpro_ai_key') || '')
+  const [apiKey, setApiKey]         = useState(() => {
+    const envKey = import.meta.env.VITE_ANTHROPIC_KEY || ''
+    const validEnv = envKey.startsWith('sk-ant-') ? envKey : ''
+    return validEnv || localStorage.getItem('fitpro_ai_key') || ''
+  })
   const [keyDraft, setKeyDraft]     = useState('')
   const [showKeyModal, setShowKeyModal] = useState(false)
   const messagesEndRef = useRef(null)
@@ -26,61 +30,76 @@ const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMob
     if (isOpen) setTimeout(() => inputRef.current?.focus(), 150)
   }, [isOpen])
 
-  // ── Системный промпт: тренировки ──────────────────────────────────────
-  const buildWorkoutPrompt = () => {
-    const recent = [...workoutHistory]
-      .sort((a, b) => new Date(b.date) - new Date(a.date))
-      .slice(0, 8)
-      .reverse()
+  // ── Единый динамический системный промпт ─────────────────────────────
+  const buildSystemPrompt = (mode) => {
+    // 1. Профиль клиента
+    const profile = (() => { try { return JSON.parse(localStorage.getItem('fitpro_profile') || 'null') } catch { return null } }) () || {}
+    const clientName   = profile.name   || 'Клиент'
+    const clientGoal   = profile.goal   || 'не указана'
+    const clientWeight = profile.weight ? `${profile.weight} кг` : 'не указан'
+    const clientHeight = profile.height ? `${profile.height} см` : 'не указан'
 
-    const exMap = {}
-    recent.forEach(w => {
-      const date = new Date(w.date).toLocaleDateString('ru', { day: 'numeric', month: 'short' }).replace('.', '')
-      ;(w.exercises || []).forEach(ex => {
-        const sets = (ex.sets || []).filter(s => s.kg || s.reps)
-        if (!sets.length) return
-        if (!exMap[ex.n]) exMap[ex.n] = []
-        exMap[ex.n].push({ date, sets: sets.map(s => `${s.kg || 0}кг×${s.reps || 0}`).join(', ') })
-      })
-    })
-
-    const historyText = Object.entries(exMap)
-      .map(([n, s]) => `${n}:\n${s.map(r => `  ${r.date}: ${r.sets}`).join('\n')}`)
-      .join('\n\n')
-
-    return `Ты персональный AI тренер. История весов клиента за последние тренировки:\n\n${historyText || 'История тренировок пока пуста — отвечай на общие вопросы по тренировкам.'}\n\nТвоя задача — рекомендовать веса на следующую тренировку исходя из истории клиента. Принцип прогрессии: добавляй 2.5 кг когда клиент выполнил все подходы чисто. Если не выполнил — оставь тот же вес или снизь на 2.5 кг. Отвечай конкретно и коротко, как тренер. Общайся на русском.`
-  }
-
-  // ── Системный промпт: питание ─────────────────────────────────────────
-  const buildNutritionPrompt = () => {
-    const goals = (() => { try { return JSON.parse(localStorage.getItem('fitpro_food_goals') || 'null') } catch { return null } })()
+    // 2. План питания
+    const foodGoals = (() => { try { return JSON.parse(localStorage.getItem('fitpro_food_goals') || 'null') } catch { return null } })()
       || { kcal: 2000, p: 150, f: 60, c: 200 }
 
+    // 3. Съедено сегодня
     const diary = (() => { try { return JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}') } catch { return {} } })()
     const today = new Date().toISOString().slice(0, 10)
-    const entries = diary[today] || []
-    const eaten = entries.reduce((a, e) => ({
+    const todayEntries = diary[today] || []
+    const eaten = todayEntries.reduce((a, e) => ({
       kcal: a.kcal + (+e.kcal || 0), p: a.p + (+e.p || 0),
       f: a.f + (+e.f || 0), c: a.c + (+e.c || 0)
     }), { kcal: 0, p: 0, f: 0, c: 0 })
+    const rem = k => Math.max(0, (foodGoals[k] || 0) - eaten[k]).toFixed(k === 'kcal' ? 0 : 1)
 
-    const rem = k => Math.max(0, (goals[k] || 0) - eaten[k]).toFixed(k === 'kcal' ? 0 : 1)
+    // 4. Последние 5 тренировок с весами
+    const recent = [...workoutHistory]
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 5)
 
-    return `Ты диетолог.
+    // Определяем программу по наиболее частой папке в истории
+    const folderCount = {}
+    recent.forEach(w => { if (w.folder) folderCount[w.folder] = (folderCount[w.folder] || 0) + 1 })
+    const topFolder = Object.entries(folderCount).sort((a, b) => b[1] - a[1])[0]?.[0] || null
 
-План питания клиента на день:
-- Калории: ${goals.kcal} ккал
-- Белки: ${goals.p}г | Жиры: ${goals.f}г | Углеводы: ${goals.c}г
+    const workoutHistoryText = recent.length === 0
+      ? 'История тренировок пока пуста.'
+      : recent.map(w => {
+          const dateStr = new Date(w.date).toLocaleDateString('ru', { day: 'numeric', month: 'short' })
+          const exLines = (w.exercises || [])
+            .filter(ex => (ex.sets || []).some(s => s.kg || s.reps))
+            .map(ex => {
+              const sets = (ex.sets || []).filter(s => s.kg || s.reps)
+                .map(s => `${s.kg || 0}кг×${s.reps || 0}`).join(', ')
+              return `    ${ex.n}: ${sets}`
+            }).join('\n')
+          return `  ${dateStr} — ${w.name || 'Тренировка'}:\n${exLines || '    (нет данных о весах)'}`
+        }).join('\n')
 
-Съедено сегодня:
-- Калории: ${eaten.kcal.toFixed(0)} ккал
-- Белки: ${eaten.p.toFixed(1)}г | Жиры: ${eaten.f.toFixed(1)}г | Углеводы: ${eaten.c.toFixed(1)}г
+    return `Ты персональный AI тренер в приложении FitPro.
 
-Осталось:
-- Калории: ${rem('kcal')} ккал
-- Белки: ${rem('p')}г | Жиры: ${rem('f')}г | Углеводы: ${rem('c')}г
+ДАННЫЕ КЛИЕНТА:
+- Имя: ${clientName}
+- Цель: ${clientGoal}
+- Вес: ${clientWeight} | Рост: ${clientHeight}${topFolder ? `\n- Программа: ${topFolder}` : ''}
+- План питания на день: ${foodGoals.kcal} ккал | Б: ${foodGoals.p}г | У: ${foodGoals.c}г | Ж: ${foodGoals.f}г
+- Съедено сегодня: ${eaten.kcal.toFixed(0)} ккал | Б: ${eaten.p.toFixed(1)}г | У: ${eaten.c.toFixed(1)}г | Ж: ${eaten.f.toFixed(1)}г
+- Осталось сегодня: ${rem('kcal')} ккал | Б: ${rem('p')}г | У: ${rem('c')}г | Ж: ${rem('f')}г
 
-Отвечай строго в рамках плана клиента. Если спрашивают можно ли что-то съесть — посчитай впишется ли в оставшиеся калории и макросы. Отвечай конкретно, с числами. Общайся на русском.`
+ПОСЛЕДНИЕ 5 ТРЕНИРОВОК (с весами):
+${workoutHistoryText}
+
+${mode === 'workout'
+  ? `РЕЖИМ: Тренировки
+Не меняй программу клиента. Рекомендуй веса на следующий подход исходя из истории.
+Принцип прогрессии: выполнил все подходы чисто → добавь 2.5 кг. Не выполнил → оставь тот же вес или снизь на 2.5 кг.
+Отвечай конкретно и коротко — называй упражнение и вес.`
+  : `РЕЖИМ: Питание
+Отвечай строго в рамках плана питания клиента.
+Если спрашивает можно ли что-то съесть — посчитай впишется ли в оставшиеся калории и макросы. Отвечай с числами.`}
+
+Отвечай коротко и конкретно, как тренер. На русском языке.`
   }
 
   // ── Отправка сообщения ────────────────────────────────────────────────
@@ -94,7 +113,7 @@ const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMob
     setInput('')
     setLoading(true)
 
-    const systemPrompt = mode === 'workout' ? buildWorkoutPrompt() : buildNutritionPrompt()
+    const systemPrompt = buildSystemPrompt(mode)
 
     try {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -115,11 +134,14 @@ const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMob
       const data = await res.json()
       if (data.content?.[0]?.text) {
         setMessages(prev => [...prev, { role: 'assistant', content: data.content[0].text }])
+      } else if (res.status === 401) {
+        setMessages(prev => [...prev, { role: 'assistant', content: '❌ API ключ неверный. Нажми 🔑 и введи рабочий ключ.' }])
+        setShowKeyModal(true)
       } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: `Ошибка: ${data.error?.message || 'Что-то пошло не так'}` }])
+        setMessages(prev => [...prev, { role: 'assistant', content: `Ошибка ${res.status}: ${data.error?.message || 'Что-то пошло не так'}` }])
       }
-    } catch {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Нет соединения. Проверь интернет и API ключ.' }])
+    } catch (err) {
+      setMessages(prev => [...prev, { role: 'assistant', content: `Ошибка сети: ${err.message}` }])
     } finally {
       setLoading(false)
     }
@@ -164,7 +186,7 @@ const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMob
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           animation: 'ai-pulse 2.5s ease-in-out infinite',
           minHeight: 'unset',
-        }}>✨</button>
+        }}>🤖</button>
       )}
 
       {/* Чат */}
@@ -184,7 +206,7 @@ const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMob
               background: 'none', border: 'none', fontSize: 22, cursor: 'pointer',
               color: '#9ca3af', padding: 0, lineHeight: 1, minHeight: 'unset',
             }}>←</button>
-            <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,#7F77DD,#5b54c4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>✨</div>
+            <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,#7F77DD,#5b54c4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🤖</div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: '#111', lineHeight: 1.2 }}>AI Ассистент</div>
               <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 500 }}>● онлайн</div>
@@ -218,7 +240,7 @@ const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMob
             {/* Заглушка если нет сообщений */}
             {messages.length === 0 && (
               <div style={{ textAlign: 'center', marginTop: 24 }}>
-                <div style={{ fontSize: 42, marginBottom: 12 }}>✨</div>
+                <div style={{ fontSize: 42, marginBottom: 12 }}>🤖</div>
                 <div style={{ fontSize: 15, fontWeight: 700, color: '#111', marginBottom: 6 }}>
                   {mode === 'workout' ? 'AI тренер по вашей программе' : 'AI диетолог'}
                 </div>
@@ -247,7 +269,7 @@ const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMob
             {messages.map((m, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
                 {m.role === 'assistant' && (
-                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#7F77DD,#5b54c4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, marginRight: 8, flexShrink: 0, alignSelf: 'flex-end', marginBottom: 2 }}>✨</div>
+                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#7F77DD,#5b54c4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, marginRight: 8, flexShrink: 0, alignSelf: 'flex-end', marginBottom: 2 }}>🤖</div>
                 )}
                 <div style={{
                   maxWidth: '78%', padding: '10px 14px',
@@ -264,7 +286,7 @@ const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMob
             {/* Индикатор загрузки */}
             {loading && (
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
-                <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#7F77DD,#5b54c4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}>✨</div>
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#7F77DD,#5b54c4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}>🤖</div>
                 <div style={{ background: '#f3f4f6', borderRadius: '16px 16px 16px 4px', padding: '12px 16px', display: 'flex', gap: 5, alignItems: 'center' }}>
                   {[0, 1, 2].map(i => (
                     <div key={i} style={{

@@ -1267,18 +1267,18 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               const ec=slot.exercises.length
               const vc=slot.exercises.filter(e=>e.videoId).length
               return (
-                <div key={slot.id} style={{ background:'#fff', borderRadius:13, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', marginBottom:10, display:'flex', alignItems:'center', gap:12, padding:'14px 16px', cursor:'pointer' }}
+                <div key={slot.id} style={{ background:'#fff', borderRadius:13, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', marginBottom:10, display:'flex', flexDirection:'column', alignItems:'center', padding:'16px 16px 14px', cursor:'pointer', position:'relative' }}
                   onClick={()=>setOpenSlotId(slot.id)}>
-                  <div style={{ flexShrink:0, width:42, height:42, borderRadius:'50%', background:ec>0?PUR:'#f3f4f6', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, fontWeight:700, color:ec>0?'#fff':'#9ca3af' }}>
+                  <div style={{ position:'absolute', top:14, left:14, width:36, height:36, borderRadius:'50%', background:ec>0?PUR:'#f3f4f6', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:ec>0?'#fff':'#9ca3af' }}>
                     {slot.slotNum}
                   </div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:15, fontWeight:600, color:'#111' }}>{slot.title}</div>
-                    <div style={{ fontSize:11, color:'#9ca3af', marginTop:2 }}>
+                  <span style={{ position:'absolute', top:18, right:14, fontSize:18, color:'#c7cad1' }}>›</span>
+                  <div style={{ textAlign:'center', paddingTop:6 }}>
+                    <div style={{ fontSize:16, fontWeight:700, color:'#111', marginBottom:4 }}>{slot.title}</div>
+                    <div style={{ fontSize:12, color:'#9ca3af' }}>
                       {ec===0?'Нет упражнений':`${ec} упр.${vc>0?` · ${vc} видео`:''}`}
                     </div>
                   </div>
-                  <span style={{ fontSize:20, color:'#c7cad1' }}>›</span>
                 </div>
               )
             })}
@@ -1289,7 +1289,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       {/* ── Плашка AI тренера ── */}
       {onOpenAI&&(
         <div onClick={()=>onOpenAI('workout')} style={{ display:'flex',alignItems:'center',gap:12,background:'linear-gradient(135deg,#7F77DD18,#5b54c408)',border:'1.5px solid #7F77DD44',borderRadius:14,padding:'12px 16px',marginBottom:14,cursor:'pointer' }}>
-          <div style={{ width:38,height:38,borderRadius:'50%',background:'linear-gradient(135deg,#7F77DD,#5b54c4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0 }}>✨</div>
+          <div style={{ width:38,height:38,borderRadius:'50%',background:'linear-gradient(135deg,#7F77DD,#5b54c4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0 }}>🤖</div>
           <div style={{ flex:1 }}>
             <div style={{ fontSize:13,fontWeight:700,color:'#7F77DD' }}>Спросить AI тренера</div>
             <div style={{ fontSize:11,color:'#9ca3af',marginTop:1 }}>Подберёт вес на следующую тренировку</div>
@@ -1303,19 +1303,15 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         const totalEx=folderSlots[folder].reduce((s,sl)=>s+sl.exercises.length,0)
         const totalVids=folderSlots[folder].reduce((s,sl)=>s+sl.exercises.filter(e=>e.videoId).length,0)
         return (
-          <Card key={folder} style={{ marginBottom:10, cursor:'pointer' }}
+          <Card key={folder} style={{ marginBottom:10, cursor:'pointer', position:'relative' }}
             onClick={()=>setOpenFolder(folder)}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-              <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-                <div style={{ fontSize:26 }}>{FOLDER_ICONS[folder]}</div>
-                <div>
-                  <div style={{ fontSize:15, fontWeight:600, color:'#111' }}>{folder}</div>
-                  <div style={{ fontSize:11, color:'#9ca3af', marginTop:2 }}>
-                    {SLOT_COUNT} тренировок · {totalEx} упр.{totalVids>0?` · ${totalVids} видео`:''}
-                  </div>
-                </div>
+            <span style={{ position:'absolute', top:'50%', right:16, transform:'translateY(-50%)', fontSize:20, color:'#c7cad1' }}>›</span>
+            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingRight:20 }}>
+              <div style={{ fontSize:28, marginBottom:6 }}>{FOLDER_ICONS[folder]}</div>
+              <div style={{ fontSize:16, fontWeight:700, color:'#111', textAlign:'center' }}>{folder}</div>
+              <div style={{ fontSize:12, color:'#9ca3af', marginTop:3, textAlign:'center' }}>
+                {SLOT_COUNT} тренировок · {totalEx} упр.{totalVids>0?` · ${totalVids} видео`:''}
               </div>
-              <span style={{ fontSize:20, color:'#c7cad1' }}>›</span>
             </div>
           </Card>
         )
@@ -1787,6 +1783,7 @@ function NutritionView(){
       p:String(meal.p),
       c:String(meal.c),
       f:String(meal.f),
+      items:meal.items||[],
     }))
     diary[logDate]=[...existing,...newEntries]
     localStorage.setItem('fitpro_food_diary',JSON.stringify(diary))
@@ -1848,14 +1845,14 @@ function NutritionView(){
         </div>
         {/* ── Панель «Зафиксировать в дневнике» */}
         <div style={{ background:'#fff',borderTop:'1px solid #e5e7eb',padding:'10px 16px 14px',flexShrink:0 }}>
-          <div style={{ fontSize:11,color:'#9ca3af',marginBottom:6,textAlign:'center',fontWeight:500 }}>Выберите дату и зафиксируйте рацион</div>
+          <div style={{ fontSize:11,color:'#9ca3af',marginBottom:6,textAlign:'center',fontWeight:500 }}>Выберите дату для копирования рациона</div>
           <DateScroller value={logDate} onChange={setLogDate} />
           <button onClick={()=>applyToFoodDiary(day)}
             style={{ width:'100%',padding:'13px',borderRadius:12,border:'none',
               background:logDone?TEA:BLU,color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset',
               display:'flex',alignItems:'center',justifyContent:'center',gap:8,
               transition:'background 0.3s' }}>
-            {logDone?'✓ Рацион добавлен в дневник!':'📋 Зафиксировать рацион'}
+            {logDone?'✓ Рацион скопирован в дневник!':'📋 Копировать рацион'}
           </button>
         </div>
       </div>
@@ -2026,15 +2023,16 @@ function LibraryView({ customExercises }) {
           <button key={m} onClick={()=>setFilt(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:20, cursor:'pointer', border:`1px solid ${filt===m?PUR:'#e5e7eb'}`, background:filt===m?'#EEEDFE':'transparent', color:filt===m?'#3C3489':'#6b7280' }}>{m}</button>
         ))}
       </div>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:9 }}>
+      <div style={{ display:'flex', flexDirection:'column', gap:9 }}>
         {fl.map((ex,i)=>(
           <Card key={i} onClick={()=>setSel(ex)} style={{ cursor:'pointer' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:5 }}>
-              <span style={{ fontSize:18 }}>{MUSCLE_ICONS[ex.m]||'🏋️'}</span>
-              <span style={{ fontSize:13, fontWeight:500, color:'#111' }}>{ex.n}</span>
-              {ex.custom&&<span style={{ fontSize:9, padding:'1px 5px', borderRadius:4, background:'#EEEDFE', color:PUR }}>моё</span>}
+            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
+              <span style={{ fontSize:22 }}>{MUSCLE_ICONS[ex.m]||'🏋️'}</span>
+              <div style={{ textAlign:'center' }}>
+                <div style={{ fontSize:15, fontWeight:600, color:'#111' }}>{ex.n}{ex.custom&&<span style={{ marginLeft:6, fontSize:10, padding:'1px 6px', borderRadius:4, background:'#EEEDFE', color:PUR }}>моё</span>}</div>
+                <div style={{ fontSize:12, color:'#9ca3af', marginTop:2 }}>{ex.m}{ex.eq?` · ${ex.eq}`:''}</div>
+              </div>
             </div>
-            <div style={{ fontSize:11, color:'#9ca3af' }}>{ex.m}{ex.eq?` · ${ex.eq}`:''}</div>
           </Card>
         ))}
         {fl.length===0&&<div style={{ color:'#c7cad1',fontSize:13,gridColumn:'1/-1',textAlign:'center',padding:'30px 0' }}>Ничего не найдено</div>}
@@ -2227,6 +2225,8 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const [foodDate,setFoodDate]=useState(()=>{const t=new Date();return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`})
   const [showFoodForm,setShowFoodForm]=useState(false)
   const [foodForm,setFoodForm]=useState({name:'',kcal:'',p:'',c:'',f:''})
+  const [editingFoodId,setEditingFoodId]=useState(null)
+  const [editFoodForm,setEditFoodForm]=useState({name:'',kcal:'',p:'',c:'',f:'',items:[]})
   const [foodView,setFoodView]=useState('day') // 'day' | 'week'
   const [showGoals,setShowGoals]=useState(false)
   const [foodGoals,setFoodGoals]=useState(()=>JSON.parse(localStorage.getItem('fitpro_food_goals')||'{"kcal":2000,"p":150,"c":200,"f":60}'))
@@ -2243,6 +2243,12 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     setShowFoodForm(false)
   }
   const removeFood=(id)=>setFoodDiary(d=>({...d,[foodDate]:(d[foodDate]||[]).filter(e=>e.id!==id)}))
+  const startEditFood=(e)=>{setEditFoodForm({name:e.name,kcal:e.kcal||'',p:e.p||'',c:e.c||'',f:e.f||'',items:e.items||[]});setEditingFoodId(e.id)}
+  const saveEditFood=()=>{
+    if(!editFoodForm.name.trim())return
+    setFoodDiary(d=>({...d,[foodDate]:(d[foodDate]||[]).map(e=>e.id===editingFoodId?{...e,...editFoodForm}:e)}))
+    setEditingFoodId(null)
+  }
 
   const BackBtn=({label})=>(
     <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexShrink:0,position:'sticky',top:0,zIndex:10 }}>
@@ -2706,7 +2712,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           {/* Плашка AI диетолога */}
           {onOpenAI&&(
             <div onClick={()=>onOpenAI('nutrition')} style={{ display:'flex',alignItems:'center',gap:12,background:'linear-gradient(135deg,#1D9E7518,#1D9E7508)',border:'1.5px solid #1D9E7544',borderRadius:14,padding:'12px 16px',marginBottom:14,cursor:'pointer' }}>
-              <div style={{ width:38,height:38,borderRadius:'50%',background:'linear-gradient(135deg,#1D9E75,#157a5b)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0 }}>✨</div>
+              <div style={{ width:38,height:38,borderRadius:'50%',background:'linear-gradient(135deg,#1D9E75,#157a5b)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0 }}>🤖</div>
               <div style={{ flex:1 }}>
                 <div style={{ fontSize:13,fontWeight:700,color:'#1D9E75' }}>Спросить AI диетолога</div>
                 <div style={{ fontSize:11,color:'#9ca3af',marginTop:1 }}>Знает ваш план и остаток калорий</div>
@@ -2789,17 +2795,64 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
             {dayEntries.length>0&&(
               <div style={{ marginBottom:12 }}>
                 {dayEntries.map(e=>(
-                  <div key={e.id} style={{ background:'#fff',borderRadius:11,boxShadow:'0 1px 4px rgba(0,0,0,0.06)',padding:'12px 14px',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center' }}>
-                    <div style={{ flex:1,minWidth:0 }}>
-                      <div style={{ fontSize:14,fontWeight:500,color:'#111' }}>{e.name}</div>
-                      <div style={{ fontSize:11,color:'#9ca3af',marginTop:2,display:'flex',gap:8,flexWrap:'wrap' }}>
-                        {e.kcal&&<span style={{ color:PUR,fontWeight:600 }}>{e.kcal} ккал</span>}
-                        {e.p&&<span>Б: {e.p}г</span>}
-                        {e.c&&<span>У: {e.c}г</span>}
-                        {e.f&&<span>Ж: {e.f}г</span>}
+                  <div key={e.id} style={{ background:'#fff',borderRadius:11,boxShadow:'0 1px 4px rgba(0,0,0,0.06)',marginBottom:8,overflow:'hidden' }}>
+                    {editingFoodId===e.id?(
+                      <div style={{ padding:'12px 14px' }}>
+                        <input value={editFoodForm.name} onChange={ev=>setEditFoodForm(f=>({...f,name:ev.target.value}))}
+                          style={{ width:'100%',padding:'8px 10px',fontSize:14,borderRadius:8,border:'1.5px solid #e5e7eb',outline:'none',boxSizing:'border-box',color:'#111',marginBottom:8 }}
+                          onFocus={ev=>ev.target.style.borderColor=PUR} onBlur={ev=>ev.target.style.borderColor='#e5e7eb'} />
+                        {/* items list editable */}
+                        {editFoodForm.items.length>0&&(
+                          <div style={{ marginBottom:8 }}>
+                            {editFoodForm.items.map((item,ii)=>(
+                              <div key={ii} style={{ display:'flex',gap:6,marginBottom:4 }}>
+                                <input value={item} onChange={ev=>setEditFoodForm(f=>({...f,items:f.items.map((it,idx)=>idx===ii?ev.target.value:it)}))}
+                                  style={{ flex:1,padding:'6px 10px',fontSize:12,borderRadius:7,border:'1px solid #e5e7eb',outline:'none',color:'#374151' }}
+                                  onFocus={ev=>ev.target.style.borderColor=PUR} onBlur={ev=>ev.target.style.borderColor='#e5e7eb'} />
+                                <button onClick={()=>setEditFoodForm(f=>({...f,items:f.items.filter((_,idx)=>idx!==ii)}))}
+                                  style={{ background:'none',border:'none',fontSize:16,cursor:'pointer',color:'#d1d5db',padding:'4px',minHeight:'unset' }}>✕</button>
+                              </div>
+                            ))}
+                            <button onClick={()=>setEditFoodForm(f=>({...f,items:[...f.items,'']}))}
+                              style={{ fontSize:12,color:PUR,border:'none',background:'none',cursor:'pointer',padding:'4px 0',minHeight:'unset' }}>+ добавить позицию</button>
+                          </div>
+                        )}
+                        <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,marginBottom:10 }}>
+                          {[['ккал','kcal',PUR],['Б','p',TEA],['У','c',BLU],['Ж','f',COR]].map(([pl,k,c])=>(
+                            <input key={k} type="number" placeholder={pl} value={editFoodForm[k]} onChange={ev=>setEditFoodForm(f=>({...f,[k]:ev.target.value}))}
+                              style={{ width:'100%',padding:'7px 6px',fontSize:12,borderRadius:7,border:`1.5px solid ${c}44`,outline:'none',boxSizing:'border-box',color:'#111',textAlign:'center' }}
+                              onFocus={ev=>ev.target.style.borderColor=c} onBlur={ev=>ev.target.style.borderColor=`${c}44`} />
+                          ))}
+                        </div>
+                        <div style={{ display:'flex',gap:8 }}>
+                          <button onClick={saveEditFood} style={{ flex:1,padding:'9px',borderRadius:8,border:'none',background:PUR,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>Сохранить</button>
+                          <button onClick={()=>setEditingFoodId(null)} style={{ padding:'9px 14px',borderRadius:8,border:'none',background:'#f3f4f6',color:'#6b7280',fontSize:13,cursor:'pointer',minHeight:'unset' }}>Отмена</button>
+                          <button onClick={()=>{removeFood(e.id);setEditingFoodId(null)}} style={{ padding:'9px 14px',borderRadius:8,border:'none',background:'#fff5f5',color:'#ef4444',fontSize:13,cursor:'pointer',minHeight:'unset' }}>Удалить</button>
+                        </div>
                       </div>
-                    </div>
-                    <button onClick={()=>removeFood(e.id)} style={{ background:'none',border:'none',fontSize:18,cursor:'pointer',color:'#d1d5db',padding:'4px',minHeight:'unset',lineHeight:1,flexShrink:0 }}>✕</button>
+                    ):(
+                      <div style={{ padding:'12px 14px' }}>
+                        <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start' }}>
+                          <div style={{ flex:1,minWidth:0 }}>
+                            <div style={{ fontSize:14,fontWeight:600,color:'#111',marginBottom:2 }}>{e.name}</div>
+                            {e.items&&e.items.length>0&&(
+                              <div style={{ marginBottom:6 }}>
+                                {e.items.map((item,ii)=>(
+                                  <div key={ii} style={{ fontSize:12,color:'#374151',lineHeight:1.5,paddingLeft:8,borderLeft:'2px solid #f3f4f6',marginBottom:1 }}>• {item}</div>
+                                ))}
+                              </div>
+                            )}
+                            <div style={{ fontSize:11,color:'#9ca3af',display:'flex',gap:8,flexWrap:'wrap' }}>
+                              {e.kcal&&<span style={{ color:PUR,fontWeight:600 }}>{e.kcal} ккал</span>}
+                              {e.p&&<span>Б: {e.p}г</span>}
+                              {e.c&&<span>У: {e.c}г</span>}
+                              {e.f&&<span>Ж: {e.f}г</span>}
+                            </div>
+                          </div>
+                          <button onClick={()=>startEditFood(e)} style={{ background:'none',border:'none',fontSize:16,cursor:'pointer',color:'#d1d5db',padding:'4px',minHeight:'unset',lineHeight:1,flexShrink:0 }}>✏️</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -3146,6 +3199,291 @@ function LandingPage({ onEnter }) {
   )
 }
 
+// ── ProfileView ──────────────────────────────────────────────────────────────
+function ProfileView({ user, onClose, onOpenAI }) {
+  const [tab,setTab]=useState('profile')
+  const [profile,setProfile]=useState(()=>{
+    try{return JSON.parse(localStorage.getItem('fitpro_profile')||'null')||{name:user?.name||'',birthdate:'',height:'',weight:'',goal:'',steps:'',gymDays:''}}catch{return{name:user?.name||'',birthdate:'',height:'',weight:'',goal:'',steps:'',gymDays:''}}
+  })
+  const [saved,setSaved]=useState(false)
+  const [showGoalPicker,setShowGoalPicker]=useState(false)
+  const [customGoal,setCustomGoal]=useState('')
+  const [typedText,setTypedText]=useState('')
+  const [typingDone,setTypingDone]=useState(false)
+  const TYPING_MSG='Могу подобрать рацион под твою цель'
+  useEffect(()=>{
+    if(!profile.goal){setTypedText('');setTypingDone(false);return}
+    setTypedText('');setTypingDone(false)
+    let i=0
+    const t=setTimeout(()=>{
+      const iv=setInterval(()=>{
+        i++
+        setTypedText(TYPING_MSG.slice(0,i))
+        if(i>=TYPING_MSG.length){clearInterval(iv);setTypingDone(true)}
+      },38)
+      return()=>clearInterval(iv)
+    },420)
+    return()=>clearTimeout(t)
+  },[profile.goal])
+  const [measurements,setMeasurements]=useState(()=>{
+    try{return JSON.parse(localStorage.getItem('fitpro_measurements')||'[]')}catch{return[]}
+  })
+  const [showAddM,setShowAddM]=useState(false)
+  const [newM,setNewM]=useState({shoulders:'',underarm:'',chest:'',waist:'',glutes:'',thigh:'',calf:'',bicep:''})
+
+  const M_FIELDS=[
+    {key:'shoulders',label:'Обхват плеч'},
+    {key:'underarm', label:'Обхват под мышками'},
+    {key:'chest',    label:'Обхват груди'},
+    {key:'waist',    label:'Обхват талии'},
+    {key:'glutes',   label:'Обхват ягодиц'},
+    {key:'thigh',    label:'Обхват бедра'},
+    {key:'calf',     label:'Обхват голени'},
+    {key:'bicep',    label:'Обхват руки (бицепс)'},
+  ]
+
+  const saveProfile=()=>{
+    localStorage.setItem('fitpro_profile',JSON.stringify(profile))
+    setSaved(true); setTimeout(()=>setSaved(false),2000)
+  }
+
+  const addMeasurement=()=>{
+    const hasAny=Object.values(newM).some(v=>v.trim())
+    if(!hasAny)return
+    const entry={date:new Date().toISOString(),...newM}
+    const updated=[entry,...measurements]
+    setMeasurements(updated)
+    localStorage.setItem('fitpro_measurements',JSON.stringify(updated))
+    setShowAddM(false)
+    setNewM({shoulders:'',underarm:'',chest:'',waist:'',glutes:'',thigh:'',calf:'',bicep:''})
+  }
+
+  const fmtDate=d=>new Date(d).toLocaleDateString('ru',{day:'numeric',month:'long',year:'numeric'})
+
+  return(
+    <div style={{position:'fixed',inset:0,background:'#f9fafb',zIndex:1050,display:'flex',flexDirection:'column',fontFamily:'system-ui,sans-serif'}}>
+      {/* Хедер */}
+      <div style={{background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
+        <button onClick={onClose} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset'}}>←</button>
+        <span style={{fontSize:18,fontWeight:800,color:'#111',flex:1}}>Мои данные</span>
+      </div>
+
+      {/* Табы */}
+      <div style={{display:'flex',gap:0,borderBottom:'1px solid #e5e7eb',background:'#fff',flexShrink:0}}>
+        {[{id:'profile',label:'Профиль'},{id:'measurements',label:'Замеры'}].map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{
+            flex:1,padding:'13px 0',border:'none',borderBottom:tab===t.id?`2.5px solid ${PUR}`:'2.5px solid transparent',
+            background:'none',fontSize:15,fontWeight:tab===t.id?700:500,color:tab===t.id?PUR:'#9ca3af',cursor:'pointer',minHeight:'unset'
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      <div style={{flex:1,overflowY:'auto',padding:'18px 16px 40px'}}>
+
+        {/* ── Профиль ── */}
+        {tab==='profile'&&(
+          <div style={{display:'flex',flexDirection:'column',gap:14}}>
+            {[
+              {key:'name',     label:'ФИО',            placeholder:'Иванов Иван Иванович', type:'text'},
+              {key:'birthdate',label:'Дата рождения',  placeholder:'01.01.1995',            type:'text'},
+              {key:'height',   label:'Рост (см)',       placeholder:'175',                   type:'number'},
+              {key:'weight',   label:'Вес (кг)',        placeholder:'75',                    type:'number'},
+            ].map(f=>(
+              <div key={f.key}>
+                <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>{f.label}</label>
+                <input value={profile[f.key]||''} type={f.type} placeholder={f.placeholder}
+                  onChange={e=>setProfile(p=>({...p,[f.key]:e.target.value}))}
+                  style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
+                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+              </div>
+            ))}
+
+            {/* Цель */}
+            <div>
+              <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Цель</label>
+              {/* Строка-триггер */}
+              <button onClick={()=>setShowGoalPicker(v=>!v)}
+                style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${profile.goal?PUR:'#e5e7eb'}`,background:profile.goal?'#EEEDFE':'#fff',cursor:'pointer',textAlign:'left',minHeight:'unset',transition:'all 0.2s'}}>
+                <span style={{fontSize:15,fontWeight:600,color:profile.goal?PUR:'#9ca3af'}}>
+                  {profile.goal||'Выбрать цель...'}
+                </span>
+                <span style={{fontSize:13,color:'#9ca3af',transition:'transform 0.2s',display:'inline-block',transform:showGoalPicker?'rotate(180deg)':'rotate(0deg)'}}>▼</span>
+              </button>
+              {/* Раскрывающийся список */}
+              <div style={{overflow:'hidden',maxHeight:showGoalPicker?400:0,opacity:showGoalPicker?1:0,transition:'max-height 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease'}}>
+                <div style={{display:'flex',flexDirection:'column',gap:6,paddingTop:8}}>
+                  {[
+                    {val:'Похудение',   icon:'🔥'},
+                    {val:'Набор массы', icon:'💪'},
+                    {val:'Поддержание', icon:'⚖️'},
+                    {val:'Рельеф',      icon:'✂️'},
+                  ].map(opt=>(
+                    <button key={opt.val} onClick={()=>{setProfile(p=>({...p,goal:opt.val}));setShowGoalPicker(false)}}
+                      style={{display:'flex',alignItems:'center',gap:10,padding:'11px 14px',borderRadius:10,border:`1.5px solid ${profile.goal===opt.val?PUR:'#e5e7eb'}`,background:profile.goal===opt.val?'#EEEDFE':'#fafafa',cursor:'pointer',textAlign:'left',minHeight:'unset',transition:'all 0.15s'}}>
+                      <span style={{fontSize:18}}>{opt.icon}</span>
+                      <span style={{fontSize:15,fontWeight:600,color:profile.goal===opt.val?PUR:'#374151'}}>{opt.val}</span>
+                      {profile.goal===opt.val&&<span style={{marginLeft:'auto',fontSize:15,color:PUR}}>✓</span>}
+                    </button>
+                  ))}
+                  {/* Свой вариант */}
+                  <div style={{display:'flex',gap:8,paddingTop:2}}>
+                    <input value={customGoal} onChange={e=>setCustomGoal(e.target.value)}
+                      placeholder="Написать свой вариант..."
+                      style={{flex:1,padding:'11px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:14,color:'#111',outline:'none',background:'#fafafa'}}
+                      onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'}
+                      onKeyDown={e=>{if(e.key==='Enter'&&customGoal.trim()){setProfile(p=>({...p,goal:customGoal.trim()}));setCustomGoal('');setShowGoalPicker(false)}}} />
+                    <button onClick={()=>{if(customGoal.trim()){setProfile(p=>({...p,goal:customGoal.trim()}));setCustomGoal('');setShowGoalPicker(false)}}}
+                      style={{padding:'11px 16px',borderRadius:10,border:'none',background:PUR,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',minHeight:'unset',flexShrink:0}}>OK</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* AI баннер — появляется после выбора цели */}
+            <div style={{
+              overflow:'hidden',
+              maxHeight: profile.goal ? 120 : 0,
+              opacity: profile.goal ? 1 : 0,
+              transition: 'max-height 0.45s cubic-bezier(0.4,0,0.2,1), opacity 0.4s ease',
+            }}>
+              <style>{`
+                @keyframes bot-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+                @keyframes bot-blink{0%,100%{opacity:1}50%{opacity:0}}
+                @keyframes banner-glow{0%,100%{box-shadow:0 0 0 0 #1D9E7520}50%{box-shadow:0 0 0 6px #1D9E7508}}
+              `}</style>
+              <div onClick={()=>{ if(onOpenAI){ onClose(); setTimeout(()=>onOpenAI('nutrition'),200) } }}
+                style={{
+                  display:'flex', alignItems:'center', gap:14,
+                  background:'linear-gradient(135deg,#1D9E7514,#1D9E7506)',
+                  border:'1.5px solid #1D9E7540', borderRadius:14,
+                  padding:'14px 16px', cursor: onOpenAI ? 'pointer' : 'default',
+                  marginBottom:4,
+                  animation:'banner-glow 2s ease-in-out infinite',
+                }}>
+                <div style={{
+                  width:44,height:44,borderRadius:'50%',
+                  background:'linear-gradient(135deg,#1D9E75,#157a5b)',
+                  display:'flex',alignItems:'center',justifyContent:'center',
+                  fontSize:22,flexShrink:0,
+                  animation: typingDone ? 'bot-float 2.2s ease-in-out infinite' : 'none',
+                }}>🤖</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:15,fontWeight:700,color:'#1D9E75',minHeight:22}}>
+                    {typedText}
+                    {!typingDone&&<span style={{animation:'bot-blink 0.7s step-end infinite',marginLeft:1,color:'#1D9E75'}}>|</span>}
+                  </div>
+                </div>
+                {onOpenAI&&typingDone&&<span style={{fontSize:20,color:'#1D9E75',flexShrink:0}}>›</span>}
+              </div>
+            </div>
+
+            {/* Активность */}
+            <div style={{background:'#f0eeff',borderRadius:12,padding:'14px 16px'}}>
+              <div style={{fontSize:14,fontWeight:700,color:PUR,marginBottom:12}}>Активность</div>
+              <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                <div>
+                  <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Шагов в день (среднее)</label>
+                  <input value={profile.steps||''} type="number" placeholder="например 8000"
+                    onChange={e=>setProfile(p=>({...p,steps:e.target.value}))}
+                    style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
+                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                </div>
+                <div>
+                  <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Тренировок в зале в неделю</label>
+                  <input value={profile.gymDays||''} type="number" placeholder="например 3"
+                    onChange={e=>setProfile(p=>({...p,gymDays:e.target.value}))}
+                    style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
+                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                </div>
+              </div>
+            </div>
+
+            <button onClick={saveProfile} style={{padding:'14px',borderRadius:12,border:'none',background:saved?TEA:PUR,color:'#fff',fontSize:16,fontWeight:700,cursor:'pointer',transition:'background 0.2s'}}>
+              {saved?'✓ Сохранено':'Сохранить'}
+            </button>
+          </div>
+        )}
+
+        {/* ── Замеры ── */}
+        {tab==='measurements'&&(
+          <div>
+            {/* Подсказка о замерах */}
+            <div style={{display:'flex',gap:10,background:'#fff8e6',border:'1px solid #fcd34d',borderRadius:12,padding:'12px 14px',marginBottom:18,alignItems:'flex-start'}}>
+              <span style={{fontSize:16,flexShrink:0}}>❗</span>
+              <div style={{fontSize:13,color:'#92400e',lineHeight:1.6}}>
+                <b>Важно:</b> все замеры делаются в самых выпуклых (наибольших) точках тела. Мышцы расслаблены, лента горизонтально без натяжения.
+              </div>
+            </div>
+
+            <button onClick={()=>setShowAddM(true)} style={{width:'100%',padding:'14px',borderRadius:12,border:`2px dashed ${PUR}`,background:'#f0eeff',color:PUR,fontSize:15,fontWeight:700,cursor:'pointer',marginBottom:20}}>
+              + Добавить замеры
+            </button>
+
+            {/* История замеров */}
+            {measurements.length===0?(
+              <div style={{textAlign:'center',color:'#9ca3af',fontSize:14,marginTop:32}}>
+                <div style={{fontSize:40,marginBottom:12}}>📏</div>
+                Пока нет замеров. Добавь первые — и сможешь отслеживать прогресс.
+              </div>
+            ):(
+              <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                {measurements.map((m,i)=>(
+                  <div key={i} style={{background:'#fff',borderRadius:14,padding:'16px',border:'1px solid #e5e7eb'}}>
+                    <div style={{fontSize:14,fontWeight:700,color:'#111',marginBottom:12}}>📅 {fmtDate(m.date)}</div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                      {M_FIELDS.map(f=>m[f.key]?(
+                        <div key={f.key} style={{background:'#f9fafb',borderRadius:8,padding:'8px 10px'}}>
+                          <div style={{fontSize:11,color:'#9ca3af',marginBottom:2}}>{f.label}</div>
+                          <div style={{fontSize:16,fontWeight:700,color:PUR}}>{m[f.key]} <span style={{fontSize:11,fontWeight:400,color:'#9ca3af'}}>см</span></div>
+                          {/* разница с предыдущей записью */}
+                          {measurements[i+1]&&measurements[i+1][f.key]&&(()=>{
+                            const diff=(parseFloat(m[f.key])-parseFloat(measurements[i+1][f.key])).toFixed(1)
+                            const pos=parseFloat(diff)>0
+                            return diff!=='0.0'&&<div style={{fontSize:11,color:pos?COR:TEA,fontWeight:600}}>{pos?'+':''}{diff} см</div>
+                          })()}
+                        </div>
+                      ):null)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Форма добавления замеров */}
+            {showAddM&&(
+              <>
+                <div onClick={()=>setShowAddM(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:10}}/>
+                <div style={{position:'fixed',bottom:0,left:0,right:0,background:'#fff',borderRadius:'18px 18px 0 0',zIndex:11,padding:'20px 18px 36px',maxHeight:'85vh',overflowY:'auto'}}>
+                  <div style={{width:36,height:4,borderRadius:2,background:'#e5e7eb',margin:'0 auto 18px'}}/>
+                  <div style={{fontSize:16,fontWeight:700,color:'#111',marginBottom:6}}>Новые замеры</div>
+                  <div style={{fontSize:12,color:'#9ca3af',marginBottom:16}}>Все поля необязательны — заполни те что есть</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:18}}>
+                    {M_FIELDS.map(f=>(
+                      <div key={f.key} style={{display:'flex',alignItems:'center',gap:10}}>
+                        <label style={{fontSize:13,color:'#374151',flex:1}}>{f.label}</label>
+                        <div style={{display:'flex',alignItems:'center',gap:6}}>
+                          <input value={newM[f.key]} type="number" placeholder="см"
+                            onChange={e=>setNewM(p=>({...p,[f.key]:e.target.value}))}
+                            style={{width:72,padding:'9px 10px',borderRadius:8,border:'1.5px solid #e5e7eb',fontSize:14,color:'#111',outline:'none',textAlign:'center'}}
+                            onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                          <span style={{fontSize:12,color:'#9ca3af'}}>см</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={addMeasurement} style={{width:'100%',padding:'14px',borderRadius:12,border:'none',background:PUR,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer'}}>
+                    Сохранить замеры
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const [user,setUser]=useState(()=>{try{return JSON.parse(localStorage.getItem('fitpro_user')||'null')}catch{return null}})
   const [nav,setNav]=useState('dashboard')
@@ -3153,6 +3491,7 @@ export default function App() {
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768)
   const [workoutActive,setWorkoutActive]=useState(false)
   const [pendingWorkoutAction,setPendingWorkoutAction]=useState(null)
+  const [showProfileView,setShowProfileView]=useState(false)
   const aiRef=useRef()
 
   useEffect(()=>{
@@ -3253,14 +3592,14 @@ export default function App() {
 
           {/* Мобильный хедер */}
           <div style={{ position:'fixed', top:0, left:0, right:0, height:MOBILE_TOP_H, background:'#fff', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 16px', zIndex:901, flexShrink:0 }}>
+            <button onClick={()=>setShowProfileSheet(true)}
+              style={{ width:36, height:36, borderRadius:'50%', border:'none', background:PUR, color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset' }}>
+              {user.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}
+            </button>
             <div style={{ display:'flex', alignItems:'center', gap:7 }}>
               <span style={{ fontSize:20 }}>🏋️</span>
               <span style={{ fontSize:16, fontWeight:800, color:'#111', letterSpacing:'-0.3px' }}>FitPro</span>
             </div>
-            <button onClick={()=>setShowProfileSheet(true)}
-              style={{ width:34, height:34, borderRadius:'50%', border:'none', background:PUR, color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset' }}>
-              {user.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}
-            </button>
           </div>
 
           <div className="mobile-content" style={{ flex:1, overflowY:'auto', padding:`${MOBILE_TOP_H+14}px 16px ${BOTTOM_NAV_H+16}px` }}>
@@ -3282,36 +3621,50 @@ export default function App() {
                 }}>
                   <div style={{ position:'absolute', top:0, left:'50%', transform:'translateX(-50%)', width:active?28:0, height:2.5, borderRadius:'0 0 3px 3px', background:PUR, transition:'width 0.18s' }} />
                   <span style={{ fontSize:22, lineHeight:1 }}>{item.icon}</span>
-                  <span style={{ fontSize:10, fontWeight:active?700:400, color:active?PUR:'#9ca3af' }}>{item.label}</span>
+                  <span style={{ fontSize:11, fontWeight:active?700:400, color:active?PUR:'#9ca3af' }}>{item.label}</span>
                 </button>
               )
             })}
           </nav>
 
-          {/* Профиль / выход — bottom sheet */}
+          {/* Профиль — bottom sheet */}
           {showProfileSheet&&(
             <>
               <div onClick={()=>setShowProfileSheet(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:1100 }} />
               <div style={{ position:'fixed', bottom:0, left:0, right:0, background:'#fff', borderRadius:'18px 18px 0 0', zIndex:1101, padding:'20px 20px 36px' }}>
-                <div style={{ width:36, height:4, borderRadius:2, background:'#e5e7eb', margin:'0 auto 20px' }} />
-                <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:22 }}>
-                  <Av lbl={user.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={46} />
+                <div style={{ width:36, height:4, borderRadius:2, background:'#e5e7eb', margin:'0 auto 16px' }} />
+                {/* Аватар + имя */}
+                <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20, padding:'0 2px' }}>
+                  <Av lbl={user.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={48} />
                   <div>
-                    <div style={{ fontSize:16, fontWeight:600, color:'#111' }}>{user.name}</div>
-                    <div style={{ fontSize:12, color:'#9ca3af', marginTop:2 }}>{user.email} · {user.role==='trainer'?'Тренер':'Клиент'}</div>
+                    <div style={{ fontSize:17, fontWeight:700, color:'#111' }}>{user.name}</div>
+                    <div style={{ fontSize:12, color:'#9ca3af', marginTop:2 }}>{user.email}</div>
                   </div>
                 </div>
+                {/* Меню */}
+                {[
+                  { icon:'👤', label:'Мои данные',  sub:'Профиль, замеры и динамика',    action:()=>{ setShowProfileSheet(false); setShowProfileView(true) } },
+                  { icon:'📊', label:'Мой прогресс', sub:'Тоннаж, тренировки, питание', action:()=>{ setShowProfileSheet(false); handleNav('progress') } },
+                ].map((item,i)=>(
+                  <button key={i} onClick={item.action} style={{ width:'100%', display:'flex', alignItems:'center', gap:14, padding:'14px 16px', borderRadius:14, border:'1px solid #f3f4f6', background:'#fafafa', cursor:'pointer', marginBottom:10, textAlign:'left' }}>
+                    <span style={{ fontSize:24 }}>{item.icon}</span>
+                    <div>
+                      <div style={{ fontSize:15, fontWeight:700, color:'#111' }}>{item.label}</div>
+                      <div style={{ fontSize:12, color:'#9ca3af', marginTop:1 }}>{item.sub}</div>
+                    </div>
+                    <span style={{ marginLeft:'auto', fontSize:18, color:'#d1d5db' }}>›</span>
+                  </button>
+                ))}
                 <button onClick={()=>{setShowProfileSheet(false);localStorage.removeItem('fitpro_user');setUser(null)}}
-                  style={{ width:'100%', padding:'13px', borderRadius:12, border:'1.5px solid #fee2e2', background:'#fff5f5', color:'#ef4444', fontSize:15, fontWeight:600, cursor:'pointer', marginBottom:10 }}>
+                  style={{ width:'100%', padding:'13px', borderRadius:12, border:'1.5px solid #fee2e2', background:'#fff5f5', color:'#ef4444', fontSize:14, fontWeight:600, cursor:'pointer', marginTop:4 }}>
                   ← Выйти / сменить аккаунт
-                </button>
-                <button onClick={()=>setShowProfileSheet(false)}
-                  style={{ width:'100%', padding:'13px', borderRadius:12, border:'1.5px solid #e5e7eb', background:'#fff', color:'#6b7280', fontSize:15, cursor:'pointer' }}>
-                  Закрыть
                 </button>
               </div>
             </>
           )}
+
+          {/* Экран "Мои данные" */}
+          {showProfileView&&<ProfileView user={user} onClose={()=>setShowProfileView(false)} onOpenAI={m=>aiRef.current?.open(m)} />}
         </div>
       ) : (
         /* ── ДЕСКТОПНЫЙ LAYOUT ── */
