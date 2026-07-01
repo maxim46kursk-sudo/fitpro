@@ -156,6 +156,10 @@ ${matchedPlan
 
 Если клиент спрашивает можно ли съесть что-то — считай по остатку на сегодня, отвечай с числами.`}
 
+ЗАПИСЬ В ДНЕВНИК ПИТАНИЯ: Если пользователь просит тебя записать еду, макросы или калории в дневник (например "занеси белков 100г жиров 50г углей 200г", "запиши в дневник", "добавь в дневник") — ты МОЖЕШЬ это сделать напрямую. Подтверди что записываешь, а в самом конце своего ответа добавь ОДИН специальный блок (без пробелов, на отдельной строке):
+[DIARY_ENTRY:{"name":"название блюда или Запись из чата","kcal":X,"p":X,"c":X,"f":X}]
+Где X — числа из запроса пользователя. Если ккал не указаны — посчитай: ккал = белки×4 + углеводы×4 + жиры×9. Если каких-то макросов нет — ставь 0. Не показывай этот блок пользователю явно, это служебная метка. Записывай на сегодня если дата не уточнена.
+
 Отвечай коротко и конкретно, как тренер. На русском языке.
 Отвечай обычным текстом без звёздочек, без двойных звёздочек, без решёток, без тире в начале строк, без markdown разметки вообще. Просто чистый текст как в обычном сообщении.`
   }
@@ -191,7 +195,24 @@ ${matchedPlan
       })
       const data = await res.json()
       if (data.content?.[0]?.text) {
-        setMessages(prev => [...prev, { role: 'assistant', content: data.content[0].text }])
+        let rawText = data.content[0].text
+        // Парсим маркер записи в дневник
+        const diaryMatch = rawText.match(/\[DIARY_ENTRY:(\{[^}]+\})\]/)
+        let diaryWritten = false
+        if (diaryMatch) {
+          try {
+            const entry = JSON.parse(diaryMatch[1])
+            const date = new Date().toISOString().slice(0, 10)
+            const raw = localStorage.getItem('fitpro_food_diary')
+            const diary = raw ? JSON.parse(raw) : {}
+            diary[date] = [...(diary[date] || []), { id: Date.now(), ...entry }]
+            localStorage.setItem('fitpro_food_diary', JSON.stringify(diary))
+            window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
+            diaryWritten = true
+          } catch {}
+          rawText = rawText.replace(/\[DIARY_ENTRY:[^\]]+\]/g, '').trim()
+        }
+        setMessages(prev => [...prev, { role: 'assistant', content: rawText, diaryWritten }])
       } else if (res.status === 401) {
         setMessages(prev => [...prev, { role: 'assistant', content: '❌ API ключ неверный. Нажми 🔑 и введи рабочий ключ.' }])
         setShowKeyModal(true)
@@ -378,8 +399,17 @@ ${matchedPlan
                     {m.content}
                   </div>
                 </div>
+                {/* Авто-запись в дневник через маркер */}
+                {m.role === 'assistant' && m.diaryWritten && (
+                  <div style={{ paddingLeft: 36 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: '#f0fdf4', border: '1.5px solid #22c55e40' }}>
+                      <span style={{ fontSize: 14, color: '#22c55e' }}>✓</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#22c55e' }}>Записано в дневник на сегодня</span>
+                    </div>
+                  </div>
+                )}
                 {/* Кнопка «Записать в дневник» — под AI-сообщением с рационом */}
-                {m.role === 'assistant' && mode === 'nutrition' && isDietMessage(m.content) && (
+                {m.role === 'assistant' && !m.diaryWritten && mode === 'nutrition' && isDietMessage(m.content) && (
                   <div style={{ paddingLeft: 36 }}>
                     {savedMsgIds[i] ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: '#f0fdf4', border: '1.5px solid #22c55e40' }}>
@@ -391,7 +421,7 @@ ${matchedPlan
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 10 }}>Выбери дату:</div>
                         {/* Быстрые кнопки */}
                         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-                          {[['Сегодня', todayISO], ['Вчера', (()=>{const y=new Date();y.setDate(y.getDate()-1);return `${y.getFullYear()}-${String(y.getMonth()+1).padStart(2,'0')}-${String(y.getDate()).padStart(2,'0')}`})()], ['Завтра', (()=>{const t=new Date();t.setDate(t.getDate()+1);return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`})()]].map(([label, iso]) => (
+                          {[['Вчера', (()=>{const y=new Date();y.setDate(y.getDate()-1);return `${y.getFullYear()}-${String(y.getMonth()+1).padStart(2,'0')}-${String(y.getDate()).padStart(2,'0')}`})()], ['Сегодня', todayISO], ['Завтра', (()=>{const t=new Date();t.setDate(t.getDate()+1);return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`})()]].map(([label, iso]) => (
                             <button key={iso} onClick={() => setPickerDate(iso)}
                               style={{ flex:1, padding:'7px 4px', borderRadius:10, border:`1.5px solid ${pickerDate===iso?PUR:'#e5e7eb'}`, background: pickerDate===iso?`${PUR}15`:'#fff', color: pickerDate===iso?PUR:'#6b7280', fontSize:12, fontWeight:600, cursor:'pointer', minHeight:'unset' }}>
                               {label}
