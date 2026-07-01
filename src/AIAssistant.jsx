@@ -268,21 +268,52 @@ ${matchedPlan && !isMassGain && !isCutting
     }) || null
   }
 
-  // Записать день рациона в дневник на выбранную дату
+  // Записать день рациона в дневник — парсим текст AI сообщения
   const savePlanDayToDiary = (msgId, date) => {
-    const plan = getMatchedPlan()
-    if (!plan?.days?.[0]) return
-    const day = plan.days[0]
-    const raw = localStorage.getItem('fitpro_food_diary')
-    const diary = raw ? JSON.parse(raw) : {}
-    const existing = diary[date] || []
-    const newEntries = day.meals.map((meal, i) => ({
-      id: Date.now() + i,
-      name: `${meal.name}${meal.time ? ' (' + meal.time + ')' : ''}`,
-      kcal: String(meal.cal), p: String(meal.p), c: String(meal.c), f: String(meal.f),
-      items: meal.items || [],
-    }))
-    diary[date] = [...existing, ...newEntries]
+    const msg = messages[msgId]
+    const text = msg?.content || ''
+    const mealKw = ['завтрак', 'перекус', 'обед', 'ужин']
+    const entries = []
+
+    // Парсим строки вида: "Завтрак (8:00): Овсянка 45г — 320 ккал, Б:12г У:55г Ж:10г"
+    text.split('\n').forEach(line => {
+      const t = line.trim()
+      if (!t) return
+      const low = t.toLowerCase()
+      if (low.includes('итого')) return
+      const meal = mealKw.find(k => low.startsWith(k))
+      if (!meal) return
+      const kcalM = t.match(/(\d+)\s*ккал/)
+      if (!kcalM) return
+      const pM = t.match(/[Бб][:\s]*(\d+)/)
+      const cM = t.match(/[Уу][:\s]*(\d+)/)
+      const fM = t.match(/[Жж][:\s]*(\d+)/)
+      const name = t.split(/\s*[(:\-–]/)[0].trim() || meal
+      entries.push({
+        id: Date.now() + entries.length,
+        name,
+        kcal: kcalM[1],
+        p: pM?.[1] || '0',
+        c: cM?.[1] || '0',
+        f: fM?.[1] || '0',
+      })
+    })
+
+    // Если из текста ничего не распарсилось — пробуем готовый план
+    if (entries.length === 0) {
+      const plan = getMatchedPlan()
+      if (plan?.days?.[0]) {
+        plan.days[0].meals.forEach((meal, i) => entries.push({
+          id: Date.now() + i,
+          name: `${meal.name}${meal.time ? ' (' + meal.time + ')' : ''}`,
+          kcal: String(meal.cal), p: String(meal.p), c: String(meal.c), f: String(meal.f),
+        }))
+      }
+    }
+
+    if (entries.length === 0) return
+    const diary = (() => { try { return JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}') } catch { return {} } })()
+    diary[date] = [...(diary[date] || []), ...entries]
     localStorage.setItem('fitpro_food_diary', JSON.stringify(diary))
     window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
     setSavedMsgIds(prev => ({ ...prev, [msgId]: date }))
@@ -448,42 +479,43 @@ ${matchedPlan && !isMassGain && !isCutting
                 )}
                 {/* Кнопка «Записать в дневник» — под AI-сообщением с рационом */}
                 {m.role === 'assistant' && !m.diaryWritten && mode === 'nutrition' && isDietMessage(m.content) && (
-                  <div style={{ paddingLeft: 36 }}>
+                  <div style={{ paddingLeft: 36, paddingRight: 4 }}>
                     {savedMsgIds[i] ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: '#f0fdf4', border: '1.5px solid #22c55e40' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: '#f0fdf4', border: '1.5px solid #22c55e40' }}>
                         <span style={{ fontSize: 14, color: '#22c55e' }}>✓</span>
                         <span style={{ fontSize: 13, fontWeight: 600, color: '#22c55e' }}>Записано на {(()=>{const d=new Date(savedMsgIds[i]+'T00:00:00');const t=new Date();const y=new Date(t);y.setDate(y.getDate()-1);const ti=t.toISOString().slice(0,10);const yi=y.toISOString().slice(0,10);return savedMsgIds[i]===ti?'сегодня':savedMsgIds[i]===yi?'вчера':`${d.getDate()}.${String(d.getMonth()+1).padStart(2,'0')}`})()}</span>
                       </div>
                     ) : diaryDatePicker === i ? (
-                      <div style={{ background: '#f9fafb', borderRadius: 16, padding: '14px', border: '1px solid #e5e7eb', maxWidth: 300 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 10 }}>Выбери дату:</div>
+                      <div style={{ background: '#f9fafb', borderRadius: 14, padding: '12px 14px', border: '1px solid #e5e7eb', boxShadow: '0 2px 12px rgba(0,0,0,0.07)' }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: '#9ca3af', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Выберите дату</div>
                         {/* Быстрые кнопки */}
-                        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-                          {[['Вчера', (()=>{const y=new Date();y.setDate(y.getDate()-1);return `${y.getFullYear()}-${String(y.getMonth()+1).padStart(2,'0')}-${String(y.getDate()).padStart(2,'0')}`})()], ['Сегодня', todayISO], ['Завтра', (()=>{const t=new Date();t.setDate(t.getDate()+1);return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`})()]].map(([label, iso]) => (
+                        <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                          {[
+                            ['Вчера', (()=>{const y=new Date();y.setDate(y.getDate()-1);return `${y.getFullYear()}-${String(y.getMonth()+1).padStart(2,'0')}-${String(y.getDate()).padStart(2,'0')}`})()],
+                            ['Сегодня', todayISO],
+                            ['Завтра', (()=>{const t=new Date();t.setDate(t.getDate()+1);return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`})()]
+                          ].map(([label, iso]) => (
                             <button key={iso} onClick={() => setPickerDate(iso)}
-                              style={{ flex:1, padding:'7px 4px', borderRadius:10, border:`1.5px solid ${pickerDate===iso?PUR:'#e5e7eb'}`, background: pickerDate===iso?`${PUR}15`:'#fff', color: pickerDate===iso?PUR:'#6b7280', fontSize:12, fontWeight:600, cursor:'pointer', minHeight:'unset' }}>
+                              style={{ flex:1, padding:'8px 0', borderRadius:9, border:`1.5px solid ${pickerDate===iso?PUR:'#e5e7eb'}`, background: pickerDate===iso?PUR:'#fff', color: pickerDate===iso?'#fff':'#6b7280', fontSize:12, fontWeight:600, cursor:'pointer', minHeight:'unset', transition:'all 0.12s' }}>
                               {label}
                             </button>
                           ))}
                         </div>
-                        {/* Точная дата */}
-                        <input type="date" value={pickerDate} onChange={e => setPickerDate(e.target.value)}
-                          max={(() => { const t = new Date(); t.setDate(t.getDate()+7); return t.toISOString().slice(0,10) })()}
-                          style={{ width:'100%', padding:'8px 10px', fontSize:13, borderRadius:10, border:`1.5px solid ${PUR}40`, outline:'none', boxSizing:'border-box', color:'#111', background:'#fff', marginBottom:10 }} />
+                        {/* Кнопка Записать */}
                         <div style={{ display:'flex', gap:8 }}>
                           <button onClick={() => savePlanDayToDiary(i, pickerDate)}
-                            style={{ flex:1, padding:'9px', borderRadius:10, border:'none', background:TEA, color:'#fff', fontSize:13, fontWeight:600, cursor:'pointer', minHeight:'unset' }}>
+                            style={{ flex:1, padding:'10px', borderRadius:10, border:'none', background:TEA, color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', minHeight:'unset' }}>
                             📓 Записать
                           </button>
                           <button onClick={() => setDiaryDatePicker(null)}
-                            style={{ padding:'9px 14px', borderRadius:10, border:'none', background:'#e5e7eb', color:'#6b7280', fontSize:13, cursor:'pointer', minHeight:'unset' }}>
+                            style={{ padding:'10px 14px', borderRadius:10, border:'none', background:'#e5e7eb', color:'#6b7280', fontSize:13, cursor:'pointer', minHeight:'unset', fontWeight:500 }}>
                             Отмена
                           </button>
                         </div>
                       </div>
                     ) : (
                       <button onClick={() => { setPickerDate(todayISO); setDiaryDatePicker(i) }}
-                        style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 20, border: `1.5px solid ${TEA}`, background: `${TEA}12`, color: TEA, fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 'unset' }}>
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 20, border: `1.5px solid ${TEA}`, background: `${TEA}12`, color: TEA, fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 'unset' }}>
                         📓 Записать в дневник
                       </button>
                     )}
