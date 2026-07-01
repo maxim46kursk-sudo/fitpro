@@ -436,6 +436,8 @@ const makeDefaultFolderSlots=()=>{
 function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutActiveChange, pendingAction, onClearPendingAction, onOpenAI }) {
   const [openFolder,setOpenFolder]=useState(null)
   const [openSlotId,setOpenSlotId]=useState(null)
+  const [openSlotHeaderMenu,setOpenSlotHeaderMenu]=useState(false)
+  const [openExMenu,setOpenExMenu]=useState(null)
   const [folderSlots,setFolderSlots]=useState(makeDefaultFolderSlots)
   const [playVideo,setPlayVideo]=useState(null)
   const [editingSlotTitle,setEditingSlotTitle]=useState(null) // {id,title}
@@ -699,6 +701,15 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     if(!editingSlotTitle)return
     updateSlots(s=>s.id===editingSlotTitle.id?{...s,title:editingSlotTitle.title}:s)
     setEditingSlotTitle(null)
+  }
+
+  const deleteSlot=(slotId)=>{
+    setFolderSlots(prev=>{
+      const next={}
+      Object.keys(prev).forEach(f=>{next[f]=prev[f].filter(s=>s.id!==slotId)})
+      return next
+    })
+    setOpenSlotId(null)
   }
 
   const allSlots=Object.values(folderSlots).flat()
@@ -1132,8 +1143,21 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               <div style={{ fontSize:17, fontWeight:700, color:'#111', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{currentSlot.title}</div>
               <div style={{ fontSize:11, color:'#9ca3af' }}>{currentSlot.exercises.length} упражнений</div>
             </div>
-            <button onClick={()=>setEditingSlotTitle({id:currentSlot.id,title:currentSlot.title})}
-              style={{ background:'none', border:'none', fontSize:18, cursor:'pointer', color:'#9ca3af', minHeight:'unset' }}>✏️</button>
+            <div style={{ position:'relative' }}>
+              <button onClick={e=>{e.stopPropagation();setOpenSlotHeaderMenu(v=>!v)}}
+                style={{ background:'none',border:'1px solid #e5e7eb',borderRadius:7,fontSize:16,cursor:'pointer',color:'#9ca3af',padding:'2px 8px',minHeight:'unset',lineHeight:1.4,letterSpacing:1 }}>⋯</button>
+              {openSlotHeaderMenu&&(
+                <>
+                  <div onClick={()=>setOpenSlotHeaderMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
+                  <div style={{ position:'absolute',top:34,right:0,background:'#fff',borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:180,overflow:'hidden',border:'1px solid #f0f0f0' }}>
+                    <button onClick={()=>{setOpenSlotHeaderMenu(false);setEditingSlotTitle({id:currentSlot.id,title:currentSlot.title})}}
+                      style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:'1px solid #f3f4f6',background:'transparent',cursor:'pointer',textAlign:'left',color:'#111',fontSize:13 }}>✏️ Редактировать</button>
+                    <button onClick={()=>{setOpenSlotHeaderMenu(false);if(window.confirm(`Удалить тренировку «${currentSlot.title}»?`))deleteSlot(currentSlot.id)}}
+                      style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:'#ef4444',fontSize:13 }}>🗑 Удалить</button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
           <div style={{ flex:1, overflowY:'auto', padding:'14px 16px 32px' }}>
             {currentSlot.exercises.length>0&&(
@@ -1198,11 +1222,20 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       <div style={{ fontSize:14, fontWeight:700, color:'#111', marginBottom:3 }}>{ex.name||'Упражнение'}</div>
                       {ex.sets&&<div style={{ fontSize:12, color:'#6b7280', lineHeight:1.7 }}>{ex.sets}</div>}
                     </div>
-                    <div style={{ display:'flex', gap:5, flexShrink:0 }}>
-                      <button onClick={()=>setEditingExercise({slotId:currentSlot.id,exId:ex.id,name:ex.name,sets:ex.sets})}
-                        style={{ width:36, height:36, borderRadius:9, background:'#f3f4f6', border:'none', cursor:'pointer', fontSize:15, display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset' }}>✏️</button>
-                      <button onClick={()=>deleteExercise(currentSlot.id,ex.id)}
-                        style={{ width:36, height:36, borderRadius:9, background:'#fef2f2', border:'none', cursor:'pointer', color:'#ef4444', fontSize:18, display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset' }}>✕</button>
+                    <div style={{ position:'relative',flexShrink:0 }}>
+                      <button onClick={e=>{e.stopPropagation();setOpenExMenu(openExMenu===ex.id?null:ex.id)}}
+                        style={{ width:36,height:36,borderRadius:9,background:'#f3f4f6',border:'none',cursor:'pointer',fontSize:17,color:'#6b7280',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,letterSpacing:1,minHeight:'unset' }}>⋯</button>
+                      {openExMenu===ex.id&&(
+                        <>
+                          <div onClick={()=>setOpenExMenu(null)} style={{ position:'fixed',inset:0,zIndex:19 }} />
+                          <div style={{ position:'absolute',top:40,right:0,background:'#fff',borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:180,overflow:'hidden',border:'1px solid #f0f0f0' }}>
+                            <button onClick={()=>{setOpenExMenu(null);setEditingExercise({slotId:currentSlot.id,exId:ex.id,name:ex.name,sets:ex.sets})}}
+                              style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:'1px solid #f3f4f6',background:'transparent',cursor:'pointer',textAlign:'left',color:'#111',fontSize:13 }}>✏️ Редактировать</button>
+                            <button onClick={()=>{setOpenExMenu(null);deleteExercise(currentSlot.id,ex.id)}}
+                              style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:'#ef4444',fontSize:13 }}>🗑 Удалить</button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                   <div style={{ marginTop:10, paddingTop:10, borderTop:'1px solid #f3f4f6' }}>
@@ -2129,15 +2162,15 @@ function DateScroller({ value, onChange }) {
   const toISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
   const todayISO = toISO(today)
   const DAY_RU = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб']
+  const MONTH_RU = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек']
 
-  // 365 дней: -180 от сегодня до +184
   const days = Array.from({length:365},(_,i)=>{
     const d = new Date(today)
     d.setDate(today.getDate()-180+i)
     return d
   })
 
-  const ITEM_W = 52
+  const ITEM_W = 46
 
   useEffect(()=>{
     const idx = days.findIndex(d=>toISO(d)===value)
@@ -2148,31 +2181,43 @@ function DateScroller({ value, onChange }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[value])
 
+  const selDate = new Date(value+'T00:00:00')
+  const isSelToday = value===todayISO
+  const isSelYesterday = (()=>{ const y=new Date(today); y.setDate(y.getDate()-1); return toISO(y)===value })()
+  const label = isSelToday ? 'Сегодня' : isSelYesterday ? 'Вчера' : `${selDate.getDate()} ${MONTH_RU[selDate.getMonth()]}`
+
   return (
-    <div style={{ background:'#1c1c1e', borderRadius:18, padding:'14px 0 12px', marginBottom:14, userSelect:'none' }}>
-      <div ref={ref} style={{ display:'flex', overflowX:'auto', scrollbarWidth:'none', WebkitOverflowScrolling:'touch', gap:0, padding:'0 12px' }}>
-        {days.map(d=>{
-          const iso = toISO(d)
-          const sel = iso===value
-          const isToday = iso===todayISO
-          return (
-            <div key={iso} onClick={()=>onChange(iso)}
-              style={{ display:'flex',flexDirection:'column',alignItems:'center',flexShrink:0,width:ITEM_W,cursor:'pointer',position:'relative' }}>
-              {sel&&<div style={{ position:'absolute',top:-2,left:6,right:6,bottom:-2,background:`${COR}28`,borderRadius:26,zIndex:0 }} />}
-              <span style={{ fontSize:11,fontWeight:sel?700:400,color:sel?COR:isToday?'#aaa':'#666',marginBottom:7,position:'relative',zIndex:1,letterSpacing:'0.01em' }}>
-                {DAY_RU[d.getDay()]}
-              </span>
-              <div style={{ width:38,height:38,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',
-                border:`2px solid ${sel?COR:isToday?'#555':'#333'}`,
-                background: sel?`${COR}22`:'transparent',
-                fontSize:15,fontWeight:sel?700:400,
-                color:sel?COR:isToday?'#ccc':'#777',
-                position:'relative',zIndex:1 }}>
-                {d.getDate()}
+    <div style={{ marginBottom:14, userSelect:'none' }}>
+      {/* Заголовок с текущей датой */}
+      <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 4px',marginBottom:8 }}>
+        <span style={{ fontSize:15,fontWeight:700,color:'#111' }}>{label}</span>
+        <span style={{ fontSize:12,color:'#9ca3af' }}>{selDate.toLocaleDateString('ru',{weekday:'long'})}</span>
+      </div>
+      {/* Скроллер */}
+      <div style={{ background:'#f9fafb',borderRadius:16,padding:'10px 0',border:'1px solid #f0f0f0' }}>
+        <div ref={ref} style={{ display:'flex',overflowX:'auto',scrollbarWidth:'none',WebkitOverflowScrolling:'touch',padding:'0 10px' }}>
+          {days.map(d=>{
+            const iso = toISO(d)
+            const sel = iso===value
+            const isToday = iso===todayISO
+            return (
+              <div key={iso} onClick={()=>onChange(iso)}
+                style={{ display:'flex',flexDirection:'column',alignItems:'center',flexShrink:0,width:ITEM_W,cursor:'pointer',padding:'2px 0' }}>
+                <span style={{ fontSize:10,fontWeight:500,color:sel?PUR:isToday?PUR:'#b0b7c3',marginBottom:4,letterSpacing:'0.02em',textTransform:'uppercase' }}>
+                  {DAY_RU[d.getDay()]}
+                </span>
+                <div style={{ width:34,height:34,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',
+                  background: sel?PUR:isToday?`${PUR}15`:'transparent',
+                  fontSize:13,fontWeight:sel?700:isToday?600:400,
+                  color:sel?'#fff':isToday?PUR:'#6b7280',
+                  transition:'all 0.15s' }}>
+                  {d.getDate()}
+                </div>
+                {isToday&&!sel&&<div style={{ width:4,height:4,borderRadius:'50%',background:PUR,marginTop:3 }} />}
               </div>
-            </div>
-          )
-        })}
+            )
+          })}
+        </div>
       </div>
     </div>
   )
@@ -2194,6 +2239,8 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const [selIdx,setSelIdx]=useState(null)
   const [showWorkoutMenu,setShowWorkoutMenu]=useState(false)
   const [openCardMenu,setOpenCardMenu]=useState(null)
+  const [openSelWorkoutMenu,setOpenSelWorkoutMenu]=useState(false)
+  const [openActiveRecMenu,setOpenActiveRecMenu]=useState(false)
   const [showScheduleForm,setShowScheduleForm]=useState(false)
   const [scheduleForm,setScheduleForm]=useState({name:'',date:''})
   const [plannedWorkouts,setPlannedWorkouts]=useState(()=>{try{return JSON.parse(localStorage.getItem('fitpro_planned')||'[]')}catch{return[]}})
@@ -2227,12 +2274,20 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const [foodForm,setFoodForm]=useState({name:'',kcal:'',p:'',c:'',f:''})
   const [editingFoodId,setEditingFoodId]=useState(null)
   const [editFoodForm,setEditFoodForm]=useState({name:'',kcal:'',p:'',c:'',f:'',items:[]})
+  const [openFoodMenu,setOpenFoodMenu]=useState(null)
+  const [showCalPicker,setShowCalPicker]=useState(false)
+  const [calPickerMonth,setCalPickerMonth]=useState(()=>{const t=new Date();return{y:t.getFullYear(),m:t.getMonth()}})
   const [foodView,setFoodView]=useState('day') // 'day' | 'week'
   const [showGoals,setShowGoals]=useState(false)
   const [foodGoals,setFoodGoals]=useState(()=>JSON.parse(localStorage.getItem('fitpro_food_goals')||'{"kcal":2000,"p":150,"c":200,"f":60}'))
   const [goalsForm,setGoalsForm]=useState(foodGoals)
   useEffect(()=>{localStorage.setItem('fitpro_food_diary',JSON.stringify(foodDiary))},[foodDiary])
   useEffect(()=>{localStorage.setItem('fitpro_food_goals',JSON.stringify(foodGoals))},[foodGoals])
+  useEffect(()=>{
+    const handler=()=>setFoodDiary(JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'))
+    window.addEventListener('fitpro:diary-update',handler)
+    return()=>window.removeEventListener('fitpro:diary-update',handler)
+  },[])
   const dayEntries=foodDiary[foodDate]||[]
   const dayTotal=dayEntries.reduce((acc,e)=>({kcal:acc.kcal+(+e.kcal||0),p:acc.p+(+e.p||0),c:acc.c+(+e.c||0),f:acc.f+(+e.f||0)}),{kcal:0,p:0,c:0,f:0})
   const addFood=()=>{
@@ -2342,10 +2397,21 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                   <div style={{ fontSize:14,fontWeight:600,color:'#111' }}>{fmtFull(selW.date)}</div>
                   <div style={{ fontSize:12,color:'#9ca3af',marginTop:2 }}>{selW.name}</div>
                 </div>
-                <button onClick={()=>onEditWorkout(workoutHistory[selW.histIdx],selW.histIdx)}
-                  style={{ fontSize:12,padding:'5px 12px',borderRadius:7,border:`1px solid ${PUR}`,background:'#EEEDFE',color:PUR,cursor:'pointer',fontWeight:500,flexShrink:0 }}>
-                  ✏️ Редактировать
-                </button>
+                <div style={{ position:'relative' }}>
+                  <button onClick={e=>{e.stopPropagation();setOpenSelWorkoutMenu(v=>!v)}}
+                    style={{ width:30,height:30,borderRadius:8,border:'1px solid #e5e7eb',background:'#f9fafb',cursor:'pointer',fontSize:17,color:'#6b7280',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,letterSpacing:1,minHeight:'unset' }}>⋯</button>
+                  {openSelWorkoutMenu&&(
+                    <>
+                      <div onClick={()=>setOpenSelWorkoutMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
+                      <div style={{ position:'absolute',top:34,right:0,background:'#fff',borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:180,overflow:'hidden',border:'1px solid #f0f0f0' }}>
+                        <button onClick={()=>{setOpenSelWorkoutMenu(false);onEditWorkout(workoutHistory[selW.histIdx],selW.histIdx)}}
+                          style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:'1px solid #f3f4f6',background:'transparent',cursor:'pointer',textAlign:'left',color:'#111',fontSize:13 }}>✏️ Редактировать</button>
+                        <button onClick={()=>{setOpenSelWorkoutMenu(false);if(window.confirm('Удалить тренировку?')){onDeleteWorkout(selW.histIdx);setSelIdx(null)}}}
+                          style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:'#ef4444',fontSize:13 }}>🗑 Удалить</button>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
               <div style={{ display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:12 }}>
                 {[{label:'Тоннаж',value:`${selW.ton} кг`,accent:true},{label:'Упражнений',value:selW.exercises.length,accent:false},{label:'Подходов',value:selW.exercises.reduce((s,ex)=>s+(ex.sets||[]).filter(s=>s.kg||s.reps).length,0),accent:false}].map(c=>(
@@ -2487,10 +2553,21 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                           </div>
                         ))}
                       </div>
-                      <button onClick={()=>onEditWorkout(workoutHistory[activeRec.histIdx],activeRec.histIdx)}
-                        style={{ marginTop:12,fontSize:12,padding:'6px 12px',borderRadius:7,border:`1px solid ${PUR}`,background:'#EEEDFE',color:PUR,cursor:'pointer',fontWeight:500 }}>
-                        ✏️ Редактировать тренировку
-                      </button>
+                      <div style={{ position:'relative',marginTop:12,display:'inline-block' }}>
+                        <button onClick={e=>{e.stopPropagation();setOpenActiveRecMenu(v=>!v)}}
+                          style={{ fontSize:12,padding:'6px 16px',borderRadius:7,border:'1px solid #e5e7eb',background:'#f9fafb',cursor:'pointer',color:'#6b7280',fontWeight:500,letterSpacing:2 }}>⋯</button>
+                        {openActiveRecMenu&&(
+                          <>
+                            <div onClick={()=>setOpenActiveRecMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
+                            <div style={{ position:'absolute',bottom:38,right:0,background:'#fff',borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:200,overflow:'hidden',border:'1px solid #f0f0f0' }}>
+                              <button onClick={()=>{setOpenActiveRecMenu(false);onEditWorkout(workoutHistory[activeRec.histIdx],activeRec.histIdx)}}
+                                style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:'1px solid #f3f4f6',background:'transparent',cursor:'pointer',textAlign:'left',color:'#111',fontSize:13 }}>✏️ Редактировать</button>
+                              <button onClick={()=>{setOpenActiveRecMenu(false);if(window.confirm('Удалить тренировку?')){onDeleteWorkout(activeRec.histIdx)}}}
+                                style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:'#ef4444',fontSize:13 }}>🗑 Удалить</button>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </Card>
                   )}
                 </div>
@@ -2742,11 +2819,8 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
             </Card>
           )}
 
-          {/* Скроллер дат */}
-          <DateScroller value={foodDate} onChange={setFoodDate} />
-
-          {/* Вкладки */}
-          <div style={{ display:'flex',gap:6,marginBottom:14 }}>
+          {/* Вкладки + иконка календаря */}
+          <div style={{ display:'flex',gap:6,marginBottom:14,alignItems:'stretch' }}>
             {[['day','День'],['week','Неделя']].map(([k,l])=>(
               <button key={k} onClick={()=>setFoodView(k)}
                 style={{ flex:1,padding:'9px',borderRadius:10,border:'none',cursor:'pointer',fontSize:13,fontWeight:600,minHeight:'unset',
@@ -2754,7 +2828,69 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 {l}
               </button>
             ))}
+            <button onClick={()=>setShowCalPicker(v=>!v)}
+              style={{ width:42,borderRadius:10,border:`1.5px solid ${showCalPicker?PUR:'#e5e7eb'}`,background:showCalPicker?`${PUR}15`:'#fff',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,minHeight:'unset',color:showCalPicker?PUR:'#6b7280' }}>
+              📅
+            </button>
           </div>
+
+          {/* Попап-календарь */}
+          {showCalPicker&&(()=>{
+            const{y,m}=calPickerMonth
+            const first=new Date(y,m,1)
+            const startDow=(first.getDay()+6)%7 // Пн=0
+            const daysInMonth=new Date(y,m+1,0).getDate()
+            const MONTH_RU=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
+            const DAY_HEADS=['Пн','Вт','Ср','Чт','Пт','Сб','Вс']
+            const todayISO=(()=>{const t=new Date();return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`})()
+            const cells=[]
+            for(let i=0;i<startDow;i++)cells.push(null)
+            for(let d=1;d<=daysInMonth;d++)cells.push(d)
+            while(cells.length%7!==0)cells.push(null)
+            return(
+              <div style={{ background:'#fff',borderRadius:16,boxShadow:'0 4px 24px rgba(0,0,0,0.10)',border:'1px solid #e5e7eb',padding:'16px',marginBottom:14 }}>
+                {/* Навигация месяца */}
+                <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14 }}>
+                  <button onClick={()=>setCalPickerMonth(({y,m})=>m===0?{y:y-1,m:11}:{y,m:m-1})}
+                    style={{ background:'none',border:'none',fontSize:20,cursor:'pointer',color:'#6b7280',minHeight:'unset',padding:'0 6px' }}>‹</button>
+                  <span style={{ fontSize:15,fontWeight:700,color:'#111' }}>{MONTH_RU[m]} {y}</span>
+                  <button onClick={()=>setCalPickerMonth(({y,m})=>m===11?{y:y+1,m:0}:{y,m:m+1})}
+                    style={{ background:'none',border:'none',fontSize:20,cursor:'pointer',color:'#6b7280',minHeight:'unset',padding:'0 6px' }}>›</button>
+                </div>
+                {/* Заголовки дней */}
+                <div style={{ display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2,marginBottom:4 }}>
+                  {DAY_HEADS.map(h=>(
+                    <div key={h} style={{ textAlign:'center',fontSize:10,fontWeight:600,color:'#b0b7c3',padding:'2px 0' }}>{h}</div>
+                  ))}
+                </div>
+                {/* Сетка дней */}
+                <div style={{ display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2 }}>
+                  {cells.map((d,ci)=>{
+                    if(!d)return <div key={ci} />
+                    const iso=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`
+                    const entries=foodDiary[iso]||[]
+                    const kcal=entries.reduce((s,e)=>s+(+e.kcal||0),0)
+                    const hasData=kcal>0
+                    const isSel=iso===foodDate
+                    const isToday=iso===todayISO
+                    return(
+                      <div key={ci} onClick={()=>{setFoodDate(iso);setFoodView('day');setShowCalPicker(false)}}
+                        style={{ display:'flex',flexDirection:'column',alignItems:'center',cursor:'pointer',borderRadius:10,padding:'5px 2px',
+                          background:isSel?PUR:isToday?`${PUR}10`:'transparent',
+                          border:isToday&&!isSel?`1px solid ${PUR}40`:'1px solid transparent' }}>
+                        <span style={{ fontSize:13,fontWeight:isSel||isToday?700:400,color:isSel?'#fff':isToday?PUR:'#111',lineHeight:1.4 }}>{d}</span>
+                        {hasData&&(
+                          <span style={{ fontSize:9,fontWeight:600,color:isSel?'rgba(255,255,255,0.85)':PUR,lineHeight:1.2,marginTop:1,textAlign:'center' }}>
+                            {kcal}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })()}
 
           {/* ДЕНЬ */}
           {foodView==='day'&&(<>
@@ -2795,7 +2931,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
             {dayEntries.length>0&&(
               <div style={{ marginBottom:12 }}>
                 {dayEntries.map(e=>(
-                  <div key={e.id} style={{ background:'#fff',borderRadius:11,boxShadow:'0 1px 4px rgba(0,0,0,0.06)',marginBottom:8,overflow:'hidden' }}>
+                  <div key={e.id} style={{ background:'#fff',borderRadius:11,boxShadow:'0 1px 4px rgba(0,0,0,0.06)',marginBottom:8,position:'relative',zIndex:openFoodMenu===e.id?50:'auto' }}>
                     {editingFoodId===e.id?(
                       <div style={{ padding:'12px 14px' }}>
                         <input value={editFoodForm.name} onChange={ev=>setEditFoodForm(f=>({...f,name:ev.target.value}))}
@@ -2849,7 +2985,19 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                               {e.f&&<span>Ж: {e.f}г</span>}
                             </div>
                           </div>
-                          <button onClick={()=>startEditFood(e)} style={{ background:'none',border:'none',fontSize:16,cursor:'pointer',color:'#d1d5db',padding:'4px',minHeight:'unset',lineHeight:1,flexShrink:0 }}>✏️</button>
+                          <div style={{ position:'relative',flexShrink:0 }}>
+                            <button onClick={ev=>{ev.stopPropagation();setOpenFoodMenu(openFoodMenu===e.id?null:e.id);setEditingFoodId(null)}}
+                              style={{ background:'none',border:'1px solid #e5e7eb',borderRadius:7,fontSize:15,cursor:'pointer',color:'#9ca3af',padding:'2px 7px',minHeight:'unset',lineHeight:1.4,letterSpacing:1 }}>⋯</button>
+                            {openFoodMenu===e.id&&(
+                              <>
+                                <div onClick={()=>setOpenFoodMenu(null)} style={{ position:'fixed',inset:0,zIndex:49 }} />
+                                <div onClick={ev=>ev.stopPropagation()} style={{ position:'absolute',top:30,right:0,background:'#fff',borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:51,minWidth:160,overflow:'hidden',border:'1px solid #f0f0f0' }}>
+                                  <button onClick={()=>{setOpenFoodMenu(null);startEditFood(e)}} style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:'1px solid #f3f4f6',background:'transparent',cursor:'pointer',textAlign:'left',color:'#111',fontSize:13 }}>✏️ Редактировать</button>
+                                  <button onClick={()=>{setOpenFoodMenu(null);removeFood(e.id)}} style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:'#ef4444',fontSize:13 }}>🗑 Удалить</button>
+                                </div>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )}
@@ -3203,7 +3351,7 @@ function LandingPage({ onEnter }) {
 function ProfileView({ user, onClose, onOpenAI }) {
   const [tab,setTab]=useState('profile')
   const [profile,setProfile]=useState(()=>{
-    try{return JSON.parse(localStorage.getItem('fitpro_profile')||'null')||{name:user?.name||'',birthdate:'',height:'',weight:'',goal:'',steps:'',gymDays:''}}catch{return{name:user?.name||'',birthdate:'',height:'',weight:'',goal:'',steps:'',gymDays:''}}
+    try{return JSON.parse(localStorage.getItem('fitpro_profile')||'null')||{name:user?.name||'',birthdate:'',height:'',weight:'',goal:'',steps:'',gymDays:'',occupation:''}}catch{return{name:user?.name||'',birthdate:'',height:'',weight:'',goal:'',steps:'',gymDays:'',occupation:''}}
   })
   const [saved,setSaved]=useState(false)
   const [showGoalPicker,setShowGoalPicker]=useState(false)
@@ -3283,15 +3431,30 @@ function ProfileView({ user, onClose, onOpenAI }) {
         {/* ── Профиль ── */}
         {tab==='profile'&&(
           <div style={{display:'flex',flexDirection:'column',gap:14}}>
+            {/* ФИО */}
+            <div>
+              <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>ФИО</label>
+              <input value={profile.name||''} type="text" placeholder="Иванов Иван Иванович"
+                onChange={e=>setProfile(p=>({...p,name:e.target.value}))}
+                style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
+                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+            </div>
+            {/* Дата рождения — нативный date picker */}
+            <div>
+              <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Дата рождения</label>
+              <input value={profile.birthdate||''} type="date" max={new Date().toISOString().slice(0,10)}
+                onChange={e=>setProfile(p=>({...p,birthdate:e.target.value}))}
+                style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:profile.birthdate?'#111':'#9ca3af',outline:'none',boxSizing:'border-box',background:'#fff',colorScheme:'light'}}
+                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+            </div>
+            {/* Рост и Вес */}
             {[
-              {key:'name',     label:'ФИО',            placeholder:'Иванов Иван Иванович', type:'text'},
-              {key:'birthdate',label:'Дата рождения',  placeholder:'01.01.1995',            type:'text'},
-              {key:'height',   label:'Рост (см)',       placeholder:'175',                   type:'number'},
-              {key:'weight',   label:'Вес (кг)',        placeholder:'75',                    type:'number'},
+              {key:'height', label:'Рост (см)', placeholder:'175'},
+              {key:'weight', label:'Вес (кг)',  placeholder:'75'},
             ].map(f=>(
               <div key={f.key}>
                 <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>{f.label}</label>
-                <input value={profile[f.key]||''} type={f.type} placeholder={f.placeholder}
+                <input value={profile[f.key]||''} type="number" placeholder={f.placeholder}
                   onChange={e=>setProfile(p=>({...p,[f.key]:e.target.value}))}
                   style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
                   onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
@@ -3389,9 +3552,16 @@ function ProfileView({ user, onClose, onOpenAI }) {
                     onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
                 </div>
                 <div>
-                  <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Тренировок в зале в неделю</label>
+                  <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Тренировок в неделю</label>
                   <input value={profile.gymDays||''} type="number" placeholder="например 3"
                     onChange={e=>setProfile(p=>({...p,gymDays:e.target.value}))}
+                    style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
+                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                </div>
+                <div>
+                  <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Род деятельности</label>
+                  <input value={profile.occupation||''} type="text" placeholder="например: сидячая работа, много стою, физический труд"
+                    onChange={e=>setProfile(p=>({...p,occupation:e.target.value}))}
                     style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
                     onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
                 </div>
@@ -3697,7 +3867,7 @@ export default function App() {
           </div>
         </div>
       )}
-      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} />
+      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} />
     </>
   )
 }

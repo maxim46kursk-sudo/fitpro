@@ -2,7 +2,9 @@ import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 're
 
 const PUR = '#7F77DD'
 
-const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMobile = false }, ref) {
+const TEA = '#1D9E75'
+
+const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMobile = false, nutritionPlans = [] }, ref) {
   const [isOpen, setIsOpen]         = useState(false)
   const [mode, setMode]             = useState('workout')
   const [messages, setMessages]     = useState([])
@@ -15,6 +17,10 @@ const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMob
   })
   const [keyDraft, setKeyDraft]     = useState('')
   const [showKeyModal, setShowKeyModal] = useState(false)
+  const [savedMsgIds, setSavedMsgIds] = useState({})
+  const [diaryDatePicker, setDiaryDatePicker] = useState(null) // msgId when picker is open
+  const todayISO = (() => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}` })()
+  const [pickerDate, setPickerDate] = useState(todayISO)
   const messagesEndRef = useRef(null)
   const inputRef       = useRef(null)
 
@@ -38,12 +44,31 @@ const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMob
     const clientGoal   = profile.goal   || 'не указана'
     const clientWeight = profile.weight ? `${profile.weight} кг` : 'не указан'
     const clientHeight = profile.height ? `${profile.height} см` : 'не указан'
+    const clientOccupation = profile.occupation || null
+    const clientAge = (() => {
+      if (!profile.birthdate) return null
+      const diff = Date.now() - new Date(profile.birthdate).getTime()
+      return Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25))
+    })()
 
-    // 2. План питания
-    const foodGoals = (() => { try { return JSON.parse(localStorage.getItem('fitpro_food_goals') || 'null') } catch { return null } })()
-      || { kcal: 2000, p: 150, f: 60, c: 200 }
+    // 2. Подбор подходящего рациона по весу
+    const weightNum = parseFloat(profile.weight) || 0
+    const matchedPlan = nutritionPlans.find(p => {
+      const [lo, hi] = p.id.split('_').map(Number)
+      return weightNum >= lo && weightNum <= hi
+    }) || nutritionPlans[0]
+    const planDay1 = matchedPlan?.days?.[0]
+    const planDay1Text = planDay1 ? planDay1.meals.map(m =>
+      `${m.name}${m.time ? ' (' + m.time + ')' : ''}: ${m.items.join(', ')} — ${m.cal} ккал, Б:${m.p}г У:${m.c}г Ж:${m.f}г`
+    ).join('\n') : ''
 
-    // 3. Съедено сегодня
+    // 3. Рассчитываем норму по весу: Б×2г/кг, Ж×1г/кг, У×3г/кг, ккал = Б×4 + Ж×9 + У×4
+    const normP    = weightNum > 0 ? Math.round(weightNum * 2) : null
+    const normF    = weightNum > 0 ? Math.round(weightNum * 1) : null
+    const normC    = weightNum > 0 ? Math.round(weightNum * 3) : null
+    const normKcal = normP !== null ? normP * 4 + normF * 9 + normC * 4 : null
+
+    // 4. Съедено сегодня
     const diary = (() => { try { return JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}') } catch { return {} } })()
     const today = new Date().toISOString().slice(0, 10)
     const todayEntries = diary[today] || []
@@ -51,7 +76,10 @@ const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMob
       kcal: a.kcal + (+e.kcal || 0), p: a.p + (+e.p || 0),
       f: a.f + (+e.f || 0), c: a.c + (+e.c || 0)
     }), { kcal: 0, p: 0, f: 0, c: 0 })
-    const rem = k => Math.max(0, (foodGoals[k] || 0) - eaten[k]).toFixed(k === 'kcal' ? 0 : 1)
+    const remKcal = normKcal !== null ? Math.max(0, normKcal - eaten.kcal) : null
+    const remP    = normP    !== null ? Math.max(0, normP    - eaten.p)    : null
+    const remF    = normF    !== null ? Math.max(0, normF    - eaten.f)    : null
+    const remC    = normC    !== null ? Math.max(0, normC    - eaten.c)    : null
 
     // 4. Последние 5 тренировок с весами
     const recent = [...workoutHistory]
@@ -80,26 +108,55 @@ const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMob
     return `Ты персональный AI тренер в приложении FitPro.
 
 ДАННЫЕ КЛИЕНТА:
-- Имя: ${clientName}
-- Цель: ${clientGoal}
-- Вес: ${clientWeight} | Рост: ${clientHeight}${topFolder ? `\n- Программа: ${topFolder}` : ''}
-- План питания на день: ${foodGoals.kcal} ккал | Б: ${foodGoals.p}г | У: ${foodGoals.c}г | Ж: ${foodGoals.f}г
-- Съедено сегодня: ${eaten.kcal.toFixed(0)} ккал | Б: ${eaten.p.toFixed(1)}г | У: ${eaten.c.toFixed(1)}г | Ж: ${eaten.f.toFixed(1)}г
-- Осталось сегодня: ${rem('kcal')} ккал | Б: ${rem('p')}г | У: ${rem('c')}г | Ж: ${rem('f')}г
+Имя: ${clientName}${clientAge ? `, возраст: ${clientAge} лет` : ''}
+Цель: ${clientGoal}
+Вес: ${clientWeight}, Рост: ${clientHeight}${clientOccupation ? `\nРод деятельности: ${clientOccupation}` : ''}${topFolder ? `\nПрограмма тренировок: ${topFolder}` : ''}${profile.steps ? `\nШагов в день: ~${profile.steps}` : ''}${profile.gymDays ? `\nТренировок в неделю: ${profile.gymDays}` : ''}
 
-ПОСЛЕДНИЕ 5 ТРЕНИРОВОК (с весами):
+ДНЕВНАЯ НОРМА ПИТАНИЯ (рассчитана по весу клиента):
+${normKcal !== null
+  ? `Калории: ${normKcal} ккал
+Белки: ${normP}г (${weightNum}кг × 2г = ${normP}г × 4ккал = ${normP*4} ккал)
+Жиры: ${normF}г (${weightNum}кг × 1г = ${normF}г × 9ккал = ${normF*9} ккал)
+Углеводы: ${normC}г (${weightNum}кг × 3г = ${normC}г × 4ккал = ${normC*4} ккал)
+Используй эту норму как основу для рациона и рекомендаций. Она рассчитана специально под вес клиента.`
+  : 'Вес клиента не указан, норму рассчитать невозможно.'}
+
+ПИТАНИЕ СЕГОДНЯ:
+Съедено: ${eaten.kcal.toFixed(0)} ккал, Б: ${eaten.p.toFixed(1)}г, У: ${eaten.c.toFixed(1)}г, Ж: ${eaten.f.toFixed(1)}г
+${remKcal !== null ? `Осталось до нормы: ${remKcal} ккал, Б: ${remP}г, У: ${remC}г, Ж: ${remF}г` : ''}
+
+ПОСЛЕДНИЕ 5 ТРЕНИРОВОК:
 ${workoutHistoryText}
+
+${matchedPlan && planDay1Text ? `ГОТОВЫЙ РАЦИОН ДЛЯ КЛИЕНТА (используй эти данные когда предлагаешь рацион):
+Название: ${matchedPlan.title}
+Цель рациона: ~${matchedPlan.target.cal} ккал/день, Б:${matchedPlan.target.p}г У:${matchedPlan.target.c}г Ж:${matchedPlan.target.f}г
+Пример дня 1:
+${planDay1Text}
+Итого день 1: ${planDay1.total.cal} ккал, Б:${planDay1.total.p}г У:${planDay1.total.c}г Ж:${planDay1.total.f}г` : ''}
 
 ${mode === 'workout'
   ? `РЕЖИМ: Тренировки
-Не меняй программу клиента. Рекомендуй веса на следующий подход исходя из истории.
-Принцип прогрессии: выполнил все подходы чисто → добавь 2.5 кг. Не выполнил → оставь тот же вес или снизь на 2.5 кг.
-Отвечай конкретно и коротко — называй упражнение и вес.`
+Не меняй программу. Рекомендуй веса на следующий подход по истории клиента.
+Прогрессия: выполнил все подходы чисто — плюс 2.5 кг. Не выполнил — тот же вес или минус 2.5 кг.
+Называй конкретно: упражнение и вес.`
   : `РЕЖИМ: Питание
-Отвечай строго в рамках плана питания клиента.
-Если спрашивает можно ли что-то съесть — посчитай впишется ли в оставшиеся калории и макросы. Отвечай с числами.`}
+Когда клиент просит помочь с рационом — отвечай строго в таком порядке:
 
-Отвечай коротко и конкретно, как тренер. На русском языке.`
+1. Объясни логику: почему именно этот рацион подходит клиенту (цель, вес, активность).
+
+2. Напиши норму от тренера словами: "Максим рекомендует тебе: белки — ${normP ?? '?'}г в день, углеводы — ${normC ?? '?'}г в день, жиры — ${normF ?? '?'}г в день. Итого: ${normKcal ?? '?'} ккал в день. Эту норму ты можешь занести в свой дневник в разделе Питание — там есть кнопка «Норма», чтобы отслеживать макросы каждый день."
+
+3. Напиши: "На основе этого я предлагаю тебе рацион:" и покажи полный день 1 из готового рациона (все приёмы пищи с едой и калориями).
+
+4. После рациона напиши: "Это день 1 из рациона «${matchedPlan?.title || ''}» — полный план на 7 дней найдёшь в разделе Питание."
+
+5. Добавь: "Если что-то не подходит — скажи что именно, я предложу замену."
+
+Если клиент спрашивает можно ли съесть что-то — считай по остатку на сегодня, отвечай с числами.`}
+
+Отвечай коротко и конкретно, как тренер. На русском языке.
+Отвечай обычным текстом без звёздочек, без двойных звёздочек, без решёток, без тире в начале строк, без markdown разметки вообще. Просто чистый текст как в обычном сообщении.`
   }
 
   // ── Отправка сообщения ────────────────────────────────────────────────
@@ -145,6 +202,43 @@ ${mode === 'workout'
     } finally {
       setLoading(false)
     }
+  }
+
+  // Определяем рацион по весу профиля
+  const getMatchedPlan = () => {
+    const profile = (() => { try { return JSON.parse(localStorage.getItem('fitpro_profile') || 'null') } catch { return null } })() || {}
+    const weightNum = parseFloat(profile.weight) || 0
+    return nutritionPlans.find(p => {
+      const [lo, hi] = p.id.split('_').map(Number)
+      return weightNum >= lo && weightNum <= hi
+    }) || nutritionPlans[0]
+  }
+
+  // Записать день рациона в дневник на выбранную дату
+  const savePlanDayToDiary = (msgId, date) => {
+    const plan = getMatchedPlan()
+    if (!plan?.days?.[0]) return
+    const day = plan.days[0]
+    const raw = localStorage.getItem('fitpro_food_diary')
+    const diary = raw ? JSON.parse(raw) : {}
+    const existing = diary[date] || []
+    const newEntries = day.meals.map((meal, i) => ({
+      id: Date.now() + i,
+      name: `${meal.name}${meal.time ? ' (' + meal.time + ')' : ''}`,
+      kcal: String(meal.cal), p: String(meal.p), c: String(meal.c), f: String(meal.f),
+      items: meal.items || [],
+    }))
+    diary[date] = [...existing, ...newEntries]
+    localStorage.setItem('fitpro_food_diary', JSON.stringify(diary))
+    window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
+    setSavedMsgIds(prev => ({ ...prev, [msgId]: date }))
+    setDiaryDatePicker(null)
+  }
+
+  const isDietMessage = (text) => {
+    const kw = ['завтрак', 'обед', 'ужин', 'перекус', 'ккал', 'рацион', 'питание', 'белки', 'день 1']
+    const low = text.toLowerCase()
+    return kw.filter(k => low.includes(k)).length >= 3
   }
 
   const saveKey = () => {
@@ -267,19 +361,65 @@ ${mode === 'workout'
 
             {/* Список сообщений */}
             {messages.map((m, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
-                {m.role === 'assistant' && (
-                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#7F77DD,#5b54c4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, marginRight: 8, flexShrink: 0, alignSelf: 'flex-end', marginBottom: 2 }}>🤖</div>
-                )}
-                <div style={{
-                  maxWidth: '78%', padding: '10px 14px',
-                  borderRadius: m.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                  background: m.role === 'user' ? PUR : '#f3f4f6',
-                  color: m.role === 'user' ? '#fff' : '#111',
-                  fontSize: 14, lineHeight: 1.65, whiteSpace: 'pre-wrap',
-                }}>
-                  {m.content}
+              <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start', gap: 6 }}>
+                <div style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: 8, width: '100%' }}>
+                  {m.role === 'assistant' && (
+                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#7F77DD,#5b54c4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}>🤖</div>
+                  )}
+                  <div style={{
+                    maxWidth: '75%', padding: '10px 14px',
+                    borderRadius: m.role === 'user' ? '16px 16px 4px 16px' : '4px 16px 16px 16px',
+                    background: m.role === 'user' ? PUR : '#f3f4f6',
+                    color: m.role === 'user' ? '#fff' : '#111',
+                    fontSize: 14, lineHeight: 1.65, whiteSpace: 'pre-wrap',
+                    textAlign: 'left',
+                  }}>
+                    {m.content}
+                  </div>
                 </div>
+                {/* Кнопка «Записать в дневник» — под AI-сообщением с рационом */}
+                {m.role === 'assistant' && mode === 'nutrition' && isDietMessage(m.content) && (
+                  <div style={{ paddingLeft: 36 }}>
+                    {savedMsgIds[i] ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: '#f0fdf4', border: '1.5px solid #22c55e40' }}>
+                        <span style={{ fontSize: 14, color: '#22c55e' }}>✓</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#22c55e' }}>Записано на {(()=>{const d=new Date(savedMsgIds[i]+'T00:00:00');const t=new Date();const y=new Date(t);y.setDate(y.getDate()-1);const ti=t.toISOString().slice(0,10);const yi=y.toISOString().slice(0,10);return savedMsgIds[i]===ti?'сегодня':savedMsgIds[i]===yi?'вчера':`${d.getDate()}.${String(d.getMonth()+1).padStart(2,'0')}`})()}</span>
+                      </div>
+                    ) : diaryDatePicker === i ? (
+                      <div style={{ background: '#f9fafb', borderRadius: 16, padding: '14px', border: '1px solid #e5e7eb', maxWidth: 300 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 10 }}>Выбери дату:</div>
+                        {/* Быстрые кнопки */}
+                        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                          {[['Сегодня', todayISO], ['Вчера', (()=>{const y=new Date();y.setDate(y.getDate()-1);return `${y.getFullYear()}-${String(y.getMonth()+1).padStart(2,'0')}-${String(y.getDate()).padStart(2,'0')}`})()], ['Завтра', (()=>{const t=new Date();t.setDate(t.getDate()+1);return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`})()]].map(([label, iso]) => (
+                            <button key={iso} onClick={() => setPickerDate(iso)}
+                              style={{ flex:1, padding:'7px 4px', borderRadius:10, border:`1.5px solid ${pickerDate===iso?PUR:'#e5e7eb'}`, background: pickerDate===iso?`${PUR}15`:'#fff', color: pickerDate===iso?PUR:'#6b7280', fontSize:12, fontWeight:600, cursor:'pointer', minHeight:'unset' }}>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        {/* Точная дата */}
+                        <input type="date" value={pickerDate} onChange={e => setPickerDate(e.target.value)}
+                          max={(() => { const t = new Date(); t.setDate(t.getDate()+7); return t.toISOString().slice(0,10) })()}
+                          style={{ width:'100%', padding:'8px 10px', fontSize:13, borderRadius:10, border:`1.5px solid ${PUR}40`, outline:'none', boxSizing:'border-box', color:'#111', background:'#fff', marginBottom:10 }} />
+                        <div style={{ display:'flex', gap:8 }}>
+                          <button onClick={() => savePlanDayToDiary(i, pickerDate)}
+                            style={{ flex:1, padding:'9px', borderRadius:10, border:'none', background:TEA, color:'#fff', fontSize:13, fontWeight:600, cursor:'pointer', minHeight:'unset' }}>
+                            📓 Записать
+                          </button>
+                          <button onClick={() => setDiaryDatePicker(null)}
+                            style={{ padding:'9px 14px', borderRadius:10, border:'none', background:'#e5e7eb', color:'#6b7280', fontSize:13, cursor:'pointer', minHeight:'unset' }}>
+                            Отмена
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button onClick={() => { setPickerDate(todayISO); setDiaryDatePicker(i) }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 20, border: `1.5px solid ${TEA}`, background: `${TEA}12`, color: TEA, fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 'unset' }}>
+                        📓 Записать в дневник
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
 
