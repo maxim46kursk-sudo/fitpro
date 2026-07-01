@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import AIAssistant from './AIAssistant'
 import './App.css'
 
@@ -1140,7 +1141,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       )}
 
       {/* ── Уровень 2: упражнения тренировки ── */}
-      {currentSlot&&(
+      {currentSlot&&createPortal(
         <div style={{ position:'fixed', inset:0, background:'#f3f4f6', zIndex:1001, display:'flex', flexDirection:'column' }}>
           <div style={{ background:'#fff', borderBottom:'1px solid #e5e7eb', padding:'14px 18px', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
             <button onClick={()=>setOpenSlotId(null)}
@@ -1285,10 +1286,10 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
 
           </div>
         </div>
-      )}
+      , document.body)}
 
       {/* ── Уровень 1: список тренировок в папке ── */}
-      {openFolder&&(
+      {openFolder&&createPortal(
         <div style={{ position:'fixed', inset:0, background:'#f3f4f6', zIndex:1000, display:'flex', flexDirection:'column' }}>
           <div style={{ background:'#fff', borderBottom:'1px solid #e5e7eb', padding:'14px 18px', display:'flex', alignItems:'center', gap:14, flexShrink:0 }}>
             <button onClick={()=>setOpenFolder(null)}
@@ -1323,7 +1324,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             })}
           </div>
         </div>
-      )}
+      , document.body)}
 
       {/* ── Плашка AI тренера ── */}
       {onOpenAI&&(
@@ -1837,7 +1838,7 @@ function NutritionView(){
   if(openDay!==null&&openPlan!==null){
     const plan=NUTRITION_PLANS.find(p=>p.id===openPlan)
     const day=plan.days[openDay]
-    return(
+    return createPortal(
       <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1001,display:'flex',flexDirection:'column' }}>
         <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexShrink:0 }}>
           <button onClick={()=>setOpenDay(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
@@ -1932,12 +1933,12 @@ function NutritionView(){
           )}
         </div>
       </div>
-    )
+    , document.body)
   }
 
   if(openPlan!==null){
     const plan=NUTRITION_PLANS.find(p=>p.id===openPlan)
-    return(
+    return createPortal(
       <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
         <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexShrink:0 }}>
           <button onClick={()=>setOpenPlan(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
@@ -1970,7 +1971,7 @@ function NutritionView(){
           ))}
         </div>
       </div>
-    )
+    , document.body)
   }
 
   return(
@@ -2366,7 +2367,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     const chartMaxTon=workoutTons.length?Math.max(...workoutTons.map(w=>w.ton),1):1
     const CHART_BAR_H=120
     const selW=selectedTonBar!==null?workoutTons[selectedTonBar]:null
-    return(
+    return createPortal(
       <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
         <BackBtn label="Общий тоннаж" />
         <div style={{ flex:1,overflowY:'auto',padding:'14px 16px 32px' }}>
@@ -2486,12 +2487,12 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           )}
         </div>
       </div>
-    )
+    , document.body)
   }
 
   // ── СЕКЦИЯ: Прогресс по упражнениям
   if(section==='exercises'){
-    return(
+    return createPortal(
       <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
         <BackBtn label="Прогресс по упражнениям" />
         <div style={{ flex:1,overflowY:'auto',padding:'14px 16px 32px' }}>
@@ -2619,7 +2620,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           )}
         </div>
       </div>
-    )
+    , document.body)
   }
 
   // ── СЕКЦИЯ: Мои тренировки (журнал)
@@ -2634,7 +2635,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
       setTemplateMsg(`Шаблон «${workout.name}» сохранён`)
       setTimeout(()=>setTemplateMsg(''),2500)
     }
-    return(
+    return createPortal(
       <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
         {/* ─ Шапка с кнопкой + */}
         <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0,position:'sticky',top:0,zIndex:10 }}>
@@ -2794,7 +2795,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           ))}
         </div>
       </div>
-    )
+    , document.body)
   }
 
   // ── СЕКЦИЯ: Питание (дневник)
@@ -2816,7 +2817,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     const rem=(k)=>Math.max(0,foodGoals[k]-dayTotal[k])
     const over=(k)=>Math.max(0,dayTotal[k]-foodGoals[k])
     const pct=(k)=>foodGoals[k]?Math.min(100,Math.round((dayTotal[k]/foodGoals[k])*100)):0
-    return(
+    return createPortal(
       <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
         {/* Шапка */}
         <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 16px',display:'flex',alignItems:'center',gap:10,flexShrink:0 }}>
@@ -3157,7 +3158,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           </>)}
         </div>
       </div>
-    )
+    , document.body)
   }
 
   // ── ГЛАВНАЯ: 4 папки
