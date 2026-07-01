@@ -56,10 +56,16 @@ const WORKOUT_ACTIONS = [
 const WCOLORS = ['#D85A30','#7F77DD','#1D9E75','#378ADD','#E53935','#F59E0B']
 
 // ── UI компоненты
-function Av({ lbl, sz=36, bg=PUR }) {
+function Av({ lbl, sz=36, bg=PUR, photo, gender }) {
+  if (photo) return (
+    <div style={{ width:sz, height:sz, borderRadius:'50%', flexShrink:0, overflow:'hidden' }}>
+      <img src={photo} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+    </div>
+  )
+  const genderEmoji = gender==='female' ? '👩' : gender==='male' ? '👨' : null
   return (
-    <div style={{ width:sz, height:sz, borderRadius:'50%', background:bg, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:Math.round(sz*.35), fontWeight:500, flexShrink:0 }}>
-      {lbl}
+    <div style={{ width:sz, height:sz, borderRadius:'50%', background:genderEmoji?'#f3f4f6':bg, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:genderEmoji?Math.round(sz*.52):Math.round(sz*.35), fontWeight:500, flexShrink:0 }}>
+      {genderEmoji || lbl}
     </div>
   )
 }
@@ -3166,8 +3172,9 @@ const NAV_MOBILE=[
 function LandingPage({ onEnter }) {
   const [view,setView]=useState('hero')
   const [role,setRole]=useState(null)
-  const [form,setForm]=useState({name:'',email:'',telegram:''})
+  const [form,setForm]=useState({name:'',email:'',telegram:'',gender:'',photoURL:''})
   const [mobile,setMobile]=useState(()=>window.innerWidth<640)
+  const photoInputRef=useRef(null)
 
   useEffect(()=>{
     const fn=()=>setMobile(window.innerWidth<640)
@@ -3175,9 +3182,17 @@ function LandingPage({ onEnter }) {
     return()=>window.removeEventListener('resize',fn)
   },[])
 
+  const handlePhotoReg=(e)=>{
+    const file=e.target.files[0]
+    if(!file)return
+    const reader=new FileReader()
+    reader.onload=ev=>setForm(v=>({...v,photoURL:ev.target.result}))
+    reader.readAsDataURL(file)
+  }
+
   const handleSubmit=()=>{
     if(!form.name.trim()||!form.email.trim()||!form.telegram.trim())return
-    const user={name:form.name.trim(),email:form.email.trim(),telegram:form.telegram.trim(),role:'client',createdAt:new Date().toISOString()}
+    const user={name:form.name.trim(),email:form.email.trim(),telegram:form.telegram.trim(),gender:form.gender,photoURL:form.photoURL,role:'client',createdAt:new Date().toISOString()}
     localStorage.setItem('fitpro_user',JSON.stringify(user))
     onEnter(user)
   }
@@ -3314,6 +3329,19 @@ function LandingPage({ onEnter }) {
                 </p>
               </div>
               <div style={{ display:'flex',flexDirection:'column',gap:14 }}>
+                {/* Фото */}
+                <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:8 }}>
+                  <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoReg} style={{ display:'none' }} />
+                  <div onClick={()=>photoInputRef.current?.click()} style={{ width:72,height:72,borderRadius:'50%',border:`2px dashed ${PUR}80`,background:'rgba(255,255,255,0.04)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',flexShrink:0 }}>
+                    {form.photoURL
+                      ? <img src={form.photoURL} alt="" style={{ width:'100%',height:'100%',objectFit:'cover' }} />
+                      : <span style={{ fontSize:28 }}>{form.gender==='female'?'👩':form.gender==='male'?'👨':'📷'}</span>
+                    }
+                  </div>
+                  <span style={{ fontSize:11,color:'rgba(255,255,255,0.3)' }}>Нажми чтобы добавить фото</span>
+                </div>
+
+                {/* Поля */}
                 {[
                   {key:'name',label:'ФИО',placeholder:'Иванов Иван Иванович',type:'text'},
                   {key:'email',label:'Email',placeholder:'ivan@example.com',type:'email'},
@@ -3330,6 +3358,20 @@ function LandingPage({ onEnter }) {
                       onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'} />
                   </div>
                 ))}
+
+                {/* Пол */}
+                <div>
+                  <label style={{ fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.45)',display:'block',marginBottom:8,letterSpacing:'0.3px' }}>Пол</label>
+                  <div style={{ display:'flex',gap:8 }}>
+                    {[['male','👨 Мужчина'],['female','👩 Женщина']].map(([val,lbl])=>(
+                      <button key={val} onClick={()=>setForm(v=>({...v,gender:val}))} type="button"
+                        style={{ flex:1,padding:'11px',borderRadius:10,border:`1.5px solid ${form.gender===val?PUR:'rgba(255,255,255,0.1)'}`,background:form.gender===val?`${PUR}30`:'rgba(255,255,255,0.04)',color:form.gender===val?'#d0ccff':'rgba(255,255,255,0.55)',fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>
+                        {lbl}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <button onClick={handleSubmit}
                   disabled={!form.name.trim()||!form.email.trim()||!form.telegram.trim()}
                   style={{ padding:'14px',borderRadius:11,border:'none',background:(!form.name.trim()||!form.email.trim()||!form.telegram.trim())?`${PUR}35`:PUR,color:'#fff',fontSize:15,fontWeight:700,cursor:(!form.name.trim()||!form.email.trim()||!form.telegram.trim())?'default':'pointer',marginTop:4,boxShadow:(!form.name.trim()||!form.email.trim()||!form.telegram.trim())?'none':`0 6px 22px ${PUR}44`,transition:'all 0.15s' }}>
@@ -3348,11 +3390,13 @@ function LandingPage({ onEnter }) {
 }
 
 // ── ProfileView ──────────────────────────────────────────────────────────────
-function ProfileView({ user, onClose, onOpenAI }) {
+function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
   const [tab,setTab]=useState('profile')
   const [profile,setProfile]=useState(()=>{
     try{return JSON.parse(localStorage.getItem('fitpro_profile')||'null')||{name:user?.name||'',birthdate:'',height:'',weight:'',goal:'',steps:'',gymDays:'',occupation:''}}catch{return{name:user?.name||'',birthdate:'',height:'',weight:'',goal:'',steps:'',gymDays:'',occupation:''}}
   })
+  const [userEdit,setUserEdit]=useState({name:user?.name||'',email:user?.email||'',telegram:user?.telegram||'',gender:user?.gender||'',photoURL:user?.photoURL||''})
+  const photoInputPVRef=useRef(null)
   const [saved,setSaved]=useState(false)
   const [showGoalPicker,setShowGoalPicker]=useState(false)
   const [customGoal,setCustomGoal]=useState('')
@@ -3392,7 +3436,19 @@ function ProfileView({ user, onClose, onOpenAI }) {
 
   const saveProfile=()=>{
     localStorage.setItem('fitpro_profile',JSON.stringify(profile))
+    // Сохраняем также редактируемые данные пользователя
+    const updatedUser={...user,...userEdit,name:userEdit.name||user.name}
+    localStorage.setItem('fitpro_user',JSON.stringify(updatedUser))
+    if(onUserUpdate)onUserUpdate(updatedUser)
     setSaved(true); setTimeout(()=>setSaved(false),2000)
+  }
+
+  const handlePhotoPV=(e)=>{
+    const file=e.target.files[0]
+    if(!file)return
+    const reader=new FileReader()
+    reader.onload=ev=>setUserEdit(u=>({...u,photoURL:ev.target.result}))
+    reader.readAsDataURL(file)
   }
 
   const addMeasurement=()=>{
@@ -3431,14 +3487,52 @@ function ProfileView({ user, onClose, onOpenAI }) {
         {/* ── Профиль ── */}
         {tab==='profile'&&(
           <div style={{display:'flex',flexDirection:'column',gap:14}}>
+            {/* Фото профиля */}
+            <input ref={photoInputPVRef} type="file" accept="image/*" onChange={handlePhotoPV} style={{display:'none'}} />
+            <div style={{display:'flex',alignItems:'center',gap:14}}>
+              <div onClick={()=>photoInputPVRef.current?.click()} style={{position:'relative',cursor:'pointer',flexShrink:0}}>
+                <Av lbl={(userEdit.name||user?.name||'').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={64} photo={userEdit.photoURL} gender={userEdit.gender} />
+                <div style={{position:'absolute',bottom:0,right:0,width:22,height:22,borderRadius:'50%',background:PUR,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,border:'2px solid #fff'}}>📷</div>
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:600,color:'#111',marginBottom:2}}>{userEdit.name||user?.name}</div>
+                <div style={{fontSize:11,color:'#9ca3af'}}>{userEdit.email||user?.email}</div>
+                <div style={{fontSize:11,color:PUR,marginTop:2,cursor:'pointer'}} onClick={()=>photoInputPVRef.current?.click()}>Изменить фото</div>
+              </div>
+            </div>
+
+            {/* Пол */}
+            <div>
+              <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Пол</label>
+              <div style={{display:'flex',gap:8}}>
+                {[['male','👨 Мужчина'],['female','👩 Женщина']].map(([val,lbl])=>(
+                  <button key={val} onClick={()=>setUserEdit(u=>({...u,gender:val}))} type="button"
+                    style={{flex:1,padding:'10px',borderRadius:10,border:`1.5px solid ${userEdit.gender===val?PUR:'#e5e7eb'}`,background:userEdit.gender===val?`${PUR}12`:'#fff',color:userEdit.gender===val?PUR:'#6b7280',fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset'}}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* ФИО */}
             <div>
               <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>ФИО</label>
-              <input value={profile.name||''} type="text" placeholder="Иванов Иван Иванович"
-                onChange={e=>setProfile(p=>({...p,name:e.target.value}))}
+              <input value={userEdit.name||''} type="text" placeholder="Иванов Иван Иванович"
+                onChange={e=>setUserEdit(u=>({...u,name:e.target.value}))}
                 style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
                 onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
             </div>
+            {/* Email и Telegram */}
+            {[{key:'email',label:'Email'},{key:'telegram',label:'Telegram'}].map(f=>(
+              <div key={f.key}>
+                <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>{f.label}</label>
+                <input value={userEdit[f.key]||''} type="text" placeholder={f.key==='email'?'ivan@example.com':'@username'}
+                  onChange={e=>setUserEdit(u=>({...u,[f.key]:e.target.value}))}
+                  style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
+                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+              </div>
+            ))}
+            {/* Физические данные */}
             {/* Дата рождения — нативный date picker */}
             <div>
               <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Дата рождения</label>
@@ -3763,8 +3857,8 @@ export default function App() {
           {/* Мобильный хедер */}
           <div style={{ position:'fixed', top:0, left:0, right:0, height:MOBILE_TOP_H, background:'#fff', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 16px', zIndex:901, flexShrink:0 }}>
             <button onClick={()=>setShowProfileSheet(true)}
-              style={{ width:36, height:36, borderRadius:'50%', border:'none', background:PUR, color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset' }}>
-              {user.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}
+              style={{ width:36, height:36, borderRadius:'50%', border:'none', background:'transparent', padding:0, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset', overflow:'hidden' }}>
+              <Av lbl={user.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={36} photo={user.photoURL} gender={user.gender} />
             </button>
             <div style={{ display:'flex', alignItems:'center', gap:7 }}>
               <span style={{ fontSize:20 }}>🏋️</span>
@@ -3805,7 +3899,7 @@ export default function App() {
                 <div style={{ width:36, height:4, borderRadius:2, background:'#e5e7eb', margin:'0 auto 16px' }} />
                 {/* Аватар + имя */}
                 <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20, padding:'0 2px' }}>
-                  <Av lbl={user.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={48} />
+                  <Av lbl={user.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={48} photo={user.photoURL} gender={user.gender} />
                   <div>
                     <div style={{ fontSize:17, fontWeight:700, color:'#111' }}>{user.name}</div>
                     <div style={{ fontSize:12, color:'#9ca3af', marginTop:2 }}>{user.email}</div>
@@ -3834,7 +3928,7 @@ export default function App() {
           )}
 
           {/* Экран "Мои данные" */}
-          {showProfileView&&<ProfileView user={user} onClose={()=>setShowProfileView(false)} onOpenAI={m=>aiRef.current?.open(m)} />}
+          {showProfileView&&<ProfileView user={user} onClose={()=>setShowProfileView(false)} onOpenAI={m=>aiRef.current?.open(m)} onUserUpdate={u=>setUser(u)} />}
         </div>
       ) : (
         /* ── ДЕСКТОПНЫЙ LAYOUT ── */
@@ -3842,7 +3936,7 @@ export default function App() {
           <div style={{ width:190, background:'#fff', borderRight:'1px solid #e5e7eb', display:'flex', flexDirection:'column', flexShrink:0 }}>
             <div style={{ padding:'16px 14px 12px', borderBottom:'1px solid #e5e7eb' }}>
               <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <Av lbl={user.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={34} />
+                <Av lbl={user.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={34} photo={user.photoURL} gender={user.gender} />
                 <div style={{ minWidth:0 }}>
                   <div style={{ fontSize:13, fontWeight:500, color:'#111', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{user.name.split(' ')[0]}</div>
                   <div style={{ fontSize:11, color:'#9ca3af' }}>{user.role==='trainer'?'Тренер':'Клиент'}</div>
