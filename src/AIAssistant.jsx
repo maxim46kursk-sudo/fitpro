@@ -4,10 +4,14 @@ const PUR = '#7F77DD'
 
 const TEA = '#1D9E75'
 
+const CHAT_KEY = (m) => `fitpro_chat_${m}`
+const loadChat  = (m) => { try { return JSON.parse(localStorage.getItem(CHAT_KEY(m)) || '[]') } catch { return [] } }
+const saveChat  = (m, msgs) => { try { localStorage.setItem(CHAT_KEY(m), JSON.stringify(msgs)) } catch {} }
+
 const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMobile = false, nutritionPlans = [] }, ref) {
   const [isOpen, setIsOpen]         = useState(false)
   const [mode, setMode]             = useState('workout')
-  const [messages, setMessages]     = useState([])
+  const [messages, setMessages]     = useState(() => loadChat('workout'))
   const [input, setInput]           = useState('')
   const [loading, setLoading]       = useState(false)
   const [apiKey, setApiKey]         = useState(() => {
@@ -25,8 +29,19 @@ const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMob
   const inputRef       = useRef(null)
 
   useImperativeHandle(ref, () => ({
-    open: (m) => { if (m) setMode(m); setIsOpen(true) }
+    open: (m) => {
+      if (m && m !== mode) {
+        setMode(m)
+        setMessages(loadChat(m))
+      }
+      setIsOpen(true)
+    }
   }))
+
+  // Сохраняем историю чата при каждом изменении сообщений
+  useEffect(() => {
+    saveChat(mode, messages)
+  }, [messages, mode])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -344,6 +359,12 @@ ${matchedPlan && !isMassGain && !isCutting
               <div style={{ fontSize: 15, fontWeight: 700, color: '#111', lineHeight: 1.2 }}>AI Ассистент</div>
               <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 500 }}>● онлайн</div>
             </div>
+            {messages.length > 0 && (
+              <button onClick={() => { saveChat(mode, []); setMessages([]) }} style={{
+                background: 'none', border: '1px solid #e5e7eb', borderRadius: 8,
+                padding: '5px 10px', fontSize: 11, color: '#9ca3af', cursor: 'pointer', minHeight: 'unset',
+              }} title="Очистить чат">🗑</button>
+            )}
             <button onClick={() => setShowKeyModal(true)} style={{
               background: 'none', border: '1px solid #e5e7eb', borderRadius: 8,
               padding: '5px 10px', fontSize: 11, color: '#9ca3af', cursor: 'pointer', minHeight: 'unset',
@@ -353,7 +374,7 @@ ${matchedPlan && !isMassGain && !isCutting
           {/* Переключатель режима */}
           <div style={{ padding: '10px 16px', borderBottom: '1px solid #f3f4f6', display: 'flex', gap: 8, flexShrink: 0, background: '#fafafa' }}>
             {[{ id: 'workout', label: '🏋️ Тренировки' }, { id: 'nutrition', label: '🥗 Питание' }].map(m => (
-              <button key={m.id} onClick={() => { setMode(m.id); setMessages([]) }}
+              <button key={m.id} onClick={() => { setMode(m.id); setMessages(loadChat(m.id)) }}
                 style={{
                   padding: '7px 18px', borderRadius: 20, border: 'none', cursor: 'pointer',
                   background: mode === m.id ? PUR : '#fff',
