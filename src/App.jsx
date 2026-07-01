@@ -1810,11 +1810,13 @@ function NutritionView(){
   const [openDay,setOpenDay]=useState(null)
   const [logDate,setLogDate]=useState(()=>{const t=new Date();return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`})
   const [logDone,setLogDone]=useState(false)
+  const [showLogDatePicker,setShowLogDatePicker]=useState(false)
+  const logCalInputRef=useRef(null)
 
-  const applyToFoodDiary=(day)=>{
+  const applyToFoodDiary=(day,date)=>{
     const raw=localStorage.getItem('fitpro_food_diary')
     const diary=raw?JSON.parse(raw):{}
-    const existing=diary[logDate]||[]
+    const existing=diary[date]||[]
     const newEntries=day.meals.map((meal,i)=>({
       id:Date.now()+i,
       name:`${meal.name}${meal.time?' ('+meal.time+')':''}`,
@@ -1824,9 +1826,11 @@ function NutritionView(){
       f:String(meal.f),
       items:meal.items||[],
     }))
-    diary[logDate]=[...existing,...newEntries]
+    diary[date]=[...existing,...newEntries]
     localStorage.setItem('fitpro_food_diary',JSON.stringify(diary))
+    window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
     setLogDone(true)
+    setShowLogDatePicker(false)
     setTimeout(()=>setLogDone(false),2500)
   }
 
@@ -1882,17 +1886,50 @@ function NutritionView(){
             </div>
           )}
         </div>
-        {/* ── Панель «Зафиксировать в дневнике» */}
+        {/* ── Панель «Копировать рацион» */}
         <div style={{ background:'#fff',borderTop:'1px solid #e5e7eb',padding:'10px 16px 14px',flexShrink:0 }}>
-          <div style={{ fontSize:11,color:'#9ca3af',marginBottom:6,textAlign:'center',fontWeight:500 }}>Выберите дату для копирования рациона</div>
-          <DateScroller value={logDate} onChange={setLogDate} />
-          <button onClick={()=>applyToFoodDiary(day)}
-            style={{ width:'100%',padding:'13px',borderRadius:12,border:'none',
-              background:logDone?TEA:BLU,color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset',
-              display:'flex',alignItems:'center',justifyContent:'center',gap:8,
-              transition:'background 0.3s' }}>
-            {logDone?'✓ Рацион скопирован в дневник!':'📋 Копировать рацион'}
-          </button>
+          {showLogDatePicker?(()=>{
+            const toISO=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+            const yd=new Date();yd.setDate(yd.getDate()-1);const yISO=toISO(yd)
+            const td=new Date();const tISO=toISO(td)
+            const tmr=new Date();tmr.setDate(tmr.getDate()+1);const tmrISO=toISO(tmr)
+            return(
+              <div>
+                <div style={{ fontSize:12,color:'#6b7280',fontWeight:600,marginBottom:8,textAlign:'center' }}>Выбери дату:</div>
+                <div style={{ display:'flex',gap:6,marginBottom:10 }}>
+                  {[['Вчера',yISO],['Сегодня',tISO],['Завтра',tmrISO]].map(([lbl,iso])=>(
+                    <button key={iso} onClick={()=>setLogDate(iso)}
+                      style={{ flex:1,padding:'9px 4px',borderRadius:10,border:`1.5px solid ${logDate===iso?BLU:'#e5e7eb'}`,background:logDate===iso?`${BLU}15`:'#fff',color:logDate===iso?BLU:'#6b7280',fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>
+                      {lbl}
+                    </button>
+                  ))}
+                  <button onClick={()=>logCalInputRef.current?.showPicker?.()??logCalInputRef.current?.click()}
+                    style={{ width:42,flexShrink:0,borderRadius:10,border:'1.5px solid #e5e7eb',background:'#fff',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',minHeight:'unset' }}>
+                    📅
+                    <input ref={logCalInputRef} type="date" value={logDate} onChange={e=>setLogDate(e.target.value)}
+                      style={{ position:'absolute',opacity:0,width:0,height:0,pointerEvents:'none' }} />
+                  </button>
+                </div>
+                <div style={{ display:'flex',gap:8 }}>
+                  <button onClick={()=>applyToFoodDiary(day,logDate)}
+                    style={{ flex:1,padding:'12px',borderRadius:12,border:'none',background:BLU,color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset' }}>
+                    📋 Копировать
+                  </button>
+                  <button onClick={()=>setShowLogDatePicker(false)}
+                    style={{ padding:'12px 16px',borderRadius:12,border:'none',background:'#f3f4f6',color:'#6b7280',fontSize:14,cursor:'pointer',minHeight:'unset' }}>
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            )
+          })():(
+            <button onClick={()=>{if(logDone)return;const t=new Date();setLogDate(`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`);setShowLogDatePicker(true)}}
+              style={{ width:'100%',padding:'13px',borderRadius:12,border:'none',
+                background:logDone?TEA:BLU,color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset',
+                display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'background 0.3s' }}>
+              {logDone?'✓ Рацион скопирован в дневник!':'📋 Копировать рацион'}
+            </button>
+          )}
         </div>
       </div>
     )
