@@ -8,21 +8,22 @@ const CHAT_KEY = (m) => `fitpro_chat_${m}`
 const loadChat  = (m) => { try { return JSON.parse(localStorage.getItem(CHAT_KEY(m)) || '[]') } catch { return [] } }
 const saveChat  = (m, msgs) => { try { localStorage.setItem(CHAT_KEY(m), JSON.stringify(msgs)) } catch {} }
 
+// Ключ из переменной окружения (подставляется Vite при сборке на Vercel)
+const ENV_KEY = (import.meta.env.VITE_ANTHROPIC_KEY || '').trim()
+
 const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMobile = false, nutritionPlans = [] }, ref) {
   const [isOpen, setIsOpen]         = useState(false)
   const [mode, setMode]             = useState('workout')
   const [messages, setMessages]     = useState(() => loadChat('workout'))
   const [input, setInput]           = useState('')
   const [loading, setLoading]       = useState(false)
-  const [apiKey, setApiKey]         = useState(() => {
-    const envKey = import.meta.env.VITE_ANTHROPIC_KEY || ''
-    const validEnv = envKey.startsWith('sk-ant-') ? envKey : ''
-    return validEnv || localStorage.getItem('fitpro_ai_key') || ''
-  })
+  // ENV_KEY — приоритет. Если пустой — берём из localStorage (ручной ввод)
+  const [apiKey, setApiKey]         = useState(() => ENV_KEY || localStorage.getItem('fitpro_ai_key') || '')
   const [keyDraft, setKeyDraft]     = useState('')
   const [showKeyModal, setShowKeyModal] = useState(false)
   const [savedMsgIds, setSavedMsgIds] = useState({})
-  const [diaryDatePicker, setDiaryDatePicker] = useState(null) // msgId when picker is open
+  const [diaryDatePicker, setDiaryDatePicker] = useState(null)
+  const [refreshNotif, setRefreshNotif] = useState(false)
   const todayISO = (() => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}` })()
   const [pickerDate, setPickerDate] = useState(todayISO)
   const messagesEndRef = useRef(null)
@@ -53,6 +54,12 @@ const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMob
 
   // ── Единый динамический системный промпт ─────────────────────────────
   const buildSystemPrompt = (mode) => {
+    // Текущее время — читается свежим при каждом вызове
+    const nowStr = new Date().toLocaleString('ru-RU', {
+      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    })
+
     // 1. Профиль клиента
     const profile = (() => { try { return JSON.parse(localStorage.getItem('fitpro_profile') || 'null') } catch { return null } }) () || {}
     const clientName   = profile.name   || 'Клиент'
@@ -104,10 +111,15 @@ const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMob
       kcal: a.kcal + (+e.kcal || 0), p: a.p + (+e.p || 0),
       f: a.f + (+e.f || 0), c: a.c + (+e.c || 0)
     }), { kcal: 0, p: 0, f: 0, c: 0 })
-    const remKcal = normKcal !== null ? Math.max(0, normKcal - eaten.kcal) : null
-    const remP    = normP    !== null ? Math.max(0, normP    - eaten.p)    : null
-    const remF    = normF    !== null ? Math.max(0, normF    - eaten.f)    : null
-    const remC    = normC    !== null ? Math.max(0, normC    - eaten.c)    : null
+    const foodGoals = (() => { try { return JSON.parse(localStorage.getItem('fitpro_food_goals') || '{}') } catch { return {} } })()
+    const userNormKcal = foodGoals.kcal ? Number(foodGoals.kcal) : null
+    const userNormP    = foodGoals.p    ? Number(foodGoals.p)    : null
+    const userNormF    = foodGoals.f    ? Number(foodGoals.f)    : null
+    const userNormC    = foodGoals.c    ? Number(foodGoals.c)    : null
+    const remKcal = userNormKcal !== null ? Math.max(0, userNormKcal - eaten.kcal) : null
+    const remP    = userNormP    !== null ? Math.max(0, userNormP    - eaten.p)    : null
+    const remF    = userNormF    !== null ? Math.max(0, userNormF    - eaten.f)    : null
+    const remC    = userNormC    !== null ? Math.max(0, userNormC    - eaten.c)    : null
 
     // 4. Последние 5 тренировок с весами
     const recent = [...workoutHistory]
@@ -133,67 +145,160 @@ const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMob
           return `  ${dateStr} — ${w.name || 'Тренировка'}:\n${exLines || '    (нет данных о весах)'}`
         }).join('\n')
 
-    return `Ты персональный AI тренер в приложении FitPro.
+    // Полный дневник питания за 3 дня с ID каждой записи
+    const diaryForPrompt = (() => {
+      const out = []
+      for (let d = 0; d < 3; d++) {
+        const dt = new Date(); dt.setDate(dt.getDate() - d)
+        const iso = dt.toISOString().slice(0, 10)
+        const entries = diary[iso] || []
+        const label = d===0?'СЕГОДНЯ':d===1?'ВЧЕРА':'ПОЗАВЧЕРА'
+        if (entries.length > 0) {
+          const tot = entries.reduce((a, e) => ({ kcal: a.kcal+(+e.kcal||0), p: a.p+(+e.p||0), c: a.c+(+e.c||0), f: a.f+(+e.f||0) }), { kcal:0, p:0, c:0, f:0 })
+          const lines = entries.map(e => `  [id:${e.id}] ${e.name} — ${e.kcal}ккал, Б:${e.p||0}г У:${e.c||0}г Ж:${e.f||0}г`).join('\n')
+          out.push(`${label} (${iso}):\n${lines}\n  Итого: ${Math.round(tot.kcal)}ккал Б:${Math.round(tot.p)}г У:${Math.round(tot.c)}г Ж:${Math.round(tot.f)}г`)
+        } else {
+          out.push(`${label} (${iso}): записей нет`)
+        }
+      }
+      return out.join('\n\n')
+    })()
 
-ДАННЫЕ КЛИЕНТА:
-Имя: ${clientName}${clientAge ? `, возраст: ${clientAge} лет` : ''}
+    // ── ПРОМПТ ДЛЯ РЕЖИМА ПИТАНИЯ ────────────────────────────────────────
+    if (mode === 'nutrition') {
+      const profileFilled = weightNum > 0 && heightNum > 0
+
+      const normLine = userNormKcal
+        ? `${userNormKcal} ккал, Б:${userNormP||0}г У:${userNormC||0}г Ж:${userNormF||0}г (установлена)`
+        : matchedPlan
+          ? `${matchedPlan.target.cal} ккал (из рациона тренера)`
+          : normKcal !== null
+            ? `${normKcal} ккал, Б:${normP}г У:${normC}г Ж:${normF}г (расчётная)`
+            : 'не определена — заполни профиль'
+
+      const remLine = remKcal !== null
+        ? `${remKcal} ккал`
+        : 'цель не установлена'
+
+      const planText = matchedPlan && planDay1Text
+        ? `${matchedPlan.title} — цель ${matchedPlan.target.cal}ккал/день\nПример дня:\n${planDay1Text}\nИтого дня: ${planDay1.total.cal}ккал Б:${planDay1.total.p}г У:${planDay1.total.c}г Ж:${planDay1.total.f}г`
+        : 'Рацион не подобран — заполни профиль (вес и рост).'
+
+      return `ВАЖНО: данные дневника питания которые я передаю тебе в этом промпте — это единственный источник правды. Игнорируй любые цифры которые ты сам упоминал в предыдущих сообщениях этого чата. Каждый раз когда пользователь спрашивает про сегодняшний рацион — смотри ТОЛЬКО на раздел ДНЕВНИК ПИТАНИЯ в этом промпте, не на историю переписки.
+
+Сейчас: ${nowStr}
+Все данные ниже прочитаны из приложения прямо сейчас в ${nowStr}. Любые цифры из истории чата устарели — не доверяй им.
+
+Ты AI помощник по питанию в приложении тренера Максима.
+
+ТВОЯ ЛИЧНОСТЬ:
+Ты как умный друг-диетолог. Тёплый, конкретный, без воды. Максимум 3-4 предложения в ответе если вопрос простой. Никогда не используй звёздочки, решётки, тире списком — только чистый текст.
+
+ДАННЫЕ КЛИЕНТА КОТОРЫЕ ТЫ ВИДИШЬ:
+Имя: ${clientName}
 Цель: ${clientGoal}
-Вес: ${clientWeight}, Рост: ${clientHeight}${clientOccupation ? `\nРод деятельности: ${clientOccupation}` : ''}${topFolder ? `\nПрограмма тренировок: ${topFolder}` : ''}${profile.steps ? `\nШагов в день: ~${profile.steps}` : ''}${profile.gymDays ? `\nТренировок в неделю: ${profile.gymDays}` : ''}
+Вес: ${clientWeight}, Рост: ${clientHeight}${clientAge ? `, ${clientAge} лет` : ''}
+Норма в день: ${normLine}
+Съедено сегодня: ${eaten.kcal.toFixed(0)} ккал, Б:${eaten.p.toFixed(0)}г У:${eaten.c.toFixed(0)}г Ж:${eaten.f.toFixed(0)}г
+Осталось: ${remLine}
 
-ДНЕВНАЯ НОРМА ПИТАНИЯ (рассчитана по весу клиента):
+Дневник питания за 3 дня:
+${diaryForPrompt}
+
+Готовые рационы тренера:
+${planText}
+${isOverweight ? `\nВАЖНО: у клиента лишний вес (${clientWeight} при росте ${clientHeight}). Нормы рассчитаны от идеального веса ${idealWeight}кг. Объясни это мягко если спросят.` : ''}${isMassGain ? '\nЦЕЛЬ — набор массы: углеводы x5г/кг.' : isCutting ? '\nЦЕЛЬ — рельеф: углеводы x2г/кг.' : ''}
+
+${!profileFilled ? 'СТАТУС ПРОФИЛЯ: не заполнен (нет веса или роста).' : ''}
+
+ЕСЛИ ПРОФИЛЬ НЕ ЗАПОЛНЕН:
+Скажи: "Чтобы я мог помочь точно — заполни профиль в приложении: вес, рост и цель. Это займёт 30 секунд." Больше ничего не делай.
+
+ЧТО ТЫ УМЕЕШЬ:
+Записать еду в дневник — если человек говорит что поел или просит записать, используй маркер [DIARY_ENTRY:{"name":"...","kcal":X,"p":X,"c":X,"f":X}]
+Удалить запись — [DELETE_ENTRY:{"date":"YYYY-MM-DD","id":X}]
+Установить норму — [SET_GOALS:{"kcal":X,"p":X,"c":X,"f":X}]
+Очистить день — [CLEAR_DIARY:{"date":"YYYY-MM-DD"}]
+Составить рацион — берёшь готовый рацион тренера который подходит под вес и цель клиента. Никогда не придумывай цифры сам — только те что в рационах тренера.
+Ответить на любой вопрос по питанию — продукты, калории, что можно съесть, как вписать что-то в норму.
+
+СТРОГИЕ ПРАВИЛА:
+Цифры калорий и макросов берёшь ТОЛЬКО из рационов тренера и профиля клиента. Никогда не придумываешь свои нормы.
+Если человек спрашивает не про питание — вежливо скажи что ты помогаешь только с питанием.
+Раз в 4-5 сообщений ненавязчиво упомяни в конце что-то вроде: "Кстати, если хочешь ускорить результат — Максим ведёт персональные тренировки, пиши ему напрямую."
+Никогда не говори что у тебя нет доступа к данным — ты видишь всё что написано выше.
+Отвечай на русском. Без markdown. Только чистый текст.`
+    }
+
+    // ── ПРОМПТ ДЛЯ РЕЖИМА ТРЕНИРОВОК (без изменений) ─────────────────────
+    return `ВАЖНО: данные которые я передаю тебе в этом промпте — единственный источник правды. Игнорируй любые цифры которые ты сам упоминал в предыдущих сообщениях. Каждый раз смотри ТОЛЬКО на данные в этом промпте, не на историю переписки.
+
+Сейчас: ${nowStr}
+Все данные ниже прочитаны из приложения прямо сейчас. Любые цифры из истории чата устарели — не доверяй им.
+
+Ты — дружелюбный персональный AI-помощник тренера Максима в фитнес-приложении FitPro. Максим — сертифицированный тренер, работает с клиентами лично.
+
+=== ДАННЫЕ АКТУАЛЬНЫ НА ${nowStr} ===
+
+=== АКТУАЛЬНЫЕ ДАННЫЕ КЛИЕНТА ===
+Имя: ${clientName}${clientAge ? `, ${clientAge} лет` : ''}
+Цель: ${clientGoal}
+Вес: ${clientWeight}, Рост: ${clientHeight}${clientOccupation ? `, Работа: ${clientOccupation}` : ''}${profile.gymDays ? `, Тренировок в неделю: ${profile.gymDays}` : ''}${profile.steps ? `, Шагов/день: ~${profile.steps}` : ''}
+
+=== ДНЕВНИК ПИТАНИЯ (у тебя есть ПОЛНЫЙ доступ к этим данным) ===
+${diaryForPrompt}
+
+Съедено сегодня: ${eaten.kcal.toFixed(0)} ккал, Б:${eaten.p.toFixed(0)}г У:${eaten.c.toFixed(0)}г Ж:${eaten.f.toFixed(0)}г
+${userNormKcal
+  ? `Цель пользователя в приложении: ${userNormKcal}ккал Б:${userNormP||0}г У:${userNormC||0}г Ж:${userNormF||0}г\nОсталось до цели: ${remKcal} ккал, Б:${remP}г У:${remC}г Ж:${remF}г`
+  : 'Цель в приложении НЕ установлена. Не называй никакую цифру "нормой" или "установленной нормой".'}
+
+=== РЕКОМЕНДУЕМАЯ НОРМА (только для советов, НЕ выдавать как "установленная норма") ===
 ${normKcal !== null
-  ? `${isOverweight ? `Фактический вес: ${weightNum} кг. Идеальная масса тела (рост ${heightNum} − 100): ${idealWeight} кг. Нормы рассчитаны по идеальному весу.` : `Вес: ${weightNum} кг.`}
-${isMassGain ? 'Цель: набор массы — углеводы повышены (×5г/кг).' : isCutting ? 'Цель: рельеф — углеводы снижены (×2г/кг).' : ''}
-Калории: ${normKcal} ккал
-Белки: ${normP}г (${baseWeight}кг × 2г)
-Жиры: ${normF}г (${baseWeight}кг × 1г)
-Углеводы: ${normC}г (${baseWeight}кг × ${carbMult}г)
-Используй эту норму как основу для рациона и рекомендаций.`
-  : 'Вес клиента не указан, норму рассчитать невозможно.'}
+  ? `${isOverweight ? `Лишний вес — рекомендую считать от идеального веса ${idealWeight}кг (рост минус 100).` : ''}${isMassGain ? ' Набор массы — углеводы x5г/кг.' : isCutting ? ' Рельеф — углеводы x2г/кг.' : ''}
+Рекомендация: ${normKcal} ккал, Б:${normP}г, Ж:${normF}г, У:${normC}г.`
+  : 'Вес не указан — рекомендацию дать нельзя.'}
 
-ПИТАНИЕ СЕГОДНЯ:
-Съедено: ${eaten.kcal.toFixed(0)} ккал, Б: ${eaten.p.toFixed(1)}г, У: ${eaten.c.toFixed(1)}г, Ж: ${eaten.f.toFixed(1)}г
-${remKcal !== null ? `Осталось до нормы: ${remKcal} ккал, Б: ${remP}г, У: ${remC}г, Ж: ${remF}г` : ''}
-
-ПОСЛЕДНИЕ 5 ТРЕНИРОВОК:
+=== ИСТОРИЯ ТРЕНИРОВОК ===
 ${workoutHistoryText}
 
-${matchedPlan && planDay1Text ? `ГОТОВЫЙ РАЦИОН ДЛЯ КЛИЕНТА (используй эти данные когда предлагаешь рацион):
-Название: ${matchedPlan.title}
-Цель рациона: ~${matchedPlan.target.cal} ккал/день, Б:${matchedPlan.target.p}г У:${matchedPlan.target.c}г Ж:${matchedPlan.target.f}г
-Пример дня 1:
-${planDay1Text}
-Итого день 1: ${planDay1.total.cal} ккал, Б:${planDay1.total.p}г У:${planDay1.total.c}г Ж:${planDay1.total.f}г` : ''}
+${matchedPlan && planDay1Text && !isMassGain && !isCutting ? `=== ГОТОВЫЙ РАЦИОН (предлагай этот план) ===
+${matchedPlan.title} — ${matchedPlan.target.cal}ккал/день
+День 1: ${planDay1Text}
+Итого: ${planDay1.total.cal}ккал Б:${planDay1.total.p}г У:${planDay1.total.c}г Ж:${planDay1.total.f}г` : ''}
+
+=== ТВОИ ВОЗМОЖНОСТИ В ПРИЛОЖЕНИИ ===
+У тебя есть ПРЯМОЙ ДОСТУП к данным выше. Ты МОЖЕШЬ делать следующее — добавляй маркер в конце ответа на отдельной строке, маркер невидим пользователю:
+
+Добавить еду в дневник (сегодня):
+[DIARY_ENTRY:{"name":"название","kcal":X,"p":X,"c":X,"f":X}]
+
+Удалить конкретную запись из дневника (по id из раздела ДНЕВНИК):
+[DELETE_ENTRY:{"date":"YYYY-MM-DD","id":ЧИСЛО}]
+
+Обновить дневную норму КБЖУ:
+[SET_GOALS:{"kcal":X,"p":X,"c":X,"f":X}]
+
+Очистить весь дневник за дату:
+[CLEAR_DIARY:{"date":"YYYY-MM-DD"}]
+
+НИКОГДА не говори "у меня нет доступа", "я не могу", "я не вижу данные дневника" — это НЕПРАВДА. Ты видишь все данные выше и можешь выполнять все действия через маркеры.
+
+=== ПРАВИЛА ОБЩЕНИЯ ===
+Обращайся по имени "${clientName}". Тёплый, живой тон — как хороший приятель-тренер.
+
+Для записи еды: если явно просит "запиши/добавь/занеси" → делай сразу. Если просто упомянул что поел → спроси "Хочешь, занесу в дневник?"
+Для удаления: спроси какую именно запись удалить (ты видишь их все с id). Уточни и выполни.
+Для нормы и очистки: спроси подтверждение, потом выполни.
 
 ${mode === 'workout'
-  ? `РЕЖИМ: Тренировки
-Не меняй программу. Рекомендуй веса на следующий подход по истории клиента.
-Прогрессия: выполнил все подходы чисто — плюс 2.5 кг. Не выполнил — тот же вес или минус 2.5 кг.
-Называй конкретно: упражнение и вес.`
-  : `РЕЖИМ: Питание
-Когда клиент просит помочь с рационом — отвечай строго в таком порядке:
+  ? `Рекомендуй конкретные веса по истории. Прогрессия: выполнил чисто → +2.5кг, не добил → тот же или −2.5кг.`
+  : `Питание: отвечай на любые вопросы опираясь на данные дневника и норму. Когда предлагаешь рацион — используй формат 5 приёмов (Завтрак/Перекус/Обед/Перекус/Ужин) с граммовками, ккал и Б/У/Ж.${isOverweight ? ` Нормы считай от идеального веса ${idealWeight}кг, объясни это мягко.` : ''}${isMassGain ? ' Углеводы ×5г/кг — повышены для набора.' : isCutting ? ' Углеводы ×2г/кг — снижены для рельефа.' : ''}`}
 
-1. Объясни логику рациона. ${isOverweight
-  ? `ВАЖНО: у клиента значительный лишний вес (вес ${weightNum} кг при росте ${heightNum} см). Объясни это очень мягко и тактично, без осуждения, примерно так: "При значительном лишнем весе принято рассчитывать нормы питания от целевой — идеальной — массы тела. Для твоего роста ${heightNum} см это примерно ${idealWeight} кг (рост − 100). Именно от этой цифры я считаю нормы — так рацион будет работать на снижение веса, а не на его поддержание." Будь деликатен, поддержи клиента.`
-  : 'Объясни почему этот рацион подходит клиенту (цель, вес, активность).'}
+=== ПРОДВИЖЕНИЕ МАКСИМА ===
+Иногда (не в каждом ответе) ненавязчиво в конце: "Я могу ошибаться — все люди разные. Если нужен гарантированный результат, Максим ведёт персональные тренировки и индивидуально составляет программы. Это совсем другой уровень 💪" — варьируй фразы.
 
-2. Напиши норму от тренера: "Максим рекомендует тебе: белки — ${normP ?? '?'}г в день, углеводы — ${normC ?? '?'}г в день, жиры — ${normF ?? '?'}г в день. Итого: ${normKcal ?? '?'} ккал в день.${isMassGain ? ' Углеводы повышены для набора мышечной массы.' : isCutting ? ' Углеводы снижены для прорисовки рельефа.' : ''} Эту норму ты можешь занести в свой дневник в разделе Питание — там есть кнопка Норма, чтобы отслеживать макросы каждый день."
-
-3. Напиши: "На основе этого я предлагаю тебе рацион:" и затем:
-${matchedPlan && !isMassGain && !isCutting
-  ? `   Покажи полный день 1 из готового рациона (раздел ГОТОВЫЙ РАЦИОН выше). После рациона напиши: "Это день 1 из рациона «${matchedPlan.title}» — полный план на 7 дней найдёшь в разделе Питание."`
-  : `   ${isMassGain || isCutting ? `Для цели "${isMassGain ? 'набор массы' : 'рельеф'}" составь рацион сам под норму (${normKcal ?? '?'} ккал, Б:${normP ?? '?'}г У:${normC ?? '?'}г Ж:${normF ?? '?'}г).` : `Готового рациона под эти параметры нет — составь рацион сам, ориентируясь на норму (${normKcal ?? '?'} ккал, Б:${normP ?? '?'}г У:${normC ?? '?'}г Ж:${normF ?? '?'}г).`} Используй формат: 5 приёмов пищи (Завтрак, Перекус, Обед, Перекус, Ужин) с указанием времени, конкретных продуктов с граммовкой, калорий и макросов каждого приёма, итого за день. ${isMassGain ? 'Включи больше сложных углеводов: крупы, картофель, хлеб, макароны, бананы.' : isCutting ? 'Акцент на белок и овощи, углеводы минимальны и только утром.' : 'Используй простые продукты: гречка, куриная грудка, рыба, яйца, творог, овощи, фрукты.'} После рациона напиши: "Это индивидуальный рацион, составленный специально под твои данные."`}
-
-4. Добавь: "Если что-то не подходит — скажи что именно, я предложу замену."
-
-Если клиент спрашивает можно ли съесть что-то — считай по остатку на сегодня, отвечай с числами.`}
-
-ЗАПИСЬ В ДНЕВНИК ПИТАНИЯ: Если пользователь просит тебя записать еду, макросы или калории в дневник (например "занеси белков 100г жиров 50г углей 200г", "запиши в дневник", "добавь в дневник") — ты МОЖЕШЬ это сделать напрямую. Подтверди что записываешь, а в самом конце своего ответа добавь ОДИН специальный блок (без пробелов, на отдельной строке):
-[DIARY_ENTRY:{"name":"название блюда или Запись из чата","kcal":X,"p":X,"c":X,"f":X}]
-Где X — числа из запроса пользователя. Если ккал не указаны — посчитай: ккал = белки×4 + углеводы×4 + жиры×9. Если каких-то макросов нет — ставь 0. Не показывай этот блок пользователю явно, это служебная метка. Записывай на сегодня если дата не уточнена.
-
-Отвечай коротко и конкретно, как тренер. На русском языке.
-Отвечай обычным текстом без звёздочек, без двойных звёздочек, без решёток, без тире в начале строк, без markdown разметки вообще. Просто чистый текст как в обычном сообщении.`
+Отвечай на русском. Без markdown, без звёздочек, без решёток. Чистый текст.`
   }
 
   // ── Отправка сообщения ────────────────────────────────────────────────
@@ -220,17 +325,30 @@ ${matchedPlan && !isMassGain && !isCutting
         },
         body: JSON.stringify({
           model: 'claude-sonnet-4-6',
-          max_tokens: 1000,
+          max_tokens: 1500,
           system: systemPrompt,
           messages: newMsgs.map(m => ({ role: m.role, content: m.content }))
         })
       })
       const data = await res.json()
       if (data.content?.[0]?.text) {
-        let rawText = data.content[0].text
-        // Парсим маркер записи в дневник
-        const diaryMatch = rawText.match(/\[DIARY_ENTRY:(\{[^}]+\})\]/)
+        // Зачищаем markdown который модель вставляет несмотря на инструкции
+        const stripMd = (t) => t
+          .replace(/\*\*(.*?)\*\*/g, '$1')
+          .replace(/\*(.*?)\*/g, '$1')
+          .replace(/^#{1,6}\s+/gm, '')
+          .replace(/^[+\-•]\s+/gm, '')
+          .replace(/`([^`]+)`/g, '$1')
+          .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim()
+
+        let rawText = stripMd(data.content[0].text)
         let diaryWritten = false
+        let actionDone = null
+
+        // 1. Запись в дневник питания
+        const diaryMatch = rawText.match(/\[DIARY_ENTRY:(\{[^}]+\})\]/)
         if (diaryMatch) {
           try {
             const entry = JSON.parse(diaryMatch[1])
@@ -244,10 +362,61 @@ ${matchedPlan && !isMassGain && !isCutting
           } catch {}
           rawText = rawText.replace(/\[DIARY_ENTRY:[^\]]+\]/g, '').trim()
         }
-        setMessages(prev => [...prev, { role: 'assistant', content: rawText, diaryWritten }])
+
+        // 2. Установить норму КБЖУ
+        const goalsMatch = rawText.match(/\[SET_GOALS:(\{[^}]+\})\]/)
+        if (goalsMatch) {
+          try {
+            const goals = JSON.parse(goalsMatch[1])
+            const existing = (() => { try { return JSON.parse(localStorage.getItem('fitpro_food_goals') || '{}') } catch { return {} } })()
+            localStorage.setItem('fitpro_food_goals', JSON.stringify({ ...existing, ...goals }))
+            window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
+            actionDone = 'goals_set'
+          } catch {}
+          rawText = rawText.replace(/\[SET_GOALS:[^\]]+\]/g, '').trim()
+        }
+
+        // 3. Удалить конкретную запись по id
+        const deleteMatch = rawText.match(/\[DELETE_ENTRY:(\{[^}]+\})\]/)
+        if (deleteMatch) {
+          try {
+            const { date, id } = JSON.parse(deleteMatch[1])
+            const raw = localStorage.getItem('fitpro_food_diary')
+            const diary = raw ? JSON.parse(raw) : {}
+            if (diary[date]) {
+              diary[date] = diary[date].filter(e => String(e.id) !== String(id))
+              if (diary[date].length === 0) delete diary[date]
+            }
+            localStorage.setItem('fitpro_food_diary', JSON.stringify(diary))
+            window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
+            actionDone = 'entry_deleted'
+          } catch {}
+          rawText = rawText.replace(/\[DELETE_ENTRY:[^\]]+\]/g, '').trim()
+        }
+
+        // 4. Очистить весь дневник за дату
+        const clearMatch = rawText.match(/\[CLEAR_DIARY:(\{[^}]+\})\]/)
+        if (clearMatch) {
+          try {
+            const { date } = JSON.parse(clearMatch[1])
+            const raw = localStorage.getItem('fitpro_food_diary')
+            const diary = raw ? JSON.parse(raw) : {}
+            delete diary[date]
+            localStorage.setItem('fitpro_food_diary', JSON.stringify(diary))
+            window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
+            actionDone = `cleared_${date}`
+          } catch {}
+          rawText = rawText.replace(/\[CLEAR_DIARY:[^\]]+\]/g, '').trim()
+        }
+
+        setMessages(prev => [...prev, { role: 'assistant', content: rawText, diaryWritten, actionDone }])
       } else if (res.status === 401) {
-        setMessages(prev => [...prev, { role: 'assistant', content: '❌ API ключ неверный. Нажми 🔑 и введи рабочий ключ.' }])
-        setShowKeyModal(true)
+        if (ENV_KEY) {
+          setMessages(prev => [...prev, { role: 'assistant', content: '❌ Ошибка авторизации. Проверьте переменную VITE_ANTHROPIC_KEY на сервере.' }])
+        } else {
+          setMessages(prev => [...prev, { role: 'assistant', content: '❌ API ключ неверный. Нажми 🔑 и введи рабочий ключ.' }])
+          setShowKeyModal(true)
+        }
       } else {
         setMessages(prev => [...prev, { role: 'assistant', content: `Ошибка ${res.status}: ${data.error?.message || 'Что-то пошло не так'}` }])
       }
@@ -390,16 +559,32 @@ ${matchedPlan && !isMassGain && !isCutting
               <div style={{ fontSize: 15, fontWeight: 700, color: '#111', lineHeight: 1.2 }}>AI Ассистент</div>
               <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 500 }}>● онлайн</div>
             </div>
+            <button onClick={() => {
+                saveChat('workout', []); saveChat('nutrition', [])
+                setMessages([])
+                setRefreshNotif(true)
+                setTimeout(() => setRefreshNotif(false), 2500)
+              }} style={{
+                background: refreshNotif ? '#f0fdf4' : 'none',
+                border: `1px solid ${refreshNotif ? '#22c55e' : '#e5e7eb'}`,
+                borderRadius: 8, padding: '5px 10px', fontSize: 11,
+                color: refreshNotif ? '#22c55e' : '#9ca3af',
+                cursor: 'pointer', minHeight: 'unset', transition: 'all 0.2s',
+              }} title="Обновить данные">
+              {refreshNotif ? '✓ Обновлено' : '↻'}
+            </button>
             {messages.length > 0 && (
-              <button onClick={() => { saveChat(mode, []); setMessages([]) }} style={{
+              <button onClick={() => { saveChat('workout', []); saveChat('nutrition', []); setMessages([]) }} style={{
                 background: 'none', border: '1px solid #e5e7eb', borderRadius: 8,
                 padding: '5px 10px', fontSize: 11, color: '#9ca3af', cursor: 'pointer', minHeight: 'unset',
-              }} title="Очистить чат">🗑</button>
+              }} title="Очистить историю чата">🗑</button>
             )}
-            <button onClick={() => setShowKeyModal(true)} style={{
-              background: 'none', border: '1px solid #e5e7eb', borderRadius: 8,
-              padding: '5px 10px', fontSize: 11, color: '#9ca3af', cursor: 'pointer', minHeight: 'unset',
-            }}>🔑</button>
+            {new URLSearchParams(window.location.search).get('dev') === '1' && (
+              <button onClick={() => setShowKeyModal(true)} style={{
+                background: 'none', border: '1px solid #e5e7eb', borderRadius: 8,
+                padding: '5px 10px', fontSize: 11, color: '#9ca3af', cursor: 'pointer', minHeight: 'unset',
+              }}>🔑</button>
+            )}
           </div>
 
           {/* Переключатель режима */}
@@ -427,12 +612,18 @@ ${matchedPlan && !isMassGain && !isCutting
               <div style={{ textAlign: 'center', marginTop: 24 }}>
                 <div style={{ fontSize: 42, marginBottom: 12 }}>🤖</div>
                 <div style={{ fontSize: 15, fontWeight: 700, color: '#111', marginBottom: 6 }}>
-                  {mode === 'workout' ? 'AI тренер по вашей программе' : 'AI диетолог'}
+                  {(() => {
+                    const p = (() => { try { return JSON.parse(localStorage.getItem('fitpro_profile') || 'null') } catch { return null } })() || {}
+                    const name = (p.name || '').split(' ')[0] || ''
+                    return name
+                      ? `Привет, ${name}! ${mode === 'workout' ? '💪' : '🥗'}`
+                      : (mode === 'workout' ? 'AI тренер по вашей программе' : 'AI диетолог')
+                  })()}
                 </div>
                 <div style={{ fontSize: 13, color: '#9ca3af', lineHeight: 1.65, marginBottom: 20 }}>
                   {mode === 'workout'
-                    ? 'Знаю вашу историю весов и подберу\nнагрузку на следующую тренировку'
-                    : 'Вижу ваш план питания и остаток\nкалорий — спросите что угодно'}
+                    ? 'Знаю твою историю весов и подберу\nнагрузку на следующую тренировку'
+                    : 'Вижу твой план питания и остаток\nкалорий — спрашивай что угодно'}
                 </div>
                 {/* Подсказки */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
@@ -471,9 +662,36 @@ ${matchedPlan && !isMassGain && !isCutting
                 {/* Авто-запись в дневник через маркер */}
                 {m.role === 'assistant' && m.diaryWritten && (
                   <div style={{ paddingLeft: 36 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: '#f0fdf4', border: '1.5px solid #22c55e40' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: '#f0fdf4', border: '1.5px solid #22c55e40' }}>
                       <span style={{ fontSize: 14, color: '#22c55e' }}>✓</span>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: '#22c55e' }}>Записано в дневник на сегодня</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#22c55e' }}>Записано в дневник</span>
+                    </div>
+                  </div>
+                )}
+                {/* Подтверждение установки нормы */}
+                {m.role === 'assistant' && m.actionDone === 'goals_set' && (
+                  <div style={{ paddingLeft: 36 }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: '#f0fdf4', border: '1.5px solid #22c55e40' }}>
+                      <span style={{ fontSize: 14, color: '#22c55e' }}>✓</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#22c55e' }}>Норма КБЖУ обновлена</span>
+                    </div>
+                  </div>
+                )}
+                {/* Подтверждение удаления записи */}
+                {m.role === 'assistant' && m.actionDone === 'entry_deleted' && (
+                  <div style={{ paddingLeft: 36 }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: '#fff7ed', border: '1.5px solid #f9731640' }}>
+                      <span style={{ fontSize: 14, color: '#f97316' }}>🗑</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#f97316' }}>Запись удалена из дневника</span>
+                    </div>
+                  </div>
+                )}
+                {/* Подтверждение очистки дневника */}
+                {m.role === 'assistant' && m.actionDone?.startsWith('cleared_') && (
+                  <div style={{ paddingLeft: 36 }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: '#fff7ed', border: '1.5px solid #f9731640' }}>
+                      <span style={{ fontSize: 14, color: '#f97316' }}>🗑</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#f97316' }}>Дневник очищен</span>
                     </div>
                   </div>
                 )}

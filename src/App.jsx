@@ -8,6 +8,12 @@ const TEA = '#1D9E75'
 const COR = '#D85A30'
 const BLU = '#378ADD'
 
+const clearFitproData = () => {
+  Object.keys(localStorage)
+    .filter(k => k.startsWith('fitpro_'))
+    .forEach(k => localStorage.removeItem(k))
+}
+
 const CLIENTS = [
   { id:1, name:'Анна Соколова',   goal:'Похудение',    program:'Кардио + Сила',     progress:78, av:'АС', cal:1800, wk:4, wts:[75,74.2,73.5,72.8,72,71.5,71] },
   { id:2, name:'Дмитрий Козлов', goal:'Набор массы',   program:'Силовые тренировки', progress:62, av:'ДК', cal:2800, wk:3, wts:[70,70.5,71,71.8,72.5,73,73.5] },
@@ -3209,10 +3215,13 @@ const NAV_MOBILE=[
 
 function LandingPage({ onEnter }) {
   const [view,setView]=useState('hero')
-  const [role,setRole]=useState(null)
-  const [form,setForm]=useState({name:'',email:'',telegram:'',gender:'',photoURL:''})
+  const [authTab,setAuthTab]=useState('login')
+  const [form,setForm]=useState({name:'',email:'',password:'',confirm:''})
   const [mobile,setMobile]=useState(()=>window.innerWidth<640)
-  const photoInputRef=useRef(null)
+  const [authError,setAuthError]=useState('')
+  const [forgotMode,setForgotMode]=useState(false)
+  const [forgotEmail,setForgotEmail]=useState('')
+  const [forgotDone,setForgotDone]=useState(false)
 
   useEffect(()=>{
     const fn=()=>setMobile(window.innerWidth<640)
@@ -3220,19 +3229,33 @@ function LandingPage({ onEnter }) {
     return()=>window.removeEventListener('resize',fn)
   },[])
 
-  const handlePhotoReg=(e)=>{
-    const file=e.target.files[0]
-    if(!file)return
-    const reader=new FileReader()
-    reader.onload=ev=>setForm(v=>({...v,photoURL:ev.target.result}))
-    reader.readAsDataURL(file)
-  }
+  const switchTab=(tab)=>{setAuthTab(tab);setAuthError('');setForgotMode(false);setForgotDone(false);setForm({name:'',email:'',password:'',confirm:''})}
 
-  const handleSubmit=()=>{
-    if(!form.name.trim()||!form.email.trim()||!form.telegram.trim())return
-    const user={name:form.name.trim(),email:form.email.trim(),telegram:form.telegram.trim(),gender:form.gender,photoURL:form.photoURL,role:'client',createdAt:new Date().toISOString()}
+  const openForm=(tab)=>{setAuthTab(tab);setView('form')}
+
+  const handleRegister=()=>{
+    if(!form.name.trim()||!form.email.trim()||!form.password.trim()){setAuthError('Заполни все обязательные поля');return}
+    if(form.password!==form.confirm){setAuthError('Пароли не совпадают');return}
+    if(form.password.length<6){setAuthError('Пароль минимум 6 символов');return}
+    clearFitproData()
+    const user={name:form.name.trim(),email:form.email.trim(),password:form.password,role:'client',createdAt:new Date().toISOString()}
     localStorage.setItem('fitpro_user',JSON.stringify(user))
     onEnter(user)
+  }
+
+  const handleLogin=()=>{
+    if(!form.email.trim()||!form.password.trim()){setAuthError('Введи email и пароль');return}
+    setAuthError('')
+    try{
+      const stored=JSON.parse(localStorage.getItem('fitpro_user')||'null')
+      if(stored&&stored.email.trim()===form.email.trim()&&stored.password===form.password){
+        onEnter(stored)
+      } else if(!stored){
+        setAuthError('Аккаунт не найден — сначала зарегистрируйся')
+      } else {
+        setAuthError('Неверный email или пароль')
+      }
+    }catch{setAuthError('Ошибка входа, попробуй снова')}
   }
 
   const G='rgba(255,255,255,0.06)'
@@ -3248,7 +3271,7 @@ function LandingPage({ onEnter }) {
           <span style={{ fontSize:18,fontWeight:800,letterSpacing:'-0.5px' }}>FitPro</span>
         </div>
         <div style={{ display:'flex',gap:8,alignItems:'center' }}>
-          <button onClick={()=>{setRole('client');setView('register')}}
+          <button onClick={()=>openForm('login')}
             style={{ padding:'7px 20px',borderRadius:8,border:`1px solid ${PUR}60`,background:`${PUR}20`,color:'#c4c0f7',fontSize:13,fontWeight:600,cursor:'pointer' }}>
             Войти
           </button>
@@ -3270,7 +3293,7 @@ function LandingPage({ onEnter }) {
               Ваш персональный<br />тренер всегда<br />рядом
             </h1>
 
-            <button onClick={()=>{setRole('client');setView('register')}}
+            <button onClick={()=>openForm('register')}
               style={{ padding:'15px 40px',borderRadius:14,border:'none',background:`linear-gradient(135deg,${PUR},#5b54c4)`,color:'#fff',fontSize:17,fontWeight:700,cursor:'pointer',boxShadow:`0 10px 32px ${PUR}55`,marginBottom:52 }}>
               Попробовать бесплатно
             </button>
@@ -3299,7 +3322,6 @@ function LandingPage({ onEnter }) {
                     <div style={{ display:'flex',flexDirection:'column',gap:7 }}>
                       {[
                         ['📋','Знаю твою программу тренировок — вижу какой вес ты делал в прошлый раз'],
-                        ['⚖️','Подберу вес на следующий подход по принципам прогрессии нагрузки тренера'],
                         ['🥗','Помогу с питанием — спроси что съесть, что заменить или как вписать любимое'],
                         ['🔄','Скорректирую план если было слишком тяжело или слишком легко'],
                         ['💬','Отвечаю так, как ответил бы сам тренер — потому что он меня именно так обучил'],
@@ -3345,7 +3367,7 @@ function LandingPage({ onEnter }) {
 
           {/* ── Кнопка внизу */}
           <div style={{ textAlign:'center',paddingBottom:52 }}>
-            <button onClick={()=>{setRole('client');setView('register')}}
+            <button onClick={()=>openForm('register')}
               style={{ padding:'15px 44px',borderRadius:14,border:'none',background:`linear-gradient(135deg,${PUR},#5b54c4)`,color:'#fff',fontSize:17,fontWeight:700,cursor:'pointer',boxShadow:`0 10px 32px ${PUR}50` }}>
               Попробовать бесплатно
             </button>
@@ -3353,72 +3375,129 @@ function LandingPage({ onEnter }) {
 
         </div>
       ):(
-        /* ── Форма регистрации */
+        /* ── Форма входа / регистрации */
         <div style={{ minHeight:'calc(100vh - 62px)',display:'flex',alignItems:'center',justifyContent:'center',padding:'28px 18px' }}>
           <div style={{ width:'100%',maxWidth:400 }}>
-            <button onClick={()=>setView('hero')} style={{ background:'none',border:'none',color:'rgba(255,255,255,0.38)',fontSize:14,cursor:'pointer',padding:'0 0 18px',display:'flex',alignItems:'center',gap:6 }}>
+            <button onClick={()=>{setView('hero');setAuthError('');setForgotMode(false)}} style={{ background:'none',border:'none',color:'rgba(255,255,255,0.38)',fontSize:14,cursor:'pointer',padding:'0 0 18px',display:'flex',alignItems:'center',gap:6 }}>
               ← Назад
             </button>
             <div style={{ background:'rgba(255,255,255,0.04)',border:GB,borderRadius:20,padding:'30px 24px' }}>
-              <div style={{ marginBottom:22 }}>
-                <h2 style={{ fontSize:22,fontWeight:800,margin:'0 0 6px' }}>Добро пожаловать!</h2>
-                <p style={{ fontSize:13,color:'rgba(255,255,255,0.38)',margin:0,lineHeight:1.65 }}>
-                  Заполни форму — и получи доступ к программам тренера и AI-ассистенту
-                </p>
-              </div>
-              <div style={{ display:'flex',flexDirection:'column',gap:14 }}>
-                {/* Фото */}
-                <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:8 }}>
-                  <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoReg} style={{ display:'none' }} />
-                  <div onClick={()=>photoInputRef.current?.click()} style={{ width:72,height:72,borderRadius:'50%',border:`2px dashed ${PUR}80`,background:'rgba(255,255,255,0.04)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',flexShrink:0 }}>
-                    {form.photoURL
-                      ? <img src={form.photoURL} alt="" style={{ width:'100%',height:'100%',objectFit:'cover' }} />
-                      : <span style={{ fontSize:28 }}>{form.gender==='female'?'👩':form.gender==='male'?'👨':'📷'}</span>
-                    }
-                  </div>
-                  <span style={{ fontSize:11,color:'rgba(255,255,255,0.3)' }}>Нажми чтобы добавить фото</span>
-                </div>
 
-                {/* Поля */}
-                {[
-                  {key:'name',label:'ФИО',placeholder:'Иванов Иван Иванович',type:'text'},
-                  {key:'email',label:'Email',placeholder:'ivan@example.com',type:'email'},
-                  {key:'telegram',label:'Ник в Telegram',placeholder:'@username',type:'text'},
-                ].map(f=>(
-                  <div key={f.key}>
-                    <label style={{ fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.45)',display:'block',marginBottom:6,letterSpacing:'0.3px' }}>
-                      {f.label} <span style={{ color:COR }}>*</span>
-                    </label>
-                    <input value={form[f.key]} type={f.type} placeholder={f.placeholder}
-                      onChange={e=>setForm(v=>({...v,[f.key]:e.target.value}))}
-                      onKeyDown={e=>e.key==='Enter'&&handleSubmit()}
-                      style={{ width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.05)',color:'#fff',fontSize:14,outline:'none',boxSizing:'border-box' }}
-                      onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'} />
-                  </div>
-                ))}
-
-                {/* Пол */}
+              {forgotMode ? (
+                /* ── Восстановление пароля */
                 <div>
-                  <label style={{ fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.45)',display:'block',marginBottom:8,letterSpacing:'0.3px' }}>Пол</label>
-                  <div style={{ display:'flex',gap:8 }}>
-                    {[['male','👨 Мужчина'],['female','👩 Женщина']].map(([val,lbl])=>(
-                      <button key={val} onClick={()=>setForm(v=>({...v,gender:val}))} type="button"
-                        style={{ flex:1,padding:'11px',borderRadius:10,border:`1.5px solid ${form.gender===val?PUR:'rgba(255,255,255,0.1)'}`,background:form.gender===val?`${PUR}30`:'rgba(255,255,255,0.04)',color:form.gender===val?'#d0ccff':'rgba(255,255,255,0.55)',fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>
-                        {lbl}
+                  <button onClick={()=>{setForgotMode(false);setForgotDone(false);setForgotEmail('')}} style={{ background:'none',border:'none',color:'rgba(255,255,255,0.38)',fontSize:13,cursor:'pointer',padding:'0 0 16px',display:'flex',alignItems:'center',gap:5 }}>
+                    ← Назад к входу
+                  </button>
+                  <h2 style={{ fontSize:20,fontWeight:800,margin:'0 0 6px' }}>Восстановление пароля</h2>
+                  <p style={{ fontSize:13,color:'rgba(255,255,255,0.38)',margin:'0 0 22px',lineHeight:1.65 }}>
+                    Введи email — пришлём инструкции по восстановлению
+                  </p>
+                  {forgotDone ? (
+                    <div style={{ textAlign:'center',padding:'24px 0' }}>
+                      <div style={{ fontSize:42,marginBottom:14 }}>✉️</div>
+                      <p style={{ fontSize:15,color:'#22c55e',fontWeight:700,margin:'0 0 8px' }}>Инструкции отправлены!</p>
+                      <p style={{ fontSize:13,color:'rgba(255,255,255,0.4)',margin:0 }}>Проверь почту {forgotEmail}</p>
+                    </div>
+                  ):(
+                    <div style={{ display:'flex',flexDirection:'column',gap:14 }}>
+                      <div>
+                        <label style={{ fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.45)',display:'block',marginBottom:6 }}>Email</label>
+                        <input value={forgotEmail} type="email" placeholder="ivan@example.com"
+                          onChange={e=>setForgotEmail(e.target.value)}
+                          onKeyDown={e=>e.key==='Enter'&&forgotEmail.trim()&&setForgotDone(true)}
+                          style={{ width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.05)',color:'#fff',fontSize:14,outline:'none',boxSizing:'border-box' }}
+                          onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'} />
+                      </div>
+                      <button onClick={()=>forgotEmail.trim()&&setForgotDone(true)} disabled={!forgotEmail.trim()}
+                        style={{ padding:'14px',borderRadius:11,border:'none',background:forgotEmail.trim()?PUR:`${PUR}35`,color:'#fff',fontSize:15,fontWeight:700,cursor:forgotEmail.trim()?'pointer':'default',transition:'all 0.15s' }}>
+                        Отправить инструкции
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ):(
+                /* ── Вход / Регистрация */
+                <div>
+                  {/* Табы */}
+                  <div style={{ display:'flex',gap:0,marginBottom:24,background:'rgba(255,255,255,0.06)',borderRadius:10,padding:3 }}>
+                    {[['login','Войти'],['register','Зарегистрироваться']].map(([t,l])=>(
+                      <button key={t} onClick={()=>switchTab(t)}
+                        style={{ flex:1,padding:'9px',borderRadius:8,border:'none',background:authTab===t?PUR:'transparent',color:authTab===t?'#fff':'rgba(255,255,255,0.45)',fontSize:13,fontWeight:600,cursor:'pointer',transition:'all 0.15s',minHeight:'unset' }}>
+                        {l}
                       </button>
                     ))}
                   </div>
-                </div>
 
-                <button onClick={handleSubmit}
-                  disabled={!form.name.trim()||!form.email.trim()||!form.telegram.trim()}
-                  style={{ padding:'14px',borderRadius:11,border:'none',background:(!form.name.trim()||!form.email.trim()||!form.telegram.trim())?`${PUR}35`:PUR,color:'#fff',fontSize:15,fontWeight:700,cursor:(!form.name.trim()||!form.email.trim()||!form.telegram.trim())?'default':'pointer',marginTop:4,boxShadow:(!form.name.trim()||!form.email.trim()||!form.telegram.trim())?'none':`0 6px 22px ${PUR}44`,transition:'all 0.15s' }}>
-                  Войти в FitPro →
-                </button>
-                <p style={{ textAlign:'center',fontSize:11,color:'rgba(255,255,255,0.18)',margin:0,lineHeight:1.6 }}>
-                  Нажимая «Войти», вы соглашаетесь с условиями использования
-                </p>
-              </div>
+                  <div style={{ display:'flex',flexDirection:'column',gap:14 }}>
+                    {authTab==='register' && (
+                      <div>
+                        <label style={{ fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.45)',display:'block',marginBottom:6 }}>Имя <span style={{ color:COR }}>*</span></label>
+                        <input value={form.name} type="text" placeholder="Иван Иванов"
+                          onChange={e=>{setForm(v=>({...v,name:e.target.value}));setAuthError('')}}
+                          onKeyDown={e=>e.key==='Enter'&&handleRegister()}
+                          style={{ width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.05)',color:'#fff',fontSize:14,outline:'none',boxSizing:'border-box' }}
+                          onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'} />
+                      </div>
+                    )}
+
+                    <div>
+                      <label style={{ fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.45)',display:'block',marginBottom:6 }}>Email <span style={{ color:COR }}>*</span></label>
+                      <input value={form.email} type="email" placeholder="ivan@example.com"
+                        onChange={e=>{setForm(v=>({...v,email:e.target.value}));setAuthError('')}}
+                        onKeyDown={e=>e.key==='Enter'&&(authTab==='login'?handleLogin():handleRegister())}
+                        style={{ width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.05)',color:'#fff',fontSize:14,outline:'none',boxSizing:'border-box' }}
+                        onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'} />
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.45)',display:'block',marginBottom:6 }}>Пароль <span style={{ color:COR }}>*</span></label>
+                      <input value={form.password} type="password" placeholder="Минимум 6 символов"
+                        onChange={e=>{setForm(v=>({...v,password:e.target.value}));setAuthError('')}}
+                        onKeyDown={e=>e.key==='Enter'&&(authTab==='login'?handleLogin():handleRegister())}
+                        style={{ width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.05)',color:'#fff',fontSize:14,outline:'none',boxSizing:'border-box' }}
+                        onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'} />
+                    </div>
+
+                    {authTab==='register' && (
+                      <div>
+                        <label style={{ fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.45)',display:'block',marginBottom:6 }}>Подтверди пароль <span style={{ color:COR }}>*</span></label>
+                        <input value={form.confirm} type="password" placeholder="Повтори пароль"
+                          onChange={e=>{setForm(v=>({...v,confirm:e.target.value}));setAuthError('')}}
+                          onKeyDown={e=>e.key==='Enter'&&handleRegister()}
+                          style={{ width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.05)',color:'#fff',fontSize:14,outline:'none',boxSizing:'border-box' }}
+                          onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'} />
+                      </div>
+                    )}
+
+                    {authError && (
+                      <div style={{ padding:'10px 14px',borderRadius:9,background:'rgba(239,68,68,0.12)',border:'1px solid rgba(239,68,68,0.3)',fontSize:13,color:'#fca5a5' }}>
+                        {authError}
+                      </div>
+                    )}
+
+                    <button onClick={authTab==='login'?handleLogin:handleRegister}
+                      style={{ padding:'14px',borderRadius:11,border:'none',background:PUR,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',marginTop:2,boxShadow:`0 6px 22px ${PUR}44`,transition:'all 0.15s' }}>
+                      {authTab==='login' ? 'Войти →' : 'Создать аккаунт →'}
+                    </button>
+
+                    {authTab==='login' && (
+                      <button onClick={()=>{setForgotMode(true);setForgotEmail(form.email);setForgotDone(false)}}
+                        style={{ background:'none',border:'none',color:`${PUR}bb`,fontSize:13,cursor:'pointer',textAlign:'center',padding:'2px 0',textDecoration:'underline',textDecorationStyle:'dotted',textUnderlineOffset:3 }}>
+                        Забыли пароль?
+                      </button>
+                    )}
+
+                    <p style={{ textAlign:'center',fontSize:12,color:'rgba(255,255,255,0.22)',margin:0,lineHeight:1.6 }}>
+                      {authTab==='login' ? 'Нет аккаунта? ' : 'Уже есть аккаунт? '}
+                      <button onClick={()=>switchTab(authTab==='login'?'register':'login')}
+                        style={{ background:'none',border:'none',color:`${PUR}cc`,fontSize:12,cursor:'pointer',padding:0,textDecoration:'underline' }}>
+                        {authTab==='login' ? 'Зарегистрироваться' : 'Войти'}
+                      </button>
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -3794,6 +3873,7 @@ export default function App() {
   const [workoutActive,setWorkoutActive]=useState(false)
   const [pendingWorkoutAction,setPendingWorkoutAction]=useState(null)
   const [showProfileView,setShowProfileView]=useState(false)
+  const [showProfileSheet,setShowProfileSheet]=useState(false)
   const aiRef=useRef()
 
   useEffect(()=>{
@@ -3866,7 +3946,6 @@ export default function App() {
 
   const BOTTOM_NAV_H = 62
   const MOBILE_TOP_H = 48
-  const [showProfileSheet,setShowProfileSheet]=useState(false)
 
   return (
     <>
@@ -3957,7 +4036,7 @@ export default function App() {
                     <span style={{ marginLeft:'auto', fontSize:18, color:'#d1d5db' }}>›</span>
                   </button>
                 ))}
-                <button onClick={()=>{setShowProfileSheet(false);localStorage.removeItem('fitpro_user');setUser(null)}}
+                <button onClick={()=>{setShowProfileSheet(false);clearFitproData();setUser(null)}}
                   style={{ width:'100%', padding:'13px', borderRadius:12, border:'1.5px solid #fee2e2', background:'#fff5f5', color:'#ef4444', fontSize:14, fontWeight:600, cursor:'pointer', marginTop:4 }}>
                   ← Выйти / сменить аккаунт
                 </button>
@@ -3988,7 +4067,7 @@ export default function App() {
             </nav>
             <div style={{ padding:'12px 14px', borderTop:'1px solid #e5e7eb' }}>
               <div style={{ fontSize:12, fontWeight:500, color:'#111' }}>FitPro</div>
-              <button onClick={()=>{localStorage.removeItem('fitpro_user');setUser(null)}}
+              <button onClick={()=>{clearFitproData();setUser(null)}}
                 style={{ fontSize:11, color:'#9ca3af', background:'none', border:'none', cursor:'pointer', padding:0, marginTop:4, display:'block' }}>
                 Выйти →
               </button>
