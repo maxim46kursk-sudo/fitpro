@@ -120,53 +120,56 @@ function NavBtn({ icon, label, active, onClick }) {
 }
 
 // ── Экраны
-function Dashboard({ setNav, setSC }) {
+function Dashboard({ setNav, setSC, isTrainer }) {
   const workoutHistory = (() => { try { return JSON.parse(localStorage.getItem('fitpro_history')||'[]') } catch { return [] } })()
   const foodDiary = (() => { try { return JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}') } catch { return {} } })()
   const foodDays = Object.keys(foodDiary).length
   const chatMsgCount = CLIENTS.reduce((sum,c)=>{
     try { return sum+(JSON.parse(localStorage.getItem(`fitpro_chat_${c.id}`)||'null')||[]).length } catch { return sum }
   },0)
+  const quickActions = [
+    ...(isTrainer?[{icon:'👥',label:'Клиенты',nav:'clients'}]:[]),
+    {icon:'🏋️',label:'Тренировки',nav:'workouts'},
+    {icon:'🥗',label:'Питание',nav:'nutrition'},
+    {icon:'📚',label:'Упражнения',nav:'library'},
+    {icon:'💬',label:'Чат',nav:'chat'},
+    {icon:'📓',label:'Дневник',nav:'progress'},
+  ]
   return (
     <div>
       <div style={{ marginBottom:18 }}>
         <h2 style={{ fontSize:20, fontWeight:500, color:'#111', margin:0 }}>Добро пожаловать 👋</h2>
-        <p style={{ fontSize:13, color:'#6b7280', marginTop:4 }}>Твоя платформа для тренеров</p>
+        <p style={{ fontSize:13, color:'#6b7280', marginTop:4 }}>{isTrainer?'Твоя платформа для тренеров':'Твой фитнес-дневник'}</p>
       </div>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:18 }}>
-        <Metric label="Клиентов" value={CLIENTS.length} icon="👥" color={PUR} />
+      <div style={{ display:'grid', gridTemplateColumns:`repeat(${isTrainer?4:3},1fr)`, gap:10, marginBottom:18 }}>
+        {isTrainer&&<Metric label="Клиентов" value={CLIENTS.length} icon="👥" color={PUR} />}
         <Metric label="Тренировок" value={workoutHistory.length} icon="🏋️" color={TEA} />
         <Metric label="Дней питания" value={foodDays} icon="🥗" color={BLU} />
         <Metric label="Сообщений" value={chatMsgCount||'—'} icon="💬" color={COR} />
       </div>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
-        <Card>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
-            <span style={{ fontWeight:500, color:'#111' }}>Клиенты</span>
-            <button onClick={()=>setNav('clients')} style={{ fontSize:12, color:PUR, border:'none', background:'none', cursor:'pointer' }}>Все →</button>
-          </div>
-          {CLIENTS.map(c=>(
-            <div key={c.id} onClick={()=>{setSC(c);setNav('cdetail')}} style={{ display:'flex', alignItems:'center', gap:9, padding:'7px 0', borderBottom:'1px solid #f3f4f6', cursor:'pointer' }}>
-              <Av lbl={c.av} sz={30} />
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:13, fontWeight:500, color:'#111' }}>{c.name}</div>
-                <div style={{ fontSize:11, color:'#9ca3af' }}>{c.goal}</div>
-                <PBar v={c.progress} color={c.progress>70?TEA:PUR} />
-              </div>
-              <span style={{ fontSize:12, fontWeight:500, color:c.progress>70?TEA:PUR }}>{c.progress}%</span>
+        {isTrainer&&(
+          <Card>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+              <span style={{ fontWeight:500, color:'#111' }}>Клиенты</span>
+              <button onClick={()=>setNav('clients')} style={{ fontSize:12, color:PUR, border:'none', background:'none', cursor:'pointer' }}>Все →</button>
             </div>
-          ))}
-        </Card>
+            {CLIENTS.map(c=>(
+              <div key={c.id} onClick={()=>{setSC(c);setNav('cdetail')}} style={{ display:'flex', alignItems:'center', gap:9, padding:'7px 0', borderBottom:'1px solid #f3f4f6', cursor:'pointer' }}>
+                <Av lbl={c.av} sz={30} />
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:13, fontWeight:500, color:'#111' }}>{c.name}</div>
+                  <div style={{ fontSize:11, color:'#9ca3af' }}>{c.goal}</div>
+                  <PBar v={c.progress} color={c.progress>70?TEA:PUR} />
+                </div>
+                <span style={{ fontSize:12, fontWeight:500, color:c.progress>70?TEA:PUR }}>{c.progress}%</span>
+              </div>
+            ))}
+          </Card>
+        )}
         <Card>
           <div style={{ fontWeight:500, color:'#111', marginBottom:12 }}>Быстрые действия</div>
-          {[
-            {icon:'👥',label:'Клиенты',nav:'clients'},
-            {icon:'🏋️',label:'Тренировки',nav:'workouts'},
-            {icon:'🥗',label:'Питание',nav:'nutrition'},
-            {icon:'📚',label:'Упражнения',nav:'library'},
-            {icon:'💬',label:'Чат',nav:'chat'},
-            {icon:'📓',label:'Дневник',nav:'progress'},
-          ].map(a=>(
+          {quickActions.map(a=>(
             <button key={a.label} onClick={()=>setNav(a.nav)} style={{ width:'100%', display:'flex', alignItems:'center', gap:9, padding:'8px 10px', marginBottom:6, background:'#f9fafb', border:'none', borderRadius:8, cursor:'pointer', textAlign:'left' }}>
               <span>{a.icon}</span><span style={{ fontSize:13, color:'#111' }}>{a.label}</span>
             </button>
@@ -3874,7 +3877,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
 
       {/* Табы */}
       <div style={{display:'flex',gap:0,borderBottom:'1px solid #e5e7eb',background:'#fff',flexShrink:0}}>
-        {[{id:'profile',label:'Профиль'},{id:'measurements',label:'Замеры'},{id:'settings',label:'Настройки'}].map(t=>(
+        {[{id:'profile',label:'Профиль'},{id:'measurements',label:'Замеры'}].map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)} style={{
             flex:1,padding:'13px 0',border:'none',borderBottom:tab===t.id?`2.5px solid ${PUR}`:'2.5px solid transparent',
             background:'none',fontSize:15,fontWeight:tab===t.id?700:500,color:tab===t.id?PUR:'#9ca3af',cursor:'pointer',minHeight:'unset'
@@ -4144,8 +4147,6 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
           </div>
         )}
 
-        {/* ── Настройки ── */}
-        {tab==='settings'&&<SettingsView user={user} />}
       </div>
     </div>
   )
@@ -4154,6 +4155,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
 export default function App() {
   const [user,setUser]=useState(null)
   const [authLoading,setAuthLoading]=useState(true)
+  const [userRole,setUserRole]=useState(()=>localStorage.getItem('fitpro_role')||'client')
   const [nav,setNav]=useState('dashboard')
   const [sc,setSC]=useState(null)
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768)
@@ -4161,7 +4163,20 @@ export default function App() {
   const [pendingWorkoutAction,setPendingWorkoutAction]=useState(null)
   const [showProfileView,setShowProfileView]=useState(false)
   const [showProfileSheet,setShowProfileSheet]=useState(false)
+  const [showSettingsView,setShowSettingsView]=useState(false)
   const aiRef=useRef()
+
+  // Проверка ?trainer=1 в URL при загрузке
+  useEffect(()=>{
+    const params=new URLSearchParams(window.location.search)
+    if(params.get('trainer')==='1'){
+      localStorage.setItem('fitpro_role','trainer')
+      setUserRole('trainer')
+      params.delete('trainer')
+      const newUrl=window.location.pathname+(params.toString()?'?'+params.toString():'')
+      window.history.replaceState({},'',newUrl)
+    }
+  },[])
 
   const mergeUserWithProfile=(supaUser)=>{
     if(!supaUser)return null
@@ -4245,7 +4260,7 @@ export default function App() {
   const renderMain=()=>{
     if(nav==='cdetail'&&sc)return <ClientDetail client={sc} goBack={()=>handleNav('clients')} />
     switch(nav){
-      case 'dashboard': return <Dashboard setNav={handleNav} setSC={setSC} />
+      case 'dashboard': return <Dashboard setNav={handleNav} setSC={setSC} isTrainer={userRole==='trainer'} />
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} />
       case 'workouts':  return <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>setEditTarget(null)} onWorkoutActiveChange={setWorkoutActive} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} onOpenAI={m=>aiRef.current?.open(m)} />
       case 'nutrition': return <NutritionView userId={user?.id} />
@@ -4315,7 +4330,7 @@ export default function App() {
             background:'#fff', borderTop:'1px solid #e5e7eb',
             display:'flex', height:BOTTOM_NAV_H, zIndex:900,
           }}>
-            {NAV_MOBILE.filter(item=>user.role==='client'?item.id!=='clients':true).map(item=>{
+            {NAV_MOBILE.filter(item=>userRole==='trainer'||item.id!=='clients').map(item=>{
               const active=nav===item.id||(nav==='cdetail'&&item.id==='clients')
               return (
                 <button key={item.id} onClick={()=>handleNav(item.id)} style={{
@@ -4341,7 +4356,10 @@ export default function App() {
                 <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20, padding:'0 2px' }}>
                   <Av lbl={user.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={48} photo={user.photoURL} gender={user.gender} />
                   <div>
-                    <div style={{ fontSize:17, fontWeight:700, color:'#111' }}>{user.name}</div>
+                    <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+                      <span style={{ fontSize:17, fontWeight:700, color:'#111' }}>{user.name}</span>
+                      {userRole==='trainer'&&<span style={{ fontSize:11, fontWeight:700, color:PUR, background:`${PUR}18`, borderRadius:6, padding:'2px 7px' }}>Тренер</span>}
+                    </div>
                     <div style={{ fontSize:12, color:'#9ca3af', marginTop:2 }}>{user.email}</div>
                   </div>
                 </div>
@@ -4349,6 +4367,7 @@ export default function App() {
                 {[
                   { icon:'👤', label:'Мои данные',  sub:'Профиль, замеры и динамика',    action:()=>{ setShowProfileSheet(false); setShowProfileView(true) } },
                   { icon:'📊', label:'Мой прогресс', sub:'Тоннаж, тренировки, питание', action:()=>{ setShowProfileSheet(false); handleNav('progress') } },
+                  { icon:'⚙️', label:'Настройки',   sub:'Уведомления, единицы, данные',  action:()=>{ setShowProfileSheet(false); setShowSettingsView(true) } },
                 ].map((item,i)=>(
                   <button key={i} onClick={item.action} style={{ width:'100%', display:'flex', alignItems:'center', gap:14, padding:'14px 16px', borderRadius:14, border:'1px solid #f3f4f6', background:'#fafafa', cursor:'pointer', marginBottom:10, textAlign:'left' }}>
                     <span style={{ fontSize:24 }}>{item.icon}</span>
@@ -4367,31 +4386,32 @@ export default function App() {
             </>
           )}
 
-          {/* Экран "Мои данные" */}
-          {showProfileView&&<ProfileView user={user} onClose={()=>setShowProfileView(false)} onOpenAI={m=>aiRef.current?.open(m)} onUserUpdate={u=>setUser(u)} />}
         </div>
       ) : (
         /* ── ДЕСКТОПНЫЙ LAYOUT ── */
         <div style={{ display:'flex', minHeight:'100vh', fontFamily:'system-ui,sans-serif', background:'#f9fafb' }}>
           <div style={{ width:190, background:'#fff', borderRight:'1px solid #e5e7eb', display:'flex', flexDirection:'column', flexShrink:0 }}>
             <div style={{ padding:'16px 14px 12px', borderBottom:'1px solid #e5e7eb' }}>
-              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <div onClick={()=>setShowProfileView(true)} style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
                 <Av lbl={user.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={34} photo={user.photoURL} gender={user.gender} />
                 <div style={{ minWidth:0 }}>
                   <div style={{ fontSize:13, fontWeight:500, color:'#111', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{user.name.split(' ')[0]}</div>
-                  <div style={{ fontSize:11, color:'#9ca3af' }}>{user.role==='trainer'?'Тренер':'Клиент'}</div>
+                  <div style={{ fontSize:11, color:'#9ca3af' }}>{userRole==='trainer'?'Тренер':'Клиент'}</div>
                 </div>
               </div>
             </div>
             <nav style={{ padding:'8px', flex:1 }}>
-              {NAV.filter(item=>user.role==='client'?item.id!=='clients':true).map(item=>(
+              {NAV.filter(item=>userRole==='trainer'||item.id!=='clients').map(item=>(
                 <NavBtn key={item.id} {...item} active={nav===item.id||(nav==='cdetail'&&item.id==='clients')} onClick={()=>handleNav(item.id)} />
               ))}
             </nav>
             <div style={{ padding:'12px 14px', borderTop:'1px solid #e5e7eb' }}>
-              <div style={{ fontSize:12, fontWeight:500, color:'#111' }}>FitPro</div>
+              <button onClick={()=>setShowSettingsView(true)}
+                style={{ display:'flex',alignItems:'center',gap:7,fontSize:12,color:'#6b7280',background:'none',border:'none',cursor:'pointer',padding:'4px 0',marginBottom:4,width:'100%' }}>
+                <span>⚙️</span> Настройки
+              </button>
               <button onClick={async()=>{await supabase.auth.signOut();clearFitproData()}}
-                style={{ fontSize:11, color:'#9ca3af', background:'none', border:'none', cursor:'pointer', padding:0, marginTop:4, display:'block' }}>
+                style={{ fontSize:11, color:'#9ca3af', background:'none', border:'none', cursor:'pointer', padding:0, marginTop:2, display:'block' }}>
                 Выйти →
               </button>
             </div>
@@ -4401,6 +4421,22 @@ export default function App() {
           </div>
         </div>
       )}
+      {/* Экран "Мои данные" (mobile + desktop) */}
+      {showProfileView&&<ProfileView user={user} onClose={()=>setShowProfileView(false)} onOpenAI={m=>aiRef.current?.open(m)} onUserUpdate={u=>setUser(u)} />}
+
+      {/* Экран "Настройки" (mobile + desktop) */}
+      {showSettingsView&&(
+        <div style={{position:'fixed',inset:0,background:'#f9fafb',zIndex:1060,display:'flex',flexDirection:'column',fontFamily:'system-ui,sans-serif'}}>
+          <div style={{background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
+            <button onClick={()=>setShowSettingsView(false)} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset'}}>←</button>
+            <span style={{fontSize:18,fontWeight:800,color:'#111',flex:1}}>Настройки</span>
+          </div>
+          <div style={{flex:1,overflowY:'auto'}}>
+            <SettingsView user={user} />
+          </div>
+        </div>
+      )}
+
       <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} />
     </>
   )
