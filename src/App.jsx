@@ -2280,7 +2280,7 @@ function DateScroller({ value, onChange }) {
 }
 
 // ── Дневник
-function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, onOpenAI }) {
+function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, onOpenAI, userId }) {
   const [section, setSection] = useState(null)
   // tonnage
   const [period,setPeriod]=useState('all')
@@ -3279,11 +3279,11 @@ const NAV=[
   {id:'progress',icon:'📓',label:'Дневник'},
 ]
 const NAV_MOBILE=[
-  {id:'dashboard',icon:'🏠',label:'Главная'},
   {id:'workouts',icon:'🏋️',label:'Тренировки'},
   {id:'nutrition',icon:'🥗',label:'Питание'},
   {id:'library',icon:'📚',label:'Упражнения'},
   {id:'progress',icon:'📓',label:'Дневник'},
+  {id:'chat',icon:'💬',label:'Чат'},
   {id:'clients',icon:'👥',label:'Клиенты'},
 ]
 
@@ -3612,6 +3612,26 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
     },420)
     return()=>clearTimeout(t)
   },[profile.goal])
+  // Отображаемое значение даты рождения в формате ДД.ММ.ГГГГ
+  const isoToDisplay=(iso)=>{if(!iso)return'';const[y,m,d]=iso.split('-');return`${d}.${m}.${y}`}
+  const [birthdateInput,setBirthdateInput]=useState(()=>isoToDisplay(profile.birthdate||''))
+  const handleBirthdateChange=(v)=>{
+    // Оставляем только цифры и точки
+    let s=v.replace(/[^0-9.]/g,'')
+    // Автовставка точек
+    if(s.length===2&&!s.includes('.'))s+='.'
+    if(s.length===5&&s.split('.').length===2)s+='.'
+    setBirthdateInput(s)
+    // Когда введено полное ДД.ММ.ГГГГ — сохраняем в ISO
+    const p=s.split('.')
+    if(p.length===3&&p[0].length===2&&p[1].length===2&&p[2].length===4){
+      const iso=`${p[2]}-${p[1]}-${p[0]}`
+      if(!isNaN(new Date(iso)))setProfile(prev=>({...prev,birthdate:iso}))
+    } else if(!s){
+      setProfile(prev=>({...prev,birthdate:''}))
+    }
+  }
+
   const [measurements,setMeasurements]=useState(()=>{
     try{return JSON.parse(localStorage.getItem('fitpro_measurements')||'[]')}catch{return[]}
   })
@@ -3728,12 +3748,12 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
               </div>
             ))}
             {/* Физические данные */}
-            {/* Дата рождения — нативный date picker */}
+            {/* Дата рождения — текстовое поле ДД.ММ.ГГГГ */}
             <div>
               <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Дата рождения</label>
-              <input value={profile.birthdate||''} type="date" max={new Date().toISOString().slice(0,10)}
-                onChange={e=>setProfile(p=>({...p,birthdate:e.target.value}))}
-                style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:profile.birthdate?'#111':'#9ca3af',outline:'none',boxSizing:'border-box',background:'#fff',colorScheme:'light'}}
+              <input value={birthdateInput} type="text" inputMode="numeric" placeholder="ДД.ММ.ГГГГ" maxLength={10}
+                onChange={e=>handleBirthdateChange(e.target.value)}
+                style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:birthdateInput?'#111':'#9ca3af',outline:'none',boxSizing:'border-box',background:'#fff'}}
                 onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
             </div>
             {/* Рост и Вес */}
@@ -4043,7 +4063,7 @@ export default function App() {
       case 'nutrition': return <NutritionView userId={user?.id} />
       case 'library':   return <LibraryView customExercises={customExercises} />
       case 'chat':      return <ChatView />
-      case 'progress':  return <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} />
+      case 'progress':  return <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} />
       default:          return null
     }
   }
@@ -4062,6 +4082,17 @@ export default function App() {
         @media (max-width: 767px) {
           button { min-height: 44px; }
           input, select, textarea { min-height: 44px; font-size: 16px !important; }
+          /* Базовые размеры шрифтов на мобильном */
+          body { font-size: 15px; }
+          h1, h2, h3, h4 { font-size: 16px !important; }
+          .mobile-content span[style*="font-size:11"],
+          .mobile-content span[style*="font-size: 11"] { font-size: 13px !important; }
+          .mobile-content div[style*="font-size:11"],
+          .mobile-content div[style*="font-size: 11"] { font-size: 13px !important; }
+          .mobile-content span[style*="font-size:12"],
+          .mobile-content span[style*="font-size: 12"] { font-size: 13px !important; }
+          .mobile-content div[style*="font-size:12"],
+          .mobile-content div[style*="font-size: 12"] { font-size: 13px !important; }
         }
 
         /* Safe area под iPhone (notch/home bar) */
