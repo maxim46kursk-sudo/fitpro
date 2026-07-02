@@ -10,6 +10,7 @@ const saveChat  = (m, msgs) => { try { localStorage.setItem(CHAT_KEY(m), JSON.st
 
 // Ключ из переменной окружения (подставляется Vite при сборке на Vercel)
 const ENV_KEY = (import.meta.env.VITE_ANTHROPIC_KEY || '').trim()
+console.log('API KEY:', ENV_KEY ? 'есть' : 'нет')
 
 const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMobile = false, nutritionPlans = [] }, ref) {
   const [isOpen, setIsOpen]         = useState(false)

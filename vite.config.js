@@ -7,4 +7,7 @@ export default defineConfig({
   server: {
     allowedHosts: true,
   },
+  define: {
+    'import.meta.env.VITE_ANTHROPIC_KEY': JSON.stringify(process.env.VITE_ANTHROPIC_KEY)
+  }
 })
