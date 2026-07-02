@@ -19,7 +19,6 @@ const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMob
   const [showKeyModal, setShowKeyModal] = useState(false)
   const [savedMsgIds, setSavedMsgIds] = useState({})
   const [diaryDatePicker, setDiaryDatePicker] = useState(null)
-  const [refreshNotif, setRefreshNotif] = useState(false)
   const todayISO = (() => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}` })()
   const [pickerDate, setPickerDate] = useState(todayISO)
   const messagesEndRef = useRef(null)
@@ -532,7 +531,7 @@ ${mode === 'workout'
 
   const HINTS = {
     workout: ['С каким весом приседать?', 'Прогресс за месяц?', 'Жим лёжа — прибавить?'],
-    nutrition: ['Можно шоколадку?', 'Что съесть после тренировки?', 'Сколько белка осталось?'],
+    nutrition: ['Какой рацион мне подойдет?', 'Что съесть после тренировки?', 'Можно ли мне алкоголь?'],
   }
 
   const BTN_BOTTOM = isMobile ? 78 : 24
@@ -585,29 +584,6 @@ ${mode === 'workout'
               <div style={{ fontSize: 15, fontWeight: 700, color: '#111', lineHeight: 1.2 }}>AI Ассистент</div>
               <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 500 }}>● онлайн</div>
             </div>
-            <button onClick={async () => {
-                if (userId) await supabase.from('chat_messages').delete().eq('user_id', userId)
-                setMessages([])
-                setRefreshNotif(true)
-                setTimeout(() => setRefreshNotif(false), 2500)
-              }} style={{
-                background: refreshNotif ? '#f0fdf4' : 'none',
-                border: `1px solid ${refreshNotif ? '#22c55e' : '#e5e7eb'}`,
-                borderRadius: 8, padding: '5px 10px', fontSize: 11,
-                color: refreshNotif ? '#22c55e' : '#9ca3af',
-                cursor: 'pointer', minHeight: 'unset', transition: 'all 0.2s',
-              }} title="Обновить данные">
-              {refreshNotif ? '✓ Обновлено' : '↻'}
-            </button>
-            {messages.length > 0 && (
-              <button onClick={async () => {
-                if (userId) await supabase.from('chat_messages').delete().eq('user_id', userId)
-                setMessages([])
-              }} style={{
-                background: 'none', border: '1px solid #e5e7eb', borderRadius: 8,
-                padding: '5px 10px', fontSize: 11, color: '#9ca3af', cursor: 'pointer', minHeight: 'unset',
-              }} title="Очистить историю чата">🗑</button>
-            )}
             {new URLSearchParams(window.location.search).get('dev') === '1' && (
               <button onClick={() => setShowKeyModal(true)} style={{
                 background: 'none', border: '1px solid #e5e7eb', borderRadius: 8,

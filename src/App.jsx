@@ -3584,6 +3584,191 @@ function LandingPage({ onEnter }) {
   )
 }
 
+// ── SettingsView ─────────────────────────────────────────────────────────────
+function SettingsView({ user }) {
+  const load=(k,def)=>{try{return JSON.parse(localStorage.getItem(k)??'null')??def}catch{return def}}
+  const [notifs,setNotifs]=useState(()=>load('fitpro_notifs',{workout:false,diary:false,report:false}))
+  const [units,setUnits]=useState(()=>load('fitpro_units',{weight:'kg',height:'cm'}))
+  const [lang,setLang]=useState(()=>load('fitpro_lang','ru'))
+  const [chatCount,setChatCount]=useState(null)
+  const [clearConfirm,setClearConfirm]=useState(false)
+  const [deleteConfirm,setDeleteConfirm]=useState(false)
+  const [dataMsg,setDataMsg]=useState('')
+
+  useEffect(()=>{
+    if(!user?.id)return
+    supabase.from('chat_messages').select('*',{count:'exact',head:true}).eq('user_id',user.id)
+      .then(({count})=>setChatCount(count??0))
+  },[user?.id])
+
+  const saveNotifs=(next)=>{setNotifs(next);localStorage.setItem('fitpro_notifs',JSON.stringify(next))}
+  const saveUnits=(next)=>{setUnits(next);localStorage.setItem('fitpro_units',JSON.stringify(next))}
+  const saveLang=(v)=>{setLang(v);localStorage.setItem('fitpro_lang',v)}
+
+  const clearChat=async()=>{
+    if(!user?.id)return
+    await supabase.from('chat_messages').delete().eq('user_id',user.id)
+    setChatCount(0);setClearConfirm(false)
+  }
+
+  const deleteAll=async()=>{
+    if(!user?.id)return
+    await supabase.from('chat_messages').delete().eq('user_id',user.id)
+    await supabase.from('food_diary').delete().eq('user_id',user.id)
+    await supabase.from('food_goals').delete().eq('user_id',user.id)
+    Object.keys(localStorage).filter(k=>k.startsWith('fitpro_')).forEach(k=>localStorage.removeItem(k))
+    await supabase.auth.signOut()
+  }
+
+  const Toggle=({on,onToggle})=>(
+    <button onClick={onToggle} style={{
+      width:44,height:24,borderRadius:12,border:'none',cursor:'pointer',padding:0,
+      background:on?PUR:'#d1d5db',transition:'background 0.2s',position:'relative',flexShrink:0,minHeight:'unset',
+    }}>
+      <span style={{
+        position:'absolute',top:2,left:on?22:2,width:20,height:20,borderRadius:'50%',
+        background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 3px #0002',display:'block',
+      }}/>
+    </button>
+  )
+
+  const Row=({label,sub,right})=>(
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 0',borderBottom:'1px solid #f3f4f6'}}>
+      <div>
+        <div style={{fontSize:15,color:'#111',fontWeight:500}}>{label}</div>
+        {sub&&<div style={{fontSize:12,color:'#9ca3af',marginTop:2}}>{sub}</div>}
+      </div>
+      {right}
+    </div>
+  )
+
+  const Section=({title,children})=>(
+    <div style={{background:'#fff',borderRadius:14,padding:'0 16px',marginBottom:14,boxShadow:'0 1px 4px #0000000a'}}>
+      <div style={{fontSize:12,fontWeight:700,color:'#9ca3af',padding:'14px 0 6px',letterSpacing:'0.5px',textTransform:'uppercase'}}>{title}</div>
+      {children}
+    </div>
+  )
+
+  return(
+    <div style={{padding:'16px 16px 40px',display:'flex',flexDirection:'column',gap:0}}>
+
+      {/* Уведомления */}
+      <Section title="Уведомления">
+        <Row label="Напоминание о тренировке" right={<Toggle on={notifs.workout} onToggle={()=>saveNotifs({...notifs,workout:!notifs.workout})}/>}/>
+        <Row label="Заполнить дневник питания вечером" right={<Toggle on={notifs.diary} onToggle={()=>saveNotifs({...notifs,diary:!notifs.diary})}/>}/>
+        <Row label="Еженедельный отчёт на почту" right={<Toggle on={notifs.report} onToggle={()=>saveNotifs({...notifs,report:!notifs.report})}/>}/>
+      </Section>
+
+      {/* Единицы измерения */}
+      <Section title="Единицы измерения">
+        <Row label="Вес" right={
+          <div style={{display:'flex',gap:4}}>
+            {['kg','lbs'].map(v=>(
+              <button key={v} onClick={()=>saveUnits({...units,weight:v})} style={{
+                padding:'5px 12px',borderRadius:8,border:`1.5px solid ${units.weight===v?PUR:'#e5e7eb'}`,
+                background:units.weight===v?`${PUR}15`:'#fff',color:units.weight===v?PUR:'#6b7280',
+                fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset',
+              }}>{v}</button>
+            ))}
+          </div>
+        }/>
+        <Row label="Рост" right={
+          <div style={{display:'flex',gap:4}}>
+            {['cm','in'].map(v=>(
+              <button key={v} onClick={()=>saveUnits({...units,height:v})} style={{
+                padding:'5px 12px',borderRadius:8,border:`1.5px solid ${units.height===v?PUR:'#e5e7eb'}`,
+                background:units.height===v?`${PUR}15`:'#fff',color:units.height===v?PUR:'#6b7280',
+                fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset',
+              }}>{v}</button>
+            ))}
+          </div>
+        }/>
+      </Section>
+
+      {/* История чата */}
+      <Section title="История чата">
+        <Row label="Сохранено сообщений" sub="История очищается раз в 30 дней" right={
+          <span style={{fontSize:15,fontWeight:700,color:PUR}}>{chatCount===null?'...' :chatCount}</span>
+        }/>
+        <div style={{padding:'6px 0 14px'}}>
+          <div style={{fontSize:12,color:'#9ca3af',marginBottom:10}}>История автоматически очищается раз в 30 дней. Перед очисткой вы получите письмо с архивом на ваш email.</div>
+          {!clearConfirm?(
+            <button onClick={()=>setClearConfirm(true)} style={{
+              width:'100%',padding:'11px',borderRadius:10,border:'1.5px solid #fee2e2',
+              background:'#fff5f5',color:'#ef4444',fontSize:14,fontWeight:600,cursor:'pointer',minHeight:'unset',
+            }}>Очистить историю чата</button>
+          ):(
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={clearChat} style={{flex:1,padding:'11px',borderRadius:10,border:'none',background:'#ef4444',color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset'}}>Удалить</button>
+              <button onClick={()=>setClearConfirm(false)} style={{flex:1,padding:'11px',borderRadius:10,border:'1.5px solid #e5e7eb',background:'#fff',color:'#6b7280',fontSize:14,cursor:'pointer',minHeight:'unset'}}>Отмена</button>
+            </div>
+          )}
+        </div>
+      </Section>
+
+      {/* Конфиденциальность */}
+      <Section title="Конфиденциальность">
+        {dataMsg&&<div style={{padding:'10px 0',fontSize:13,color:TEA,fontWeight:500}}>{dataMsg}</div>}
+        <div style={{paddingBottom:14,display:'flex',flexDirection:'column',gap:8}}>
+          <button onClick={()=>{setDataMsg('✓ Данные будут отправлены на ваш email');setTimeout(()=>setDataMsg(''),4000)}} style={{
+            width:'100%',padding:'11px',borderRadius:10,border:'1.5px solid #e5e7eb',
+            background:'#fff',color:'#111',fontSize:14,fontWeight:500,cursor:'pointer',minHeight:'unset',textAlign:'left',
+          }}>📤 Скачать мои данные</button>
+          {!deleteConfirm?(
+            <button onClick={()=>setDeleteConfirm(true)} style={{
+              width:'100%',padding:'11px',borderRadius:10,border:'1.5px solid #fee2e2',
+              background:'#fff5f5',color:'#ef4444',fontSize:14,fontWeight:600,cursor:'pointer',minHeight:'unset',
+            }}>🗑 Удалить все мои данные</button>
+          ):(
+            <div style={{background:'#fff5f5',borderRadius:12,padding:'14px',border:'1.5px solid #fecaca'}}>
+              <div style={{fontSize:14,fontWeight:600,color:'#ef4444',marginBottom:10}}>Удалить все данные?</div>
+              <div style={{fontSize:13,color:'#6b7280',marginBottom:12}}>Это действие необратимо. Все тренировки, питание и история чата будут удалены.</div>
+              <div style={{display:'flex',gap:8}}>
+                <button onClick={deleteAll} style={{flex:1,padding:'11px',borderRadius:10,border:'none',background:'#ef4444',color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset'}}>Удалить всё</button>
+                <button onClick={()=>setDeleteConfirm(false)} style={{flex:1,padding:'11px',borderRadius:10,border:'1.5px solid #e5e7eb',background:'#fff',color:'#6b7280',fontSize:14,cursor:'pointer',minHeight:'unset'}}>Отмена</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </Section>
+
+      {/* Язык */}
+      <Section title="Язык">
+        <Row label="Язык приложения" right={
+          <div style={{display:'flex',gap:4}}>
+            {[['ru','Русский'],['en','English']].map(([v,lbl])=>(
+              <button key={v} onClick={()=>saveLang(v)} style={{
+                padding:'5px 12px',borderRadius:8,border:`1.5px solid ${lang===v?PUR:'#e5e7eb'}`,
+                background:lang===v?`${PUR}15`:'#fff',color:lang===v?PUR:'#6b7280',
+                fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset',
+              }}>{lbl}</button>
+            ))}
+          </div>
+        }/>
+      </Section>
+
+      {/* Поддержка */}
+      <Section title="Поддержка">
+        {[
+          {label:'Написать тренеру',icon:'💬',url:'https://t.me/maxim_athlete'},
+          {label:'Поддержка',icon:'🛟',url:'https://t.me/fitpro_supportt'},
+          {label:'Сообщить об ошибке',icon:'🐛',url:'https://t.me/fitpro_supportt'},
+        ].map(item=>(
+          <a key={item.label} href={item.url} target="_blank" rel="noopener noreferrer" style={{
+            display:'flex',alignItems:'center',gap:12,padding:'13px 0',
+            borderBottom:'1px solid #f3f4f6',textDecoration:'none',color:'#111',
+          }}>
+            <span style={{fontSize:18}}>{item.icon}</span>
+            <span style={{fontSize:15,fontWeight:500,flex:1}}>{item.label}</span>
+            <span style={{fontSize:16,color:'#9ca3af'}}>›</span>
+          </a>
+        ))}
+      </Section>
+
+    </div>
+  )
+}
+
 // ── ProfileView ──────────────────────────────────────────────────────────────
 function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
   const [tab,setTab]=useState('profile')
@@ -3689,7 +3874,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
 
       {/* Табы */}
       <div style={{display:'flex',gap:0,borderBottom:'1px solid #e5e7eb',background:'#fff',flexShrink:0}}>
-        {[{id:'profile',label:'Профиль'},{id:'measurements',label:'Замеры'}].map(t=>(
+        {[{id:'profile',label:'Профиль'},{id:'measurements',label:'Замеры'},{id:'settings',label:'Настройки'}].map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)} style={{
             flex:1,padding:'13px 0',border:'none',borderBottom:tab===t.id?`2.5px solid ${PUR}`:'2.5px solid transparent',
             background:'none',fontSize:15,fontWeight:tab===t.id?700:500,color:tab===t.id?PUR:'#9ca3af',cursor:'pointer',minHeight:'unset'
@@ -3958,6 +4143,9 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
             )}
           </div>
         )}
+
+        {/* ── Настройки ── */}
+        {tab==='settings'&&<SettingsView user={user} />}
       </div>
     </div>
   )
