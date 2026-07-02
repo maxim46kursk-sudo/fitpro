@@ -1,21 +1,16 @@
 import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react'
+import { supabase } from './supabase.js'
 
 const PUR = '#7F77DD'
-
 const TEA = '#1D9E75'
-
-const CHAT_KEY = (m) => `fitpro_chat_${m}`
-const loadChat  = (m) => { try { return JSON.parse(localStorage.getItem(CHAT_KEY(m)) || '[]') } catch { return [] } }
-const saveChat  = (m, msgs) => { try { localStorage.setItem(CHAT_KEY(m), JSON.stringify(msgs)) } catch {} }
 
 // Ключ из переменной окружения (подставляется Vite при сборке на Vercel)
 const ENV_KEY = (import.meta.env.VITE_ANTHROPIC_KEY || '').trim()
-console.log('API KEY:', ENV_KEY ? 'есть' : 'нет')
 
-const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMobile = false, nutritionPlans = [] }, ref) {
+const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMobile = false, nutritionPlans = [], userId = null }, ref) {
   const [isOpen, setIsOpen]         = useState(false)
   const [mode, setMode]             = useState('workout')
-  const [messages, setMessages]     = useState(() => loadChat('workout'))
+  const [messages, setMessages]     = useState([])
   const [input, setInput]           = useState('')
   const [loading, setLoading]       = useState(false)
   // ENV_KEY — приоритет. Если пустой — берём из localStorage (ручной ввод)
@@ -34,16 +29,21 @@ const AIAssistant = forwardRef(function AIAssistant({ workoutHistory = [], isMob
     open: (m) => {
       if (m && m !== mode) {
         setMode(m)
-        setMessages(loadChat(m))
+        setMessages([])
       }
       setIsOpen(true)
     }
   }))
 
-  // Сохраняем историю чата при каждом изменении сообщений
+  // Загрузка истории чата из Supabase при открытии или смене режима
   useEffect(() => {
-    saveChat(mode, messages)
-  }, [messages, mode])
+    if (!isOpen || !userId) return
+    supabase.from('chat_messages').select('*')
+      .eq('user_id', userId).eq('mode', mode).order('created_at')
+      .then(({ data }) => {
+        if (data) setMessages(data.map(m => ({ role: m.role, content: m.content })))
+      })
+  }, [mode, isOpen, userId])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -351,11 +351,19 @@ ${mode === 'workout'
           try {
             const entry = JSON.parse(diaryMatch[1])
             const date = new Date().toISOString().slice(0, 10)
+            const newId = Date.now()
             const raw = localStorage.getItem('fitpro_food_diary')
             const diary = raw ? JSON.parse(raw) : {}
-            diary[date] = [...(diary[date] || []), { id: Date.now(), ...entry }]
+            diary[date] = [...(diary[date] || []), { id: newId, ...entry }]
             localStorage.setItem('fitpro_food_diary', JSON.stringify(diary))
             window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
+            if (userId) {
+              supabase.from('food_diary').insert({
+                user_id: userId, date,
+                name: entry.name, kcal: +entry.kcal||0,
+                p: +entry.p||0, c: +entry.c||0, f: +entry.f||0,
+              })
+            }
             diaryWritten = true
           } catch {}
           rawText = rawText.replace(/\[DIARY_ENTRY:[^\]]+\]/g, '').trim()
@@ -366,9 +374,14 @@ ${mode === 'workout'
         if (goalsMatch) {
           try {
             const goals = JSON.parse(goalsMatch[1])
-            const existing = (() => { try { return JSON.parse(localStorage.getItem('fitpro_food_goals') || '{}') } catch { return {} } })()
-            localStorage.setItem('fitpro_food_goals', JSON.stringify({ ...existing, ...goals }))
+            let existing = {}
+            try { existing = JSON.parse(localStorage.getItem('fitpro_food_goals') || '{}') } catch {}
+            const merged = { ...existing, ...goals }
+            localStorage.setItem('fitpro_food_goals', JSON.stringify(merged))
             window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
+            if (userId) {
+              supabase.from('food_goals').upsert({ user_id: userId, ...merged, updated_at: new Date().toISOString() })
+            }
             actionDone = 'goals_set'
           } catch {}
           rawText = rawText.replace(/\[SET_GOALS:[^\]]+\]/g, '').trim()
@@ -387,6 +400,7 @@ ${mode === 'workout'
             }
             localStorage.setItem('fitpro_food_diary', JSON.stringify(diary))
             window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
+            if (userId) supabase.from('food_diary').delete().eq('id', id)
             actionDone = 'entry_deleted'
           } catch {}
           rawText = rawText.replace(/\[DELETE_ENTRY:[^\]]+\]/g, '').trim()
@@ -408,6 +422,13 @@ ${mode === 'workout'
         }
 
         setMessages(prev => [...prev, { role: 'assistant', content: rawText, diaryWritten, actionDone }])
+        // Сохраняем оба сообщения в Supabase
+        if (userId) {
+          await supabase.from('chat_messages').insert([
+            { user_id: userId, mode, role: 'user', content: userMsg.content },
+            { user_id: userId, mode, role: 'assistant', content: rawText },
+          ])
+        }
       } else if (res.status === 401) {
         if (ENV_KEY) {
           setMessages(prev => [...prev, { role: 'assistant', content: '❌ Ошибка авторизации. Проверьте переменную VITE_ANTHROPIC_KEY на сервере.' }])
@@ -479,10 +500,17 @@ ${mode === 'workout'
     }
 
     if (entries.length === 0) return
-    const diary = (() => { try { return JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}') } catch { return {} } })()
+    let diary = {}
+    try { diary = JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}') } catch {}
     diary[date] = [...(diary[date] || []), ...entries]
     localStorage.setItem('fitpro_food_diary', JSON.stringify(diary))
     window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
+    if (userId) {
+      supabase.from('food_diary').insert(entries.map(e => ({
+        user_id: userId, date, name: e.name,
+        kcal: +e.kcal||0, p: +e.p||0, c: +e.c||0, f: +e.f||0,
+      })))
+    }
     setSavedMsgIds(prev => ({ ...prev, [msgId]: date }))
     setDiaryDatePicker(null)
   }
@@ -557,8 +585,8 @@ ${mode === 'workout'
               <div style={{ fontSize: 15, fontWeight: 700, color: '#111', lineHeight: 1.2 }}>AI Ассистент</div>
               <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 500 }}>● онлайн</div>
             </div>
-            <button onClick={() => {
-                saveChat('workout', []); saveChat('nutrition', [])
+            <button onClick={async () => {
+                if (userId) await supabase.from('chat_messages').delete().eq('user_id', userId)
                 setMessages([])
                 setRefreshNotif(true)
                 setTimeout(() => setRefreshNotif(false), 2500)
@@ -572,7 +600,10 @@ ${mode === 'workout'
               {refreshNotif ? '✓ Обновлено' : '↻'}
             </button>
             {messages.length > 0 && (
-              <button onClick={() => { saveChat('workout', []); saveChat('nutrition', []); setMessages([]) }} style={{
+              <button onClick={async () => {
+                if (userId) await supabase.from('chat_messages').delete().eq('user_id', userId)
+                setMessages([])
+              }} style={{
                 background: 'none', border: '1px solid #e5e7eb', borderRadius: 8,
                 padding: '5px 10px', fontSize: 11, color: '#9ca3af', cursor: 'pointer', minHeight: 'unset',
               }} title="Очистить историю чата">🗑</button>

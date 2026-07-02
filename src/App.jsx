@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import AIAssistant from './AIAssistant'
+import { supabase } from './supabase.js'
 import './App.css'
 
 const PUR = '#7F77DD'
@@ -1812,7 +1813,7 @@ const NUTRITION_PLANS=[
 const DAY_NAMES=['Пн','Вт','Ср','Чт','Пт','Сб','Вс']
 const MEAL_ICONS={'Завтрак':'🌅','Перекус':'🍎','Обед':'🍽️','Ужин':'🌙'}
 
-function NutritionView(){
+function NutritionView({ userId }){
   const [openPlan,setOpenPlan]=useState(null)
   const [openDay,setOpenDay]=useState(null)
   const [logDate,setLogDate]=useState(()=>{const t=new Date();return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`})
@@ -1820,10 +1821,7 @@ function NutritionView(){
   const [showLogDatePicker,setShowLogDatePicker]=useState(false)
   const logCalInputRef=useRef(null)
 
-  const applyToFoodDiary=(day,date)=>{
-    const raw=localStorage.getItem('fitpro_food_diary')
-    const diary=raw?JSON.parse(raw):{}
-    const existing=diary[date]||[]
+  const applyToFoodDiary=async(day,date)=>{
     const newEntries=day.meals.map((meal,i)=>({
       id:Date.now()+i,
       name:`${meal.name}${meal.time?' ('+meal.time+')':''}`,
@@ -1833,7 +1831,15 @@ function NutritionView(){
       f:String(meal.f),
       items:meal.items||[],
     }))
-    diary[date]=[...existing,...newEntries]
+    if(userId){
+      await supabase.from('food_diary').insert(newEntries.map(e=>({
+        user_id:userId, date, name:e.name,
+        kcal:+e.kcal||0, p:+e.p||0, c:+e.c||0, f:+e.f||0,
+      })))
+    }
+    const raw=localStorage.getItem('fitpro_food_diary')
+    const diary=raw?JSON.parse(raw):{}
+    diary[date]=[...(diary[date]||[]),...newEntries]
     localStorage.setItem('fitpro_food_diary',JSON.stringify(diary))
     window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
     setLogDone(true)
@@ -2318,7 +2324,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const fmtFull=d=>new Date(d).toLocaleDateString('ru',{day:'numeric',month:'long',year:'numeric'})
 
   // ── питание дневник
-  const [foodDiary,setFoodDiary]=useState(()=>JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'))
+  const [foodDiary,setFoodDiary]=useState({})
   const [foodDate,setFoodDate]=useState(()=>{const t=new Date();return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`})
   const [showFoodForm,setShowFoodForm]=useState(false)
   const [foodForm,setFoodForm]=useState({name:'',kcal:'',p:'',c:'',f:''})
@@ -2329,29 +2335,93 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const [calPickerMonth,setCalPickerMonth]=useState(()=>{const t=new Date();return{y:t.getFullYear(),m:t.getMonth()}})
   const [foodView,setFoodView]=useState('day') // 'day' | 'week'
   const [showGoals,setShowGoals]=useState(false)
-  const [foodGoals,setFoodGoals]=useState(()=>JSON.parse(localStorage.getItem('fitpro_food_goals')||'{"kcal":2000,"p":150,"c":200,"f":60}'))
+  const [foodGoals,setFoodGoals]=useState({kcal:2000,p:150,c:200,f:60})
   const [goalsForm,setGoalsForm]=useState(foodGoals)
-  useEffect(()=>{localStorage.setItem('fitpro_food_diary',JSON.stringify(foodDiary))},[foodDiary])
-  useEffect(()=>{localStorage.setItem('fitpro_food_goals',JSON.stringify(foodGoals))},[foodGoals])
+
+  // Загрузка дневника из Supabase при смене даты
   useEffect(()=>{
-    const handler=()=>setFoodDiary(JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'))
+    if(!userId){
+      setFoodDiary(d=>({...d,...(()=>{try{return JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}')}catch{return{}}})()}))
+      return
+    }
+    supabase.from('food_diary').select('*').eq('user_id',userId).eq('date',foodDate).order('created_at')
+      .then(({data})=>{
+        const entries=(data||[]).map(r=>({id:r.id,name:r.name,kcal:String(r.kcal||0),p:String(r.p||0),c:String(r.c||0),f:String(r.f||0)}))
+        setFoodDiary(d=>{
+          const updated={...d,[foodDate]:entries}
+          const all={...JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'),[foodDate]:entries}
+          localStorage.setItem('fitpro_food_diary',JSON.stringify(all))
+          return updated
+        })
+      })
+  },[foodDate,userId])
+
+  // Загрузка целей КБЖУ из Supabase
+  useEffect(()=>{
+    if(!userId){
+      const g=JSON.parse(localStorage.getItem('fitpro_food_goals')||'{"kcal":2000,"p":150,"c":200,"f":60}')
+      setFoodGoals(g);setGoalsForm(g);return
+    }
+    supabase.from('food_goals').select('*').eq('user_id',userId).single()
+      .then(({data})=>{
+        if(data){
+          const g={kcal:data.kcal||2000,p:data.p||150,c:data.c||200,f:data.f||60}
+          setFoodGoals(g);setGoalsForm(g)
+          localStorage.setItem('fitpro_food_goals',JSON.stringify(g))
+        }
+      })
+  },[userId])
+
+  useEffect(()=>{
+    const handler=()=>{
+      if(!userId)setFoodDiary(JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'))
+    }
     window.addEventListener('fitpro:diary-update',handler)
     return()=>window.removeEventListener('fitpro:diary-update',handler)
-  },[])
+  },[userId])
   const dayEntries=foodDiary[foodDate]||[]
   const dayTotal=dayEntries.reduce((acc,e)=>({kcal:acc.kcal+(+e.kcal||0),p:acc.p+(+e.p||0),c:acc.c+(+e.c||0),f:acc.f+(+e.f||0)}),{kcal:0,p:0,c:0,f:0})
-  const addFood=()=>{
+  const addFood=async()=>{
     if(!foodForm.name.trim())return
-    const entry={id:Date.now(),...foodForm}
-    setFoodDiary(d=>({...d,[foodDate]:[...(d[foodDate]||[]),entry]}))
+    let entry={id:Date.now(),...foodForm}
+    if(userId){
+      const {data}=await supabase.from('food_diary').insert({
+        user_id:userId,date:foodDate,name:foodForm.name,
+        kcal:+foodForm.kcal||0,p:+foodForm.p||0,c:+foodForm.c||0,f:+foodForm.f||0,
+      }).select().single()
+      if(data)entry={...entry,id:data.id}
+    }
+    setFoodDiary(d=>{
+      const updated={...d,[foodDate]:[...(d[foodDate]||[]),entry]}
+      const all={...JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'),[foodDate]:updated[foodDate]}
+      localStorage.setItem('fitpro_food_diary',JSON.stringify(all))
+      return updated
+    })
     setFoodForm({name:'',kcal:'',p:'',c:'',f:''})
     setShowFoodForm(false)
   }
-  const removeFood=(id)=>setFoodDiary(d=>({...d,[foodDate]:(d[foodDate]||[]).filter(e=>e.id!==id)}))
+  const removeFood=async(id)=>{
+    if(userId)await supabase.from('food_diary').delete().eq('id',id)
+    setFoodDiary(d=>{
+      const updated={...d,[foodDate]:(d[foodDate]||[]).filter(e=>e.id!==id)}
+      const all={...JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'),[foodDate]:updated[foodDate]}
+      localStorage.setItem('fitpro_food_diary',JSON.stringify(all))
+      return updated
+    })
+  }
   const startEditFood=(e)=>{setEditFoodForm({name:e.name,kcal:e.kcal||'',p:e.p||'',c:e.c||'',f:e.f||'',items:e.items||[]});setEditingFoodId(e.id)}
-  const saveEditFood=()=>{
+  const saveEditFood=async()=>{
     if(!editFoodForm.name.trim())return
-    setFoodDiary(d=>({...d,[foodDate]:(d[foodDate]||[]).map(e=>e.id===editingFoodId?{...e,...editFoodForm}:e)}))
+    if(userId)await supabase.from('food_diary').update({
+      name:editFoodForm.name,kcal:+editFoodForm.kcal||0,
+      p:+editFoodForm.p||0,c:+editFoodForm.c||0,f:+editFoodForm.f||0,
+    }).eq('id',editingFoodId)
+    setFoodDiary(d=>{
+      const updated={...d,[foodDate]:(d[foodDate]||[]).map(e=>e.id===editingFoodId?{...e,...editFoodForm}:e)}
+      const all={...JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'),[foodDate]:updated[foodDate]}
+      localStorage.setItem('fitpro_food_diary',JSON.stringify(all))
+      return updated
+    })
     setEditingFoodId(null)
   }
 
@@ -2862,7 +2932,11 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                   </div>
                 ))}
               </div>
-              <button onClick={()=>{setFoodGoals(goalsForm);setShowGoals(false)}}
+              <button onClick={async()=>{
+                setFoodGoals(goalsForm);setShowGoals(false)
+                localStorage.setItem('fitpro_food_goals',JSON.stringify(goalsForm))
+                if(userId)await supabase.from('food_goals').upsert({user_id:userId,...goalsForm,updated_at:new Date().toISOString()})
+              }}
                 style={{ width:'100%',padding:'10px',borderRadius:9,border:'none',background:PUR,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>
                 Сохранить
               </button>
@@ -3233,29 +3307,33 @@ function LandingPage({ onEnter }) {
 
   const openForm=(tab)=>{setAuthTab(tab);setView('form')}
 
-  const handleRegister=()=>{
+  const [authBusy,setAuthBusy]=useState(false)
+
+  const handleRegister=async()=>{
     if(!form.name.trim()||!form.email.trim()||!form.password.trim()){setAuthError('Заполни все обязательные поля');return}
     if(form.password!==form.confirm){setAuthError('Пароли не совпадают');return}
     if(form.password.length<6){setAuthError('Пароль минимум 6 символов');return}
+    setAuthBusy(true);setAuthError('')
     clearFitproData()
-    const user={name:form.name.trim(),email:form.email.trim(),password:form.password,role:'client',createdAt:new Date().toISOString()}
-    localStorage.setItem('fitpro_user',JSON.stringify(user))
-    onEnter(user)
+    const{data,error}=await supabase.auth.signUp({
+      email:form.email.trim(),password:form.password,
+      options:{data:{name:form.name.trim()}}
+    })
+    if(error){setAuthError(error.message);setAuthBusy(false);return}
+    if(data.user){
+      await supabase.from('profiles').insert({id:data.user.id,name:form.name.trim(),email:form.email.trim()})
+    }
+    setAuthBusy(false)
+    // onAuthStateChange в App() автоматически установит пользователя
   }
 
-  const handleLogin=()=>{
+  const handleLogin=async()=>{
     if(!form.email.trim()||!form.password.trim()){setAuthError('Введи email и пароль');return}
-    setAuthError('')
-    try{
-      const stored=JSON.parse(localStorage.getItem('fitpro_user')||'null')
-      if(stored&&stored.email.trim()===form.email.trim()&&stored.password===form.password){
-        onEnter(stored)
-      } else if(!stored){
-        setAuthError('Аккаунт не найден — сначала зарегистрируйся')
-      } else {
-        setAuthError('Неверный email или пароль')
-      }
-    }catch{setAuthError('Ошибка входа, попробуй снова')}
+    setAuthBusy(true);setAuthError('')
+    const{error}=await supabase.auth.signInWithPassword({email:form.email.trim(),password:form.password})
+    if(error){setAuthError('Неверный email или пароль');setAuthBusy(false);return}
+    setAuthBusy(false)
+    // onAuthStateChange в App() автоматически установит пользователя
   }
 
   const G='rgba(255,255,255,0.06)'
@@ -3476,9 +3554,9 @@ function LandingPage({ onEnter }) {
                       </div>
                     )}
 
-                    <button onClick={authTab==='login'?handleLogin:handleRegister}
-                      style={{ padding:'14px',borderRadius:11,border:'none',background:PUR,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',marginTop:2,boxShadow:`0 6px 22px ${PUR}44`,transition:'all 0.15s' }}>
-                      {authTab==='login' ? 'Войти →' : 'Создать аккаунт →'}
+                    <button onClick={authTab==='login'?handleLogin:handleRegister} disabled={authBusy}
+                      style={{ padding:'14px',borderRadius:11,border:'none',background:authBusy?'#6b7280':PUR,color:'#fff',fontSize:15,fontWeight:700,cursor:authBusy?'not-allowed':'pointer',marginTop:2,boxShadow:`0 6px 22px ${PUR}44`,transition:'all 0.15s' }}>
+                      {authBusy ? 'Подождите...' : authTab==='login' ? 'Войти →' : 'Создать аккаунт →'}
                     </button>
 
                     {authTab==='login' && (
@@ -3866,7 +3944,8 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
 }
 
 export default function App() {
-  const [user,setUser]=useState(()=>{try{return JSON.parse(localStorage.getItem('fitpro_user')||'null')}catch{return null}})
+  const [user,setUser]=useState(null)
+  const [authLoading,setAuthLoading]=useState(true)
   const [nav,setNav]=useState('dashboard')
   const [sc,setSC]=useState(null)
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768)
@@ -3875,6 +3954,30 @@ export default function App() {
   const [showProfileView,setShowProfileView]=useState(false)
   const [showProfileSheet,setShowProfileSheet]=useState(false)
   const aiRef=useRef()
+
+  const mergeUserWithProfile=(supaUser)=>{
+    if(!supaUser)return null
+    let stored={},profile={}
+    try{stored=JSON.parse(localStorage.getItem('fitpro_user')||'{}')}catch{}
+    try{profile=JSON.parse(localStorage.getItem('fitpro_profile')||'{}')}catch{}
+    return{
+      ...supaUser,
+      name:profile.name||stored.name||supaUser.user_metadata?.name||supaUser.email?.split('@')[0]||'',
+      telegram:stored.telegram||'',gender:stored.gender||'',photoURL:stored.photoURL||'',
+    }
+  }
+
+  useEffect(()=>{
+    supabase.auth.getSession().then(({data:{session}})=>{
+      setUser(mergeUserWithProfile(session?.user??null))
+      setAuthLoading(false)
+    })
+    const{data:{subscription}}=supabase.auth.onAuthStateChange((_,session)=>{
+      setUser(mergeUserWithProfile(session?.user??null))
+    })
+    return()=>subscription.unsubscribe()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[])
 
   useEffect(()=>{
     const fn=()=>setIsMobile(window.innerWidth<768)
@@ -3928,6 +4031,7 @@ export default function App() {
     handleNav('workouts')
   }
 
+  if(authLoading) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#08080f',color:'#9ca3af',fontSize:14}}>Загрузка...</div>
   if(!user) return <LandingPage onEnter={setUser} />
 
   const renderMain=()=>{
@@ -3936,7 +4040,7 @@ export default function App() {
       case 'dashboard': return <Dashboard setNav={handleNav} setSC={setSC} />
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} />
       case 'workouts':  return <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>setEditTarget(null)} onWorkoutActiveChange={setWorkoutActive} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} onOpenAI={m=>aiRef.current?.open(m)} />
-      case 'nutrition': return <NutritionView />
+      case 'nutrition': return <NutritionView userId={user?.id} />
       case 'library':   return <LibraryView customExercises={customExercises} />
       case 'chat':      return <ChatView />
       case 'progress':  return <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} />
@@ -4036,7 +4140,7 @@ export default function App() {
                     <span style={{ marginLeft:'auto', fontSize:18, color:'#d1d5db' }}>›</span>
                   </button>
                 ))}
-                <button onClick={()=>{setShowProfileSheet(false);clearFitproData();setUser(null)}}
+                <button onClick={async()=>{setShowProfileSheet(false);await supabase.auth.signOut();clearFitproData()}}
                   style={{ width:'100%', padding:'13px', borderRadius:12, border:'1.5px solid #fee2e2', background:'#fff5f5', color:'#ef4444', fontSize:14, fontWeight:600, cursor:'pointer', marginTop:4 }}>
                   ← Выйти / сменить аккаунт
                 </button>
@@ -4067,7 +4171,7 @@ export default function App() {
             </nav>
             <div style={{ padding:'12px 14px', borderTop:'1px solid #e5e7eb' }}>
               <div style={{ fontSize:12, fontWeight:500, color:'#111' }}>FitPro</div>
-              <button onClick={()=>{clearFitproData();setUser(null)}}
+              <button onClick={async()=>{await supabase.auth.signOut();clearFitproData()}}
                 style={{ fontSize:11, color:'#9ca3af', background:'none', border:'none', cursor:'pointer', padding:0, marginTop:4, display:'block' }}>
                 Выйти →
               </button>
@@ -4078,7 +4182,7 @@ export default function App() {
           </div>
         </div>
       )}
-      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} />
+      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} />
     </>
   )
 }
