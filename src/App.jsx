@@ -98,19 +98,6 @@ function Metric({ label, value, icon, color=PUR }) {
   )
 }
 
-function InfoTile({ label, value, sub, icon, color=PUR }) {
-  return (
-    <div style={{ background:'#f9fafb', borderRadius:10, padding:'12px 14px' }}>
-      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
-        <span style={{ fontSize:11, color:'#6b7280' }}>{label}</span>
-        <span style={{ fontSize:16, color }}>{icon}</span>
-      </div>
-      <div style={{ fontSize:14, fontWeight:500, color:'#111' }}>{value}</div>
-      {sub && <div style={{ fontSize:11, color:'#9ca3af', marginTop:2 }}>{sub}</div>}
-    </div>
-  )
-}
-
 function PBar({ v, color=PUR }) {
   return (
     <div style={{ background:'#e5e7eb', borderRadius:4, height:5, marginTop:4 }}>
@@ -141,7 +128,7 @@ function Dashboard({ setNav, setSC, isTrainer }) {
     try { return sum+(JSON.parse(localStorage.getItem(`fitpro_chat_${c.id}`)||'null')||[]).length } catch { return sum }
   },0)
   const quickActions = [
-    ...(isTrainer?[{icon:'👥',label:'Клиенты',nav:'clients'}]:[]),
+    {icon:'👥',label:'Клиенты',nav:'clients'},
     {icon:'🏋️',label:'Тренировки',nav:'workouts'},
     {icon:'🥗',label:'Питание',nav:'nutrition'},
     {icon:'📚',label:'Упражнения',nav:'library'},
@@ -149,44 +136,19 @@ function Dashboard({ setNav, setSC, isTrainer }) {
     {icon:'📓',label:'Дневник',nav:'progress'},
   ]
 
-  // ── сводка для клиента: сегодняшняя тренировка, остаток калорий, последняя активность
-  const todayISO = (() => { const t=new Date(); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}` })()
-  const plannedWorkouts = (() => { try { return JSON.parse(localStorage.getItem('fitpro_planned')||'[]') } catch { return [] } })()
-  const todayWorkout = plannedWorkouts.find(p=>p.date===todayISO) || null
-  const foodGoals = (() => { try { return JSON.parse(localStorage.getItem('fitpro_food_goals')||'null') } catch { return null } })()
-  const eatenKcal = (foodDiary[todayISO]||[]).reduce((s,e)=>s+(+e.kcal||0),0)
-  const kcalLeft = foodGoals?.kcal ? Math.max(0, Number(foodGoals.kcal)-eatenKcal) : null
-  const lastWorkout = [...workoutHistory].sort((a,b)=>new Date(b.date)-new Date(a.date))[0] || null
-  const hasClientSummary = !isTrainer && (todayWorkout || kcalLeft!==null || lastWorkout)
-
   return (
     <div>
-      {isTrainer&&(
-        <div style={{ marginBottom:18 }}>
-          <h2 style={{ fontSize:20, fontWeight:500, color:'#111', margin:0 }}>Добро пожаловать 👋</h2>
-          <p style={{ fontSize:13, color:'#6b7280', marginTop:4 }}>Твоя платформа для тренеров</p>
-        </div>
-      )}
-      {isTrainer&&(
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:18 }}>
-          <Metric label="Клиентов" value={CLIENTS.length} icon="👥" color={PUR} />
-          <Metric label="Тренировок" value={workoutHistory.length} icon="🏋️" color={TEA} />
-          <Metric label="Дней питания" value={foodDays} icon="🥗" color={BLU} />
-          <Metric label="Сообщений" value={chatMsgCount||'—'} icon="💬" color={COR} />
-        </div>
-      )}
-      {hasClientSummary&&(
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginBottom:18 }}>
-          <InfoTile label="Сегодня" icon="🏋️" color={TEA}
-            value={todayWorkout ? todayWorkout.name : 'Тренировка не запланирована'} />
-          <InfoTile label="Осталось калорий" icon="🥗" color={BLU}
-            value={kcalLeft!==null ? `${kcalLeft} ккал` : 'Цель не задана'} />
-          <InfoTile label="Последняя активность" icon="📈" color={PUR}
-            value={lastWorkout ? (lastWorkout.name||'Тренировка') : 'Пока нет данных'}
-            sub={lastWorkout ? new Date(lastWorkout.date).toLocaleDateString('ru',{day:'numeric',month:'short'}) : null} />
-        </div>
-      )}
-      <div style={{ display:'grid', gridTemplateColumns:isTrainer?'1fr 1fr':'1fr', gap:14 }}>
+      <div style={{ marginBottom:18 }}>
+        <h2 style={{ fontSize:20, fontWeight:500, color:'#111', margin:0 }}>Добро пожаловать 👋</h2>
+        <p style={{ fontSize:13, color:'#6b7280', marginTop:4 }}>Твоя платформа для тренеров</p>
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:18 }}>
+        <Metric label="Клиентов" value={CLIENTS.length} icon="👥" color={PUR} />
+        <Metric label="Тренировок" value={workoutHistory.length} icon="🏋️" color={TEA} />
+        <Metric label="Дней питания" value={foodDays} icon="🥗" color={BLU} />
+        <Metric label="Сообщений" value={chatMsgCount||'—'} icon="💬" color={COR} />
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
         {isTrainer&&(
           <Card>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
@@ -4312,7 +4274,9 @@ export default function App() {
   const renderMain=()=>{
     if(nav==='cdetail'&&sc)return <ClientDetail client={sc} goBack={()=>handleNav('clients')} />
     switch(nav){
-      case 'dashboard': return <Dashboard setNav={handleNav} setSC={setSC} isTrainer={userRole==='trainer'} />
+      case 'dashboard': return userRole==='trainer'
+        ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} />
+        : <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} />
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} />
       case 'workouts':  return <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>setEditTarget(null)} onWorkoutActiveChange={setWorkoutActive} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} onOpenAI={m=>aiRef.current?.open(m)} />
       case 'nutrition': return <NutritionView userId={user?.id} />
