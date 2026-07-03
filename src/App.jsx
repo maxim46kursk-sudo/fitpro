@@ -3851,12 +3851,26 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
     {key:'bicep',    label:'Обхват руки (бицепс)'},
   ]
 
-  const saveProfile=()=>{
+  const saveProfile=async()=>{
     localStorage.setItem('fitpro_profile',JSON.stringify(profile))
     // Сохраняем также редактируемые данные пользователя
     const updatedUser={...user,...userEdit,name:userEdit.name||user.name}
     localStorage.setItem('fitpro_user',JSON.stringify(updatedUser))
     if(onUserUpdate)onUserUpdate(updatedUser)
+    // Синхронизируем с таблицей profiles в Supabase — AI-ассистент по питанию читает профиль только оттуда
+    if(user?.id){
+      const{error}=await supabase.from('profiles').upsert({
+        id:user.id,
+        name:updatedUser.name||null,
+        weight:profile.weight?Number(profile.weight):null,
+        height:profile.height?Number(profile.height):null,
+        goal:profile.goal||null,
+        birthdate:profile.birthdate||null,
+        occupation:profile.occupation||null,
+        gym_days:profile.gymDays?Number(profile.gymDays):null,
+      })
+      if(error)console.error('Ошибка синхронизации профиля с Supabase:',error)
+    }
     setSaved(true); setTimeout(()=>setSaved(false),2000)
   }
 
