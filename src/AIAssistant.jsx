@@ -42,11 +42,12 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
     const today = new Date().toISOString().slice(0, 10)
-    const [{ data: diary }, { data: goals }, { data: profile }] = await Promise.all([
+    const [{ data: diary }, { data: goals }] = await Promise.all([
       supabase.from('food_diary').select('*').eq('user_id', user.id).eq('date', today).order('created_at'),
       supabase.from('food_goals').select('*').eq('user_id', user.id).single(),
-      supabase.from('profiles').select('*').eq('id', user.id).single(),
     ])
+    const { data: profile, error: profileError } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+    console.log('PROFILE:', profile, 'ERROR:', profileError)
     return { user, today, diary: diary || [], goals: goals || null, profile: profile || {} }
   }
 
