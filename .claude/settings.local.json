@@ -22,7 +22,8 @@
       "Bash(npx --no -- kill-port 5173)",
       "Bash(npm run *)",
       "Bash(curl -s http://localhost:5173/)",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173/)"
     ]
   }
 }

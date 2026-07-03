@@ -98,6 +98,19 @@ function Metric({ label, value, icon, color=PUR }) {
   )
 }
 
+function InfoTile({ label, value, sub, icon, color=PUR }) {
+  return (
+    <div style={{ background:'#f9fafb', borderRadius:10, padding:'12px 14px' }}>
+      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
+        <span style={{ fontSize:11, color:'#6b7280' }}>{label}</span>
+        <span style={{ fontSize:16, color }}>{icon}</span>
+      </div>
+      <div style={{ fontSize:14, fontWeight:500, color:'#111' }}>{value}</div>
+      {sub && <div style={{ fontSize:11, color:'#9ca3af', marginTop:2 }}>{sub}</div>}
+    </div>
+  )
+}
+
 function PBar({ v, color=PUR }) {
   return (
     <div style={{ background:'#e5e7eb', borderRadius:4, height:5, marginTop:4 }}>
@@ -135,19 +148,45 @@ function Dashboard({ setNav, setSC, isTrainer }) {
     {icon:'💬',label:'Чат',nav:'chat'},
     {icon:'📓',label:'Дневник',nav:'progress'},
   ]
+
+  // ── сводка для клиента: сегодняшняя тренировка, остаток калорий, последняя активность
+  const todayISO = (() => { const t=new Date(); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}` })()
+  const plannedWorkouts = (() => { try { return JSON.parse(localStorage.getItem('fitpro_planned')||'[]') } catch { return [] } })()
+  const todayWorkout = plannedWorkouts.find(p=>p.date===todayISO) || null
+  const foodGoals = (() => { try { return JSON.parse(localStorage.getItem('fitpro_food_goals')||'null') } catch { return null } })()
+  const eatenKcal = (foodDiary[todayISO]||[]).reduce((s,e)=>s+(+e.kcal||0),0)
+  const kcalLeft = foodGoals?.kcal ? Math.max(0, Number(foodGoals.kcal)-eatenKcal) : null
+  const lastWorkout = [...workoutHistory].sort((a,b)=>new Date(b.date)-new Date(a.date))[0] || null
+  const hasClientSummary = !isTrainer && (todayWorkout || kcalLeft!==null || lastWorkout)
+
   return (
     <div>
-      <div style={{ marginBottom:18 }}>
-        <h2 style={{ fontSize:20, fontWeight:500, color:'#111', margin:0 }}>Добро пожаловать 👋</h2>
-        <p style={{ fontSize:13, color:'#6b7280', marginTop:4 }}>{isTrainer?'Твоя платформа для тренеров':'Твой фитнес-дневник'}</p>
-      </div>
-      <div style={{ display:'grid', gridTemplateColumns:`repeat(${isTrainer?4:3},1fr)`, gap:10, marginBottom:18 }}>
-        {isTrainer&&<Metric label="Клиентов" value={CLIENTS.length} icon="👥" color={PUR} />}
-        <Metric label="Тренировок" value={workoutHistory.length} icon="🏋️" color={TEA} />
-        <Metric label="Дней питания" value={foodDays} icon="🥗" color={BLU} />
-        <Metric label="Сообщений" value={chatMsgCount||'—'} icon="💬" color={COR} />
-      </div>
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+      {isTrainer&&(
+        <div style={{ marginBottom:18 }}>
+          <h2 style={{ fontSize:20, fontWeight:500, color:'#111', margin:0 }}>Добро пожаловать 👋</h2>
+          <p style={{ fontSize:13, color:'#6b7280', marginTop:4 }}>Твоя платформа для тренеров</p>
+        </div>
+      )}
+      {isTrainer&&(
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:18 }}>
+          <Metric label="Клиентов" value={CLIENTS.length} icon="👥" color={PUR} />
+          <Metric label="Тренировок" value={workoutHistory.length} icon="🏋️" color={TEA} />
+          <Metric label="Дней питания" value={foodDays} icon="🥗" color={BLU} />
+          <Metric label="Сообщений" value={chatMsgCount||'—'} icon="💬" color={COR} />
+        </div>
+      )}
+      {hasClientSummary&&(
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginBottom:18 }}>
+          <InfoTile label="Сегодня" icon="🏋️" color={TEA}
+            value={todayWorkout ? todayWorkout.name : 'Тренировка не запланирована'} />
+          <InfoTile label="Осталось калорий" icon="🥗" color={BLU}
+            value={kcalLeft!==null ? `${kcalLeft} ккал` : 'Цель не задана'} />
+          <InfoTile label="Последняя активность" icon="📈" color={PUR}
+            value={lastWorkout ? (lastWorkout.name||'Тренировка') : 'Пока нет данных'}
+            sub={lastWorkout ? new Date(lastWorkout.date).toLocaleDateString('ru',{day:'numeric',month:'short'}) : null} />
+        </div>
+      )}
+      <div style={{ display:'grid', gridTemplateColumns:isTrainer?'1fr 1fr':'1fr', gap:14 }}>
         {isTrainer&&(
           <Card>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
@@ -2377,11 +2416,24 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
 
   useEffect(()=>{
     const handler=()=>{
-      if(!userId)setFoodDiary(JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'))
+      if(!userId){
+        setFoodDiary(JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'))
+        return
+      }
+      supabase.from('food_diary').select('*').eq('user_id',userId).eq('date',foodDate).order('created_at')
+        .then(({data})=>{
+          const entries=(data||[]).map(r=>({id:r.id,name:r.name,kcal:String(r.kcal||0),p:String(r.p||0),c:String(r.c||0),f:String(r.f||0)}))
+          setFoodDiary(d=>{
+            const updated={...d,[foodDate]:entries}
+            const all={...JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'),[foodDate]:entries}
+            localStorage.setItem('fitpro_food_diary',JSON.stringify(all))
+            return updated
+          })
+        })
     }
     window.addEventListener('fitpro:diary-update',handler)
     return()=>window.removeEventListener('fitpro:diary-update',handler)
-  },[userId])
+  },[userId,foodDate])
   const dayEntries=foodDiary[foodDate]||[]
   const dayTotal=dayEntries.reduce((acc,e)=>({kcal:acc.kcal+(+e.kcal||0),p:acc.p+(+e.p||0),c:acc.c+(+e.c||0),f:acc.f+(+e.f||0)}),{kcal:0,p:0,c:0,f:0})
   const addFood=async()=>{

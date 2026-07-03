@@ -355,14 +355,15 @@ ${mode === 'workout'
             const diary = raw ? JSON.parse(raw) : {}
             diary[date] = [...(diary[date] || []), { id: newId, ...entry }]
             localStorage.setItem('fitpro_food_diary', JSON.stringify(diary))
-            window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
             if (userId) {
-              supabase.from('food_diary').insert({
+              const { error } = await supabase.from('food_diary').insert({
                 user_id: userId, date,
                 name: entry.name, kcal: +entry.kcal||0,
                 p: +entry.p||0, c: +entry.c||0, f: +entry.f||0,
               })
+              if (error) console.error('Ошибка записи в дневник питания:', error)
             }
+            window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
             diaryWritten = true
           } catch {}
           rawText = rawText.replace(/\[DIARY_ENTRY:[^\]]+\]/g, '').trim()
