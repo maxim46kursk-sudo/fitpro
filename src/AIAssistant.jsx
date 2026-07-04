@@ -116,6 +116,28 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
     return age
   }
 
+  const PER_KG_BY_GOAL = {
+    'Похудение':   { p: 2, c: 3, f: 1 },
+    'Рельеф':      { p: 2, c: 2, f: 1 },
+    'Набор массы': { p: 2, c: 5, f: 1 },
+    'Поддержание': { p: 2, c: 3, f: 1 },
+  }
+
+  // Методика тренера: расчёт нормы КБЖУ от роста/веса/пола/цели (см. буквальные шаги в системном промпте)
+  const calcMacroGoals = ({ height, weight, gender, goal }) => {
+    const h = Number(height), w = Number(weight)
+    if (!h || !w) return null
+    const lastTwo = h % 100
+    const leanMass = gender === 'female' ? h - 110 : h - 100
+    const baseWeight = w > lastTwo ? leanMass : w
+    const perKg = PER_KG_BY_GOAL[goal] || PER_KG_BY_GOAL['Поддержание']
+    const p = Math.round(baseWeight * perKg.p)
+    const c = Math.round(baseWeight * perKg.c)
+    const f = Math.round(baseWeight * perKg.f)
+    const kcal = p * 4 + c * 4 + f * 9
+    return { baseWeight, p, c, f, kcal }
+  }
+
   const buildSystemPrompt = ({ profile, goals, diary, today }) => {
     const eaten = diary.reduce((s, e) => s + (+e.kcal || 0), 0)
     const left = (goals?.kcal || 0) - eaten
@@ -123,12 +145,14 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
       ? diary.map(e => `[id:${e.id}] ${e.name} — ${e.kcal}ккал Б:${e.p}г У:${e.c}г Ж:${e.f}г`).join('\n')
       : 'пусто'
     const age = calcAge(profile.birthdate)
+    const macroGoals = calcMacroGoals(profile)
 
     return `Ты AI помощник по питанию в приложении FitPro тренера Максима.
 
 Данные клиента:
 Имя: ${profile.name || 'не указано'}
 Возраст: ${age ?? 'не указан'}
+Пол: ${profile.gender === 'female' ? 'женский' : profile.gender === 'male' ? 'мужской' : 'не указан (считать мужским)'}
 Цель: ${profile.goal || 'не указана'}
 Вес: ${profile.weight || '?'}кг, Рост: ${profile.height || '?'}см
 Уровень активности: ${ACTIVITY_LABELS[profile.activity_level] || 'не указан'}
@@ -140,11 +164,26 @@ ${diaryText}
 Съедено: ${eaten} ккал
 Осталось: ${left} ккал
 
+МЕТОДИКА РАСЧЁТА НОРМЫ КБЖУ — используй СТРОГО эту формулу, никогда не считай по другим методикам (Миффлина, TDEE и т.п.) и не придумывай свои цифры:
+Шаг 1 — базовый вес:
+  - Последние две цифры роста (рост 185 → 85, рост 160 → 60)
+  - Если реальный вес БОЛЬШЕ этого числа: базовый вес = сухая масса (мужчина: рост−100, женщина: рост−110)
+  - Если реальный вес МЕНЬШЕ или РАВЕН этому числу: базовый вес = реальный вес
+  - Пол берётся из поля gender; если не указан — считать мужским
+Шаг 2 — граммы на 1 кг базового веса по цели:
+  - Похудение: Б2/У3/Ж1 · Рельеф: Б2/У2/Ж1 · Набор массы: Б2/У5/Ж1 · Поддержание: Б2/У3/Ж1
+Шаг 3 — калории = Б×4 + У×4 + Ж×9
+
+${macroGoals
+  ? `Расчёт по этой методике для текущего клиента (базовый вес ${macroGoals.baseWeight}кг): ${macroGoals.kcal} ккал, Б:${macroGoals.p}г У:${macroGoals.c}г Ж:${macroGoals.f}г. Если задаёшь/пересчитываешь норму — используй маркер GOAL ИМЕННО с этими числами, не меняя их.`
+  : 'Рассчитать норму нельзя — в профиле не заполнены рост и/или вес. Попроси клиента заполнить профиль, прежде чем называть любые цифры по КБЖУ.'}
+
 ПРАВИЛА:
 1. Отвечай кратко и по делу, без markdown и звёздочек
 2. Если профиль не заполнен — попроси заполнить его
 3. Темы кроме питания не обсуждай
 4. Раз в 5 сообщений упоминай что Максим ведёт персональные тренировки
+5. Любые цифры нормы КБЖУ — только из расчёта по методике выше, никогда не оценивай на глаз
 
 ДЕЙСТВИЯ — добавляй маркер в конце ответа на новой строке:
 Записать еду: [ADD:{"name":"Завтрак: овсянка 90г, яйца 2шт","kcal":420,"p":25,"c":45,"f":12}]

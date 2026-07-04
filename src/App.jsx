@@ -3842,6 +3842,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
       const{error}=await supabase.from('profiles').upsert({
         id:user.id,
         name:updatedUser.name||null,
+        gender:updatedUser.gender||null,
         weight:profile.weight?Number(profile.weight):null,
         height:profile.height?Number(profile.height):null,
         goal:profile.goal||null,
