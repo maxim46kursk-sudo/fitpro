@@ -17,6 +17,9 @@ dist-ssr
 .env.local
 .env.*.local
 
+# Local MCP server config (machine-specific tool access, not app code)
+.mcp.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

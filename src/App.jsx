@@ -3332,14 +3332,13 @@ function LandingPage({ onEnter }) {
     if(form.password.length<6){setAuthError('Пароль минимум 6 символов');return}
     setAuthBusy(true);setAuthError('')
     clearFitproData()
-    const{data,error}=await supabase.auth.signUp({
+    const{error}=await supabase.auth.signUp({
       email:form.email.trim(),password:form.password,
       options:{data:{name:form.name.trim()}}
     })
     if(error){setAuthError(error.message);setAuthBusy(false);return}
-    if(data.user){
-      await supabase.from('profiles').insert({id:data.user.id,name:form.name.trim(),email:form.email.trim()})
-    }
+    // Запись в public.profiles создаётся автоматически триггером on_auth_user_created в Supabase —
+    // делать это здесь на клиенте ненадёжно, т.к. сразу после signUp сессии ещё может не быть (email-подтверждение)
     setAuthBusy(false)
     // onAuthStateChange в App() автоматически установит пользователя
   }
