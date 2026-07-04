@@ -42,16 +42,39 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
     const today = new Date().toISOString().slice(0, 10)
-    const [{ data: diary }, { data: goals }] = await Promise.all([
+    const [{ data: diary }, { data: goals }, { data: profile }] = await Promise.all([
       supabase.from('food_diary').select('*').eq('user_id', user.id).eq('date', today).order('created_at'),
       supabase.from('food_goals').select('*').eq('user_id', user.id).single(),
+      supabase.from('profiles').select('*').eq('id', user.id).single(),
     ])
-    const { data: profile, error: profileError } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-    console.log('PROFILE:', profile, 'ERROR:', profileError)
     return { user, today, diary: diary || [], goals: goals || null, profile: profile || {} }
   }
 
-  // При открытии чата и при возврате в режим питания — подтягиваем актуальные данные
+  // Диагностика — выводит в консоль браузера что реально приходит из Supabase.
+  // Открой DevTools → Console, открой AI-ассистент и посмотри вывод USER/PROFILE/DIARY/GOALS.
+  const runDiagnostics = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    console.log('USER:', user?.id, user?.email)
+
+    if (!user) { console.log('НЕТ ПОЛЬЗОВАТЕЛЯ'); return }
+
+    const { data: profile, error: pe } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+    console.log('PROFILE:', JSON.stringify(profile), 'ERROR:', pe?.message)
+
+    const today = new Date().toISOString().slice(0, 10)
+    const { data: diary, error: de } = await supabase.from('food_diary').select('*').eq('user_id', user.id).eq('date', today)
+    console.log('DIARY:', JSON.stringify(diary), 'ERROR:', de?.message)
+
+    const { data: goals, error: ge } = await supabase.from('food_goals').select('*').eq('user_id', user.id).single()
+    console.log('GOALS:', JSON.stringify(goals), 'ERROR:', ge?.message)
+  }
+
+  // При открытии чата — диагностика в консоль + подтягиваем актуальные данные для промпта
+  useEffect(() => {
+    if (!isOpen) return
+    runDiagnostics()
+  }, [isOpen])
+
   useEffect(() => {
     if (!isOpen || mode !== 'nutrition') return
     loadContext().then(c => c && setCtx(c))
