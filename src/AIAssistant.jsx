@@ -102,19 +102,36 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
     if (isOpen && mode === 'nutrition') setTimeout(() => inputRef.current?.focus(), 150)
   }, [isOpen, mode])
 
+  const ACTIVITY_LABELS = { sedentary: 'малоподвижный', moderate: 'умеренный', high: 'высокий' }
+
+  // Возраст на сегодняшнюю дату из birthdate (YYYY-MM-DD)
+  const calcAge = (birthdate) => {
+    if (!birthdate) return null
+    const b = new Date(birthdate)
+    if (isNaN(b)) return null
+    const now = new Date()
+    let age = now.getFullYear() - b.getFullYear()
+    const beforeBirthday = now.getMonth() < b.getMonth() || (now.getMonth() === b.getMonth() && now.getDate() < b.getDate())
+    if (beforeBirthday) age--
+    return age
+  }
+
   const buildSystemPrompt = ({ profile, goals, diary, today }) => {
     const eaten = diary.reduce((s, e) => s + (+e.kcal || 0), 0)
     const left = (goals?.kcal || 0) - eaten
     const diaryText = diary.length
       ? diary.map(e => `[id:${e.id}] ${e.name} — ${e.kcal}ккал Б:${e.p}г У:${e.c}г Ж:${e.f}г`).join('\n')
       : 'пусто'
+    const age = calcAge(profile.birthdate)
 
     return `Ты AI помощник по питанию в приложении FitPro тренера Максима.
 
 Данные клиента:
 Имя: ${profile.name || 'не указано'}
+Возраст: ${age ?? 'не указан'}
 Цель: ${profile.goal || 'не указана'}
 Вес: ${profile.weight || '?'}кг, Рост: ${profile.height || '?'}см
+Уровень активности: ${ACTIVITY_LABELS[profile.activity_level] || 'не указан'}
 Норма: ${goals?.kcal || 'не задана'} ккал, Б:${goals?.p || 0}г У:${goals?.c || 0}г Ж:${goals?.f || 0}г
 
 Дневник сегодня (${today}):

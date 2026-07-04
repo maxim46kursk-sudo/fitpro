@@ -3789,7 +3789,7 @@ function SettingsView({ user }) {
 function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
   const [tab,setTab]=useState('profile')
   const [profile,setProfile]=useState(()=>{
-    try{return JSON.parse(localStorage.getItem('fitpro_profile')||'null')||{name:user?.name||'',birthdate:'',height:'',weight:'',goal:'',steps:'',gymDays:'',occupation:''}}catch{return{name:user?.name||'',birthdate:'',height:'',weight:'',goal:'',steps:'',gymDays:'',occupation:''}}
+    try{return JSON.parse(localStorage.getItem('fitpro_profile')||'null')||{name:user?.name||'',birthdate:'',height:'',weight:'',goal:'',steps:'',gymDays:'',occupation:'',activityLevel:''}}catch{return{name:user?.name||'',birthdate:'',height:'',weight:'',goal:'',steps:'',gymDays:'',occupation:'',activityLevel:''}}
   })
   const [userEdit,setUserEdit]=useState({name:user?.name||'',email:user?.email||'',telegram:user?.telegram||'',gender:user?.gender||'',photoURL:user?.photoURL||''})
   const photoInputPVRef=useRef(null)
@@ -3813,25 +3813,6 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
     },420)
     return()=>clearTimeout(t)
   },[profile.goal])
-  // Отображаемое значение даты рождения в формате ДД.ММ.ГГГГ
-  const isoToDisplay=(iso)=>{if(!iso)return'';const[y,m,d]=iso.split('-');return`${d}.${m}.${y}`}
-  const [birthdateInput,setBirthdateInput]=useState(()=>isoToDisplay(profile.birthdate||''))
-  const handleBirthdateChange=(v)=>{
-    // Оставляем только цифры и точки
-    let s=v.replace(/[^0-9.]/g,'')
-    // Автовставка точек
-    if(s.length===2&&!s.includes('.'))s+='.'
-    if(s.length===5&&s.split('.').length===2)s+='.'
-    setBirthdateInput(s)
-    // Когда введено полное ДД.ММ.ГГГГ — сохраняем в ISO
-    const p=s.split('.')
-    if(p.length===3&&p[0].length===2&&p[1].length===2&&p[2].length===4){
-      const iso=`${p[2]}-${p[1]}-${p[0]}`
-      if(!isNaN(new Date(iso)))setProfile(prev=>({...prev,birthdate:iso}))
-    } else if(!s){
-      setProfile(prev=>({...prev,birthdate:''}))
-    }
-  }
 
   const [measurements,setMeasurements]=useState(()=>{
     try{return JSON.parse(localStorage.getItem('fitpro_measurements')||'[]')}catch{return[]}
@@ -3867,6 +3848,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
         birthdate:profile.birthdate||null,
         occupation:profile.occupation||null,
         gym_days:profile.gymDays?Number(profile.gymDays):null,
+        activity_level:profile.activityLevel||null,
       })
       if(error)console.error('Ошибка синхронизации профиля с Supabase:',error)
     }
@@ -3963,12 +3945,12 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
               </div>
             ))}
             {/* Физические данные */}
-            {/* Дата рождения — текстовое поле ДД.ММ.ГГГГ */}
+            {/* Дата рождения — нативный календарь, хранится в ISO (YYYY-MM-DD) */}
             <div>
               <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Дата рождения</label>
-              <input value={birthdateInput} type="text" inputMode="numeric" placeholder="ДД.ММ.ГГГГ" maxLength={10}
-                onChange={e=>handleBirthdateChange(e.target.value)}
-                style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:birthdateInput?'#111':'#9ca3af',outline:'none',boxSizing:'border-box',background:'#fff'}}
+              <input value={profile.birthdate||''} type="date" max={new Date().toISOString().slice(0,10)}
+                onChange={e=>setProfile(p=>({...p,birthdate:e.target.value}))}
+                style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:profile.birthdate?'#111':'#9ca3af',outline:'none',boxSizing:'border-box',background:'#fff'}}
                 onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
             </div>
             {/* Рост и Вес */}
@@ -4088,6 +4070,17 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                     onChange={e=>setProfile(p=>({...p,occupation:e.target.value}))}
                     style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
                     onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                </div>
+                <div>
+                  <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Уровень активности</label>
+                  <div style={{display:'flex',gap:8}}>
+                    {[['sedentary','Малоподвижный'],['moderate','Умеренный'],['high','Высокий']].map(([val,lbl])=>(
+                      <button key={val} type="button" onClick={()=>setProfile(p=>({...p,activityLevel:val}))}
+                        style={{flex:1,padding:'10px 6px',borderRadius:10,border:`1.5px solid ${profile.activityLevel===val?PUR:'#e5e7eb'}`,background:profile.activityLevel===val?`${PUR}12`:'#fff',color:profile.activityLevel===val?PUR:'#6b7280',fontSize:12,fontWeight:600,cursor:'pointer',minHeight:'unset'}}>
+                        {lbl}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
