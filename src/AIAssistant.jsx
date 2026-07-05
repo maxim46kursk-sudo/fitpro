@@ -38,13 +38,16 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
     setTimeout(() => setShowToast(false), 2000)
   }
 
-  // Свежие данные пользователя из Supabase — только Supabase, никакого localStorage
+  // Свежие данные пользователя из Supabase — только Supabase, никакого localStorage.
+  // Дневник грузим за последние 30 дней (не только сегодня), чтобы AI видел полную
+  // картину питания и мог работать с любой датой, а не только с сегодняшней.
   const loadContext = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
     const today = new Date().toISOString().slice(0, 10)
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
     const [{ data: diary }, { data: goals }, { data: profile }] = await Promise.all([
-      supabase.from('food_diary').select('*').eq('user_id', user.id).eq('date', today).order('created_at'),
+      supabase.from('food_diary').select('*').eq('user_id', user.id).gte('date', since).order('date', { ascending: false }).order('created_at'),
       supabase.from('food_goals').select('*').eq('user_id', user.id).single(),
       supabase.from('profiles').select('*').eq('id', user.id).single(),
     ])
@@ -62,9 +65,9 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
     const { data: profile, error: pe } = await supabase.from('profiles').select('*').eq('id', user.id).single()
     console.log('PROFILE:', JSON.stringify(profile), 'ERROR:', pe?.message)
 
-    const today = new Date().toISOString().slice(0, 10)
-    const { data: diary, error: de } = await supabase.from('food_diary').select('*').eq('user_id', user.id).eq('date', today)
-    console.log('DIARY:', JSON.stringify(diary), 'ERROR:', de?.message)
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const { data: diary, error: de } = await supabase.from('food_diary').select('*').eq('user_id', user.id).gte('date', since).order('date', { ascending: false })
+    console.log('DIARY (30 дней):', JSON.stringify(diary), 'ERROR:', de?.message)
 
     const { data: goals, error: ge } = await supabase.from('food_goals').select('*').eq('user_id', user.id).single()
     console.log('GOALS:', JSON.stringify(goals), 'ERROR:', ge?.message)
@@ -182,19 +185,26 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
         }
       }
 
-      // CLEAR — полная очистка дневника за дату (только после подтверждения клиентом словом "да")
-      const clearMatch = text.match(/\[CLEAR:(\{[^}]+\})\]/)
-      if (clearMatch) {
-        try {
-          const clear = JSON.parse(clearMatch[1])
-          const { error } = await supabase.from('food_diary').delete()
-            .eq('user_id', fresh.user.id).eq('date', clear.date || fresh.today)
-          if (error) console.error('Ошибка очистки дневника:', error)
+      // CLEAR — полная очистка дневника за дату, может быть несколько маркеров сразу
+      // (несколько дат за раз) — только после подтверждения клиентом словом "да"
+      const clearMatches = [...text.matchAll(/\[CLEAR:(\{[^}]+\})\]/g)]
+      if (clearMatches.length) {
+        let cleared = false
+        for (const m of clearMatches) {
+          try {
+            const clear = JSON.parse(m[1])
+            const { error } = await supabase.from('food_diary').delete()
+              .eq('user_id', fresh.user.id).eq('date', clear.date || fresh.today)
+            if (error) console.error('Ошибка очистки дневника:', error)
+            else cleared = true
+          } catch (e) { console.error('Ошибка разбора CLEAR:', e) }
+        }
+        text = text.replace(/\[CLEAR:[^\]]+\]/g, '')
+        if (cleared) {
           window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
           const refreshed = await loadContext()
           if (refreshed) setCtx(refreshed)
-        } catch (e) { console.error('Ошибка разбора CLEAR:', e) }
-        text = text.replace(/\[CLEAR:[^\]]+\]/g, '')
+        }
       }
 
       // GOAL
