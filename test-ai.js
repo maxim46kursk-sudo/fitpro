@@ -7,7 +7,7 @@
 // Запуск: node test-ai.js
 
 import { readFileSync } from 'node:fs'
-import { buildSystemPrompt } from './src/aiPrompt.js'
+import { buildSystemPrompt, calcMacroGoals } from './src/aiPrompt.js'
 
 // .env в проекте не грузится автоматически (dotenv не используется) — читаем вручную
 function loadEnv() {
@@ -32,12 +32,16 @@ if (!API_KEY) {
 
 // ── Тестовые контексты профиля/дневника/нормы ───────────────────────────────
 
-// Мужчина 185/98, Похудение → по методике: базовый вес 85, 2465 ккал, Б170/У255/Ж85
+// Мужчина 185/98, Похудение, активность moderate (×1.375).
 const FULL_PROFILE = {
   name: 'Тест Тестов', gender: 'male', height: 185, weight: 98,
   goal: 'Похудение', activity_level: 'moderate', birthdate: '1990-01-01',
 }
-const FULL_GOALS = { kcal: 2465, p: 170, c: 255, f: 85 }
+// Норму считаем ЧЕРЕЗ РЕАЛЬНУЮ формулу из aiPrompt.js, а не хардкодим числа —
+// иначе при любом изменении методики (как уже дважды случалось в этой сессии)
+// придётся вручную искать и править магические числа по всему файлу.
+const CALC = calcMacroGoals(FULL_PROFILE)
+const FULL_GOALS = { kcal: CALC.kcal, p: CALC.p, c: CALC.c, f: CALC.f }
 const DIARY_WITH_ENTRIES = [
   { id: 101, name: 'Завтрак: овсянка 90г, яйца 2шт', kcal: 420, p: 25, c: 45, f: 12 },
   { id: 102, name: 'Обед: гречка 150г, куриная грудка 200г', kcal: 600, p: 45, c: 70, f: 15 },
@@ -53,7 +57,7 @@ const DIARY_THREE = [
 const daysAgo = (n) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 const fmtDMY = (iso) => { const [y, m, d] = iso.split('-'); return `${d}.${m}.${y}` }
 const YESTERDAY = daysAgo(1)
-const OVERAGE_DAY = daysAgo(5) // единственный день с переборoм нормы (2465) в этом наборе
+const OVERAGE_DAY = daysAgo(5) // единственный день с переборoм нормы (FULL_GOALS.kcal) в этом наборе — см. проверку ниже
 const WEEK_DIARY = [
   { id: 201, date: TODAY, name: 'Завтрак: овсянка 90г, яйца 2шт', kcal: 420, p: 25, c: 45, f: 12 },
   { id: 202, date: TODAY, name: 'Обед: гречка 150г, куриная грудка 200г', kcal: 600, p: 45, c: 70, f: 15 },
@@ -66,9 +70,18 @@ const WEEK_DIARY = [
   { id: 222, date: OVERAGE_DAY, name: 'Рацион дня в отпуске', kcal: 3800, p: 140, c: 400, f: 140 },
   { id: 223, date: daysAgo(6), name: 'Обычный рацион дня', kcal: 2450, p: 168, c: 252, f: 84 },
 ]
-// Единственный день с переборoм нормы (2465) в этом наборе — OVERAGE_DAY (3800), остальные дни ниже нормы
 // Среднее за 7 дней: (1020+1400+280+2400+2400+3800+2450)/7 = 1964 (округление)
 const WEEK_AVG7 = 1964
+// Защита от дрейфа формулы: набор задуман так, что ровно один день (OVERAGE_DAY) превышает
+// норму. Если calcMacroGoals снова изменится и это перестанет быть так — тест лучше сломать
+// явно здесь, чем тихо проверять неверное допущение в сценарии "в какой день был перебор".
+{
+  const overDays = WEEK_DIARY.reduce((acc, e) => { (acc[e.date] ??= 0); acc[e.date] += e.kcal; return acc }, {})
+  const daysOver = Object.entries(overDays).filter(([, kcal]) => kcal > FULL_GOALS.kcal)
+  if (daysOver.length !== 1 || daysOver[0][0] !== OVERAGE_DAY) {
+    throw new Error(`WEEK_DIARY больше не даёт ровно один день перебора относительно FULL_GOALS.kcal=${FULL_GOALS.kcal}: ${JSON.stringify(daysOver)}`)
+  }
+}
 const EMPTY_PROFILE = {}
 
 const ctxFull = (diary = []) => ({ profile: FULL_PROFILE, goals: FULL_GOALS, diary, today: TODAY })
@@ -83,18 +96,18 @@ const stripMarkers = (text) => text.replace(/\[(ADD|DEL|CLEAR|GOAL):\{[^}]*\}\]/
 const markers = (text, type) => [...text.matchAll(new RegExp(`\\[${type}:(\\{[^}]+\\})\\]`, 'g'))]
   .map(m => { try { return JSON.parse(m[1]) } catch { return null } }).filter(Boolean)
 
-const asksForDate = (text) => /дат[уаы]|дд\.мм\.гггг|\d{2}\.\d{2}\.\d{4}/i.test(text) && /\?/.test(text)
+const asksForDate = (text) => /дат[уаы]|дд\.мм\.гггг|\d{2}\.\d{2}\.\d{4}/i.test(text) && /(\?|уточни|укажи|напиши|скажи)/i.test(text)
 const asksToFillProfile = (text) => /профил/i.test(text) && /заполн/i.test(text)
-const refusesOffTopic = (text) => /не могу|только[^.\n]{0,60}питан|не по теме|другая тема|обсужда(ю|ть) только|кроме питания/i.test(text)
+const refusesOffTopic = (text) => /не могу|только[^.\n]{0,60}питан|не по теме|другая тема|обсужда(ю|ть) только|кроме питания|не (в моей|моя) компетенц|не связан\S*[^.\n]{0,15}с питанием/i.test(text)
 // NB: JS-регексы \b не распознают кириллицу как "word chars", поэтому для
 // границ слов на кириллице используются явные лукараунды по диапазону букв,
 // а не \b (иначе "бот\b" не матчится вообще нигде на русском тексте).
 const offersOrRecords = (text) => markers(text, 'ADD').length > 0 ||
-  /(записать|добавить в дневник|занести|записал|добавил|уточни|какой именно|какую именно|сколько грамм|сколько граммов|напиши название)/i.test(text)
+  /(запис\S*|добав\S*|занести|уточни|какой именно|какую именно|какое (пиво|блюдо)|сколько грамм|сколько граммов|напиши название)/i.test(text)
 const isEmpathetic = (text) => /(быва[ею]т|ничего страшного|не вини себя|не ругай себя|не кор[ий]|не казни|подде́?рж|не сдавайся|случается|это (совершенно )?нормально|не переживай|без паники|у всех быва|никто не идеален|ты справ|всё получится|не критично|срыв.{0,20}не (катастроф|конец|перечёркива)|непрост|понимаю[,.]|расскажи[,.]? что|найти решение|помогу|постара(юсь|емся))/i.test(text)
 const isJudgmental = (text) => /(зря ты|не надо было|нельзя было|это плохо|как тебе не стыдно|сама виновата|сам виноват|разочаров)/i.test(text)
 const declinesRiskyAdvice = (text) => /(не (могу|буду|сове[тс]|рекоменду)|обрат.*(к врачу|к специалисту|к эндокринолог)|это (не )?(моя|по) (компетенц|тема)|не по (моей )?части|консультац.*(врач|специалист))/i.test(text)
-const identifiesAsAI = (text) => /ассистент|искусственн|программ|модел[ья]|алгоритм|у меня нет возраста|цифров|виртуальн|не человек|не живой|(?<![а-яёА-ЯЁ])(бот|ии)(?![а-яёА-ЯЁ])/i.test(text)
+const identifiesAsAI = (text) => /ассистент|искусственн|программ|модел[ья]|алгоритм|у меня нет возраста|цифров|виртуальн|не человек|не живой|\bAI\b|(?<![а-яёА-ЯЁ])(бот|ии)(?![а-яёА-ЯЁ])/i.test(text)
 const looksLikeCode = (text) => /```|def \w+\(|import \w+|print\(|function\s*\(/i.test(text)
 // Пользователь не должен знать про ID записей — AI обязан искать запись по названию сам
 const asksUserForId = (text) => /(укажи|назови|напиши|скажи|дай)[^.?\n]{0,20}\bid\b|какой (у записи )?id|номер записи/i.test(text)
@@ -128,15 +141,15 @@ function mk({ group, name, ctx, setup = [], user, expect, extra }) {
 
 mk({
   group: 'Профиль и нормы', name: 'какая у меня норма калорий', user: 'какая у меня норма калорий',
-  expect: 'Называет норму по формуле (2465 ккал, база 85 кг)',
-  extra: (t) => !/2465/.test(t) ? ['нет числа 2465 ккал из расчёта'] : [],
+  expect: `Называет норму по формуле с учётом активности (${FULL_GOALS.kcal} ккал, база ${CALC.baseWeight} кг ×${CALC.activityMultiplier})`,
+  extra: (t) => !new RegExp(String(FULL_GOALS.kcal)).test(t) ? [`нет числа ${FULL_GOALS.kcal} ккал из расчёта (с учётом активности)`] : [],
 })
 mk({
   group: 'Профиль и нормы', name: 'почему такая норма', setup: ['какая у меня норма калорий'], user: 'почему такая норма',
-  expect: 'Объясняет расчёт: базовый вес 85 (лишний вес → сухая масса 185−100)',
+  expect: `Объясняет расчёт: базовый вес ${CALC.baseWeight} (лишний вес → сухая масса 185−100)`,
   extra: (t) => {
     const issues = []
-    if (!/85/.test(t)) issues.push('не упомянут базовый вес 85 кг')
+    if (!new RegExp(String(CALC.baseWeight)).test(t)) issues.push(`не упомянут базовый вес ${CALC.baseWeight} кг`)
     const explains = /(сухая|лишн)/i.test(t) || (/98/.test(t) && /100/.test(t))
     if (!explains) issues.push('не объяснена причина (лишний вес / сухая масса / 98 vs 100)')
     return issues
@@ -144,7 +157,7 @@ mk({
 })
 mk({
   group: 'Профиль и нормы', name: 'посчитай мне рацион', setup: ['какая у меня норма калорий', 'почему такая норма'], user: 'посчитай мне рацион',
-  expect: 'Даёт рацион с приёмами пищи в рамках нормы 2465 ккал',
+  expect: `Даёт рацион с приёмами пищи в рамках нормы ${FULL_GOALS.kcal} ккал`,
   extra: (t) => {
     const issues = []
     if (!/ккал/i.test(t)) issues.push('нет упоминания калорий в рационе')
@@ -371,8 +384,8 @@ mk({
 })
 mk({
   group: 'Вопросы по питанию', name: 'сколько белка осталось', ctx: ctxFull(DIARY_WITH_ENTRIES), user: 'сколько белка осталось',
-  expect: 'Считает из дневника: норма 170г − съедено 70г = 100г',
-  extra: (t) => !/100/.test(t) ? ['не посчитан правильный остаток белка (170−70=100г)'] : [],
+  expect: `Считает из дневника: норма ${FULL_GOALS.p}г − съедено 70г = ${FULL_GOALS.p - 70}г`,
+  extra: (t) => !new RegExp(String(FULL_GOALS.p - 70)).test(t) ? [`не посчитан правильный остаток белка (${FULL_GOALS.p}−70=${FULL_GOALS.p - 70}г)`] : [],
 })
 
 // ── Группа: Сложные вопросы по питанию ──────────────────────────────────
@@ -583,16 +596,16 @@ mk({
 })
 mk({
   group: 'Работа с дневником', name: 'сколько калорий осталось', ctx: ctxFull(DIARY_WITH_ENTRIES), user: 'сколько калорий у меня осталось',
-  expect: 'Называет 1445 ккал (2465 − 1020)',
-  extra: (t) => !/1445/.test(t) ? ['не посчитан верный остаток 1445 ккал (2465−1020)'] : [],
+  expect: `Называет ${FULL_GOALS.kcal - 1020} ккал (${FULL_GOALS.kcal} − 1020)`,
+  extra: (t) => !new RegExp(String(FULL_GOALS.kcal - 1020)).test(t) ? [`не посчитан верный остаток ${FULL_GOALS.kcal - 1020} ккал (${FULL_GOALS.kcal}−1020)`] : [],
 })
 mk({
   group: 'Работа с дневником', name: 'то же самое что вчера', ctx: ctxFull(DIARY_WITH_ENTRIES), user: 'запиши то же самое что вчера',
-  expect: 'Не видит вчерашний день в контексте — уточняет, что именно было съедено, не выдумывает',
+  expect: 'В дневнике нет записей за вчера — сообщает это или уточняет, что именно было съедено, не выдумывает',
   extra: (t) => {
     const issues = []
     if (markers(t, 'ADD').length) issues.push('придумал данные за вчера, которых нет в контексте, вместо уточнения')
-    if (!/\?/.test(t)) issues.push('не задан уточняющий вопрос про вчерашнюю еду')
+    if (!/(\?|нет запис|запис\S*\s+нет|нечего (скопировать|перенести)|ничего не записано|начинается с сегодня|скажи что именно|уточни)/i.test(t)) issues.push('не сообщил об отсутствии данных за вчера и не уточнил')
     return issues
   },
 })
@@ -631,8 +644,8 @@ mk({
 })
 mk({
   group: 'Ошибки и опечатки', name: 'скока белка нужно в день', user: 'скока белка нужно в день',
-  expect: 'Понимает опечатку "скока", называет норму белка (170г для этого клиента)',
-  extra: (t) => !/170/.test(t) ? ['не названа верная норма белка 170г для клиента'] : [],
+  expect: `Понимает опечатку "скока", называет норму белка (${FULL_GOALS.p}г для этого клиента)`,
+  extra: (t) => !new RegExp(String(FULL_GOALS.p)).test(t) ? [`не названа верная норма белка ${FULL_GOALS.p}г для клиента`] : [],
 })
 
 // ── Группа: Эмоциональные ────────────────────────────────────────────────
@@ -687,7 +700,7 @@ mk({
 })
 mk({
   group: 'Аналитика дневника', name: 'в какой день был перебор калорий', ctx: ctxFull(WEEK_DIARY), user: 'в какой день был перебор калорий',
-  expect: `Называет день ${fmtDMY(OVERAGE_DAY)} (3800 ккал против нормы 2465)`,
+  expect: `Называет день ${fmtDMY(OVERAGE_DAY)} (3800 ккал против нормы ${FULL_GOALS.kcal})`,
   extra: (t) => {
     const issues = []
     if (!t.includes(fmtDMY(OVERAGE_DAY)) && !/отпуск/i.test(t)) issues.push(`не назвал верный день перебора (${fmtDMY(OVERAGE_DAY)})`)

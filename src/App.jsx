@@ -3610,16 +3610,23 @@ function SettingsView({ user }) {
   const [clearConfirm,setClearConfirm]=useState(false)
   const [deleteConfirm,setDeleteConfirm]=useState(false)
   const [dataMsg,setDataMsg]=useState('')
+  const [aiStyle,setAiStyle]=useState('act')
 
   useEffect(()=>{
     if(!user?.id)return
     supabase.from('chat_messages').select('*',{count:'exact',head:true}).eq('user_id',user.id)
       .then(({count})=>setChatCount(count??0))
+    supabase.from('profiles').select('ai_style').eq('id',user.id).single()
+      .then(({data})=>{ if(data?.ai_style) setAiStyle(data.ai_style) })
   },[user?.id])
 
   const saveNotifs=(next)=>{setNotifs(next);localStorage.setItem('fitpro_notifs',JSON.stringify(next))}
   const saveUnits=(next)=>{setUnits(next);localStorage.setItem('fitpro_units',JSON.stringify(next))}
   const saveLang=(v)=>{setLang(v);localStorage.setItem('fitpro_lang',v)}
+  const saveAiStyle=(v)=>{
+    setAiStyle(v)
+    if(user?.id)supabase.from('profiles').update({ai_style:v}).eq('id',user.id)
+  }
 
   const clearChat=async()=>{
     if(!user?.id)return
@@ -3696,6 +3703,21 @@ function SettingsView({ user }) {
                 background:units.height===v?`${PUR}15`:'#fff',color:units.height===v?PUR:'#6b7280',
                 fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset',
               }}>{v}</button>
+            ))}
+          </div>
+        }/>
+      </Section>
+
+      {/* AI ассистент */}
+      <Section title="AI ассистент">
+        <Row label="Стиль AI ассистента" sub={aiStyle==='ask'?'Уточняет граммовки и детали перед записью еды':'Сам прикидывает и сразу записывает, потом можно поправить'} right={
+          <div style={{display:'flex',gap:4}}>
+            {[['ask','Спрашивай меня'],['act','Действуй сам']].map(([v,lbl])=>(
+              <button key={v} onClick={()=>saveAiStyle(v)} style={{
+                padding:'5px 10px',borderRadius:8,border:`1.5px solid ${aiStyle===v?PUR:'#e5e7eb'}`,
+                background:aiStyle===v?`${PUR}15`:'#fff',color:aiStyle===v?PUR:'#6b7280',
+                fontSize:12,fontWeight:600,cursor:'pointer',minHeight:'unset',whiteSpace:'nowrap',
+              }}>{lbl}</button>
             ))}
           </div>
         }/>
