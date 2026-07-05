@@ -161,19 +161,40 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
         }
       }
 
-      // DEL
-      const delMatch = text.match(/\[DEL:(\{[^}]+\})\]/)
-      if (delMatch) {
-        try {
-          const del = JSON.parse(delMatch[1])
-          const { error } = await supabase.from('food_diary').delete()
-            .eq('id', del.id).eq('user_id', fresh.user.id).eq('date', del.date || fresh.today)
-          if (error) console.error('Ошибка удаления записи:', error)
+      // DEL — может быть несколько записей за раз (после подтверждения массового удаления)
+      const delMatches = [...text.matchAll(/\[DEL:(\{[^}]+\})\]/g)]
+      if (delMatches.length) {
+        let deleted = false
+        for (const m of delMatches) {
+          try {
+            const del = JSON.parse(m[1])
+            const { error } = await supabase.from('food_diary').delete()
+              .eq('id', del.id).eq('user_id', fresh.user.id).eq('date', del.date || fresh.today)
+            if (error) console.error('Ошибка удаления записи:', error)
+            else deleted = true
+          } catch (e) { console.error('Ошибка разбора DEL:', e) }
+        }
+        text = text.replace(/\[DEL:[^\]]+\]/g, '')
+        if (deleted) {
           window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
           const refreshed = await loadContext()
           if (refreshed) setCtx(refreshed)
-        } catch (e) { console.error('Ошибка разбора DEL:', e) }
-        text = text.replace(/\[DEL:[^\]]+\]/g, '')
+        }
+      }
+
+      // CLEAR — полная очистка дневника за дату (только после подтверждения клиентом словом "да")
+      const clearMatch = text.match(/\[CLEAR:(\{[^}]+\})\]/)
+      if (clearMatch) {
+        try {
+          const clear = JSON.parse(clearMatch[1])
+          const { error } = await supabase.from('food_diary').delete()
+            .eq('user_id', fresh.user.id).eq('date', clear.date || fresh.today)
+          if (error) console.error('Ошибка очистки дневника:', error)
+          window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
+          const refreshed = await loadContext()
+          if (refreshed) setCtx(refreshed)
+        } catch (e) { console.error('Ошибка разбора CLEAR:', e) }
+        text = text.replace(/\[CLEAR:[^\]]+\]/g, '')
       }
 
       // GOAL

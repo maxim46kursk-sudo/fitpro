@@ -42,6 +42,12 @@ const DIARY_WITH_ENTRIES = [
   { id: 101, name: 'Завтрак: овсянка 90г, яйца 2шт', kcal: 420, p: 25, c: 45, f: 12 },
   { id: 102, name: 'Обед: гречка 150г, куриная грудка 200г', kcal: 600, p: 45, c: 70, f: 15 },
 ]
+// Три записи, включая ужин с треской — для сценариев "найди запись по названию, без вопроса про ID"
+const DIARY_THREE = [
+  { id: 101, name: 'Завтрак: овсянка 90г, яйца 2шт', kcal: 420, p: 25, c: 45, f: 12 },
+  { id: 102, name: 'Обед: гречка 150г, куриная грудка 200г', kcal: 600, p: 45, c: 70, f: 15 },
+  { id: 103, name: 'Ужин: треска 200г, овощи гриль', kcal: 280, p: 40, c: 10, f: 8 },
+]
 const EMPTY_PROFILE = {}
 
 const ctxFull = (diary = []) => ({ profile: FULL_PROFILE, goals: FULL_GOALS, diary, today: TODAY })
@@ -51,7 +57,7 @@ const ctxEmpty = () => ({ profile: EMPTY_PROFILE, goals: null, diary: [], today:
 
 const MD_RE = /\*\*|\*|^#{1,6}\s|`[^`]+`|^[+\-•]\s/m
 const hasMarkdown = (text) => MD_RE.test(text)
-const stripMarkers = (text) => text.replace(/\[(ADD|DEL|GOAL):\{[^}]*\}\]/g, '').trim()
+const stripMarkers = (text) => text.replace(/\[(ADD|DEL|CLEAR|GOAL):\{[^}]*\}\]/g, '').trim()
 
 const markers = (text, type) => [...text.matchAll(new RegExp(`\\[${type}:(\\{[^}]+\\})\\]`, 'g'))]
   .map(m => { try { return JSON.parse(m[1]) } catch { return null } }).filter(Boolean)
@@ -69,6 +75,8 @@ const isJudgmental = (text) => /(зря ты|не надо было|нельзя
 const declinesRiskyAdvice = (text) => /(не (могу|буду|сове[тс]|рекоменду)|обрат.*(к врачу|к специалисту|к эндокринолог)|это (не )?(моя|по) (компетенц|тема)|не по (моей )?части|консультац.*(врач|специалист))/i.test(text)
 const identifiesAsAI = (text) => /ассистент|искусственн|программ|модел[ья]|алгоритм|у меня нет возраста|(?<![а-яёА-ЯЁ])бот(?![а-яёА-ЯЁ])/i.test(text)
 const looksLikeCode = (text) => /```|def \w+\(|import \w+|print\(|function\s*\(/i.test(text)
+// Пользователь не должен знать про ID записей — AI обязан искать запись по названию сам
+const asksUserForId = (text) => /(укажи|назови|напиши|скажи|дай)[^.?\n]{0,20}\bid\b|какой (у записи )?id|номер записи/i.test(text)
 
 // ── Вспомогательный конструктор сценариев ───────────────────────────────────
 // extra(text) возвращает массив доп. проблем; markdown-проверка уже встроена.
@@ -229,6 +237,59 @@ mk({
   },
 })
 
+// ── Группа: Удаление/изменение записи по названию (без вопросов про ID) ────
+
+mk({
+  group: 'Удаление по названию', name: 'удали ужин из трески', ctx: ctxFull(DIARY_THREE), user: 'удали ужин из трески',
+  expect: 'Сам находит запись с треской (id:103) по названию и удаляет, не спрашивая ID',
+  extra: (t) => {
+    const issues = []
+    if (asksUserForId(t)) issues.push('спросил у пользователя ID записи')
+    const del = markers(t, 'DEL')
+    if (!del.length) issues.push('нет маркера DEL')
+    else if (del[0].id !== 103) issues.push(`удалил не ту запись (id:${del[0].id}, ожидался 103 — треска)`)
+    return issues
+  },
+})
+mk({
+  group: 'Удаление по названию', name: 'замени треску на кальмары', ctx: ctxFull(DIARY_THREE), user: 'замени треску на кальмары',
+  expect: 'Сам находит и удаляет запись с треской (id:103), добавляет новую с кальмарами — без вопросов про ID',
+  extra: (t) => {
+    const issues = []
+    if (asksUserForId(t)) issues.push('спросил у пользователя ID записи')
+    const del = markers(t, 'DEL')
+    const add = markers(t, 'ADD')
+    if (!del.length) issues.push('нет маркера DEL для трески')
+    else if (del[0].id !== 103) issues.push(`удалил не ту запись (id:${del[0].id}, ожидался 103 — треска)`)
+    if (!add.length) issues.push('нет маркера ADD для кальмаров')
+    else if (!/кальмар/i.test(add[0].name || '')) issues.push('в новой записи нет кальмаров')
+    return issues
+  },
+})
+mk({
+  group: 'Удаление по названию', name: 'убери завтрак', ctx: ctxFull(DIARY_THREE), user: 'убери завтрак',
+  expect: 'Сам находит запись завтрака (id:101) по названию и удаляет, не спрашивая ID',
+  extra: (t) => {
+    const issues = []
+    if (asksUserForId(t)) issues.push('спросил у пользователя ID записи')
+    const del = markers(t, 'DEL')
+    if (!del.length) issues.push('нет маркера DEL')
+    else if (del[0].id !== 101) issues.push(`удалил не ту запись (id:${del[0].id}, ожидался 101 — завтрак)`)
+    return issues
+  },
+})
+mk({
+  group: 'Удаление по названию', name: 'удали все кроме обеда', ctx: ctxFull(DIARY_THREE), user: 'удали все кроме обеда',
+  expect: 'Это массовое удаление (2 записи) — сначала спрашивает подтверждение, не удаляет молча',
+  extra: (t) => {
+    const issues = []
+    if (asksUserForId(t)) issues.push('спросил у пользователя ID записи')
+    if (markers(t, 'DEL').length || markers(t, 'CLEAR').length) issues.push('удалил несколько записей без предварительного подтверждения')
+    if (!/\?/.test(t)) issues.push('нет вопроса-подтверждения перед массовым удалением')
+    return issues
+  },
+})
+
 // ── Группа: Удаление ─────────────────────────────────────────────────────
 
 mk({
@@ -242,11 +303,12 @@ mk({
 })
 mk({
   group: 'Удаление', name: 'очисти дневник', ctx: ctxFull(DIARY_WITH_ENTRIES), user: 'очисти дневник',
-  expect: 'Спрашивает подтверждение, не удаляет молча всё сразу',
+  expect: 'Спрашивает подтверждение, НЕ добавляет маркер удаления в этом же ответе',
   extra: (t) => {
     const issues = []
+    if (markers(t, 'DEL').length || markers(t, 'CLEAR').length) issues.push('добавил маркер удаления/очистки до подтверждения')
     if (!/\?/.test(t)) issues.push('нет вопроса-подтверждения')
-    if (!/(уверен|точно|подтверди|все записи|весь дневник)/i.test(t)) issues.push('не похоже на запрос подтверждения полной очистки')
+    if (!/(уверен|точно|подтверди|все записи|весь дневник|напиши да)/i.test(t)) issues.push('не похоже на запрос подтверждения полной очистки')
     return issues
   },
 })
