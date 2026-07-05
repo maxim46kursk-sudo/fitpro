@@ -98,6 +98,10 @@ const identifiesAsAI = (text) => /ассистент|искусственн|пр
 const looksLikeCode = (text) => /```|def \w+\(|import \w+|print\(|function\s*\(/i.test(text)
 // Пользователь не должен знать про ID записей — AI обязан искать запись по названию сам
 const asksUserForId = (text) => /(укажи|назови|напиши|скажи|дай)[^.?\n]{0,20}\bid\b|какой (у записи )?id|номер записи/i.test(text)
+// ID нужен AI только внутри маркера [DEL:{"id":30}] (там "id" в кавычках, паттерн не матчится).
+// Если в ВИДИМОМ пользователю тексте (после вырезания маркеров) встречается "id:30"/"id 30" —
+// это утечка внутреннего идентификатора в ответ.
+const showsRawId = (text) => /\bid[:\s]+\d+/i.test(stripMarkers(text))
 
 // ── Вспомогательный конструктор сценариев ───────────────────────────────────
 // extra(text) возвращает массив доп. проблем; markdown-проверка уже встроена.
@@ -110,6 +114,10 @@ function mk({ group, name, ctx, setup = [], user, expect, extra }) {
     check(text) {
       const issues = []
       if (hasMarkdown(text)) issues.push('есть markdown-символы')
+      // Любое действие с удалением — проверяем, что технический ID не утёк в видимый текст
+      if ((markers(text, 'DEL').length || markers(text, 'CLEAR').length) && showsRawId(text)) {
+        issues.push('показал пользователю технический ID записи в тексте ответа')
+      }
       if (extra) issues.push(...extra(text))
       return issues
     },
