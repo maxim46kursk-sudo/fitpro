@@ -1,10 +1,13 @@
 import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { supabase } from './supabase'
 import { buildSystemPrompt } from './aiPrompt'
+import { buildWorkoutSystemPrompt } from './workoutPrompt'
+import { PROGRAMS_MAP } from './programs'
 
 const PUR = '#7F77DD'
 
 const HINTS = ['Какой рацион мне подойдет?', 'Что съесть после тренировки?', 'Можно ли мне алкоголь?']
+const HINTS_WORKOUT = ['Жим 50кг на 8 было легко, какой вес дальше?', 'Что у меня растёт, а что стоит на месте?', 'Побаливает плечо на жиме, что делать?']
 
 const stripMd = (t) => t
   .replace(/\*\*(.*?)\*\*/g, '$1')
@@ -39,13 +42,22 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
   }
 
   // Свежие данные пользователя из Supabase — только Supabase, никакого localStorage.
-  // Дневник грузим за последние 30 дней (не только сегодня), чтобы AI видел полную
-  // картину питания и мог работать с любой датой, а не только с сегодняшней.
-  const loadContext = async () => {
+  // Историю (дневник питания / подходы тренировок) грузим за последние 30 дней
+  // (не только сегодня), чтобы AI видел полную картину и мог работать с любой датой.
+  const loadContext = async (m) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
     const today = new Date().toISOString().slice(0, 10)
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
+    if (m === 'workout') {
+      const [{ data: sets }, { data: profile }] = await Promise.all([
+        supabase.from('workout_sets').select('*').eq('user_id', user.id).gte('date', since).order('date'),
+        supabase.from('profiles').select('*').eq('id', user.id).single(),
+      ])
+      return { user, today, sets: sets || [], profile: profile || {} }
+    }
+
     const [{ data: diary }, { data: goals }, { data: profile }] = await Promise.all([
       supabase.from('food_diary').select('*').eq('user_id', user.id).gte('date', since).order('date', { ascending: false }).order('created_at'),
       supabase.from('food_goals').select('*').eq('user_id', user.id).single(),
@@ -80,19 +92,19 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
   }, [isOpen])
 
   useEffect(() => {
-    if (!isOpen || mode !== 'nutrition') return
-    loadContext().then(c => c && setCtx(c))
+    if (!isOpen) return
+    loadContext(mode).then(c => c && setCtx(c))
   }, [isOpen, mode])
 
-  // История чата по питанию — из Supabase
+  // История чата — своя ветка на каждый режим, из Supabase
   useEffect(() => {
-    if (!isOpen || mode !== 'nutrition') return
+    if (!isOpen) return
     let cancelled = false
     ;(async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user || cancelled) return
       const { data } = await supabase.from('chat_messages').select('*')
-        .eq('user_id', user.id).eq('mode', 'nutrition').order('created_at')
+        .eq('user_id', user.id).eq('mode', mode).order('created_at')
       if (!cancelled && data) setMessages(data.map(m => ({ role: m.role, content: m.content })))
     })()
     return () => { cancelled = true }
@@ -103,11 +115,11 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
   }, [messages, loading])
 
   useEffect(() => {
-    if (isOpen && mode === 'nutrition') setTimeout(() => inputRef.current?.focus(), 150)
+    if (isOpen) setTimeout(() => inputRef.current?.focus(), 150)
   }, [isOpen, mode])
 
   const send = async () => {
-    if (!input.trim() || loading || mode !== 'nutrition') return
+    if (!input.trim() || loading) return
 
     const userMsg = { role: 'user', content: input.trim() }
     const newMsgs = [...messages, userMsg]
@@ -117,9 +129,18 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
 
     try {
       // Перед каждым запросом перезагружаем данные — единственный источник правды
-      const fresh = await loadContext()
+      const fresh = await loadContext(mode)
       if (!fresh) throw new Error('Не удалось определить пользователя')
       setCtx(fresh)
+
+      const system = mode === 'workout'
+        ? buildWorkoutSystemPrompt({
+            profile: fresh.profile,
+            programTemplate: PROGRAMS_MAP[fresh.profile.program] || null,
+            sets: fresh.sets,
+            today: fresh.today,
+          })
+        : buildSystemPrompt(fresh)
 
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -127,7 +148,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
         body: JSON.stringify({
           model: 'claude-sonnet-4-6',
           max_tokens: 1000,
-          system: buildSystemPrompt(fresh),
+          system,
           messages: newMsgs.map(m => ({ role: m.role, content: m.content })),
         }),
       })
@@ -140,87 +161,144 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
       let text = stripMd(data.content[0].text)
       let added = false
 
-      // ADD — может быть несколько приёмов пищи за раз, каждый в своём маркере
-      const addMatches = [...text.matchAll(/\[ADD:(\{[^}]+\})\]/g)]
-      if (addMatches.length) {
-        for (const m of addMatches) {
+      if (mode === 'workout') {
+        // ADD_SET — может быть несколько подходов за раз
+        const addSetMatches = [...text.matchAll(/\[ADD_SET:(\{[^}]+\})\]/g)]
+        if (addSetMatches.length) {
+          for (const m of addSetMatches) {
+            try {
+              const entry = JSON.parse(m[1])
+              const { error } = await supabase.from('workout_sets').insert({
+                user_id: fresh.user.id, exercise: entry.exercise, date: entry.date || fresh.today,
+                kg: entry.kg != null ? Number(entry.kg) : null,
+                reps: entry.reps != null ? Number(entry.reps) : null,
+              })
+              if (error) console.error('Ошибка записи подхода:', error)
+              else added = true
+            } catch (e) { console.error('Ошибка разбора ADD_SET:', e) }
+          }
+          text = text.replace(/\[ADD_SET:[^\]]+\]/g, '')
+        }
+
+        // DEL_SET — может быть несколько записей за раз
+        const delSetMatches = [...text.matchAll(/\[DEL_SET:(\{[^}]+\})\]/g)]
+        if (delSetMatches.length) {
+          for (const m of delSetMatches) {
+            try {
+              const del = JSON.parse(m[1])
+              const { error } = await supabase.from('workout_sets').delete()
+                .eq('id', del.id).eq('user_id', fresh.user.id)
+              if (error) console.error('Ошибка удаления подхода:', error)
+            } catch (e) { console.error('Ошибка разбора DEL_SET:', e) }
+          }
+          text = text.replace(/\[DEL_SET:[^\]]+\]/g, '')
+        }
+
+        // EDIT_SET — может быть несколько корректировок за раз
+        const editSetMatches = [...text.matchAll(/\[EDIT_SET:(\{[^}]+\})\]/g)]
+        if (editSetMatches.length) {
+          for (const m of editSetMatches) {
+            try {
+              const edit = JSON.parse(m[1])
+              const patch = {}
+              if (edit.kg != null) patch.kg = Number(edit.kg)
+              if (edit.reps != null) patch.reps = Number(edit.reps)
+              const { error } = await supabase.from('workout_sets').update(patch)
+                .eq('id', edit.id).eq('user_id', fresh.user.id)
+              if (error) console.error('Ошибка изменения подхода:', error)
+            } catch (e) { console.error('Ошибка разбора EDIT_SET:', e) }
+          }
+          text = text.replace(/\[EDIT_SET:[^\]]+\]/g, '')
+        }
+
+        if (addSetMatches.length || delSetMatches.length || editSetMatches.length) {
+          if (added) flashToast()
+          const refreshed = await loadContext(mode)
+          if (refreshed) setCtx(refreshed)
+        }
+      } else {
+        // ADD — может быть несколько приёмов пищи за раз, каждый в своём маркере
+        const addMatches = [...text.matchAll(/\[ADD:(\{[^}]+\})\]/g)]
+        if (addMatches.length) {
+          for (const m of addMatches) {
+            try {
+              const entry = JSON.parse(m[1])
+              const { error } = await supabase.from('food_diary').insert({
+                user_id: fresh.user.id, date: entry.date || fresh.today,
+                name: entry.name, kcal: +entry.kcal || 0,
+                p: +entry.p || 0, c: +entry.c || 0, f: +entry.f || 0,
+              })
+              if (error) console.error('Ошибка записи в дневник:', error)
+              else added = true
+            } catch (e) { console.error('Ошибка разбора ADD:', e) }
+          }
+          text = text.replace(/\[ADD:[^\]]+\]/g, '')
+          if (added) {
+            window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
+            flashToast()
+            const refreshed = await loadContext(mode)
+            if (refreshed) setCtx(refreshed)
+          }
+        }
+
+        // DEL — может быть несколько записей за раз (после подтверждения массового удаления)
+        const delMatches = [...text.matchAll(/\[DEL:(\{[^}]+\})\]/g)]
+        if (delMatches.length) {
+          let deleted = false
+          for (const m of delMatches) {
+            try {
+              const del = JSON.parse(m[1])
+              const { error } = await supabase.from('food_diary').delete()
+                .eq('id', del.id).eq('user_id', fresh.user.id).eq('date', del.date || fresh.today)
+              if (error) console.error('Ошибка удаления записи:', error)
+              else deleted = true
+            } catch (e) { console.error('Ошибка разбора DEL:', e) }
+          }
+          text = text.replace(/\[DEL:[^\]]+\]/g, '')
+          if (deleted) {
+            window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
+            const refreshed = await loadContext(mode)
+            if (refreshed) setCtx(refreshed)
+          }
+        }
+
+        // CLEAR — полная очистка дневника за дату, может быть несколько маркеров сразу
+        // (несколько дат за раз) — только после подтверждения клиентом словом "да"
+        const clearMatches = [...text.matchAll(/\[CLEAR:(\{[^}]+\})\]/g)]
+        if (clearMatches.length) {
+          let cleared = false
+          for (const m of clearMatches) {
+            try {
+              const clear = JSON.parse(m[1])
+              const { error } = await supabase.from('food_diary').delete()
+                .eq('user_id', fresh.user.id).eq('date', clear.date || fresh.today)
+              if (error) console.error('Ошибка очистки дневника:', error)
+              else cleared = true
+            } catch (e) { console.error('Ошибка разбора CLEAR:', e) }
+          }
+          text = text.replace(/\[CLEAR:[^\]]+\]/g, '')
+          if (cleared) {
+            window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
+            const refreshed = await loadContext(mode)
+            if (refreshed) setCtx(refreshed)
+          }
+        }
+
+        // GOAL
+        const goalMatch = text.match(/\[GOAL:(\{[^}]+\})\]/)
+        if (goalMatch) {
           try {
-            const entry = JSON.parse(m[1])
-            const { error } = await supabase.from('food_diary').insert({
-              user_id: fresh.user.id, date: entry.date || fresh.today,
-              name: entry.name, kcal: +entry.kcal || 0,
-              p: +entry.p || 0, c: +entry.c || 0, f: +entry.f || 0,
+            const goal = JSON.parse(goalMatch[1])
+            const { error } = await supabase.from('food_goals').upsert({
+              user_id: fresh.user.id,
+              kcal: +goal.kcal || 0, p: +goal.p || 0, c: +goal.c || 0, f: +goal.f || 0,
+              updated_at: new Date().toISOString(),
             })
-            if (error) console.error('Ошибка записи в дневник:', error)
-            else added = true
-          } catch (e) { console.error('Ошибка разбора ADD:', e) }
+            if (error) console.error('Ошибка обновления нормы:', error)
+            window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
+          } catch (e) { console.error('Ошибка разбора GOAL:', e) }
+          text = text.replace(/\[GOAL:[^\]]+\]/g, '')
         }
-        text = text.replace(/\[ADD:[^\]]+\]/g, '')
-        if (added) {
-          window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
-          flashToast()
-          const refreshed = await loadContext()
-          if (refreshed) setCtx(refreshed)
-        }
-      }
-
-      // DEL — может быть несколько записей за раз (после подтверждения массового удаления)
-      const delMatches = [...text.matchAll(/\[DEL:(\{[^}]+\})\]/g)]
-      if (delMatches.length) {
-        let deleted = false
-        for (const m of delMatches) {
-          try {
-            const del = JSON.parse(m[1])
-            const { error } = await supabase.from('food_diary').delete()
-              .eq('id', del.id).eq('user_id', fresh.user.id).eq('date', del.date || fresh.today)
-            if (error) console.error('Ошибка удаления записи:', error)
-            else deleted = true
-          } catch (e) { console.error('Ошибка разбора DEL:', e) }
-        }
-        text = text.replace(/\[DEL:[^\]]+\]/g, '')
-        if (deleted) {
-          window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
-          const refreshed = await loadContext()
-          if (refreshed) setCtx(refreshed)
-        }
-      }
-
-      // CLEAR — полная очистка дневника за дату, может быть несколько маркеров сразу
-      // (несколько дат за раз) — только после подтверждения клиентом словом "да"
-      const clearMatches = [...text.matchAll(/\[CLEAR:(\{[^}]+\})\]/g)]
-      if (clearMatches.length) {
-        let cleared = false
-        for (const m of clearMatches) {
-          try {
-            const clear = JSON.parse(m[1])
-            const { error } = await supabase.from('food_diary').delete()
-              .eq('user_id', fresh.user.id).eq('date', clear.date || fresh.today)
-            if (error) console.error('Ошибка очистки дневника:', error)
-            else cleared = true
-          } catch (e) { console.error('Ошибка разбора CLEAR:', e) }
-        }
-        text = text.replace(/\[CLEAR:[^\]]+\]/g, '')
-        if (cleared) {
-          window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
-          const refreshed = await loadContext()
-          if (refreshed) setCtx(refreshed)
-        }
-      }
-
-      // GOAL
-      const goalMatch = text.match(/\[GOAL:(\{[^}]+\})\]/)
-      if (goalMatch) {
-        try {
-          const goal = JSON.parse(goalMatch[1])
-          const { error } = await supabase.from('food_goals').upsert({
-            user_id: fresh.user.id,
-            kcal: +goal.kcal || 0, p: +goal.p || 0, c: +goal.c || 0, f: +goal.f || 0,
-            updated_at: new Date().toISOString(),
-          })
-          if (error) console.error('Ошибка обновления нормы:', error)
-          window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
-        } catch (e) { console.error('Ошибка разбора GOAL:', e) }
-        text = text.replace(/\[GOAL:[^\]]+\]/g, '')
       }
 
       // Компактный вывод — без пустых/пробельных строк после вырезания маркеров
@@ -229,8 +307,8 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
       setMessages(prev => [...prev, { role: 'assistant', content: text, added }])
 
       await supabase.from('chat_messages').insert([
-        { user_id: fresh.user.id, mode: 'nutrition', role: 'user', content: userMsg.content },
-        { user_id: fresh.user.id, mode: 'nutrition', role: 'assistant', content: text },
+        { user_id: fresh.user.id, mode, role: 'user', content: userMsg.content },
+        { user_id: fresh.user.id, mode, role: 'assistant', content: text },
       ])
     } catch (err) {
       setMessages(prev => [...prev, { role: 'assistant', content: `Ошибка: ${err.message}` }])
@@ -320,38 +398,26 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
             ))}
           </div>
 
-          {/* Режим тренировок — пока заглушка */}
-          {mode === 'workout' ? (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, textAlign: 'center' }}>
-              <div>
-                <div style={{ fontSize: 42, marginBottom: 12 }}>🚧</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#111', marginBottom: 6 }}>Скоро здесь появится AI-тренер</div>
-                <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 20 }}>Пока помогаю только с питанием</div>
-                <button onClick={() => setMode('nutrition')} style={{
-                  padding: '10px 20px', borderRadius: 20, border: 'none',
-                  background: PUR, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                }}>
-                  Перейти к питанию
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
+          <>
               {/* Сообщения */}
               <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
 
                 {/* Заглушка если нет сообщений */}
                 {messages.length === 0 && (
                   <div style={{ textAlign: 'center', marginTop: 24 }}>
-                    <div style={{ fontSize: 42, marginBottom: 12 }}>🥗</div>
+                    <div style={{ fontSize: 42, marginBottom: 12 }}>{mode === 'workout' ? '🏋️' : '🥗'}</div>
                     <div style={{ fontSize: 15, fontWeight: 700, color: '#111', marginBottom: 6 }}>
-                      {ctx?.profile?.name ? `Привет, ${ctx.profile.name.split(' ')[0]}! 🥗` : 'AI диетолог'}
+                      {mode === 'workout'
+                        ? (ctx?.profile?.name ? `Привет, ${ctx.profile.name.split(' ')[0]}! 🏋️` : 'AI-тренер')
+                        : (ctx?.profile?.name ? `Привет, ${ctx.profile.name.split(' ')[0]}! 🥗` : 'AI диетолог')}
                     </div>
                     <div style={{ fontSize: 13, color: '#9ca3af', lineHeight: 1.65, marginBottom: 20 }}>
-                      Вижу твой дневник и норму —{'\n'}спрашивай что угодно
+                      {mode === 'workout'
+                        ? <>Вижу твою программу и историю —{'\n'}спрашивай про вес и прогресс</>
+                        : <>Вижу твой дневник и норму —{'\n'}спрашивай что угодно</>}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
-                      {HINTS.map((h, i) => (
+                      {(mode === 'workout' ? HINTS_WORKOUT : HINTS).map((h, i) => (
                         <button key={i} onClick={() => setInput(h)}
                           style={{
                             padding: '8px 16px', borderRadius: 20, border: `1px solid ${PUR}44`,
@@ -424,7 +490,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-                  placeholder="Спроси про питание или продукт..."
+                  placeholder={mode === 'workout' ? 'Расскажи как прошёл подход...' : 'Спроси про питание или продукт...'}
                   style={{
                     flex: 1, padding: '11px 16px', borderRadius: 24,
                     border: '1.5px solid #e5e7eb', fontSize: 14,
@@ -446,7 +512,6 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
                   }}>↑</button>
               </div>
             </>
-          )}
         </div>
       )}
     </>
