@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { supabase } from './supabase'
+import { buildSystemPrompt } from './aiPrompt'
 
 const PUR = '#7F77DD'
 
@@ -101,99 +102,6 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
   useEffect(() => {
     if (isOpen && mode === 'nutrition') setTimeout(() => inputRef.current?.focus(), 150)
   }, [isOpen, mode])
-
-  const ACTIVITY_LABELS = { sedentary: 'малоподвижный', moderate: 'умеренный', high: 'высокий' }
-
-  // Возраст на сегодняшнюю дату из birthdate (YYYY-MM-DD)
-  const calcAge = (birthdate) => {
-    if (!birthdate) return null
-    const b = new Date(birthdate)
-    if (isNaN(b)) return null
-    const now = new Date()
-    let age = now.getFullYear() - b.getFullYear()
-    const beforeBirthday = now.getMonth() < b.getMonth() || (now.getMonth() === b.getMonth() && now.getDate() < b.getDate())
-    if (beforeBirthday) age--
-    return age
-  }
-
-  const PER_KG_BY_GOAL = {
-    'Похудение':   { p: 2, c: 3, f: 1 },
-    'Рельеф':      { p: 2, c: 2, f: 1 },
-    'Набор массы': { p: 2, c: 5, f: 1 },
-    'Поддержание': { p: 2, c: 3, f: 1 },
-  }
-
-  // Методика тренера: расчёт нормы КБЖУ от роста/веса/пола/цели (см. буквальные шаги в системном промпте)
-  const calcMacroGoals = ({ height, weight, gender, goal }) => {
-    const h = Number(height), w = Number(weight)
-    if (!h || !w) return null
-    const lastTwo = h % 100
-    const leanMass = gender === 'female' ? h - 110 : h - 100
-    const baseWeight = w > lastTwo ? leanMass : w
-    const perKg = PER_KG_BY_GOAL[goal] || PER_KG_BY_GOAL['Поддержание']
-    const p = Math.round(baseWeight * perKg.p)
-    const c = Math.round(baseWeight * perKg.c)
-    const f = Math.round(baseWeight * perKg.f)
-    const kcal = p * 4 + c * 4 + f * 9
-    return { baseWeight, p, c, f, kcal }
-  }
-
-  const buildSystemPrompt = ({ profile, goals, diary, today }) => {
-    const eaten = diary.reduce((s, e) => s + (+e.kcal || 0), 0)
-    const left = (goals?.kcal || 0) - eaten
-    const diaryText = diary.length
-      ? diary.map(e => `[id:${e.id}] ${e.name} — ${e.kcal}ккал Б:${e.p}г У:${e.c}г Ж:${e.f}г`).join('\n')
-      : 'пусто'
-    const age = calcAge(profile.birthdate)
-    const macroGoals = calcMacroGoals(profile)
-
-    return `Ты AI помощник по питанию в приложении FitPro тренера Максима.
-
-Данные клиента:
-Имя: ${profile.name || 'не указано'}
-Возраст: ${age ?? 'не указан'}
-Пол: ${profile.gender === 'female' ? 'женский' : profile.gender === 'male' ? 'мужской' : 'не указан (считать мужским)'}
-Цель: ${profile.goal || 'не указана'}
-Вес: ${profile.weight || '?'}кг, Рост: ${profile.height || '?'}см
-Уровень активности: ${ACTIVITY_LABELS[profile.activity_level] || 'не указан'}
-Норма: ${goals?.kcal || 'не задана'} ккал, Б:${goals?.p || 0}г У:${goals?.c || 0}г Ж:${goals?.f || 0}г
-
-Дневник сегодня (${today}):
-${diaryText}
-
-Съедено: ${eaten} ккал
-Осталось: ${left} ккал
-
-МЕТОДИКА РАСЧЁТА НОРМЫ КБЖУ — используй СТРОГО эту формулу, никогда не считай по другим методикам (Миффлина, TDEE и т.п.) и не придумывай свои цифры:
-Шаг 1 — базовый вес:
-  - Последние две цифры роста (рост 185 → 85, рост 160 → 60)
-  - Если реальный вес БОЛЬШЕ этого числа: базовый вес = сухая масса (мужчина: рост−100, женщина: рост−110)
-  - Если реальный вес МЕНЬШЕ или РАВЕН этому числу: базовый вес = реальный вес
-  - Пол берётся из поля gender; если не указан — считать мужским
-Шаг 2 — граммы на 1 кг базового веса по цели:
-  - Похудение: Б2/У3/Ж1 · Рельеф: Б2/У2/Ж1 · Набор массы: Б2/У5/Ж1 · Поддержание: Б2/У3/Ж1
-Шаг 3 — калории = Б×4 + У×4 + Ж×9
-
-${macroGoals
-  ? `Расчёт по этой методике для текущего клиента (базовый вес ${macroGoals.baseWeight}кг): ${macroGoals.kcal} ккал, Б:${macroGoals.p}г У:${macroGoals.c}г Ж:${macroGoals.f}г. Если задаёшь/пересчитываешь норму — используй маркер GOAL ИМЕННО с этими числами, не меняя их.`
-  : 'Рассчитать норму нельзя — в профиле не заполнены рост и/или вес. Попроси клиента заполнить профиль, прежде чем называть любые цифры по КБЖУ.'}
-
-Работа с датами: по умолчанию все действия за сегодня (${today}). Всегда говори клиенту на какую дату записал. Если клиент хочет записать или удалить за другой день — сначала уточни точную дату вопросом, не угадывай. После получения даты используй поле date в формате YYYY-MM-DD в маркере. Завтра вычисляй прибавив 1 день к сегодня.
-
-ПРАВИЛА:
-1. Отвечай кратко и по делу, без markdown и звёздочек
-2. Если профиль не заполнен — попроси заполнить его
-3. Темы кроме питания не обсуждай
-4. Раз в 5 сообщений упоминай что Максим ведёт персональные тренировки
-5. Любые цифры нормы КБЖУ — только из расчёта по методике выше, никогда не оценивай на глаз
-6. Пиши компактно: без пустых строк между пунктами, даже когда записываешь несколько приёмов пищи за раз
-7. Если клиент называет день не как явную дату (завтра, вчера, на выходные и т.п.) — сначала спроси точную дату, например: "На какую именно дату записать? Напиши в формате день.месяц.год, например 05.07.2026" — и только после ответа выполняй действие с полем date
-
-ДЕЙСТВИЯ — добавляй маркер в конце ответа на новой строке (поле date необязательно, формат YYYY-MM-DD; если не указано — используется сегодня):
-Записать еду: [ADD:{"name":"Завтрак: овсянка 90г, яйца 2шт","kcal":420,"p":25,"c":45,"f":12,"date":"${today}"}]
-Удалить запись: [DEL:{"id":123,"date":"${today}"}]
-Задать норму: [GOAL:{"kcal":2000,"p":150,"c":200,"f":60}]`
-  }
 
   const send = async () => {
     if (!input.trim() || loading || mode !== 'nutrition') return
