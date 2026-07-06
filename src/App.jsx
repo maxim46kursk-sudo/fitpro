@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import AIAssistant from './AIAssistant'
 import { supabase } from './supabase.js'
-import { FOLDERS, PROGRAMS_MAP } from './programs.js'
+import { FOLDERS, PROGRAMS_MAP, EXERCISES } from './programs.js'
 import './App.css'
 
 const PUR = '#7F77DD'
@@ -22,99 +22,6 @@ const CLIENTS = [
   { id:3, name:'Сергей Петров',   goal:'Выносливость', program:'Бег + Кардио',       progress:45, av:'СП', cal:2400, wk:2, wts:[80,80,79.5,79,79,78.5,78] },
 ]
 
-
-// Собрано из реальных программ тренировок тренера (Full Body, Сплит, Похудение,
-// Домашние тренировки) — см. PROGRAMS_MAP в ./programs.js. Дубли между программами
-// убраны; варианты, отличавшиеся только номером уровня резинки (интенсивность,
-// не отдельное упражнение), объединены в одно.
-const EXERCISES = [
-  // Ноги
-  { n:'Приседания', m:'Ноги', eq:'Штанга' },
-  { n:'Зашагивание на тумбу', m:'Ноги', eq:'Гантели' },
-  { n:'Болгарские выпады с гантелями', m:'Ноги', eq:'Гантели' },
-  { n:'Болгарские выпады', m:'Ноги', eq:'Без оборудования' },
-  { n:'Болгарские выпады с резиной', m:'Ноги', eq:'Резина' },
-  { n:'Выпады', m:'Ноги', eq:'Штанга' },
-  { n:'Выпады назад на месте', m:'Ноги', eq:'Штанга' },
-  { n:'Выпады назад на месте с резиной', m:'Ноги', eq:'Резина' },
-  { n:'Приседания с резиной', m:'Ноги', eq:'Резина' },
-  { n:'Сгибание ног сидя/лежа', m:'Ноги', eq:'Тренажёр' },
-  // Ягодицы
-  { n:'Ягодичный мост со штангой', m:'Ягодицы', eq:'Штанга' },
-  { n:'Ягодичный мост на одной ноге (упор на стул/диван)', m:'Ягодицы', eq:'Без оборудования' },
-  { n:'Ягодичный мост на одной ноге с резиной (упор на стул/диван)', m:'Ягодицы', eq:'Резина' },
-  { n:'Румынская тяга со штангой', m:'Ягодицы', eq:'Штанга' },
-  { n:'Румынская тяга на одной ноге со штангой', m:'Ягодицы', eq:'Штанга' },
-  { n:'Румынская на одной ноге с упором другой ноги в стену', m:'Ягодицы', eq:'Без оборудования' },
-  { n:'Румынская на одной ноге с упором другой ноги в стену с резиной', m:'Ягодицы', eq:'Резина' },
-  { n:'Румынская стоя на одной ноге с отведением второй ноги назад', m:'Ягодицы', eq:'Без оборудования' },
-  { n:'Румынская тяга на одной ноге отводя другую ногу назад с резиной', m:'Ягодицы', eq:'Резина' },
-  { n:'Отведения бедер сидя в тренажере', m:'Ягодицы', eq:'Тренажёр' },
-  { n:'Отведения бедер сидя с резиной', m:'Ягодицы', eq:'Резина' },
-  { n:'Отведение согнутой ноги стоя в наклоне с резиной', m:'Ягодицы', eq:'Резина' },
-  { n:'Махи стоя в кроссовере', m:'Ягодицы', eq:'Блок' },
-  { n:'Махи в кроссовере по одной руке V-образной рукояткой', m:'Ягодицы', eq:'Блок' },
-  { n:'Махи ноги стоя с резиной', m:'Ягодицы', eq:'Резина' },
-  { n:'Шаги в сторону с резиной на коленях', m:'Ягодицы', eq:'Резина' },
-  { n:'Фроги', m:'Ягодицы', eq:'Без оборудования' },
-  // Спина
-  { n:'Тяга верхнего блока', m:'Спина', eq:'Блок' },
-  { n:'Тяга верхнего блока широким хватом', m:'Спина', eq:'Блок' },
-  { n:'Тяга верхнего блока с V-образной рукоятью', m:'Спина', eq:'Блок' },
-  { n:'Тяга нижнего блока с V-образной рукоятью сидя', m:'Спина', eq:'Блок' },
-  { n:'Тяга нижнего блока с упором грудью', m:'Спина', eq:'Тренажёр' },
-  { n:'Подтягивания в гравитроне параллельный хват', m:'Спина', eq:'Гравитрон' },
-  { n:'Тяга горизонтальная к поясу по одной руке стоя в выпаде', m:'Спина', eq:'Гантели' },
-  { n:'Тяга гантели в наклоне с опорой на скамью', m:'Спина', eq:'Гантели' },
-  { n:'Тяга резины лежа на полу', m:'Спина', eq:'Резина' },
-  { n:'Тяга резины сидя на полу', m:'Спина', eq:'Резина' },
-  { n:'Тяга стоя в наклоне резины', m:'Спина', eq:'Резина' },
-  { n:'Тяга к поясу резины с упором рукой в наклоне', m:'Спина', eq:'Резина' },
-  { n:'Гиперэкстензия', m:'Спина', eq:'Тренажёр' },
-  // Грудь
-  { n:'Жим гантелей на наклонной скамье', m:'Грудь', eq:'Гантели' },
-  { n:'Жим гантелей лежа на наклонной скамье', m:'Грудь', eq:'Гантели' },
-  { n:'Разводка', m:'Грудь', eq:'Гантели' },
-  { n:'Бабочка', m:'Грудь', eq:'Тренажёр' },
-  { n:'Отжимания от пола', m:'Грудь', eq:'Без оборудования' },
-  // Плечи
-  { n:'Жим гантелей сидя', m:'Плечи', eq:'Гантели' },
-  { n:'Жим резины сидя', m:'Плечи', eq:'Резина' },
-  { n:'Махи с гантелями стоя', m:'Плечи', eq:'Гантели' },
-  { n:'Протяжка штанги широким хватом', m:'Плечи', eq:'Штанга' },
-  { n:'Протяжка штанги широким хватом стоя', m:'Плечи', eq:'Штанга' },
-  { n:'Протяжка резины', m:'Плечи', eq:'Резина' },
-  { n:'Отведение рук назад сидя в наклоне', m:'Плечи', eq:'Гантели' },
-  { n:'Отведение руки с резиной', m:'Плечи', eq:'Резина' },
-  { n:'Приведение руки с резиной', m:'Плечи', eq:'Резина' },
-  { n:'Обратная бабочка', m:'Плечи', eq:'Тренажёр' },
-  // Руки
-  { n:'Разгибание рук (косичка)', m:'Руки', eq:'Блок' },
-  { n:'Сгибание рук (косичка)', m:'Руки', eq:'Блок' },
-  { n:'Разгибание рук (прямая рукоять)', m:'Руки', eq:'Блок' },
-  { n:'Сгибание рук (прямая рукоять)', m:'Руки', eq:'Блок' },
-  { n:'Разгибание рук с резиной', m:'Руки', eq:'Резина' },
-  { n:'Сгибание рук с резиной', m:'Руки', eq:'Резина' },
-  // Кор
-  { n:'Спайдер', m:'Кор', eq:'Гантели' },
-  { n:'Молитва в кроссовере', m:'Кор', eq:'Блок' },
-  { n:'Скручивания лежа на полу', m:'Кор', eq:'Без оборудования' },
-  { n:'Складка', m:'Кор', eq:'Без оборудования' },
-  { n:'Вращение корпуса сидя на ягодицах', m:'Кор', eq:'Гантели' },
-  { n:'Мертвый жук', m:'Кор', eq:'Без оборудования' },
-  { n:'Обратная лодочка', m:'Кор', eq:'Без оборудования' },
-  { n:'Доползание до планки + становимся на локти', m:'Кор', eq:'Без оборудования' },
-  { n:'Доползание до планки + касание рукой противоположного плеча', m:'Кор', eq:'Без оборудования' },
-  { n:'В планке перетаскиваем гантелю под собой', m:'Кор', eq:'Гантели' },
-  // Всё тело
-  { n:'Трастеры', m:'Всё тело', eq:'Гантели' },
-  { n:'Рывок гантели одной рукой', m:'Всё тело', eq:'Гантели' },
-  { n:'Махи гирей', m:'Всё тело', eq:'Гиря' },
-  { n:'Выпад + прыжок', m:'Всё тело', eq:'Без оборудования' },
-  { n:'Присед + мах гантелями вперед', m:'Всё тело', eq:'Гантели' },
-  { n:'Боковой выпад с подъемом гантели над головой', m:'Всё тело', eq:'Гантели' },
-  { n:'Выпад назад с гантелей в руке над головой', m:'Всё тело', eq:'Гантели' },
-]
 
 const CHAT_INIT = [
   { id:1, from:'client', text:'Привет! Можно изменить программу? Болит колено 😔', t:'10:15' },
@@ -548,6 +455,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const [setVideos,setSetVideos]=useState({}) // '${ei}_${si}' → {url,name}
   const [showSendModal,setShowSendModal]=useState(false)
   const [sendCopied,setSendCopied]=useState(false)
+  const [showFinishToast,setShowFinishToast]=useState(false)
   const setVideoInputRef=useRef(null)
   const setVideoUploadTarget=useRef(null)
 
@@ -559,7 +467,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       setWExercises((w.exercises||[]).map(ex=>({...ex,sets:(ex.sets||[]).map(s=>({...s})),done:false})))
       const isLog=w.duration===null||w.duration===undefined
       setWMode(isLog?'log':'start')
-      if(isLog&&w.date)setWDate(new Date(w.date).toISOString().split('T')[0])
+      if(w.date)setWDate(new Date(w.date).toISOString().split('T')[0])
       setTimer(0);setSwTime(0);setSwRunning(false)
       setWComment(w.comment||'')
       setIsEditMode(true)
@@ -597,11 +505,11 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
 
   const handleAction=key=>{
     setMenuOpen(false)
+    const today=new Date().toISOString().split('T')[0]
     if(key==='start'){
-      setWName('Новая тренировка');setWColor('#D85A30');setWExercises([]);setTimer(0);setSwTime(0);setSwRunning(false);setWMode('start');setWDate('');setStep('naming')
+      setWName('Новая тренировка');setWColor('#D85A30');setWExercises([]);setTimer(0);setSwTime(0);setSwRunning(false);setWMode('start');setWDate(today);setStep('naming')
     }
     if(key==='done'){
-      const today=new Date().toISOString().split('T')[0]
       setWName('Тренировка');setWColor('#1D9E75');setWExercises([]);setWMode('log');setWDate(today);setStep('naming')
     }
   }
@@ -633,7 +541,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
 
   const finishWorkout=()=>{
     if(wExercises.length>0){
-      const date=wMode==='log'&&wDate
+      const date=wDate
         ?new Date(wDate+'T12:00:00').toISOString()
         :(isEditMode&&editTarget?editTarget.workout.date:new Date().toISOString())
       const updated={name:wName,color:wColor,exercises:wExercises,duration:wMode==='start'?timer:null,date,comment:wComment}
@@ -641,6 +549,8 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         onWorkoutUpdate(editTarget.histIdx,updated)
       } else {
         onWorkoutComplete(updated)
+        setShowFinishToast(true)
+        setTimeout(()=>setShowFinishToast(false),2500)
       }
     }
     exitWorkout()
@@ -839,8 +749,14 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                 <div style={{ fontSize:22, fontWeight:700, color:'#fff' }}>{wName}</div>
                 {isEditMode&&<span style={{ fontSize:10, padding:'2px 7px', borderRadius:6, background:'rgba(0,0,0,0.25)', color:'#fff' }}>редактирование</span>}
               </div>
-              {wMode==='start'&&<div style={{ fontSize:14, color:'rgba(255,255,255,0.7)', marginTop:3 }}>⏱ {fmt(timer)}</div>}
-              {wMode==='log'&&wDate&&<div style={{ fontSize:14, color:'rgba(255,255,255,0.7)', marginTop:3 }}>📅 {new Date(wDate+'T12:00:00').toLocaleDateString('ru',{day:'numeric',month:'long',year:'numeric'})}</div>}
+              <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:3, flexWrap:'wrap' }}>
+                {wMode==='start'&&<div style={{ fontSize:14, color:'rgba(255,255,255,0.7)' }}>⏱ {fmt(timer)}</div>}
+                <label style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:13, color:'rgba(255,255,255,0.85)', cursor:'pointer' }}>
+                  📅
+                  <input type="date" value={wDate} onChange={e=>setWDate(e.target.value)}
+                    style={{ background:'rgba(0,0,0,0.22)', border:'none', outline:'none', color:'#fff', fontSize:13, colorScheme:'dark', cursor:'pointer', fontFamily:'inherit', padding:'3px 7px', borderRadius:6 }} />
+                </label>
+              </div>
             </div>
             <button onClick={exitWorkout} style={{ fontSize:12, color:'#fff', background:'rgba(0,0,0,0.25)', border:'none', borderRadius:6, padding:'5px 11px', cursor:'pointer', marginTop:4, flexShrink:0 }}>✕ Выйти</button>
           </div>
@@ -1013,6 +929,16 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   // ── Список программ
   return (
     <div style={{ position:'relative' }}>
+      {showFinishToast&&(
+        <div style={{
+          position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
+          zIndex:1200, padding:'10px 18px', borderRadius:24,
+          background:'#16a34a', color:'#fff', fontSize:13, fontWeight:700,
+          boxShadow:'0 6px 20px rgba(22,163,74,0.35)',
+        }}>
+          Тренировка записана в дневник ✓
+        </div>
+      )}
       {menuOpen&&(
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center' }}
           onClick={()=>setMenuOpen(false)}>
@@ -2310,6 +2236,8 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const [selectedEx,setSelectedEx]=useState(null)
   const [exQuery,setExQuery]=useState('')
   const [activeBar,setActiveBar]=useState(null)
+  const [exPeriod,setExPeriod]=useState('all')
+  const [showExPeriodMenu,setShowExPeriodMenu]=useState(false)
   // workouts
   const [selIdx,setSelIdx]=useState(null)
   const [showWorkoutMenu,setShowWorkoutMenu]=useState(false)
@@ -2457,10 +2385,11 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     setEditingFoodId(null)
   }
 
-  const BackBtn=({label})=>(
+  const BackBtn=({label,right})=>(
     <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexShrink:0,position:'sticky',top:0,zIndex:10 }}>
       <button onClick={()=>setSection(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
-      <span style={{ fontSize:17,fontWeight:700,color:'#111' }}>{label}</span>
+      <span style={{ fontSize:17,fontWeight:700,color:'#111',flex:1 }}>{label}</span>
+      {right}
     </div>
   )
 
@@ -2600,20 +2529,54 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
 
   // ── СЕКЦИЯ: Прогресс по упражнениям
   if(section==='exercises'){
+    const EX_PERIOD_DAYS={week:7,month:30,'3m':90}
+    const exPeriodCutoff=exPeriod==='all'?0:Date.now()-EX_PERIOD_DAYS[exPeriod]*86400000
+    const filteredExerciseMap={}
+    workoutHistory.forEach((w,histIdx)=>{
+      if(new Date(w.date).getTime()<exPeriodCutoff)return
+      ;(w.exercises||[]).forEach(ex=>{
+        if(!filteredExerciseMap[ex.n])filteredExerciseMap[ex.n]={muscle:ex.m,records:[]}
+        const validSets=(ex.sets||[]).filter(s=>s.kg||s.reps)
+        const tonnage=validSets.reduce((sum,s)=>sum+(parseFloat(s.kg)||0)*(parseInt(s.reps)||0),0)
+        const maxKg=validSets.length?Math.max(...validSets.map(s=>parseFloat(s.kg)||0)):0
+        filteredExerciseMap[ex.n].records.push({date:w.date,sets:ex.sets,tonnage,maxKg,histIdx,workoutName:w.name})
+      })
+    })
+    const exTonnage=n=>filteredExerciseMap[n].records.reduce((s,r)=>s+r.tonnage,0)
+    const sortedExerciseNames=Object.keys(filteredExerciseMap).sort((a,b)=>exTonnage(b)-exTonnage(a))
+    const PERIOD_OPTIONS=[{k:'week',l:'Неделя'},{k:'month',l:'Месяц'},{k:'3m',l:'3 месяца'},{k:'all',l:'Всё время'}]
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
-        <BackBtn label="Прогресс по упражнениям" />
+        <BackBtn label="Прогресс по упражнениям" right={
+          <div style={{ position:'relative' }}>
+            <button onClick={()=>setShowExPeriodMenu(v=>!v)}
+              style={{ width:34,height:34,borderRadius:9,border:'1px solid #e5e7eb',background:exPeriod!=='all'?`${PUR}11`:'#f9fafb',cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:exPeriod!=='all'?PUR:'#6b7280',minHeight:'unset' }}>📅</button>
+            {showExPeriodMenu&&(
+              <>
+                <div onClick={()=>setShowExPeriodMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
+                <div style={{ position:'absolute',top:40,right:0,background:'#fff',borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:160,overflow:'hidden',border:'1px solid #f0f0f0' }}>
+                  {PERIOD_OPTIONS.map((p,idx)=>(
+                    <button key={p.k} onClick={()=>{setExPeriod(p.k);setShowExPeriodMenu(false);setSelectedEx(null);setActiveBar(null)}}
+                      style={{ display:'block',width:'100%',padding:'10px 15px',border:'none',borderTop:idx>0?'1px solid #f3f4f6':'none',background:exPeriod===p.k?`${PUR}11`:'transparent',cursor:'pointer',textAlign:'left',color:exPeriod===p.k?PUR:'#111',fontSize:13,fontWeight:exPeriod===p.k?600:400 }}>{p.l}</button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        } />
         <div style={{ flex:1,overflowY:'auto',padding:'14px 16px 32px' }}>
           <input value={exQuery} onChange={e=>setExQuery(e.target.value)} placeholder="Поиск упражнения..."
             style={{ width:'100%',padding:'10px 16px',fontSize:14,borderRadius:10,border:'1.5px solid #e5e7eb',boxSizing:'border-box',outline:'none',marginBottom:10,color:'#111',background:'#fff' }}
             onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
           {exerciseNames.length===0?(
             <div style={{ textAlign:'center',color:'#9ca3af',fontSize:13,marginTop:40 }}>Завершите тренировку с упражнениями, чтобы видеть аналитику</div>
-          ):exerciseNames.filter(n=>n.toLowerCase().includes(exQuery.toLowerCase())).length===0?(
+          ):sortedExerciseNames.length===0?(
+            <div style={{ textAlign:'center',color:'#9ca3af',fontSize:13,marginTop:40 }}>Нет тренировок за выбранный период</div>
+          ):sortedExerciseNames.filter(n=>n.toLowerCase().includes(exQuery.toLowerCase())).length===0?(
             <div style={{ textAlign:'center',color:'#9ca3af',fontSize:13,marginTop:40 }}>Упражнение не найдено</div>
           ):(
-            exerciseNames.filter(n=>n.toLowerCase().includes(exQuery.toLowerCase())).map(name=>{
-              const ex=exerciseMap[name]
+            sortedExerciseNames.filter(n=>n.toLowerCase().includes(exQuery.toLowerCase())).map(name=>{
+              const ex=filteredExerciseMap[name]
               const records=[...ex.records].sort((a,b)=>new Date(a.date)-new Date(b.date))
               const best=Math.max(...ex.records.map(r=>r.maxKg))
               const growth=records.length>1?records[records.length-1].tonnage-records[0].tonnage:0

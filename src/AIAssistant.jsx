@@ -3,6 +3,7 @@ import { supabase } from './supabase'
 import { buildSystemPrompt } from './aiPrompt'
 import { buildWorkoutSystemPrompt } from './workoutPrompt'
 import { PROGRAMS_MAP } from './programs'
+import TrainingSurvey from './TrainingSurvey'
 
 const PUR = '#7F77DD'
 
@@ -26,6 +27,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
   const [loading, setLoading]   = useState(false)
   const [ctx, setCtx]           = useState(null) // { user, today, diary, goals, profile } — свежак из Supabase
   const [showToast, setShowToast] = useState(false)
+  const [showSurvey, setShowSurvey] = useState(false)
   const messagesEndRef = useRef(null)
   const inputRef       = useRef(null)
 
@@ -51,11 +53,12 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
     if (m === 'workout') {
-      const [{ data: sets }, { data: profile }] = await Promise.all([
+      const [{ data: sets }, { data: profile }, { data: survey }] = await Promise.all([
         supabase.from('workout_sets').select('*').eq('user_id', user.id).gte('date', since).order('date'),
         supabase.from('profiles').select('*').eq('id', user.id).single(),
+        supabase.from('training_survey').select('*').eq('user_id', user.id).single(),
       ])
-      return { user, today, sets: sets || [], profile: profile || {} }
+      return { user, today, sets: sets || [], profile: profile || {}, survey: survey || null }
     }
 
     const [{ data: diary }, { data: goals }, { data: profile }] = await Promise.all([
@@ -138,6 +141,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
             profile: fresh.profile,
             programTemplate: PROGRAMS_MAP[fresh.profile.program] || null,
             sets: fresh.sets,
+            survey: fresh.survey,
             today: fresh.today,
           })
         : buildSystemPrompt(fresh)
@@ -160,6 +164,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
 
       let text = stripMd(data.content[0].text)
       let added = false
+      let suggestSurvey = false
 
       if (mode === 'workout') {
         // ADD_SET — может быть несколько подходов за раз
@@ -216,6 +221,10 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
           const refreshed = await loadContext(mode)
           if (refreshed) setCtx(refreshed)
         }
+
+        // SUGGEST_SURVEY — AI предлагает заполнить анкету перед составлением программы
+        suggestSurvey = /\[SUGGEST_SURVEY\]/.test(text)
+        if (suggestSurvey) text = text.replace(/\[SUGGEST_SURVEY\]/g, '')
       } else {
         // ADD — может быть несколько приёмов пищи за раз, каждый в своём маркере
         const addMatches = [...text.matchAll(/\[ADD:(\{[^}]+\})\]/g)]
@@ -304,7 +313,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
       // Компактный вывод — без пустых/пробельных строк после вырезания маркеров
       text = text.replace(/[ \t]*\n[ \t]*(?:\n[ \t]*)+/g, '\n').trim()
 
-      setMessages(prev => [...prev, { role: 'assistant', content: text, added }])
+      setMessages(prev => [...prev, { role: 'assistant', content: text, added, suggestSurvey }])
 
       await supabase.from('chat_messages').insert([
         { user_id: fresh.user.id, mode, role: 'user', content: userMsg.content },
@@ -379,6 +388,14 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
               <div style={{ fontSize: 15, fontWeight: 700, color: '#111', lineHeight: 1.2 }}>AI Ассистент</div>
               <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 500 }}>● онлайн</div>
             </div>
+            {mode === 'workout' && (
+              <button onClick={() => setShowSurvey(true)} title="Заполнить анкету"
+                style={{
+                  width: 34, height: 34, borderRadius: 10, border: '1px solid #e5e7eb', background: '#f9fafb',
+                  fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0, minHeight: 'unset',
+                }}>📋</button>
+            )}
           </div>
 
           {/* Переключатель режима */}
@@ -458,6 +475,15 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
                         </div>
                       </div>
                     )}
+                    {/* Кнопка «Заполнить анкету» под ответом с SUGGEST_SURVEY-маркером */}
+                    {m.role === 'assistant' && m.suggestSurvey && (
+                      <div style={{ paddingLeft: 36 }}>
+                        <button onClick={() => setShowSurvey(true)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 20, background: PUR, border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                          📋 Заполнить анкету
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
 
@@ -513,6 +539,10 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
               </div>
             </>
         </div>
+      )}
+
+      {showSurvey && (
+        <TrainingSurvey onClose={() => setShowSurvey(false)} onSaved={() => { if (mode === 'workout') loadContext('workout').then(c => c && setCtx(c)) }} />
       )}
     </>
   )
