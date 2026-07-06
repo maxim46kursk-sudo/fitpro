@@ -44,8 +44,9 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
   }
 
   // Свежие данные пользователя из Supabase — только Supabase, никакого localStorage.
-  // Историю (дневник питания / подходы тренировок) грузим за последние 30 дней
-  // (не только сегодня), чтобы AI видел полную картину и мог работать с любой датой.
+  // Дневник питания грузим за 30 дней. Тренировки — за 90 дней: волновой цикл
+  // тренера Максима (см. workoutPrompt.js) крутится по нескольким полным
+  // циклам Объём/Развитие/Сила, 30 дней их не покрывают.
   const loadContext = async (m) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
@@ -53,8 +54,9 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
     if (m === 'workout') {
+      const workoutSince = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
       const [{ data: sets }, { data: profile }, { data: survey }] = await Promise.all([
-        supabase.from('workout_sets').select('*').eq('user_id', user.id).gte('date', since).order('date'),
+        supabase.from('workout_sets').select('*').eq('user_id', user.id).gte('date', workoutSince).order('date'),
         supabase.from('profiles').select('*').eq('id', user.id).single(),
         supabase.from('training_survey').select('*').eq('user_id', user.id).single(),
       ])
@@ -177,6 +179,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
                 user_id: fresh.user.id, exercise: entry.exercise, date: entry.date || fresh.today,
                 kg: entry.kg != null ? Number(entry.kg) : null,
                 reps: entry.reps != null ? Number(entry.reps) : null,
+                rating: entry.rating != null ? Number(entry.rating) : null,
               })
               if (error) console.error('Ошибка записи подхода:', error)
               else added = true
@@ -208,6 +211,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
               const patch = {}
               if (edit.kg != null) patch.kg = Number(edit.kg)
               if (edit.reps != null) patch.reps = Number(edit.reps)
+              if (edit.rating != null) patch.rating = Number(edit.rating)
               const { error } = await supabase.from('workout_sets').update(patch)
                 .eq('id', edit.id).eq('user_id', fresh.user.id)
               if (error) console.error('Ошибка изменения подхода:', error)
