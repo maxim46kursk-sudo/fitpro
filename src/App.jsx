@@ -4202,6 +4202,22 @@ export default function App() {
   const [authLoading,setAuthLoading]=useState(true)
   const [userRole,setUserRole]=useState(()=>localStorage.getItem('fitpro_role')||'client')
   const [nav,setNav]=useState('dashboard')
+  // История переходов верхнего уровня — чтобы "назад" из экранов вроде деталей
+  // клиента (открываются и с Главной, и со вкладки Клиенты) вело туда, откуда
+  // реально пришли, а не на жёстко заданный экран.
+  const navHistoryRef=useRef([])
+  const prevNavRef=useRef(nav)
+  useEffect(()=>{
+    if(prevNavRef.current!==nav){
+      navHistoryRef.current.push(prevNavRef.current)
+      if(navHistoryRef.current.length>20)navHistoryRef.current.shift()
+      prevNavRef.current=nav
+    }
+  },[nav])
+  const goBackNav=()=>{
+    const prev=navHistoryRef.current.pop()
+    setNav(prev??'dashboard')
+  }
   const [sc,setSC]=useState(null)
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768)
   const [workoutActive,setWorkoutActive]=useState(false)
@@ -4318,7 +4334,7 @@ export default function App() {
   if(!user) return <LandingPage onEnter={setUser} />
 
   const renderMain=()=>{
-    if(nav==='cdetail'&&sc)return <ClientDetail client={sc} goBack={()=>handleNav('clients')} />
+    if(nav==='cdetail'&&sc)return <ClientDetail client={sc} goBack={goBackNav} />
     switch(nav){
       case 'dashboard': return userRole==='trainer'
         ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} />

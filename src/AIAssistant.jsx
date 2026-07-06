@@ -28,6 +28,8 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
   const [ctx, setCtx]           = useState(null) // { user, today, diary, goals, profile } — свежак из Supabase
   const [showToast, setShowToast] = useState(false)
   const [showSurvey, setShowSurvey] = useState(false)
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
+  const [clearing, setClearing] = useState(false)
   const messagesEndRef = useRef(null)
   const inputRef       = useRef(null)
 
@@ -41,6 +43,21 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
   const flashToast = () => {
     setShowToast(true)
     setTimeout(() => setShowToast(false), 2000)
+  }
+
+  // Очистка истории чата — только для текущего режима (питание/тренировки
+  // чистятся раздельно, у каждого своя строка mode в chat_messages).
+  const clearChatHistory = async () => {
+    if (clearing) return
+    setClearing(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { error } = await supabase.from('chat_messages').delete().eq('user_id', user.id).eq('mode', mode)
+      if (error) console.error('Ошибка очистки истории чата:', error)
+    }
+    setMessages([])
+    setClearing(false)
+    setShowClearConfirm(false)
   }
 
   // Свежие данные пользователя из Supabase — только Supabase, никакого localStorage.
@@ -122,6 +139,8 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
   useEffect(() => {
     if (isOpen) setTimeout(() => inputRef.current?.focus(), 150)
   }, [isOpen, mode])
+
+  useEffect(() => { setShowClearConfirm(false) }, [mode, isOpen])
 
   const send = async () => {
     if (!input.trim() || loading) return
@@ -400,6 +419,40 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
                   flexShrink: 0, minHeight: 'unset',
                 }}>📋</button>
             )}
+            <div style={{ position: 'relative' }}>
+              <button onClick={() => setShowClearConfirm(true)} title="Очистить историю чата"
+                disabled={!messages.length}
+                style={{
+                  width: 34, height: 34, borderRadius: 10, border: '1px solid #e5e7eb', background: '#f9fafb',
+                  fontSize: 15, cursor: messages.length ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0, minHeight: 'unset', opacity: messages.length ? 1 : 0.4,
+                }}>🗑</button>
+              {showClearConfirm && (
+                <>
+                  <div onClick={() => setShowClearConfirm(false)} style={{ position: 'fixed', inset: 0, zIndex: 1400 }} />
+                  <div style={{
+                    position: 'absolute', top: 40, right: 0, background: '#fff', borderRadius: 12,
+                    boxShadow: '0 6px 24px rgba(0,0,0,0.18)', zIndex: 1401, minWidth: 230, padding: 14,
+                    border: '1px solid #f0f0f0',
+                  }}>
+                    <div style={{ fontSize: 13, color: '#111', fontWeight: 600, marginBottom: 10 }}>Очистить историю чата?</div>
+                    <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 12, lineHeight: 1.4 }}>
+                      Удалятся только сообщения режима «{mode === 'workout' ? 'Тренировки' : 'Питание'}».
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => setShowClearConfirm(false)}
+                        style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', color: '#6b7280', fontSize: 12.5, cursor: 'pointer', minHeight: 'unset' }}>
+                        Отмена
+                      </button>
+                      <button onClick={clearChatHistory} disabled={clearing}
+                        style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: '#ef4444', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', minHeight: 'unset' }}>
+                        {clearing ? 'Удаление...' : 'Очистить'}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Переключатель режима */}

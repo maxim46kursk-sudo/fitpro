@@ -120,7 +120,7 @@ export default function TrainingSurvey({ onClose, onSaved }) {
               <div style={{ fontSize: 14, fontWeight: 600, color: '#111', marginBottom: 10 }}>Есть ли противопоказания?</div>
               <textarea value={contraindications} onChange={e => setContraindications(e.target.value)}
                 placeholder="Травмы, ограничения... можно оставить пустым" rows={3}
-                style={{ width: '100%', padding: '10px 12px', fontSize: 13, borderRadius: 10, border: '1.5px solid #e5e7eb', outline: 'none', color: '#111', fontFamily: 'inherit', resize: 'none', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '10px 12px', fontSize: 13, borderRadius: 10, border: '1.5px solid #e5e7eb', outline: 'none', color: '#111', background: '#fff', colorScheme: 'light', fontFamily: 'inherit', resize: 'none', boxSizing: 'border-box' }}
                 onFocus={e => e.target.style.borderColor = PUR} onBlur={e => e.target.style.borderColor = '#e5e7eb'} />
             </div>
 
@@ -130,7 +130,7 @@ export default function TrainingSurvey({ onClose, onSaved }) {
                 Любимые упражнения {favoriteExercises.length > 0 && <span style={{ color: PUR, fontWeight: 500 }}>({favoriteExercises.length})</span>}
               </div>
               <input value={exQuery} onChange={e => setExQuery(e.target.value)} placeholder="Поиск упражнения..."
-                style={{ width: '100%', padding: '9px 12px', fontSize: 13, borderRadius: 9, border: '1.5px solid #e5e7eb', outline: 'none', color: '#111', marginBottom: 8, boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '9px 12px', fontSize: 13, borderRadius: 9, border: '1.5px solid #e5e7eb', outline: 'none', color: '#111', background: '#fff', colorScheme: 'light', marginBottom: 8, boxSizing: 'border-box' }}
                 onFocus={e => e.target.style.borderColor = PUR} onBlur={e => e.target.style.borderColor = '#e5e7eb'} />
               <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid #f3f4f6', borderRadius: 10 }}>
                 {filteredEx.length === 0 && <div style={{ padding: 14, textAlign: 'center', color: '#c7cad1', fontSize: 12 }}>Ничего не найдено</div>}
