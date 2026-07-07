@@ -2930,6 +2930,17 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   // ── СЕКЦИЯ: Питание (дневник)
   if(section==='food'){
     const selDate=new Date(foodDate+'T00:00:00')
+    const dow=selDate.getDay()
+    const weekStart=new Date(selDate); weekStart.setDate(selDate.getDate()-(dow===0?6:dow-1))
+    const weekDays=Array.from({length:7},(_,i)=>{
+      const d=new Date(weekStart); d.setDate(weekStart.getDate()+i)
+      const iso=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+      const entries=foodDiary[iso]||[]
+      const tot=entries.reduce((a,e)=>({kcal:a.kcal+(+e.kcal||0),p:a.p+(+e.p||0),c:a.c+(+e.c||0),f:a.f+(+e.f||0)}),{kcal:0,p:0,c:0,f:0})
+      return {iso,d,entries,tot}
+    })
+    const weekTotal=weekDays.reduce((a,d)=>({kcal:a.kcal+d.tot.kcal,p:a.p+d.tot.p,c:a.c+d.tot.c,f:a.f+d.tot.f}),{kcal:0,p:0,c:0,f:0})
+    const weekAvg={kcal:Math.round(weekTotal.kcal/7),p:Math.round(weekTotal.p/7),c:Math.round(weekTotal.c/7),f:Math.round(weekTotal.f/7)}
     const rem=(k)=>Math.max(0,foodGoals[k]-dayTotal[k])
     const over=(k)=>Math.max(0,dayTotal[k]-foodGoals[k])
     const pct=(k)=>foodGoals[k]?Math.min(100,Math.round((dayTotal[k]/foodGoals[k])*100)):0
@@ -3041,6 +3052,39 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
               </div>
             )
           })()}
+
+          {/* Сводка за неделю */}
+          <Card style={{ marginBottom:14 }}>
+            <div style={{ fontSize:13,fontWeight:700,color:'#111',marginBottom:4 }}>Сводка за неделю</div>
+            <div style={{ fontSize:11,color:'#9ca3af',marginBottom:12 }}>
+              {weekStart.toLocaleDateString('ru',{day:'numeric',month:'short'})} — {weekDays[6].d.toLocaleDateString('ru',{day:'numeric',month:'short',year:'numeric'})}
+            </div>
+            <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:14 }}>
+              {[['🔥',weekTotal.kcal,'ккал',PUR],['🥩',weekTotal.p+'г','белки',TEA],['🍚',weekTotal.c+'г','углев.',BLU],['🥑',weekTotal.f+'г','жиры',COR]].map(([ic,v,l,c])=>(
+                <div key={l} style={{ background:'#f9fafb',borderRadius:10,padding:'8px 4px',textAlign:'center' }}>
+                  <div style={{ fontSize:12 }}>{ic}</div>
+                  <div style={{ fontSize:13,fontWeight:700,color:c }}>{v}</div>
+                  <div style={{ fontSize:9,color:'#9ca3af' }}>{l}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ background:'#f9fafb',borderRadius:10,padding:'10px 12px' }}>
+              <div style={{ fontSize:11,color:'#9ca3af',marginBottom:4 }}>Среднее в день</div>
+              <div style={{ display:'flex',gap:10,flexWrap:'wrap',marginBottom:4 }}>
+                <span style={{ fontSize:14,fontWeight:700,color:PUR }}>{weekAvg.kcal} ккал</span>
+                <span style={{ fontSize:12,color:TEA }}>Б {weekAvg.p}г</span>
+                <span style={{ fontSize:12,color:BLU }}>У {weekAvg.c}г</span>
+                <span style={{ fontSize:12,color:COR }}>Ж {weekAvg.f}г</span>
+              </div>
+              {foodGoals.kcal>0&&(
+                <div style={{ fontSize:12,fontWeight:600 }}>
+                  {weekAvg.kcal>=foodGoals.kcal
+                    ?<span style={{ color:COR }}>+{weekAvg.kcal-foodGoals.kcal} ккал/день сверх нормы</span>
+                    :<span style={{ color:TEA }}>−{foodGoals.kcal-weekAvg.kcal} ккал/день до нормы</span>}
+                </div>
+              )}
+            </div>
+          </Card>
 
           {/* Сводка за сегодня */}
           <Card style={{ marginBottom:14 }}>
