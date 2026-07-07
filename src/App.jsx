@@ -2307,6 +2307,30 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
       })
   },[foodDate,userId])
 
+  // Загрузка дневника из Supabase за весь видимый месяц (для точек в календаре)
+  useEffect(()=>{
+    if(!userId)return
+    const{y,m}=calPickerMonth
+    const monthStart=`${y}-${String(m+1).padStart(2,'0')}-01`
+    const lastDay=new Date(y,m+1,0).getDate()
+    const monthEnd=`${y}-${String(m+1).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`
+    supabase.from('food_diary').select('*').eq('user_id',userId).gte('date',monthStart).lte('date',monthEnd).order('created_at')
+      .then(({data})=>{
+        const byDate={}
+        for(const r of (data||[])){
+          const entry={id:r.id,name:r.name,kcal:String(r.kcal||0),p:String(r.p||0),c:String(r.c||0),f:String(r.f||0)}
+          if(!byDate[r.date])byDate[r.date]=[]
+          byDate[r.date].push(entry)
+        }
+        setFoodDiary(d=>{
+          const updated={...d,...byDate}
+          const all={...JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'),...byDate}
+          localStorage.setItem('fitpro_food_diary',JSON.stringify(all))
+          return updated
+        })
+      })
+  },[calPickerMonth,userId])
+
   // Загрузка целей КБЖУ из Supabase
   useEffect(()=>{
     if(!userId){
