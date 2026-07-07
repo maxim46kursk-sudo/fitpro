@@ -364,10 +364,15 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
         }
       `}</style>
 
-      {/* Плавающая кнопка */}
+      {/* Плавающая кнопка — z-index должен быть выше ЛЮБОГО полноэкранного
+          "текущего экрана" (подразделы Дневника и т.п. используют 1000-1001,
+          Мои данные 1050, Настройки 1060), иначе они перекрывают клик по
+          кнопке своей fixed-inset:0 областью. При этом ниже диалогов поверх
+          всего — чат (1050, но кнопка и чат никогда не показаны одновременно),
+          шторка профиля (1100), тосты/модалки (1200+), анкета (1300). */}
       {!isOpen && (
         <button onClick={() => setIsOpen(true)} style={{
-          position: 'fixed', bottom: BTN_BOTTOM, right: 18, zIndex: 950,
+          position: 'fixed', bottom: BTN_BOTTOM, right: 18, zIndex: 1070,
           width: 52, height: 52, borderRadius: '50%', border: 'none',
           background: 'linear-gradient(135deg,#7F77DD,#5b54c4)',
           color: '#fff', fontSize: 22, cursor: 'pointer',

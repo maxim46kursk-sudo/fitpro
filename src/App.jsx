@@ -1281,7 +1281,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           <div style={{ width:38,height:38,borderRadius:'50%',background:'linear-gradient(135deg,#7F77DD,#5b54c4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0 }}>🤖</div>
           <div style={{ flex:1 }}>
             <div style={{ fontSize:13,fontWeight:700,color:'#7F77DD' }}>Спросить AI тренера</div>
-            <div style={{ fontSize:11,color:'#9ca3af',marginTop:1 }}>Подберёт вес на следующую тренировку</div>
+            <div style={{ fontSize:11,color:'#9ca3af',marginTop:1 }}>Как увеличивать нагрузку правильно</div>
           </div>
           <span style={{ fontSize:18,color:'#7F77DD' }}>›</span>
         </div>
@@ -2225,8 +2225,12 @@ function DateScroller({ value, onChange }) {
 }
 
 // ── Дневник
-function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, onOpenAI, userId }) {
-  const [section, setSection] = useState(null)
+function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, onOpenAI, userId, initialSection, onSectionChange }) {
+  const [section, setSection] = useState(()=>initialSection??null)
+  // Сообщаем родителю текущий подраздел — чтобы App мог его запомнить и вернуть
+  // при повторном монтировании DiaryView после вынужденного перехода на другую
+  // вкладку (см. borrowedNavRef/pendingSectionRestoreRef в App()).
+  useEffect(()=>{ onSectionChange?.(section) },[section])
   // tonnage
   const [period,setPeriod]=useState('all')
   const [customFrom,setCustomFrom]=useState('')
@@ -2238,6 +2242,8 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const [activeBar,setActiveBar]=useState(null)
   const [exPeriod,setExPeriod]=useState('all')
   const [showExPeriodMenu,setShowExPeriodMenu]=useState(false)
+  const [exCustomFrom,setExCustomFrom]=useState('')
+  const [exCustomTo,setExCustomTo]=useState('')
   // workouts
   const [selIdx,setSelIdx]=useState(null)
   const [showWorkoutMenu,setShowWorkoutMenu]=useState(false)
@@ -2278,9 +2284,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const [editingFoodId,setEditingFoodId]=useState(null)
   const [editFoodForm,setEditFoodForm]=useState({name:'',kcal:'',p:'',c:'',f:'',items:[]})
   const [openFoodMenu,setOpenFoodMenu]=useState(null)
-  const [showCalPicker,setShowCalPicker]=useState(false)
   const [calPickerMonth,setCalPickerMonth]=useState(()=>{const t=new Date();return{y:t.getFullYear(),m:t.getMonth()}})
-  const [foodView,setFoodView]=useState('day') // 'day' | 'week'
   const [showGoals,setShowGoals]=useState(false)
   const [foodGoals,setFoodGoals]=useState({kcal:2000,p:150,c:200,f:60})
   const [goalsForm,setGoalsForm]=useState(foodGoals)
@@ -2425,21 +2429,23 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                   </button>
                 ))}
               </div>
-              <div style={{ display:'flex',flexDirection:isMobile?'column':'row',alignItems:isMobile?'stretch':'center',gap:8,width:isMobile?'100%':'auto' }}>
+              <div style={{ display:'flex',flexDirection:isMobile?'column':'row',alignItems:'center',gap:8,width:isMobile?'100%':'auto' }}>
                 <div style={{ display:'flex',alignItems:'center',gap:6 }}>
-                  <span style={{ fontSize:11,color:'#9ca3af',flexShrink:0 }}>с</span>
+                  <span style={{ fontSize:11,color:'#9ca3af',flexShrink:0,width:16,textAlign:'right' }}>с</span>
                   <input type="date" value={customFrom} onChange={e=>{setCustomFrom(e.target.value);setSelectedTonBar(null)}}
-                    style={{ flex:1,fontSize:13,padding:'7px 9px',borderRadius:7,border:'1.5px solid #e5e7eb',outline:'none',color:'#111',background:'#fff',colorScheme:'light',minHeight:'unset' }}
+                    style={{ width:128,flexShrink:0,fontSize:13,padding:'7px 6px',borderRadius:7,border:'1.5px solid #e5e7eb',outline:'none',color:'#111',background:'#fff',colorScheme:'light',minHeight:'unset',textAlign:'center',boxSizing:'border-box' }}
                     onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
                 </div>
                 <div style={{ display:'flex',alignItems:'center',gap:6 }}>
-                  <span style={{ fontSize:11,color:'#9ca3af',flexShrink:0 }}>по</span>
+                  <span style={{ fontSize:11,color:'#9ca3af',flexShrink:0,width:16,textAlign:'right' }}>по</span>
                   <input type="date" value={customTo} onChange={e=>{setCustomTo(e.target.value);setSelectedTonBar(null)}}
-                    style={{ flex:1,fontSize:13,padding:'7px 9px',borderRadius:7,border:'1.5px solid #e5e7eb',outline:'none',color:'#111',background:'#fff',colorScheme:'light',minHeight:'unset' }}
+                    style={{ width:128,flexShrink:0,fontSize:13,padding:'7px 6px',borderRadius:7,border:'1.5px solid #e5e7eb',outline:'none',color:'#111',background:'#fff',colorScheme:'light',minHeight:'unset',textAlign:'center',boxSizing:'border-box' }}
                     onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                </div>
+                <div style={{ width:28,display:'flex',justifyContent:'center',flexShrink:0 }}>
                   {(customFrom||customTo)&&(
                     <button onClick={()=>{setCustomFrom('');setCustomTo('');setSelectedTonBar(null)}}
-                      style={{ fontSize:13,padding:'6px 10px',borderRadius:6,border:'none',background:'#f3f4f6',color:'#9ca3af',cursor:'pointer',minHeight:'unset',flexShrink:0 }}>✕</button>
+                      style={{ fontSize:13,padding:'5px 7px',borderRadius:6,border:'none',background:'#f3f4f6',color:'#9ca3af',cursor:'pointer',minHeight:'unset' }}>✕</button>
                   )}
                 </div>
               </div>
@@ -2529,11 +2535,17 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
 
   // ── СЕКЦИЯ: Прогресс по упражнениям
   if(section==='exercises'){
-    const EX_PERIOD_DAYS={week:7,month:30,'3m':90}
-    const exPeriodCutoff=exPeriod==='all'?0:Date.now()-EX_PERIOD_DAYS[exPeriod]*86400000
+    const EX_PERIOD_DAYS={'30d':30}
     const filteredExerciseMap={}
     workoutHistory.forEach((w,histIdx)=>{
-      if(new Date(w.date).getTime()<exPeriodCutoff)return
+      const t=new Date(w.date).getTime()
+      if(exCustomFrom||exCustomTo){
+        const from=exCustomFrom?new Date(exCustomFrom).getTime():0
+        const to=exCustomTo?new Date(exCustomTo+'T23:59:59').getTime():Infinity
+        if(t<from||t>to)return
+      } else if(exPeriod==='30d'&&t<Date.now()-EX_PERIOD_DAYS['30d']*86400000){
+        return
+      }
       ;(w.exercises||[]).forEach(ex=>{
         if(!filteredExerciseMap[ex.n])filteredExerciseMap[ex.n]={muscle:ex.m,records:[]}
         const validSets=(ex.sets||[]).filter(s=>s.kg||s.reps)
@@ -2544,7 +2556,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     })
     const exTonnage=n=>filteredExerciseMap[n].records.reduce((s,r)=>s+r.tonnage,0)
     const sortedExerciseNames=Object.keys(filteredExerciseMap).sort((a,b)=>exTonnage(b)-exTonnage(a))
-    const PERIOD_OPTIONS=[{k:'week',l:'Неделя'},{k:'month',l:'Месяц'},{k:'3m',l:'3 месяца'},{k:'all',l:'Всё время'}]
+    const PERIOD_OPTIONS=[{k:'all',l:'Всё время'},{k:'30d',l:'30 дней'},{k:'custom',l:'Свой период'}]
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
         <BackBtn label="Прогресс по упражнениям" right={
@@ -2556,7 +2568,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 <div onClick={()=>setShowExPeriodMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
                 <div style={{ position:'absolute',top:40,right:0,background:'#fff',borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:160,overflow:'hidden',border:'1px solid #f0f0f0' }}>
                   {PERIOD_OPTIONS.map((p,idx)=>(
-                    <button key={p.k} onClick={()=>{setExPeriod(p.k);setShowExPeriodMenu(false);setSelectedEx(null);setActiveBar(null)}}
+                    <button key={p.k} onClick={()=>{setExPeriod(p.k);if(p.k!=='custom'){setExCustomFrom('');setExCustomTo('')}setShowExPeriodMenu(false);setSelectedEx(null);setActiveBar(null)}}
                       style={{ display:'block',width:'100%',padding:'10px 15px',border:'none',borderTop:idx>0?'1px solid #f3f4f6':'none',background:exPeriod===p.k?`${PUR}11`:'transparent',cursor:'pointer',textAlign:'left',color:exPeriod===p.k?PUR:'#111',fontSize:13,fontWeight:exPeriod===p.k?600:400 }}>{p.l}</button>
                   ))}
                 </div>
@@ -2565,6 +2577,28 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           </div>
         } />
         <div style={{ flex:1,overflowY:'auto',padding:'14px 16px 32px' }}>
+          {exPeriod==='custom'&&(
+            <div style={{ display:'flex',flexDirection:isMobile?'column':'row',alignItems:'center',gap:8,width:isMobile?'100%':'auto',marginBottom:10 }}>
+              <div style={{ display:'flex',alignItems:'center',gap:6 }}>
+                <span style={{ fontSize:11,color:'#9ca3af',flexShrink:0,width:16,textAlign:'right' }}>с</span>
+                <input type="date" value={exCustomFrom} onChange={e=>{setExCustomFrom(e.target.value);setSelectedEx(null);setActiveBar(null)}}
+                  style={{ width:128,flexShrink:0,fontSize:13,padding:'7px 6px',borderRadius:7,border:'1.5px solid #e5e7eb',outline:'none',color:'#111',background:'#fff',colorScheme:'light',minHeight:'unset',textAlign:'center',boxSizing:'border-box' }}
+                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+              </div>
+              <div style={{ display:'flex',alignItems:'center',gap:6 }}>
+                <span style={{ fontSize:11,color:'#9ca3af',flexShrink:0,width:16,textAlign:'right' }}>по</span>
+                <input type="date" value={exCustomTo} onChange={e=>{setExCustomTo(e.target.value);setSelectedEx(null);setActiveBar(null)}}
+                  style={{ width:128,flexShrink:0,fontSize:13,padding:'7px 6px',borderRadius:7,border:'1.5px solid #e5e7eb',outline:'none',color:'#111',background:'#fff',colorScheme:'light',minHeight:'unset',textAlign:'center',boxSizing:'border-box' }}
+                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+              </div>
+              <div style={{ width:28,display:'flex',justifyContent:'center',flexShrink:0 }}>
+                {(exCustomFrom||exCustomTo)&&(
+                  <button onClick={()=>{setExCustomFrom('');setExCustomTo('');setSelectedEx(null);setActiveBar(null)}}
+                    style={{ fontSize:13,padding:'5px 7px',borderRadius:6,border:'none',background:'#f3f4f6',color:'#9ca3af',cursor:'pointer',minHeight:'unset' }}>✕</button>
+                )}
+              </div>
+            </div>
+          )}
           <input value={exQuery} onChange={e=>setExQuery(e.target.value)} placeholder="Поиск упражнения..."
             style={{ width:'100%',padding:'10px 16px',fontSize:14,borderRadius:10,border:'1.5px solid #e5e7eb',boxSizing:'border-box',outline:'none',marginBottom:10,color:'#111',background:'#fff' }}
             onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
@@ -2872,19 +2906,6 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   // ── СЕКЦИЯ: Питание (дневник)
   if(section==='food'){
     const selDate=new Date(foodDate+'T00:00:00')
-    const dow=selDate.getDay()
-    const weekStart=new Date(selDate); weekStart.setDate(selDate.getDate()-(dow===0?6:dow-1))
-    const weekDays=Array.from({length:7},(_,i)=>{
-      const d=new Date(weekStart); d.setDate(weekStart.getDate()+i)
-      const iso=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-      const entries=foodDiary[iso]||[]
-      const tot=entries.reduce((a,e)=>({kcal:a.kcal+(+e.kcal||0),p:a.p+(+e.p||0),c:a.c+(+e.c||0),f:a.f+(+e.f||0)}),{kcal:0,p:0,c:0,f:0})
-      return {iso,d,entries,tot}
-    })
-    const weekTotal=weekDays.reduce((a,d)=>({kcal:a.kcal+d.tot.kcal,p:a.p+d.tot.p,c:a.c+d.tot.c,f:a.f+d.tot.f}),{kcal:0,p:0,c:0,f:0})
-    const weekAvg={kcal:Math.round(weekTotal.kcal/7),p:Math.round(weekTotal.p/7),c:Math.round(weekTotal.c/7),f:Math.round(weekTotal.f/7)}
-    const DAY_SHORT=['Пн','Вт','Ср','Чт','Пт','Сб','Вс']
-    const weekKcalMax=Math.max(...weekDays.map(d=>d.tot.kcal),foodGoals.kcal||1,1)
     const rem=(k)=>Math.max(0,foodGoals[k]-dayTotal[k])
     const over=(k)=>Math.max(0,dayTotal[k]-foodGoals[k])
     const pct=(k)=>foodGoals[k]?Math.min(100,Math.round((dayTotal[k]/foodGoals[k])*100)):0
@@ -2938,23 +2959,9 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
             </Card>
           )}
 
-          {/* Вкладки + иконка календаря */}
-          <div style={{ display:'flex',gap:6,marginBottom:14,alignItems:'stretch' }}>
-            {[['day','День'],['week','Неделя']].map(([k,l])=>(
-              <button key={k} onClick={()=>setFoodView(k)}
-                style={{ flex:1,padding:'9px',borderRadius:10,border:'none',cursor:'pointer',fontSize:13,fontWeight:600,minHeight:'unset',
-                  background:foodView===k?PUR:'#e5e7eb',color:foodView===k?'#fff':'#6b7280' }}>
-                {l}
-              </button>
-            ))}
-            <button onClick={()=>setShowCalPicker(v=>!v)}
-              style={{ width:42,borderRadius:10,border:`1.5px solid ${showCalPicker?PUR:'#e5e7eb'}`,background:showCalPicker?`${PUR}15`:'#fff',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,minHeight:'unset',color:showCalPicker?PUR:'#6b7280' }}>
-              📅
-            </button>
-          </div>
 
-          {/* Попап-календарь */}
-          {showCalPicker&&(()=>{
+          {/* Календарь месяца */}
+          {(()=>{
             const{y,m}=calPickerMonth
             const first=new Date(y,m,1)
             const startDow=(first.getDay()+6)%7 // Пн=0
@@ -2993,7 +3000,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                     const isSel=iso===foodDate
                     const isToday=iso===todayISO
                     return(
-                      <div key={ci} onClick={()=>{setFoodDate(iso);setFoodView('day');setShowCalPicker(false)}}
+                      <div key={ci} onClick={()=>setFoodDate(iso)}
                         style={{ display:'flex',flexDirection:'column',alignItems:'center',cursor:'pointer',borderRadius:10,padding:'5px 2px',
                           background:isSel?PUR:isToday?`${PUR}10`:'transparent',
                           border:isToday&&!isSel?`1px solid ${PUR}40`:'1px solid transparent' }}>
@@ -3011,9 +3018,8 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
             )
           })()}
 
-          {/* ДЕНЬ */}
-          {foodView==='day'&&(<>
-            <Card style={{ marginBottom:14 }}>
+          {/* Сводка за сегодня */}
+          <Card style={{ marginBottom:14 }}>
               <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10 }}>
                 <span style={{ fontSize:13,fontWeight:700,color:'#111' }}>Итого за день</span>
                 <span style={{ fontSize:11,color:'#9ca3af' }}>{selDate.toLocaleDateString('ru',{day:'numeric',month:'short'})}</span>
@@ -3148,89 +3154,6 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 + Добавить продукт
               </button>
             )}
-          </>)}
-
-          {/* НЕДЕЛЯ */}
-          {foodView==='week'&&(<>
-            <Card style={{ marginBottom:14 }}>
-              <div style={{ fontSize:13,fontWeight:700,color:'#111',marginBottom:4 }}>Сводка за неделю</div>
-              <div style={{ fontSize:11,color:'#9ca3af',marginBottom:12 }}>
-                {weekStart.toLocaleDateString('ru',{day:'numeric',month:'short'})} — {weekDays[6].d.toLocaleDateString('ru',{day:'numeric',month:'short',year:'numeric'})}
-              </div>
-              <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:14 }}>
-                {[['🔥',weekTotal.kcal,'ккал',PUR],['🥩',weekTotal.p+'г','белки',TEA],['🍚',weekTotal.c+'г','углев.',BLU],['🥑',weekTotal.f+'г','жиры',COR]].map(([ic,v,l,c])=>(
-                  <div key={l} style={{ background:'#f9fafb',borderRadius:10,padding:'8px 4px',textAlign:'center' }}>
-                    <div style={{ fontSize:12 }}>{ic}</div>
-                    <div style={{ fontSize:13,fontWeight:700,color:c }}>{v}</div>
-                    <div style={{ fontSize:9,color:'#9ca3af' }}>{l}</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{ background:'#f9fafb',borderRadius:10,padding:'10px 12px',marginBottom:14 }}>
-                <div style={{ fontSize:11,color:'#9ca3af',marginBottom:4 }}>Среднее в день</div>
-                <div style={{ display:'flex',gap:10,flexWrap:'wrap',marginBottom:4 }}>
-                  <span style={{ fontSize:14,fontWeight:700,color:PUR }}>{weekAvg.kcal} ккал</span>
-                  <span style={{ fontSize:12,color:TEA }}>Б {weekAvg.p}г</span>
-                  <span style={{ fontSize:12,color:BLU }}>У {weekAvg.c}г</span>
-                  <span style={{ fontSize:12,color:COR }}>Ж {weekAvg.f}г</span>
-                </div>
-                {foodGoals.kcal>0&&(
-                  <div style={{ fontSize:12,fontWeight:600 }}>
-                    {weekAvg.kcal>=foodGoals.kcal
-                      ?<span style={{ color:COR }}>+{weekAvg.kcal-foodGoals.kcal} ккал/день сверх нормы</span>
-                      :<span style={{ color:TEA }}>−{foodGoals.kcal-weekAvg.kcal} ккал/день до нормы</span>}
-                  </div>
-                )}
-              </div>
-              <div style={{ fontSize:11,color:'#9ca3af',marginBottom:8 }}>Калории по дням</div>
-              <div style={{ display:'flex',alignItems:'flex-end',gap:3,height:90 }}>
-                {weekDays.map((d,i)=>{
-                  const bh=Math.max(4,Math.round((d.tot.kcal/weekKcalMax)*74))
-                  const isSel=d.iso===foodDate
-                  const goalLine=foodGoals.kcal?Math.round((foodGoals.kcal/weekKcalMax)*74):0
-                  return(
-                    <div key={i} onClick={()=>{setFoodDate(d.iso);setFoodView('day')}}
-                      style={{ flex:1,display:'flex',flexDirection:'column',alignItems:'center',cursor:'pointer',height:'100%',justifyContent:'flex-end',position:'relative' }}>
-                      {foodGoals.kcal>0&&<div style={{ position:'absolute',bottom:goalLine+14,left:0,right:0,height:1,background:`${COR}66` }} />}
-                      <div style={{ fontSize:9,color:isSel?PUR:'#c7cad1',marginBottom:2,fontWeight:isSel?700:400 }}>{d.tot.kcal||''}</div>
-                      <div style={{ width:'80%',height:bh,background:isSel?PUR:d.tot.kcal>foodGoals.kcal&&foodGoals.kcal>0?`${COR}88`:`${PUR}44`,borderRadius:'3px 3px 0 0' }} />
-                      <div style={{ fontSize:9,color:isSel?PUR:'#9ca3af',marginTop:4,fontWeight:isSel?700:400 }}>{DAY_SHORT[i]}</div>
-                    </div>
-                  )
-                })}
-              </div>
-            </Card>
-            <Card>
-              <div style={{ fontSize:13,fontWeight:700,color:'#111',marginBottom:10 }}>По дням</div>
-              {weekDays.map((d,i)=>(
-                <div key={i} onClick={()=>{setFoodDate(d.iso);setFoodView('day')}}
-                  style={{ display:'flex',alignItems:'center',gap:10,padding:'9px 0',borderBottom:i<6?'1px solid #f3f4f6':'',cursor:'pointer' }}>
-                  <div style={{ width:36,textAlign:'center',flexShrink:0 }}>
-                    <div style={{ fontSize:10,color:d.iso===foodDate?PUR:'#9ca3af',fontWeight:d.iso===foodDate?700:400 }}>{DAY_SHORT[i]}</div>
-                    <div style={{ fontSize:15,fontWeight:700,color:d.iso===foodDate?PUR:'#111' }}>{d.d.getDate()}</div>
-                  </div>
-                  <div style={{ flex:1,minWidth:0 }}>
-                    {d.tot.kcal===0?(
-                      <div style={{ fontSize:11,color:'#c7cad1' }}>Нет записей</div>
-                    ):(
-                      <div style={{ display:'flex',gap:8,flexWrap:'wrap' }}>
-                        <span style={{ fontSize:13,fontWeight:700,color:PUR }}>{d.tot.kcal} ккал</span>
-                        <span style={{ fontSize:11,color:TEA }}>Б{d.tot.p}г</span>
-                        <span style={{ fontSize:11,color:BLU }}>У{d.tot.c}г</span>
-                        <span style={{ fontSize:11,color:COR }}>Ж{d.tot.f}г</span>
-                      </div>
-                    )}
-                  </div>
-                  {foodGoals.kcal>0&&d.tot.kcal>0&&(
-                    <div style={{ fontSize:11,fontWeight:700,color:d.tot.kcal>=foodGoals.kcal?COR:TEA,flexShrink:0 }}>
-                      {d.tot.kcal>=foodGoals.kcal?`+${d.tot.kcal-foodGoals.kcal}`:`−${foodGoals.kcal-d.tot.kcal}`}
-                    </div>
-                  )}
-                  <span style={{ color:'#c7cad1',fontSize:16,flexShrink:0 }}>›</span>
-                </div>
-              ))}
-            </Card>
-          </>)}
         </div>
       </div>
     , document.body)
@@ -3249,7 +3172,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
       <h2 style={{ fontSize:20,fontWeight:500,color:'#111',margin:'0 0 16px' }}>Дневник</h2>
       {FOLDERS_DIARY.map(f=>(
         <div key={f.key} style={{ background:'#fff',borderRadius:14,boxShadow:'0 1px 5px rgba(0,0,0,0.08)',marginBottom:10,display:'flex',alignItems:'center',gap:14,padding:'16px',cursor:'pointer' }}
-          onClick={()=>setSection(f.key)}>
+          onClick={()=>{if(f.key==='exercises'){setExPeriod('all');setExCustomFrom('');setExCustomTo('')}setSection(f.key)}}>
           <div style={{ width:50,height:50,borderRadius:14,background:`${f.color}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0 }}>
             {f.icon}
           </div>
@@ -3589,14 +3512,13 @@ function SettingsView({ user }) {
   const [deleteConfirm,setDeleteConfirm]=useState(false)
   const [dataMsg,setDataMsg]=useState('')
   const [aiStyle,setAiStyle]=useState('act')
-  const [program,setProgram]=useState('')
 
   useEffect(()=>{
     if(!user?.id)return
     supabase.from('chat_messages').select('*',{count:'exact',head:true}).eq('user_id',user.id)
       .then(({count})=>setChatCount(count??0))
-    supabase.from('profiles').select('ai_style, program').eq('id',user.id).single()
-      .then(({data})=>{ if(data?.ai_style) setAiStyle(data.ai_style); setProgram(data?.program||'') })
+    supabase.from('profiles').select('ai_style').eq('id',user.id).single()
+      .then(({data})=>{ if(data?.ai_style) setAiStyle(data.ai_style) })
   },[user?.id])
 
   const saveNotifs=(next)=>{setNotifs(next);localStorage.setItem('fitpro_notifs',JSON.stringify(next))}
@@ -3605,10 +3527,6 @@ function SettingsView({ user }) {
   const saveAiStyle=(v)=>{
     setAiStyle(v)
     if(user?.id)supabase.from('profiles').update({ai_style:v}).eq('id',user.id)
-  }
-  const saveProgram=(v)=>{
-    setProgram(v)
-    if(user?.id)supabase.from('profiles').update({program:v}).eq('id',user.id)
   }
 
   const clearChat=async()=>{
@@ -3704,25 +3622,6 @@ function SettingsView({ user }) {
             ))}
           </div>
         }/>
-      </Section>
-
-      {/* Программа тренировок */}
-      <Section title="Программа тренировок">
-        <div style={{padding:'6px 0 14px'}}>
-          <div style={{fontSize:12,color:'#9ca3af',marginBottom:10}}>Какую программу тренер назначил вам — по ней AI-тренер будет подбирать рабочие веса.</div>
-          <div style={{display:'flex',flexDirection:'column',gap:6}}>
-            {FOLDERS.map(f=>(
-              <button key={f} onClick={()=>saveProgram(f)} style={{
-                width:'100%',display:'flex',alignItems:'center',gap:8,padding:'11px 14px',borderRadius:10,textAlign:'left',
-                border:`1.5px solid ${program===f?PUR:'#e5e7eb'}`,background:program===f?`${PUR}12`:'#fff',
-                color:program===f?PUR:'#374151',fontSize:14,fontWeight:program===f?700:500,cursor:'pointer',minHeight:'unset',
-              }}>
-                <span style={{fontSize:16}}>{FOLDER_ICONS[f]}</span>{f}
-                {program===f&&<span style={{marginLeft:'auto',fontSize:14}}>✓</span>}
-              </button>
-            ))}
-          </div>
-        </div>
       </Section>
 
       {/* История чата */}
@@ -4218,6 +4117,27 @@ export default function App() {
     const prev=navHistoryRef.current.pop()
     setNav(prev??'dashboard')
   }
+  // Взводится, когда nav принудительно переключают на 'workouts' ради
+  // редактирования/быстрого старта тренировки из другого раздела (не обычный
+  // клик по вкладке) — на выходе из экрана тренировки это сигнал вернуть
+  // пользователя туда, откуда он реально пришёл, через goBackNav().
+  const borrowedNavRef=useRef(false)
+  // diarySectionRef — DiaryView сообщает сюда свой текущий подраздел через
+  // onSectionChange, всегда актуален, пока DiaryView смонтирован.
+  // pendingSectionRestoreRef — снимок diarySectionRef в момент вынужденного
+  // прыжка (см. handleEditWorkout/handleWorkoutAction), который DiaryView
+  // при повторном монтировании подхватит как initialSection и откроется сразу
+  // в нужном подразделе, а не на корневом меню.
+  // Важно: рендер читает этот реф, но НЕ мутирует его — компонент обёрнут в
+  // StrictMode, тело рендера вызывается дважды в dev, и мутация во время
+  // рендера привела бы к тому, что второй вызов увидел бы уже очищенное
+  // значение. Поэтому очистка вынесена в отдельный эффект ниже, который
+  // срабатывает уже после коммита — и только при возврате в Дневник.
+  const diarySectionRef=useRef(null)
+  const pendingSectionRestoreRef=useRef(null)
+  useEffect(()=>{
+    if(nav==='dashboard'||nav==='progress')pendingSectionRestoreRef.current=null
+  },[nav])
   const [sc,setSC]=useState(null)
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768)
   const [workoutActive,setWorkoutActive]=useState(false)
@@ -4313,6 +4233,7 @@ export default function App() {
   }
 
   const handleEditWorkout=(workout,histIdx)=>{
+    if(nav!=='workouts'){borrowedNavRef.current=true;pendingSectionRestoreRef.current=diarySectionRef.current}
     setEditTarget({workout,histIdx})
     setNav('workouts')
   }
@@ -4327,6 +4248,7 @@ export default function App() {
 
   const handleWorkoutAction=(action)=>{
     if(action==='start'||action==='done') setPendingWorkoutAction(action)
+    if(nav!=='workouts'){borrowedNavRef.current=true;pendingSectionRestoreRef.current=diarySectionRef.current}
     handleNav('workouts')
   }
 
@@ -4338,13 +4260,13 @@ export default function App() {
     switch(nav){
       case 'dashboard': return userRole==='trainer'
         ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} />
-        : <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} />
+        : <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} onSectionChange={s=>{diarySectionRef.current=s}} />
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} />
-      case 'workouts':  return <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>setEditTarget(null)} onWorkoutActiveChange={setWorkoutActive} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} onOpenAI={m=>aiRef.current?.open(m)} />
+      case 'workouts':  return <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutActiveChange={setWorkoutActive} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} onOpenAI={m=>aiRef.current?.open(m)} />
       case 'nutrition': return <NutritionView userId={user?.id} />
       case 'library':   return <LibraryView customExercises={customExercises} />
       case 'chat':      return <ChatView />
-      case 'progress':  return <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} />
+      case 'progress':  return <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} onSectionChange={s=>{diarySectionRef.current=s}} />
       default:          return null
     }
   }
