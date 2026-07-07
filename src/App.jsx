@@ -370,7 +370,7 @@ const makeDefaultFolderSlots=()=>{
   const o={}; FOLDERS.forEach(f=>{o[f]=makeDefaultSlots(f)}); return o
 }
 
-function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutActiveChange, pendingAction, onClearPendingAction, onOpenAI }) {
+function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutActiveChange, pendingAction, onClearPendingAction, onOpenAI, userId }) {
   const [openFolder,setOpenFolder]=useState(null)
   const [openSlotId,setOpenSlotId]=useState(null)
   const [openSlotHeaderMenu,setOpenSlotHeaderMenu]=useState(false)
@@ -503,11 +503,34 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
   }
 
-  const handleAction=key=>{
+  const handleAction=async key=>{
     setMenuOpen(false)
     const today=new Date().toISOString().split('T')[0]
     if(key==='start'){
       setWName('Новая тренировка');setWColor('#D85A30');setWExercises([]);setTimer(0);setSwTime(0);setSwRunning(false);setWMode('start');setWDate(today);setStep('naming')
+      // Подхватываем тренировку, составленную AI-тренером на сегодня (см.
+      // маркер SET_PROGRAM в AIAssistant.jsx) — она лежит в workout_sets как
+      // строки-план (kg пуст, recommended_kg заполнен). Забираем и сразу
+      // убираем черновые строки, чтобы не плодить дубли при завершении.
+      if(userId){
+        const{data:planRows}=await supabase.from('workout_sets').select('*')
+          .eq('user_id',userId).eq('date',today).is('kg',null).not('recommended_kg','is',null)
+        if(planRows&&planRows.length){
+          const byExercise={}
+          planRows.forEach(r=>{(byExercise[r.exercise]??=[]).push(r)})
+          const planExercises=Object.entries(byExercise).map(([name,rows])=>{
+            const meta=allExercises.find(e=>e.n===name)
+            return {
+              n:name,m:meta?.m||'',eq:meta?.eq||'',
+              sets:rows.map(r=>({kg:'',reps:r.reps!=null?String(r.reps):'',recKg:r.recommended_kg!=null?String(r.recommended_kg):''})),
+              done:false,
+            }
+          })
+          setWExercises(planExercises)
+          setWName('Тренировка от AI-тренера')
+          await supabase.from('workout_sets').delete().in('id',planRows.map(r=>r.id))
+        }
+      }
     }
     if(key==='done'){
       setWName('Тренировка');setWColor('#1D9E75');setWExercises([]);setWMode('log');setWDate(today);setStep('naming')
@@ -519,7 +542,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const filteredEx=allExercises.filter(e=>(pickMuscle==='Все'||e.m===pickMuscle)&&e.n.toLowerCase().includes(pickQ.toLowerCase()))
 
   const pickExercise=ex=>{
-    setWExercises(p=>[...p,{...ex,sets:[{kg:'',reps:''}],done:false}])
+    setWExercises(p=>[...p,{...ex,sets:[{kg:'',reps:'',recKg:''}],done:false}])
     setPickOpen(false);setPickQ('');setPickMuscle('Все')
   }
 
@@ -845,6 +868,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                               <button onClick={()=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.filter((_,j)=>j!==si)}:x).filter(x=>x.sets.length>0))}
                                 style={{ background:'none', border:'none', color:'#6b7280', cursor:'pointer', fontSize:14, textAlign:'center' }}>✕</button>
                             </div>
+                            {set.recKg&&(
+                              <div style={{ display:'grid', gridTemplateColumns:'24px 1fr 1fr 26px 26px 20px', gap:5 }}>
+                                <span />
+                                <span style={{ fontSize:9, color:PUR, textAlign:'center', marginTop:2 }}>реком. {set.recKg}кг</span>
+                              </div>
+                            )}
                             {noteOpen&&(
                               <input value={set.note||''} autoFocus
                                 onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,note:e.target.value}:s)}:x))}
@@ -862,7 +891,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                         )
                       })}
                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:6 }}>
-                        <button onClick={()=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:[...x.sets,{kg:'',reps:''}]}:x))}
+                        <button onClick={()=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:[...x.sets,{kg:'',reps:'',recKg:''}]}:x))}
                           style={{ fontSize:12, color:wColor, background:'none', border:'none', cursor:'pointer', fontWeight:600, padding:0 }}>
                           + Подход
                         </button>
@@ -4289,7 +4318,7 @@ export default function App() {
       for(const ex of withDate.exercises||[]){
         for(const s of ex.sets||[]){
           if(!s.kg&&!s.reps)continue
-          rows.push({user_id:user.id,exercise:ex.n,date:isoDate,kg:s.kg?Number(s.kg):null,reps:s.reps?Number(s.reps):null,note:s.note||null})
+          rows.push({user_id:user.id,exercise:ex.n,date:isoDate,kg:s.kg?Number(s.kg):null,reps:s.reps?Number(s.reps):null,note:s.note||null,recommended_kg:s.recKg?Number(s.recKg):null})
         }
       }
       if(rows.length)supabase.from('workout_sets').insert(rows).then(({error})=>{if(error)console.error('Ошибка синхронизации тренировки с Supabase:',error)})
@@ -4330,7 +4359,7 @@ export default function App() {
         ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} />
         : <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} onSectionChange={s=>{diarySectionRef.current=s}} />
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} />
-      case 'workouts':  return <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutActiveChange={setWorkoutActive} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} onOpenAI={m=>aiRef.current?.open(m)} />
+      case 'workouts':  return <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutActiveChange={setWorkoutActive} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} />
       case 'nutrition': return <NutritionView userId={user?.id} />
       case 'library':   return <LibraryView customExercises={customExercises} />
       case 'chat':      return <ChatView />

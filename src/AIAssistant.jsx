@@ -172,7 +172,10 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'claude-sonnet-4-6',
-          max_tokens: 1000,
+          // Тренировочный режим может выдавать SET_PROGRAM — до 6 упражнений по 4
+          // подхода в одном маркере, плюс текст ответа; 1000 токенов (хватает для
+          // обычных реплик и для питания) для этого тесно и рискует обрезать маркер.
+          max_tokens: mode === 'workout' ? 2000 : 1000,
           system,
           messages: newMsgs.map(m => ({ role: m.role, content: m.content })),
         }),
@@ -186,6 +189,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
       let text = stripMd(data.content[0].text)
       let added = false
       let suggestSurvey = false
+      let programSet = false
 
       if (mode === 'workout') {
         // ADD_SET — может быть несколько подходов за раз
@@ -239,8 +243,41 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
           text = text.replace(/\[EDIT_SET:[^\]]+\]/g, '')
         }
 
-        if (addSetMatches.length || delSetMatches.length || editSetMatches.length) {
-          if (added) flashToast()
+        // SET_PROGRAM — составленная AI программа (несколько сессий/упражнений/подходов).
+        // Вложенный JSON не укладывается в плоский шаблон {[^}]+} остальных маркеров,
+        // поэтому границы ищем по индексу открывающей метки и последней "]" в ответе
+        // (маркер всегда ставится в конце, см. workoutPrompt.js).
+        const spIdx = text.indexOf('[SET_PROGRAM:')
+        if (spIdx !== -1) {
+          const jsonStart = spIdx + '[SET_PROGRAM:'.length
+          const jsonEnd = text.lastIndexOf(']')
+          if (jsonEnd > jsonStart) {
+            try {
+              const program = JSON.parse(text.slice(jsonStart, jsonEnd))
+              const rows = []
+              for (const session of program.sessions || []) {
+                for (const ex of session.exercises || []) {
+                  for (const s of ex.sets || []) {
+                    rows.push({
+                      user_id: fresh.user.id, exercise: ex.exercise, date: session.date || fresh.today,
+                      kg: null, reps: s.reps != null ? Number(s.reps) : null,
+                      recommended_kg: s.recKg != null ? Number(s.recKg) : null, rating: null,
+                    })
+                  }
+                }
+              }
+              if (rows.length) {
+                const { error } = await supabase.from('workout_sets').insert(rows)
+                if (error) console.error('Ошибка записи программы:', error)
+                else programSet = true
+              }
+            } catch (e) { console.error('Ошибка разбора SET_PROGRAM:', e) }
+            text = text.slice(0, spIdx) + text.slice(jsonEnd + 1)
+          }
+        }
+
+        if (addSetMatches.length || delSetMatches.length || editSetMatches.length || programSet) {
+          if (added || programSet) flashToast()
           const refreshed = await loadContext(mode)
           if (refreshed) setCtx(refreshed)
         }
@@ -336,7 +373,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
       // Компактный вывод — без пустых/пробельных строк после вырезания маркеров
       text = text.replace(/[ \t]*\n[ \t]*(?:\n[ \t]*)+/g, '\n').trim()
 
-      setMessages(prev => [...prev, { role: 'assistant', content: text, added, suggestSurvey }])
+      setMessages(prev => [...prev, { role: 'assistant', content: text, added, suggestSurvey, programSet }])
 
       await supabase.from('chat_messages').insert([
         { user_id: fresh.user.id, mode, role: 'user', content: userMsg.content },
@@ -534,6 +571,15 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: '#f0fdf4', border: '1.5px solid #22c55e40' }}>
                           <span style={{ fontSize: 14, color: '#22c55e' }}>✓</span>
                           <span style={{ fontSize: 13, fontWeight: 600, color: '#22c55e' }}>Записано в дневник ✓</span>
+                        </div>
+                      </div>
+                    )}
+                    {/* Плашка «Программа составлена» под ответом с SET_PROGRAM-маркером */}
+                    {m.role === 'assistant' && m.programSet && (
+                      <div style={{ paddingLeft: 36 }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: '#f0fdf4', border: '1.5px solid #22c55e40' }}>
+                          <span style={{ fontSize: 14, color: '#22c55e' }}>✓</span>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: '#22c55e' }}>Программа составлена ✓</span>
                         </div>
                       </div>
                     )}
