@@ -370,7 +370,7 @@ const makeDefaultFolderSlots=()=>{
   const o={}; FOLDERS.forEach(f=>{o[f]=makeDefaultSlots(f)}); return o
 }
 
-function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutActiveChange, pendingAction, onClearPendingAction, onOpenAI, userId }) {
+function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutActiveChange, pendingAction, onClearPendingAction, onOpenAI }) {
   const [openFolder,setOpenFolder]=useState(null)
   const [openSlotId,setOpenSlotId]=useState(null)
   const [openSlotHeaderMenu,setOpenSlotHeaderMenu]=useState(false)
@@ -503,34 +503,11 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
   }
 
-  const handleAction=async key=>{
+  const handleAction=key=>{
     setMenuOpen(false)
     const today=new Date().toISOString().split('T')[0]
     if(key==='start'){
       setWName('Новая тренировка');setWColor('#D85A30');setWExercises([]);setTimer(0);setSwTime(0);setSwRunning(false);setWMode('start');setWDate(today);setStep('naming')
-      // Подхватываем тренировку, составленную AI-тренером на сегодня (см.
-      // маркер SET_PROGRAM в AIAssistant.jsx) — она лежит в workout_sets как
-      // строки-план (kg пуст, recommended_kg заполнен). Забираем и сразу
-      // убираем черновые строки, чтобы не плодить дубли при завершении.
-      if(userId){
-        const{data:planRows}=await supabase.from('workout_sets').select('*')
-          .eq('user_id',userId).eq('date',today).is('kg',null).not('recommended_kg','is',null)
-        if(planRows&&planRows.length){
-          const byExercise={}
-          planRows.forEach(r=>{(byExercise[r.exercise]??=[]).push(r)})
-          const planExercises=Object.entries(byExercise).map(([name,rows])=>{
-            const meta=allExercises.find(e=>e.n===name)
-            return {
-              n:name,m:meta?.m||'',eq:meta?.eq||'',
-              sets:rows.map(r=>({kg:'',reps:r.reps!=null?String(r.reps):'',recKg:r.recommended_kg!=null?String(r.recommended_kg):''})),
-              done:false,
-            }
-          })
-          setWExercises(planExercises)
-          setWName('Тренировка от AI-тренера')
-          await supabase.from('workout_sets').delete().in('id',planRows.map(r=>r.id))
-        }
-      }
     }
     if(key==='done'){
       setWName('Тренировка');setWColor('#1D9E75');setWExercises([]);setWMode('log');setWDate(today);setStep('naming')
@@ -2254,12 +2231,23 @@ function DateScroller({ value, onChange }) {
 }
 
 // ── Дневник
-function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, onOpenAI, userId, initialSection, onSectionChange }) {
+function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, onOpenAI, userId, initialSection, diaryJumpToken, onSectionChange }) {
   const [section, setSection] = useState(()=>initialSection??null)
   // Сообщаем родителю текущий подраздел — чтобы App мог его запомнить и вернуть
   // при повторном монтировании DiaryView после вынужденного перехода на другую
   // вкладку (см. borrowedNavRef/pendingSectionRestoreRef в App()).
   useEffect(()=>{ onSectionChange?.(section) },[section])
+  // Принудительный переход в initialSection по внешнему сигналу (например
+  // кнопка "Перейти к тренировке" из чата) — нужен отдельно от lazy-инициализации
+  // выше, т.к. если DiaryView уже смонтирован (nav не менялся), просто новое
+  // значение initialSection само по себе ничего не запустит.
+  const jumpTokenRef = useRef(diaryJumpToken)
+  useEffect(()=>{
+    if(diaryJumpToken!==jumpTokenRef.current){
+      jumpTokenRef.current=diaryJumpToken
+      if(initialSection)setSection(initialSection)
+    }
+  },[diaryJumpToken,initialSection])
   // tonnage
   const [period,setPeriod]=useState('all')
   const [customFrom,setCustomFrom]=useState('')
@@ -4235,6 +4223,11 @@ export default function App() {
   useEffect(()=>{
     if(nav==='dashboard'||nav==='progress')pendingSectionRestoreRef.current=null
   },[nav])
+  // diaryJumpToken — принудительный переход в конкретный подраздел Дневника
+  // (например по кнопке "Перейти к тренировке" из чата), даже если Дневник
+  // уже смонтирован и nav не меняется (тогда лишь смена initialSection в
+  // lazy-инициализаторе useState ничего не даст — нужен реальный сигнал).
+  const [diaryJumpToken,setDiaryJumpToken]=useState(0)
   const [sc,setSC]=useState(null)
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768)
   const [workoutActive,setWorkoutActive]=useState(false)
@@ -4306,6 +4299,15 @@ export default function App() {
     setNav(id)
   }
 
+  // Переход в раздел "Мои тренировки" Дневника из чата AI-тренера (кнопка
+  // "Перейти к тренировке" под сообщением с SET_PROGRAM). Клиент дальше сам
+  // открывает нужную запись — сюда не передаём конкретную тренировку.
+  const goToDiaryWorkouts=()=>{
+    pendingSectionRestoreRef.current='workouts'
+    setDiaryJumpToken(t=>t+1)
+    handleNav('dashboard')
+  }
+
   const handleWorkoutComplete=workout=>{
     const withDate={...workout,date:workout.date||new Date().toISOString()}
     setWorkoutHistory(h=>[...h,withDate])
@@ -4357,13 +4359,13 @@ export default function App() {
     switch(nav){
       case 'dashboard': return userRole==='trainer'
         ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} />
-        : <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} onSectionChange={s=>{diarySectionRef.current=s}} />
+        : <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} />
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} />
-      case 'workouts':  return <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutActiveChange={setWorkoutActive} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} />
+      case 'workouts':  return <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutActiveChange={setWorkoutActive} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} onOpenAI={m=>aiRef.current?.open(m)} />
       case 'nutrition': return <NutritionView userId={user?.id} />
       case 'library':   return <LibraryView customExercises={customExercises} />
       case 'chat':      return <ChatView />
-      case 'progress':  return <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} onSectionChange={s=>{diarySectionRef.current=s}} />
+      case 'progress':  return <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} />
       default:          return null
     }
   }
@@ -4534,7 +4536,7 @@ export default function App() {
         </div>
       )}
 
-      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} />
+      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onWorkoutComplete={handleWorkoutComplete} onGoToWorkoutsDiary={goToDiaryWorkouts} />
     </>
   )
 }

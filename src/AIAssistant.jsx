@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 're
 import { supabase } from './supabase'
 import { buildSystemPrompt } from './aiPrompt'
 import { buildWorkoutSystemPrompt } from './workoutPrompt'
-import { PROGRAMS_MAP } from './programs'
+import { PROGRAMS_MAP, EXERCISES } from './programs'
 import TrainingSurvey from './TrainingSurvey'
 
 const PUR = '#7F77DD'
@@ -19,7 +19,7 @@ const stripMd = (t) => t
   .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
   .trim()
 
-const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
+const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkoutComplete, onGoToWorkoutsDiary }, ref) {
   const [isOpen, setIsOpen]     = useState(false)
   const [mode, setMode]         = useState('nutrition')
   const [messages, setMessages] = useState([])
@@ -247,6 +247,13 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
         // Вложенный JSON не укладывается в плоский шаблон {[^}]+} остальных маркеров,
         // поэтому границы ищем по индексу открывающей метки и последней "]" в ответе
         // (маркер всегда ставится в конце, см. workoutPrompt.js).
+        // Каждая сессия становится полноценной записью в дневнике тренировок — тем
+        // же путём, что и обычная выполненная тренировка (onWorkoutComplete),
+        // поэтому она сразу видна в "Мои тренировки" и синхронизируется в
+        // workout_sets с проставленным recommended_kg. Кнопка "Перейти к
+        // тренировке" в чате должна появляться, только если это реально
+        // получилось — отсюда флаг programSet выставляется только когда
+        // хотя бы одна сессия успешно превратилась в запись.
         const spIdx = text.indexOf('[SET_PROGRAM:')
         if (spIdx !== -1) {
           const jsonStart = spIdx + '[SET_PROGRAM:'.length
@@ -254,30 +261,39 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
           if (jsonEnd > jsonStart) {
             try {
               const program = JSON.parse(text.slice(jsonStart, jsonEnd))
-              const rows = []
+              let createdCount = 0
               for (const session of program.sessions || []) {
-                for (const ex of session.exercises || []) {
-                  for (const s of ex.sets || []) {
-                    rows.push({
-                      user_id: fresh.user.id, exercise: ex.exercise, date: session.date || fresh.today,
-                      kg: null, reps: s.reps != null ? Number(s.reps) : null,
-                      recommended_kg: s.recKg != null ? Number(s.recKg) : null, rating: null,
-                    })
-                  }
-                }
+                const exercises = (session.exercises || [])
+                  .filter(ex => ex.exercise && ex.sets?.length)
+                  .map(ex => {
+                    const meta = EXERCISES.find(e => e.n === ex.exercise)
+                    return {
+                      n: ex.exercise, m: meta?.m || '', eq: meta?.eq || '',
+                      sets: ex.sets.map(s => ({
+                        kg: '', reps: s.reps != null ? String(s.reps) : '',
+                        recKg: s.recKg != null ? String(s.recKg) : '',
+                      })),
+                      done: false,
+                    }
+                  })
+                if (!exercises.length) continue
+                const date = session.date || fresh.today
+                const dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('ru', { day: 'numeric', month: 'long' })
+                onWorkoutComplete?.({
+                  name: `Тренировка от AI-ассистента, ${dateLabel}`,
+                  color: PUR, exercises, duration: null,
+                  date: new Date(date + 'T12:00:00').toISOString(), comment: '',
+                })
+                createdCount++
               }
-              if (rows.length) {
-                const { error } = await supabase.from('workout_sets').insert(rows)
-                if (error) console.error('Ошибка записи программы:', error)
-                else programSet = true
-              }
+              if (createdCount) programSet = true
             } catch (e) { console.error('Ошибка разбора SET_PROGRAM:', e) }
             text = text.slice(0, spIdx) + text.slice(jsonEnd + 1)
           }
         }
 
-        if (addSetMatches.length || delSetMatches.length || editSetMatches.length || programSet) {
-          if (added || programSet) flashToast()
+        if (addSetMatches.length || delSetMatches.length || editSetMatches.length) {
+          if (added) flashToast()
           const refreshed = await loadContext(mode)
           if (refreshed) setCtx(refreshed)
         }
@@ -574,13 +590,14 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false }, ref) {
                         </div>
                       </div>
                     )}
-                    {/* Плашка «Программа составлена» под ответом с SET_PROGRAM-маркером */}
+                    {/* Кнопка «Перейти к тренировке» под ответом с SET_PROGRAM-маркером —
+                        только если запись в дневник реально прошла (m.programSet). */}
                     {m.role === 'assistant' && m.programSet && (
                       <div style={{ paddingLeft: 36 }}>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: '#f0fdf4', border: '1.5px solid #22c55e40' }}>
-                          <span style={{ fontSize: 14, color: '#22c55e' }}>✓</span>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: '#22c55e' }}>Программа составлена ✓</span>
-                        </div>
+                        <button onClick={() => { setIsOpen(false); onGoToWorkoutsDiary?.() }}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 20, background: PUR, border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                          📋 Перейти к тренировке
+                        </button>
                       </div>
                     )}
                     {/* Кнопка «Заполнить анкету» под ответом с SUGGEST_SURVEY-маркером */}
