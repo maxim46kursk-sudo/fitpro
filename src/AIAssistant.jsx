@@ -30,8 +30,29 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
   const [showSurvey, setShowSurvey] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [clearing, setClearing] = useState(false)
+  const [attachedImage, setAttachedImage] = useState(null) // { dataUrl, mediaType, base64 } — фото питания перед отправкой (режим "Питание")
   const messagesEndRef = useRef(null)
   const inputRef       = useRef(null)
+  const imageInputRef  = useRef(null)
+
+  const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+  const handleImageSelect = (e) => {
+    const file = e.target.files[0]
+    e.target.value = '' // сброс, чтобы можно было выбрать тот же файл повторно
+    if (!file) return
+    if (!file.type.startsWith('image/')) return
+    if (file.size > MAX_IMAGE_BYTES) {
+      alert('Фото слишком большое (максимум 5 МБ) — попробуй сделать скриншот меньше.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(reader.result || '')
+      if (!match) return
+      setAttachedImage({ dataUrl: reader.result, mediaType: match[1], base64: match[2] })
+    }
+    reader.readAsDataURL(file)
+  }
 
   useImperativeHandle(ref, () => ({
     open: (m) => {
@@ -140,15 +161,18 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
     if (isOpen) setTimeout(() => inputRef.current?.focus(), 150)
   }, [isOpen, mode])
 
-  useEffect(() => { setShowClearConfirm(false) }, [mode, isOpen])
+  useEffect(() => { setShowClearConfirm(false); setAttachedImage(null) }, [mode, isOpen])
 
   const send = async () => {
-    if (!input.trim() || loading) return
+    const hasImage = mode === 'nutrition' && !!attachedImage
+    if ((!input.trim() && !hasImage) || loading) return
 
-    const userMsg = { role: 'user', content: input.trim() }
+    const sentImage = attachedImage
+    const userMsg = { role: 'user', content: input.trim(), image: hasImage ? sentImage.dataUrl : undefined }
     const newMsgs = [...messages, userMsg]
     setMessages(newMsgs)
     setInput('')
+    setAttachedImage(null)
     setLoading(true)
 
     try {
@@ -177,7 +201,18 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
           // обычных реплик и для питания) для этого тесно и рискует обрезать маркер.
           max_tokens: mode === 'workout' ? 2000 : 1000,
           system,
-          messages: newMsgs.map(m => ({ role: m.role, content: m.content })),
+          // Последнее сообщение, если к нему приложено фото, уходит в Anthropic
+          // мультимодальным content-массивом (image + text); вся остальная
+          // история — как обычно, плоской строкой. api/chat — чистый прокси,
+          // прогоняет body как есть, поэтому это не требует правок на бэкенде.
+          messages: newMsgs.map((m, i) => {
+            if (hasImage && i === newMsgs.length - 1) {
+              const blocks = [{ type: 'image', source: { type: 'base64', media_type: sentImage.mediaType, data: sentImage.base64 } }]
+              if (m.content) blocks.push({ type: 'text', text: m.content })
+              return { role: m.role, content: blocks }
+            }
+            return { role: m.role, content: m.content }
+          }),
         }),
       })
       const data = await res.json()
@@ -392,7 +427,8 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
       setMessages(prev => [...prev, { role: 'assistant', content: text, added, suggestSurvey, programSet }])
 
       await supabase.from('chat_messages').insert([
-        { user_id: fresh.user.id, mode, role: 'user', content: userMsg.content },
+        // Фото не сохраняем как base64 в текстовое поле — только пометку, что оно было.
+        { user_id: fresh.user.id, mode, role: 'user', content: hasImage ? `[фото]${userMsg.content ? ' ' + userMsg.content : ''}` : userMsg.content },
         { user_id: fresh.user.id, mode, role: 'assistant', content: text },
       ])
     } catch (err) {
@@ -578,6 +614,9 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
                         fontSize: 14, lineHeight: 1.65, whiteSpace: 'pre-wrap',
                         textAlign: 'left',
                       }}>
+                        {m.image && (
+                          <img src={m.image} alt="Прикреплённое фото" style={{ display: 'block', maxWidth: '100%', maxHeight: 220, borderRadius: 10, marginBottom: m.content ? 8 : 0 }} />
+                        )}
                         {m.content}
                       </div>
                     </div>
@@ -629,6 +668,18 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
                 <div ref={messagesEndRef} />
               </div>
 
+              {/* Превью прикреплённого фото — над полем ввода, до отправки */}
+              {attachedImage && (
+                <div style={{ padding: '10px 16px 0', display: 'flex', alignItems: 'center', gap: 10, background: '#fff', flexShrink: 0 }}>
+                  <div style={{ position: 'relative', flexShrink: 0 }}>
+                    <img src={attachedImage.dataUrl} alt="Превью" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 10, border: '1px solid #e5e7eb', display: 'block' }} />
+                    <button onClick={() => setAttachedImage(null)}
+                      style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', border: 'none', background: '#ef4444', color: '#fff', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, minHeight: 'unset', padding: 0 }}>✕</button>
+                  </div>
+                  <span style={{ fontSize: 12, color: '#9ca3af', lineHeight: 1.4 }}>Фото прикреплено — считаю цифры со скриншота</span>
+                </div>
+              )}
+
               {/* Поле ввода */}
               <div style={{
                 padding: '12px 16px',
@@ -636,12 +687,26 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
                 borderTop: '1px solid #e5e7eb',
                 display: 'flex', gap: 8, flexShrink: 0, background: '#fff',
               }}>
+                {mode === 'nutrition' && (
+                  <>
+                    <input ref={imageInputRef} type="file" accept="image/*" onChange={handleImageSelect} style={{ display: 'none' }} />
+                    <button
+                      onClick={() => imageInputRef.current?.click()}
+                      title="Прикрепить фото/скриншот"
+                      style={{
+                        width: 44, height: 44, borderRadius: '50%', border: '1.5px solid #e5e7eb', flexShrink: 0,
+                        background: attachedImage ? `${PUR}18` : '#f9fafb', color: attachedImage ? PUR : '#6b7280',
+                        fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        minHeight: 'unset',
+                      }}>📎</button>
+                  </>
+                )}
                 <input
                   ref={inputRef}
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-                  placeholder={mode === 'workout' ? 'Расскажи как прошёл подход...' : 'Спроси про питание или продукт...'}
+                  placeholder={mode === 'workout' ? 'Расскажи как прошёл подход...' : attachedImage ? 'Можно добавить комментарий...' : 'Спроси про питание или продукт...'}
                   style={{
                     flex: 1, padding: '11px 16px', borderRadius: 24,
                     border: '1.5px solid #e5e7eb', fontSize: 14,
@@ -653,11 +718,11 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
                 />
                 <button
                   onClick={send}
-                  disabled={!input.trim() || loading}
+                  disabled={(!input.trim() && !attachedImage) || loading}
                   style={{
                     width: 44, height: 44, borderRadius: '50%', border: 'none', flexShrink: 0,
-                    background: (!input.trim() || loading) ? '#e5e7eb' : `linear-gradient(135deg,${PUR},#5b54c4)`,
-                    color: '#fff', fontSize: 20, cursor: (!input.trim() || loading) ? 'default' : 'pointer',
+                    background: ((!input.trim() && !attachedImage) || loading) ? '#e5e7eb' : `linear-gradient(135deg,${PUR},#5b54c4)`,
+                    color: '#fff', fontSize: 20, cursor: ((!input.trim() && !attachedImage) || loading) ? 'default' : 'pointer',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     transition: 'background 0.15s', minHeight: 'unset',
                   }}>↑</button>
