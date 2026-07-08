@@ -6,6 +6,9 @@ import { PROGRAMS_MAP, EXERCISES } from './programs'
 import TrainingSurvey from './TrainingSurvey'
 
 const PUR = '#7F77DD'
+// Та же ссылка, что и кнопка "Написать тренеру" в Настройках → Поддержка (App.jsx) —
+// один и тот же контакт Максима в Telegram, не заводим вторую ссылку.
+const MAX_TELEGRAM_URL = 'https://t.me/maxim_athlete'
 
 const HINTS = ['Какой рацион мне подойдет?', 'Что съесть после тренировки?', 'Можно ли мне алкоголь?']
 const HINTS_WORKOUT = ['Жим 50кг на 8 было легко, какой вес дальше?', 'Что у меня растёт, а что стоит на месте?', 'Побаливает плечо на жиме, что делать?']
@@ -225,6 +228,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
       let added = false
       let suggestSurvey = false
       let programSet = false
+      let contactMax = false
 
       if (mode === 'workout') {
         // ADD_SET — может быть несколько подходов за раз
@@ -252,9 +256,10 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
           for (const m of delSetMatches) {
             try {
               const del = JSON.parse(m[1])
-              const { error } = await supabase.from('workout_sets').delete()
+              const { error, count } = await supabase.from('workout_sets').delete({ count: 'exact' })
                 .eq('id', del.id).eq('user_id', fresh.user.id)
               if (error) console.error('Ошибка удаления подхода:', error)
+              else if (!count) console.warn(`DEL_SET: id:${del.id} не найден в workout_sets — AI сообщил об удалении записи, которой не существовало`)
             } catch (e) { console.error('Ошибка разбора DEL_SET:', e) }
           }
           text = text.replace(/\[DEL_SET:[^\]]+\]/g, '')
@@ -296,8 +301,21 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
           if (jsonEnd > jsonStart) {
             try {
               const program = JSON.parse(text.slice(jsonStart, jsonEnd))
+              // Защита от дублей: если на эту дату уже лежит запланированная
+              // (ещё не выполненная — kg пуст, recommended_kg заполнен) программа,
+              // не создаём вторую, даже если модель по ошибке прислала SET_PROGRAM
+              // повторно (см. buildPlannedProgramSection в workoutPrompt.js — сама
+              // модель тоже должна это видеть и не пересоставлять, но код подстраховывает).
+              const plannedDates = new Set(
+                (fresh.sets || []).filter(s => s.kg == null && s.recommended_kg != null).map(s => s.date)
+              )
               let createdCount = 0
               for (const session of program.sessions || []) {
+                const date = session.date || fresh.today
+                if (plannedDates.has(date)) {
+                  console.warn(`SET_PROGRAM: на ${date} уже есть запланированная тренировка — пропускаю дубль`)
+                  continue
+                }
                 const exercises = (session.exercises || [])
                   .filter(ex => ex.exercise && ex.sets?.length)
                   .map(ex => {
@@ -312,7 +330,6 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
                     }
                   })
                 if (!exercises.length) continue
-                const date = session.date || fresh.today
                 const dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('ru', { day: 'numeric', month: 'long' })
                 onWorkoutComplete?.({
                   name: `Тренировка от AI-ассистента, ${dateLabel}`,
@@ -320,6 +337,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
                   date: new Date(date + 'T12:00:00').toISOString(), comment: '',
                 })
                 createdCount++
+                plannedDates.add(date)
               }
               if (createdCount) programSet = true
             } catch (e) { console.error('Ошибка разбора SET_PROGRAM:', e) }
@@ -336,6 +354,10 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
         // SUGGEST_SURVEY — AI предлагает заполнить анкету перед составлением программы
         suggestSurvey = /\[SUGGEST_SURVEY\]/.test(text)
         if (suggestSurvey) text = text.replace(/\[SUGGEST_SURVEY\]/g, '')
+
+        // CONTACT_MAX — AI ответил на вопрос-миф и предлагает написать Максиму за подробностями
+        contactMax = /\[CONTACT_MAX\]/.test(text)
+        if (contactMax) text = text.replace(/\[CONTACT_MAX\]/g, '')
       } else {
         // ADD — может быть несколько приёмов пищи за раз, каждый в своём маркере
         const addMatches = [...text.matchAll(/\[ADD:(\{[^}]+\})\]/g)]
@@ -424,7 +446,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
       // Компактный вывод — без пустых/пробельных строк после вырезания маркеров
       text = text.replace(/[ \t]*\n[ \t]*(?:\n[ \t]*)+/g, '\n').trim()
 
-      setMessages(prev => [...prev, { role: 'assistant', content: text, added, suggestSurvey, programSet }])
+      setMessages(prev => [...prev, { role: 'assistant', content: text, added, suggestSurvey, programSet, contactMax }])
 
       await supabase.from('chat_messages').insert([
         // Фото не сохраняем как base64 в текстовое поле — только пометку, что оно было.
@@ -646,6 +668,15 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
                           style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 20, background: PUR, border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                           📋 Заполнить анкету
                         </button>
+                      </div>
+                    )}
+                    {/* Кнопка «Написать Максиму» под ответом на вопрос-миф (CONTACT_MAX-маркер) */}
+                    {m.role === 'assistant' && m.contactMax && (
+                      <div style={{ paddingLeft: 36 }}>
+                        <a href={MAX_TELEGRAM_URL} target="_blank" rel="noopener noreferrer"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 20, background: PUR, border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', textDecoration: 'none' }}>
+                          💬 Написать Максиму
+                        </a>
                       </div>
                     )}
                   </div>
