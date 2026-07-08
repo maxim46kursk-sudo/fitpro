@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import AIAssistant from './AIAssistant'
 import { supabase } from './supabase.js'
-import { FOLDERS, PROGRAMS_MAP, EXERCISES } from './programs.js'
+import { FOLDERS, PROGRAMS_MAP, EXERCISES, isOneSidedExercise } from './programs.js'
 import './App.css'
 
 const PUR = '#7F77DD'
@@ -519,7 +519,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const filteredEx=allExercises.filter(e=>(pickMuscle==='Все'||e.m===pickMuscle)&&e.n.toLowerCase().includes(pickQ.toLowerCase()))
 
   const pickExercise=ex=>{
-    setWExercises(p=>[...p,{...ex,sets:[{kg:'',reps:'',recKg:''}],done:false}])
+    setWExercises(p=>[...p,{...ex,sets:[{kg:'',reps:'',recKg:'',rating:''}],done:false}])
     setPickOpen(false);setPickQ('');setPickMuscle('Все')
   }
 
@@ -802,12 +802,20 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                     <span style={{ fontSize:14, fontWeight:600, color:ex.done?'#4ade80':wColor }}>{ex.n}</span>
                     {ex.done&&<span style={{ fontSize:11, color:'#4ade80' }}>✓ Выполнено</span>}
                   </div>
+                  {isOneSidedExercise(ex.n)&&(
+                    <div style={{ fontSize:10, color:'#6b7280', marginTop:-4, marginBottom:8 }}>
+                      + повторения общим числом на обе стороны, не на одну
+                    </div>
+                  )}
 
                   {ex.done?(
                     <div>
                       <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:8 }}>
                         {ex.sets.map((s,si)=>(s.kg||s.reps)&&(
-                          <span key={si} style={{ fontSize:11, color:'#9ca3af' }}>{si+1}. {s.kg||'—'}кг × {s.reps||'—'}</span>
+                          <span key={si} style={{ fontSize:11, color:'#9ca3af' }}>
+                            {si+1}. {s.kg||'—'}кг × {s.reps||'—'}
+                            {isOneSidedExercise(ex.n)&&<span title="Общее количество повторений на обе стороны, не на одну">+</span>}
+                          </span>
                         ))}
                       </div>
                       <div style={{ fontSize:16, fontWeight:700, color:'#4ade80' }}>Тоннаж: {tonnage} кг</div>
@@ -834,10 +842,16 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                 onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,kg:e.target.value}:s)}:x))}
                                 placeholder="0"
                                 style={{ background:'#374151', border:'1px solid #4b5563', borderRadius:6, padding:'6px 6px', fontSize:13, color:'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
-                              <input value={set.reps}
-                                onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,reps:e.target.value}:s)}:x))}
-                                placeholder="0"
-                                style={{ background:'#374151', border:'1px solid #4b5563', borderRadius:6, padding:'6px 6px', fontSize:13, color:'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
+                              <div style={{ position:'relative', width:'100%' }}>
+                                <input value={set.reps}
+                                  onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,reps:e.target.value}:s)}:x))}
+                                  placeholder="0"
+                                  style={{ background:'#374151', border:'1px solid #4b5563', borderRadius:6, padding:'6px 6px', fontSize:13, color:'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
+                                {isOneSidedExercise(ex.n)&&(
+                                  <span title="Общее количество повторений на обе стороны, не на одну"
+                                    style={{ position:'absolute', top:-5, right:-4, fontSize:10, fontWeight:700, color:PUR }}>+</span>
+                                )}
+                              </div>
                               <button onClick={()=>setOpenSetNote(noteOpen?null:{ei,si})}
                                 style={{ width:26, height:26, borderRadius:6, border:'none', background:set.note?`${PUR}50`:'#374151', color:set.note?PUR:'#6b7280', cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}>📝</button>
                               <button onClick={()=>{setVideoUploadTarget.current={ei,si};setVideoInputRef.current.click()}}
@@ -849,6 +863,23 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                               <div style={{ display:'grid', gridTemplateColumns:'24px 1fr 1fr 26px 26px 20px', gap:5 }}>
                                 <span />
                                 <span style={{ fontSize:9, color:PUR, textAlign:'center', marginTop:2 }}>реком. {set.recKg}кг</span>
+                              </div>
+                            )}
+                            {/* Оценка нагрузки 1-5 — только под рабочими подходами (последние
+                                2 в упражнении, как и считает AI-тренер в workoutPrompt.js) */}
+                            {si>=ex.sets.length-2&&(
+                              <div style={{ display:'flex', alignItems:'center', gap:5, marginTop:3, paddingLeft:29 }}>
+                                <span style={{ fontSize:9, color:'#6b7280' }}>Нагрузка:</span>
+                                {[1,2,3,4,5].map(n=>(
+                                  <button key={n}
+                                    onClick={()=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,rating:s.rating===n?'':n}:s)}:x))}
+                                    title={n===1?'1 — совсем легко':n===5?'5 — на пределе':String(n)}
+                                    style={{ width:18, height:18, borderRadius:'50%', border:`1px solid ${set.rating===n?wColor:'#4b5563'}`,
+                                      background:set.rating===n?wColor:'transparent', color:set.rating===n?'#fff':'#9ca3af',
+                                      fontSize:9, fontWeight:700, cursor:'pointer', padding:0, lineHeight:1 }}>
+                                    {n}
+                                  </button>
+                                ))}
                               </div>
                             )}
                             {noteOpen&&(
@@ -868,7 +899,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                         )
                       })}
                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:6 }}>
-                        <button onClick={()=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:[...x.sets,{kg:'',reps:'',recKg:''}]}:x))}
+                        <button onClick={()=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:[...x.sets,{kg:'',reps:'',recKg:'',rating:''}]}:x))}
                           style={{ fontSize:12, color:wColor, background:'none', border:'none', cursor:'pointer', fontWeight:600, padding:0 }}>
                           + Подход
                         </button>
@@ -4320,7 +4351,7 @@ export default function App() {
       for(const ex of withDate.exercises||[]){
         for(const s of ex.sets||[]){
           if(!s.kg&&!s.reps)continue
-          rows.push({user_id:user.id,exercise:ex.n,date:isoDate,kg:s.kg?Number(s.kg):null,reps:s.reps?Number(s.reps):null,note:s.note||null,recommended_kg:s.recKg?Number(s.recKg):null})
+          rows.push({user_id:user.id,exercise:ex.n,date:isoDate,kg:s.kg?Number(s.kg):null,reps:s.reps?Number(s.reps):null,note:s.note||null,recommended_kg:s.recKg?Number(s.recKg):null,rating:s.rating?Number(s.rating):null})
         }
       }
       if(rows.length)supabase.from('workout_sets').insert(rows).then(({error})=>{if(error)console.error('Ошибка синхронизации тренировки с Supabase:',error)})
