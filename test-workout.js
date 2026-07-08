@@ -268,12 +268,16 @@ mk({
   },
 })
 
+// Спина — мышца без настоящей изоляции в библиотеке (см.
+// NO_ISOLATION_ACCENT_MUSCLES в workoutPrompt.js): акцент на неё реализуется
+// ТРЕМЯ базовыми упражнениями вместо обычных 2 база + 1 изоляция-на-акцент,
+// а изоляции требуется только 2 (с любых мышц, не обязательно со спины).
 const SPLIT_SURVEY = { experience: 'medium', contraindications: null, favorite_exercises: ['Тяга верхнего блока'], focus_muscles: ['Спина'], system: 'split' }
 mk({
-  group: 'Конструктор программы', name: 'сплит — 5 упражнений (2 база + 3 изоляция)',
+  group: 'Конструктор программы', name: 'сплит на спину — 5 упражнений (3 база на спину, изоляция не на акцент)',
   sets: [], survey: SPLIT_SURVEY,
   user: 'Составь мне тренировку на сегодня на спину. Тягу верхнего блока делаю с 25 кг. Остальное подбери сам, лёгкий вес для начала.',
-  expect: 'SET_PROGRAM с 5 упражнениями: 2 многосуставных база, 3 изолирующих, все названия из справочника',
+  expect: 'SET_PROGRAM с 5 упражнениями: 3 разных многосуставных упражнения на Спину (акцент реализован базой, не изоляцией — у спины изоляции почти нет) + 2 изолирующих с любых мышц, все названия из справочника',
   extra: (t) => {
     const program = extractSetProgram(t)
     if (!program) return ['нет маркера SET_PROGRAM']
@@ -288,8 +292,11 @@ mk({
     const byName = Object.fromEntries(EXERCISES.map(e => [e.n, e]))
     const compoundCount = exNames.filter(n => byName[n]?.type === 'compound').length
     const isolationCount = exNames.filter(n => byName[n]?.type === 'isolation').length
-    if (compoundCount < 2) issues.push(`меньше 2 базовых упражнений (${compoundCount})`)
-    if (isolationCount < 3) issues.push(`меньше 3 изолирующих упражнений (${isolationCount})`)
+    const backCompoundCount = exNames.filter(n => byName[n]?.type === 'compound' && byName[n]?.m === 'Спина').length
+    if (compoundCount < 3) issues.push(`меньше 3 базовых упражнений (${compoundCount})`)
+    if (backCompoundCount < 3) issues.push(`меньше 3 базовых именно на спину (${backCompoundCount}) — акцент должен идти объёмом базы`)
+    if (new Set(exNames.filter(n => byName[n]?.type === 'compound' && byName[n]?.m === 'Спина')).size < backCompoundCount) issues.push('базовые упражнения на спину повторяются, а не разные')
+    if (isolationCount < 2) issues.push(`меньше 2 изолирующих упражнений (${isolationCount})`)
     for (const ex of session.exercises || []) {
       if (!ex.sets?.length) issues.push(`у упражнения "${ex.exercise}" нет подходов`)
     }
