@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
 // Локальный dev-сервер Vite не умеет исполнять serverless-функции из /api —
@@ -7,7 +7,10 @@ import react from '@vitejs/plugin-react'
 // input" при попытке res.json() пустого ответа. Плагин повторяет ровно то же,
 // что делает api/chat.js в проде (см. этот файл) — прокси к Anthropic с
 // серверным API-ключом, — но исполняется прямо внутри dev-сервера.
-function localApiChatPlugin() {
+// Ключ передаётся параметром (из loadEnv), а не читается через process.env
+// внутри плагина — Vite НЕ прокидывает .env в process.env автоматически для
+// конфига, из-за этого ключ на локалке оказался пустым при первой попытке.
+function localApiChatPlugin(apiKey) {
   return {
     name: 'local-api-chat',
     configureServer(server) {
@@ -17,6 +20,12 @@ function localApiChatPlugin() {
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
         if (req.method === 'OPTIONS') { res.statusCode = 200; res.end(); return }
         if (req.method !== 'POST') { res.statusCode = 405; res.end(); return }
+        if (!apiKey) {
+          res.statusCode = 500
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ error: { message: 'VITE_ANTHROPIC_KEY не найден в .env — локальный /api/chat не может обратиться к Anthropic' } }))
+          return
+        }
         let body = ''
         req.on('data', chunk => { body += chunk })
         req.on('end', async () => {
@@ -25,7 +34,7 @@ function localApiChatPlugin() {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'x-api-key': process.env.VITE_ANTHROPIC_KEY,
+                'x-api-key': apiKey,
                 'anthropic-version': '2023-06-01',
               },
               body,
@@ -46,18 +55,21 @@ function localApiChatPlugin() {
 }
 
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [react(), localApiChatPlugin()],
-  server: {
-    allowedHosts: true,
-  },
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (!id.includes('node_modules')) return
-          if (id.includes('react-dom') || id.includes('/react/')) return 'vendor'
-          if (id.includes('@supabase/supabase-js')) return 'supabase'
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  return {
+    plugins: [react(), localApiChatPlugin(env.VITE_ANTHROPIC_KEY)],
+    server: {
+      allowedHosts: true,
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return
+            if (id.includes('react-dom') || id.includes('/react/')) return 'vendor'
+            if (id.includes('@supabase/supabase-js')) return 'supabase'
+          }
         }
       }
     }
