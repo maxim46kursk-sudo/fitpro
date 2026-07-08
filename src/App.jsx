@@ -164,7 +164,7 @@ function Dashboard({ setNav, setSC, isTrainer }) {
   )
 }
 
-function ClientsView({ setSC, setNav }) {
+function ClientsView({ setSC, setNav, userId }) {
   const [q,setQ]=useState('')
   const [showAdd,setShowAdd]=useState(false)
   const [addForm,setAddForm]=useState({name:'',goal:'Похудение',program:''})
@@ -176,6 +176,33 @@ function ClientsView({ setSC, setNav }) {
     setLocalClients(list)
     localStorage.setItem('fitpro_local_clients',JSON.stringify(list))
   }
+
+  // Клиенты, добавленные тренером вручную — подтягиваются из Supabase (единый
+  // список на любом устройстве); локальные без supabaseId переносятся один раз.
+  useEffect(()=>{
+    if(!userId)return
+    let cancelled=false
+    ;(async()=>{
+      let local
+      try{local=JSON.parse(localStorage.getItem('fitpro_local_clients')||'[]')}catch{local=[]}
+      const toMigrate=local.filter(c=>!c.supabaseId)
+      for(const c of toMigrate){
+        const{data,error}=await supabase.from('trainer_clients').insert({trainer_id:userId,name:c.name,goal:c.goal||null,program:c.program||null,progress:c.progress||0}).select('id').single()
+        if(error)console.error('Миграция клиента: ошибка вставки:',error)
+        else if(data)c.supabaseId=data.id
+      }
+      if(toMigrate.length)localStorage.setItem('fitpro_local_clients',JSON.stringify(local))
+      const{data:rows,error}=await supabase.from('trainer_clients').select('*').eq('trainer_id',userId)
+      if(cancelled||error||!rows)return
+      const mapped=rows.map(r=>{
+        const initials=r.name.trim().split(' ').map(w=>w[0]?.toUpperCase()||'').join('').slice(0,2)||'КЛ'
+        return{id:r.id,supabaseId:r.id,name:r.name,goal:r.goal||'',program:r.program||'Без программы',progress:r.progress||0,av:initials,cal:0,wk:0,wts:[],isLocal:true}
+      })
+      setLocalClients(mapped)
+      localStorage.setItem('fitpro_local_clients',JSON.stringify(mapped))
+    })()
+    return()=>{cancelled=true}
+  },[userId])
 
   const addClient=()=>{
     if(!addForm.name.trim())return
@@ -193,9 +220,23 @@ function ClientsView({ setSC, setNav }) {
     saveLocal([...localClients,newC])
     setAddForm({name:'',goal:'Похудение',program:''})
     setShowAdd(false)
+    if(userId){
+      supabase.from('trainer_clients').insert({trainer_id:userId,name:newC.name,goal:newC.goal||null,program:newC.program||null,progress:0}).select('id').single().then(({data,error})=>{
+        if(error){console.error('Ошибка синхронизации клиента с Supabase:',error);return}
+        setLocalClients(list=>{
+          const updated=list.map(c=>c===newC?{...c,supabaseId:data?.id}:c)
+          localStorage.setItem('fitpro_local_clients',JSON.stringify(updated))
+          return updated
+        })
+      })
+    }
   }
 
-  const deleteLocal=(id)=>saveLocal(localClients.filter(c=>c.id!==id))
+  const deleteLocal=(id)=>{
+    const target=localClients.find(c=>c.id===id)
+    saveLocal(localClients.filter(c=>c.id!==id))
+    if(target?.supabaseId!=null)supabase.from('trainer_clients').delete().eq('id',target.supabaseId)
+  }
 
   const allClients=[...CLIENTS,...localClients]
   const fl=allClients.filter(c=>c.name.toLowerCase().includes(q.toLowerCase()))
@@ -370,7 +411,7 @@ const makeDefaultFolderSlots=()=>{
   const o={}; FOLDERS.forEach(f=>{o[f]=makeDefaultSlots(f)}); return o
 }
 
-function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutActiveChange, pendingAction, onClearPendingAction, onOpenAI }) {
+function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutActiveChange, pendingAction, onClearPendingAction, onOpenAI, userId }) {
   const [openFolder,setOpenFolder]=useState(null)
   const [openSlotId,setOpenSlotId]=useState(null)
   const [openSlotHeaderMenu,setOpenSlotHeaderMenu]=useState(false)
@@ -530,6 +571,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     pickExercise(newEx)
     setCustomForm({n:'',m:'',eq:''})
     setCustomOpen(false)
+    if(userId){
+      supabase.from('custom_exercises').insert({user_id:userId,name:newEx.n,muscle_group:newEx.m||null,equipment:newEx.eq||null}).select('id').single().then(({data,error})=>{
+        if(error){console.error('Ошибка синхронизации своего упражнения с Supabase:',error);return}
+        setCustomExercises(list=>list.map(e=>e===newEx?{...e,supabaseId:data?.id}:e))
+      })
+    }
   }
 
   const exitWorkout=()=>{
@@ -2302,6 +2349,32 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const [plannedWorkouts,setPlannedWorkouts]=useState(()=>{try{return JSON.parse(localStorage.getItem('fitpro_planned')||'[]')}catch{return[]}})
   const [templateMsg,setTemplateMsg]=useState('')
 
+  // Запланированные тренировки — как и остальное, подтягиваются из Supabase,
+  // чтобы совпадать на любом устройстве/origin. Локальные записи без supabaseId
+  // (старые, ещё не синхронизированные) переносятся один раз, затем список
+  // целиком заменяется тем, что реально лежит в базе.
+  useEffect(()=>{
+    if(!userId)return
+    let cancelled=false
+    ;(async()=>{
+      let local
+      try{local=JSON.parse(localStorage.getItem('fitpro_planned')||'[]')}catch{local=[]}
+      const toMigrate=local.filter(p=>!p.supabaseId)
+      for(const p of toMigrate){
+        const{data,error}=await supabase.from('planned_workouts').insert({user_id:userId,name:p.name||null,date:p.date||null}).select('id').single()
+        if(error)console.error('Миграция плана тренировки: ошибка вставки:',error)
+        else if(data)p.supabaseId=data.id
+      }
+      if(toMigrate.length)localStorage.setItem('fitpro_planned',JSON.stringify(local))
+      const{data:rows,error}=await supabase.from('planned_workouts').select('*').eq('user_id',userId).order('date')
+      if(cancelled||error||!rows)return
+      const mapped=rows.map(r=>({id:r.id,supabaseId:r.id,name:r.name,date:r.date}))
+      setPlannedWorkouts(mapped)
+      localStorage.setItem('fitpro_planned',JSON.stringify(mapped))
+    })()
+    return()=>{cancelled=true}
+  },[userId])
+
   // ── общие вычисления (нужны всем секциям)
   const exerciseMap={}
   workoutHistory.forEach((w,histIdx)=>{
@@ -2808,14 +2881,31 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   // ── СЕКЦИЯ: Мои тренировки (журнал)
   if(section==='workouts'){
     const sorted=[...allWorkoutTons].reverse()
-    const savePlanned=(pw)=>{const next=[...plannedWorkouts,pw];setPlannedWorkouts(next);localStorage.setItem('fitpro_planned',JSON.stringify(next))}
-    const deletePlanned=(id)=>{const next=plannedWorkouts.filter(p=>p.id!==id);setPlannedWorkouts(next);localStorage.setItem('fitpro_planned',JSON.stringify(next))}
+    const savePlanned=(pw)=>{
+      const next=[...plannedWorkouts,pw];setPlannedWorkouts(next);localStorage.setItem('fitpro_planned',JSON.stringify(next))
+      if(userId){
+        supabase.from('planned_workouts').insert({user_id:userId,name:pw.name||null,date:pw.date||null}).select('id').single().then(({data,error})=>{
+          if(error){console.error('Ошибка синхронизации плана тренировки:',error);return}
+          setPlannedWorkouts(list=>{
+            const updated=list.map(p=>p===pw?{...p,supabaseId:data?.id}:p)
+            localStorage.setItem('fitpro_planned',JSON.stringify(updated))
+            return updated
+          })
+        })
+      }
+    }
+    const deletePlanned=(id)=>{
+      const target=plannedWorkouts.find(p=>p.id===id)
+      const next=plannedWorkouts.filter(p=>p.id!==id);setPlannedWorkouts(next);localStorage.setItem('fitpro_planned',JSON.stringify(next))
+      if(target?.supabaseId!=null)supabase.from('planned_workouts').delete().eq('id',target.supabaseId)
+    }
     const saveTemplate=(workout)=>{
       const tpl={id:Date.now(),name:workout.name,exercises:(workout.exercises||[]).map(ex=>({n:ex.n,m:ex.m,eq:ex.eq}))}
       const existing=JSON.parse(localStorage.getItem('fitpro_user_templates')||'[]')
       localStorage.setItem('fitpro_user_templates',JSON.stringify([...existing,tpl]))
       setTemplateMsg(`Шаблон «${workout.name}» сохранён`)
       setTimeout(()=>setTemplateMsg(''),2500)
+      if(userId)supabase.from('workout_templates').insert({user_id:userId,name:tpl.name,exercises:tpl.exercises})
     }
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
@@ -3638,13 +3728,30 @@ function SettingsView({ user }) {
     if(!user?.id)return
     supabase.from('chat_messages').select('*',{count:'exact',head:true}).eq('user_id',user.id)
       .then(({count})=>setChatCount(count??0))
-    supabase.from('profiles').select('ai_style').eq('id',user.id).single()
-      .then(({data})=>{ if(data?.ai_style) setAiStyle(data.ai_style) })
+    // notifs/units/lang читаются из profiles, а не только из localStorage — иначе
+    // настройки, сохранённые на одном устройстве, не видны на другом.
+    supabase.from('profiles').select('ai_style,notifs,units,lang').eq('id',user.id).single()
+      .then(({data})=>{
+        if(!data)return
+        if(data.ai_style)setAiStyle(data.ai_style)
+        if(data.notifs)setNotifs(data.notifs)
+        if(data.units)setUnits(data.units)
+        if(data.lang)setLang(data.lang)
+      })
   },[user?.id])
 
-  const saveNotifs=(next)=>{setNotifs(next);localStorage.setItem('fitpro_notifs',JSON.stringify(next))}
-  const saveUnits=(next)=>{setUnits(next);localStorage.setItem('fitpro_units',JSON.stringify(next))}
-  const saveLang=(v)=>{setLang(v);localStorage.setItem('fitpro_lang',v)}
+  const saveNotifs=(next)=>{
+    setNotifs(next);localStorage.setItem('fitpro_notifs',JSON.stringify(next))
+    if(user?.id)supabase.from('profiles').update({notifs:next}).eq('id',user.id)
+  }
+  const saveUnits=(next)=>{
+    setUnits(next);localStorage.setItem('fitpro_units',JSON.stringify(next))
+    if(user?.id)supabase.from('profiles').update({units:next}).eq('id',user.id)
+  }
+  const saveLang=(v)=>{
+    setLang(v);localStorage.setItem('fitpro_lang',v)
+    if(user?.id)supabase.from('profiles').update({lang:v}).eq('id',user.id)
+  }
   const saveAiStyle=(v)=>{
     setAiStyle(v)
     if(user?.id)supabase.from('profiles').update({ai_style:v}).eq('id',user.id)
@@ -3864,6 +3971,69 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
   const [showAddM,setShowAddM]=useState(false)
   const [newM,setNewM]=useState({shoulders:'',underarm:'',chest:'',waist:'',glutes:'',thigh:'',calf:'',bicep:''})
 
+  // Профиль и замеры при открытии подтягиваются из Supabase — так на любом
+  // origin/устройстве (localhost, прод, новый браузер) видны одни и те же
+  // данные, а не только то, что успело закэшироваться в localStorage. Запись
+  // (saveProfile/addMeasurement) и раньше шла в Supabase — не хватало именно
+  // чтения при загрузке, из-за чего localhost показывал пустой/дефолтный профиль.
+  useEffect(()=>{
+    if(!user?.id)return
+    let cancelled=false
+    supabase.from('profiles').select('*').eq('id',user.id).single().then(({data})=>{
+      if(cancelled||!data)return
+      setProfile(p=>({
+        ...p,
+        weight:data.weight!=null?String(data.weight):p.weight,
+        height:data.height!=null?String(data.height):p.height,
+        goal:data.goal??p.goal,
+        birthdate:data.birthdate??p.birthdate,
+        occupation:data.occupation??p.occupation,
+        gymDays:data.gym_days!=null?String(data.gym_days):p.gymDays,
+        activityLevel:data.activity_level??p.activityLevel,
+      }))
+      setUserEdit(u=>({
+        ...u,
+        name:data.name||u.name,
+        gender:data.gender||u.gender,
+        telegram:data.telegram||u.telegram,
+        photoURL:data.photo_url||u.photoURL,
+      }))
+    })
+    return()=>{cancelled=true}
+  },[user?.id])
+
+  useEffect(()=>{
+    if(!user?.id)return
+    let cancelled=false
+    ;(async()=>{
+      // Замеры только добавляются (удаления нет) — поэтому, в отличие от
+      // тренировок, здесь безопасно просто дозаписать в Supabase то, у чего
+      // ещё нет supabaseId, без риска "воскресить" что-то удалённое.
+      let local
+      try{local=JSON.parse(localStorage.getItem('fitpro_measurements')||'[]')}catch{local=[]}
+      const toMigrate=local.filter(m=>!m.supabaseId)
+      for(const m of toMigrate){
+        const{data,error}=await supabase.from('measurements').insert({
+          user_id:user.id,date:m.date,
+          shoulders:m.shoulders||null,underarm:m.underarm||null,chest:m.chest||null,waist:m.waist||null,
+          glutes:m.glutes||null,thigh:m.thigh||null,calf:m.calf||null,bicep:m.bicep||null,
+        }).select('id').single()
+        if(error)console.error('Миграция замера: ошибка вставки:',error)
+        else if(data)m.supabaseId=data.id
+      }
+      if(toMigrate.length)localStorage.setItem('fitpro_measurements',JSON.stringify(local))
+
+      const{data:rows,error}=await supabase.from('measurements').select('*').eq('user_id',user.id).order('date',{ascending:false})
+      if(cancelled||error||!rows)return
+      setMeasurements(rows.map(r=>({
+        supabaseId:r.id,date:r.date,
+        shoulders:r.shoulders||'',underarm:r.underarm||'',chest:r.chest||'',waist:r.waist||'',
+        glutes:r.glutes||'',thigh:r.thigh||'',calf:r.calf||'',bicep:r.bicep||'',
+      })))
+    })()
+    return()=>{cancelled=true}
+  },[user?.id])
+
   const M_FIELDS=[
     {key:'shoulders',label:'Обхват плеч'},
     {key:'underarm', label:'Обхват под мышками'},
@@ -3887,6 +4057,8 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
         id:user.id,
         name:updatedUser.name||null,
         gender:updatedUser.gender||null,
+        telegram:updatedUser.telegram||null,
+        photo_url:updatedUser.photoURL||null,
         weight:profile.weight?Number(profile.weight):null,
         height:profile.height?Number(profile.height):null,
         goal:profile.goal||null,
@@ -3917,6 +4089,20 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
     localStorage.setItem('fitpro_measurements',JSON.stringify(updated))
     setShowAddM(false)
     setNewM({shoulders:'',underarm:'',chest:'',waist:'',glutes:'',thigh:'',calf:'',bicep:''})
+    if(user?.id){
+      supabase.from('measurements').insert({
+        user_id:user.id,date:entry.date,
+        shoulders:entry.shoulders||null,underarm:entry.underarm||null,chest:entry.chest||null,waist:entry.waist||null,
+        glutes:entry.glutes||null,thigh:entry.thigh||null,calf:entry.calf||null,bicep:entry.bicep||null,
+      }).select('id').single().then(({data,error})=>{
+        if(error){console.error('Ошибка синхронизации замера с Supabase:',error);return}
+        setMeasurements(list=>{
+          const next=list.map(m=>m===entry?{...m,supabaseId:data?.id}:m)
+          localStorage.setItem('fitpro_measurements',JSON.stringify(next))
+          return next
+        })
+      })
+    }
   }
 
   const fmtDate=d=>new Date(d).toLocaleDateString('ru',{day:'numeric',month:'long',year:'numeric'})
@@ -4271,6 +4457,151 @@ function usePullToRefresh(ref) {
   return { pull, refreshing }
 }
 
+// Реконструкция дневника тренировок из Supabase (workouts + workout_sets) —
+// раньше "Мои тренировки"/прогресс/тоннаж читались ТОЛЬКО из localStorage
+// браузера, поэтому на новом origin/устройстве (например localhost) дневник
+// был пустым, даже если реальные подходы годами копились в workout_sets для
+// AI-тренера. Теперь Supabase — источник правды: новые тренировки создают
+// строку в workouts и подходы с её workout_id (buildWorkoutRecord ниже),
+// старые подходы (ещё без workout_id, до этой миграции) группируются по дате
+// как раньше — по одной карточке на день, это лучшее приближение, доступное
+// без привязки к конкретной тренировке.
+function buildExerciseEntryFromSets(name, sets) {
+  const meta = EXERCISES.find(e => e.n === name)
+  return {
+    n: name, m: meta?.m || '', eq: meta?.eq || '',
+    done: sets.some(s => s.kg != null),
+    sets: sets.map(s => ({
+      kg: s.kg != null ? String(s.kg) : '',
+      reps: s.reps != null ? String(s.reps) : '',
+      recKg: s.recommended_kg != null ? String(s.recommended_kg) : '',
+      note: s.note || '',
+      rating: s.rating != null ? s.rating : '',
+    })),
+  }
+}
+
+// Одноразовый перенос старой локальной истории (fitpro_history) в Supabase —
+// часть тренировок была записана ДО того, как появилась синхронизация в
+// workout_sets вообще, и существует только в localStorage того браузера, где
+// их когда-то занесли (обычно прод). Без этого шага такие тренировки никогда
+// не появятся ни на каком другом устройстве/origin, включая localhost.
+async function migrateLocalWorkoutHistoryToSupabase(userId) {
+  let local
+  try { local = JSON.parse(localStorage.getItem('fitpro_history') || '[]') } catch { local = [] }
+  // fromSupabaseFallback — карточки, которые сами являются лишь чтением уже
+  // существующих в Supabase данных (см. loadWorkoutHistoryFromSupabase), их
+  // нельзя мигрировать обратно — иначе то, что удалили из Supabase напрямую,
+  // но что успело закэшироваться в localStorage, будет воскрешено этой же
+  // функцией на следующей загрузке. Доп. проверка по сигнатуре синтетической
+  // карточки (имя ровно "Тренировка", без цвета/комментария/длительности) —
+  // страховка для копий, закэшированных ДО того как появился сам флаг выше;
+  // настоящая новая тренировка называется иначе ("Новая тренировка" по
+  // умолчанию), так что коллизии с реальными данными тут не будет.
+  const looksLikeStaleFallbackCopy = w => w.name === 'Тренировка' && !w.comment && w.duration == null
+  const toMigrate = local.filter(w => w.workoutId == null && !w.fromSupabaseFallback && !looksLikeStaleFallbackCopy(w))
+  if (!toMigrate.length) return
+
+  for (const workout of toMigrate) {
+    const { data: wRow, error: we } = await supabase.from('workouts').insert({
+      user_id: userId, name: workout.name || null, color: workout.color || null,
+      date: workout.date, duration: workout.duration != null ? workout.duration : null, comment: workout.comment || null,
+    }).select('id').single()
+    if (we) { console.error('Миграция тренировки: не удалось создать запись:', we); continue }
+    const workoutId = wRow?.id
+    if (workoutId == null) continue
+
+    if (workout.supabaseSetIds?.length) {
+      // Подходы уже когда-то засинкались (старым способом, без привязки к
+      // тренировке) — просто привязываем их к новой строке, не дублируем.
+      const { error } = await supabase.from('workout_sets').update({ workout_id: workoutId }).in('id', workout.supabaseSetIds)
+      if (error) console.error('Миграция тренировки: не удалось привязать подходы по id:', error)
+      continue
+    }
+
+    const isoDate = (workout.date || '').slice(0, 10)
+    const exerciseNames = [...new Set((workout.exercises || []).map(ex => ex.n).filter(Boolean))]
+    let linked = false
+    if (isoDate && exerciseNames.length) {
+      // Пытаемся найти уже существующие, но ещё ничьи (workout_id is null)
+      // строки за эту дату/упражнения — это подходы, засинканные раньше, чем
+      // появилось отслеживание id, привязываем их вместо вставки дублей.
+      const { data: existing, error: fe } = await supabase.from('workout_sets').select('id')
+        .eq('user_id', userId).eq('date', isoDate).in('exercise', exerciseNames).is('workout_id', null)
+      if (fe) console.error('Миграция тренировки: ошибка поиска существующих подходов:', fe)
+      if (existing?.length) {
+        const { error } = await supabase.from('workout_sets').update({ workout_id: workoutId }).in('id', existing.map(r => r.id))
+        if (error) console.error('Миграция тренировки: не удалось привязать найденные подходы:', error)
+        linked = true
+      }
+    }
+
+    if (!linked) {
+      // Ни supabaseSetIds, ни совпадающих строк в базе не нашлось — эта
+      // тренировка ещё ни разу не попадала в Supabase, заносим её подходы сейчас.
+      const rows = []
+      for (const ex of workout.exercises || []) {
+        for (const s of ex.sets || []) {
+          if (!s.kg && !s.reps) continue
+          rows.push({ user_id: userId, exercise: ex.n, date: isoDate, kg: s.kg ? Number(s.kg) : null, reps: s.reps ? Number(s.reps) : null, note: s.note || null, recommended_kg: s.recKg ? Number(s.recKg) : null, rating: s.rating ? Number(s.rating) : null, workout_id: workoutId })
+        }
+      }
+      if (rows.length) {
+        const { error } = await supabase.from('workout_sets').insert(rows)
+        if (error) console.error('Миграция тренировки: не удалось вставить подходы:', error)
+      }
+    }
+  }
+}
+
+async function loadWorkoutHistoryFromSupabase(userId) {
+  const [{ data: workoutsRows, error: we }, { data: setsRows, error: se }] = await Promise.all([
+    supabase.from('workouts').select('*').eq('user_id', userId),
+    supabase.from('workout_sets').select('*').eq('user_id', userId).order('id'),
+  ])
+  if (we) console.error('Ошибка загрузки тренировок из Supabase:', we)
+  if (se) console.error('Ошибка загрузки подходов из Supabase:', se)
+
+  const byWorkoutId = {}
+  const byDateLegacy = {}
+  for (const s of setsRows || []) {
+    if (s.workout_id != null) (byWorkoutId[s.workout_id] ??= []).push(s)
+    else (byDateLegacy[s.date] ??= []).push(s)
+  }
+
+  const groupByExercise = sets => {
+    const byExercise = {}
+    for (const s of sets) (byExercise[s.exercise] ??= []).push(s)
+    return Object.entries(byExercise).map(([name, exSets]) => buildExerciseEntryFromSets(name, exSets))
+  }
+
+  const result = []
+  for (const w of workoutsRows || []) {
+    const sets = byWorkoutId[w.id]
+    if (!sets?.length) continue
+    result.push({
+      workoutId: w.id, name: w.name || 'Тренировка', color: w.color || PUR,
+      date: w.date, duration: w.duration != null ? Number(w.duration) : null, comment: w.comment || '',
+      exercises: groupByExercise(sets),
+    })
+  }
+  for (const [date, sets] of Object.entries(byDateLegacy)) {
+    result.push({
+      // fromSupabaseFallback — эта карточка ЦЕЛИКОМ построена из того, что уже
+      // лежит в Supabase (просто без workout_id) — её нельзя путать с "новой
+      // локальной тренировкой, которую ещё нужно засинхронизировать". Без
+      // этого флага миграция при следующей загрузке приняла бы закэшированную
+      // в localStorage копию этой карточки за несинхронизированную и заново
+      // вставила бы её подходы в Supabase — воскрешая то, что явно удалили.
+      fromSupabaseFallback: true,
+      name: 'Тренировка', color: PUR, date, duration: null, comment: '',
+      exercises: groupByExercise(sets),
+    })
+  }
+  result.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+  return result
+}
+
 function PullToRefreshIndicator({ pull, refreshing }) {
   if (!refreshing && pull < 4) return null
   return (
@@ -4399,6 +4730,58 @@ export default function App() {
   useEffect(()=>{localStorage.setItem('fitpro_history',JSON.stringify(workoutHistory))},[workoutHistory])
   useEffect(()=>{localStorage.setItem('fitpro_custom_ex',JSON.stringify(customExercises))},[customExercises])
 
+  // Свои упражнения — так же подтягиваются из Supabase; локальные без
+  // supabaseId (старые, ещё не синхронизированные) переносятся один раз.
+  useEffect(()=>{
+    if(!user?.id)return
+    let cancelled=false
+    ;(async()=>{
+      let local
+      try{local=JSON.parse(localStorage.getItem('fitpro_custom_ex')||'[]')}catch{local=[]}
+      const toMigrate=local.filter(e=>!e.supabaseId)
+      for(const e of toMigrate){
+        const{data,error}=await supabase.from('custom_exercises').insert({user_id:user.id,name:e.n,muscle_group:e.m||null,equipment:e.eq||null}).select('id').single()
+        if(error)console.error('Миграция своего упражнения: ошибка вставки:',error)
+        else if(data)e.supabaseId=data.id
+      }
+      if(toMigrate.length)localStorage.setItem('fitpro_custom_ex',JSON.stringify(local))
+      const{data:rows,error}=await supabase.from('custom_exercises').select('*').eq('user_id',user.id)
+      if(cancelled||error||!rows)return
+      const mapped=rows.map(r=>({n:r.name,m:r.muscle_group||'',eq:r.equipment||'',custom:true,supabaseId:r.id}))
+      setCustomExercises(mapped)
+      localStorage.setItem('fitpro_custom_ex',JSON.stringify(mapped))
+    })()
+    return()=>{cancelled=true}
+  },[user?.id])
+
+  // Дневник тренировок при входе подтягивается из Supabase (единый источник для
+  // любого origin/устройства) и подменяет то, что успело подгрузиться из
+  // localStorage — так на localhost и на проде видна одна и та же реальная
+  // история, а не пустой локальный кэш браузера.
+  useEffect(()=>{
+    if(!user?.id)return
+    let cancelled=false
+    ;(async()=>{
+      await migrateLocalWorkoutHistoryToSupabase(user.id)
+      const history=await loadWorkoutHistoryFromSupabase(user.id)
+      if(!cancelled)setWorkoutHistory(history)
+    })()
+    return()=>{cancelled=true}
+  },[user?.id])
+
+  // Имя/пол/фото/telegram — сразу при входе обогащаем user данными из Supabase
+  // (mergeUserWithProfile до этого брал их только из localStorage, поэтому шапка
+  // и аватар на новом устройстве показывали пусто, пока не откроешь "Мои данные").
+  useEffect(()=>{
+    if(!user?.id)return
+    let cancelled=false
+    supabase.from('profiles').select('name,gender,telegram,photo_url').eq('id',user.id).single().then(({data})=>{
+      if(cancelled||!data)return
+      setUser(u=>u?{...u,name:data.name||u.name,gender:data.gender||u.gender,telegram:data.telegram||u.telegram,photoURL:data.photo_url||u.photoURL}:u)
+    })
+    return()=>{cancelled=true}
+  },[user?.id])
+
   const [editTarget,setEditTarget]=useState(null)
 
   const handleNav=(id)=>{
@@ -4426,21 +4809,31 @@ export default function App() {
     handleNav('dashboard')
   }
 
-  // workout_sets — единственный источник правды для AI-тренера (см. workoutPrompt.js),
-  // так же как food_diary для питания. Раньше удаление/правка тренировки в дневнике
-  // трогали только локальную историю (fitpro_history), а строки в workout_sets
-  // оставались висеть — AI при следующем вопросе видел "удалённую" тренировку как
-  // будто она всё ещё существует и отказывался составлять новую. Теперь id
-  // реальных строк Supabase сохраняются на самой записи тренировки (supabaseSetIds)
-  // и используются, чтобы точно удалить их при удалении/правке дневника.
-  const insertWorkoutSetsRows=async(workout)=>{
+  // workouts/workout_sets в Supabase — единственный источник правды и для Дневника,
+  // и для AI-тренера (см. workoutPrompt.js), так же как food_diary для питания.
+  // Раньше тренировка существовала только в workout_sets (плоские подходы без
+  // группировки) — удаление/правка в дневнике либо не трогали Supabase вовсе,
+  // либо угадывали нужные строки по дате+названию. Теперь каждая тренировка —
+  // отдельная строка в workouts, её id (workoutId) хранится на самой записи и
+  // однозначно определяет "чьи это подходы", включая на любом другом устройстве.
+  const insertWorkoutRow=async(workout)=>{
+    if(!user?.id)return null
+    const{data,error}=await supabase.from('workouts').insert({
+      user_id:user.id, name:workout.name||null, color:workout.color||null,
+      date:workout.date, duration:workout.duration!=null?workout.duration:null, comment:workout.comment||null,
+    }).select('id').single()
+    if(error){console.error('Ошибка создания тренировки в Supabase:',error);return null}
+    return data?.id??null
+  }
+
+  const insertWorkoutSetsRows=async(workout,workoutId)=>{
     if(!user?.id)return []
     const isoDate=(workout.date||'').slice(0,10)
     const rows=[]
     for(const ex of workout.exercises||[]){
       for(const s of ex.sets||[]){
         if(!s.kg&&!s.reps)continue
-        rows.push({user_id:user.id,exercise:ex.n,date:isoDate,kg:s.kg?Number(s.kg):null,reps:s.reps?Number(s.reps):null,note:s.note||null,recommended_kg:s.recKg?Number(s.recKg):null,rating:s.rating?Number(s.rating):null})
+        rows.push({user_id:user.id,exercise:ex.n,date:isoDate,kg:s.kg?Number(s.kg):null,reps:s.reps?Number(s.reps):null,note:s.note||null,recommended_kg:s.recKg?Number(s.recKg):null,rating:s.rating?Number(s.rating):null,workout_id:workoutId??null})
       }
     }
     if(!rows.length)return []
@@ -4451,13 +4844,21 @@ export default function App() {
 
   const deleteWorkoutSetsRows=async(workout)=>{
     if(!user?.id||!workout)return
+    if(workout.workoutId!=null){
+      // Одна запись в workouts — удаление каскадом (ON DELETE CASCADE) чистит
+      // все её строки в workout_sets разом, без угадывания по дате/названию.
+      const{error}=await supabase.from('workouts').delete().eq('id',workout.workoutId)
+      if(error)console.error('Ошибка удаления тренировки из Supabase:',error)
+      return
+    }
     if(workout.supabaseSetIds?.length){
       const{error}=await supabase.from('workout_sets').delete().in('id',workout.supabaseSetIds)
       if(error)console.error('Ошибка удаления тренировки из Supabase:',error)
       return
     }
-    // Записи без сохранённых id (созданы до этой правки) — fallback по дате и
-    // названиям упражнений, менее точный, но лучше чем оставить AI видеть их вечно.
+    // Записи без workoutId/supabaseSetIds (старые подходы ещё до перехода на
+    // таблицу workouts) — fallback по дате и названиям упражнений, менее
+    // точный, но лучше чем оставить AI видеть их вечно.
     const isoDate=(workout.date||'').slice(0,10)
     const exerciseNames=[...new Set((workout.exercises||[]).map(ex=>ex.n).filter(Boolean))]
     if(!isoDate||!exerciseNames.length)return
@@ -4466,21 +4867,42 @@ export default function App() {
   }
 
   const handleWorkoutComplete=workout=>{
-    const withDate={...workout,date:workout.date||new Date().toISOString()}
+    // workoutId/supabaseSetIds намеренно не копируем из workout (может прийти
+    // из handleCopyWorkout, который спредит старую запись) — это ВСЕГДА новая
+    // тренировка и ей нужна своя собственная строка в Supabase, а не связь со
+    // старой (иначе удаление копии удалило бы и оригинал).
+    const{workoutId:_wid,supabaseSetIds:_sids,...rest}=workout
+    const withDate={...rest,date:workout.date||new Date().toISOString()}
     setWorkoutHistory(h=>[...h,withDate])
-    insertWorkoutSetsRows(withDate).then(ids=>{
-      if(ids.length)setWorkoutHistory(h=>h.map(w=>w===withDate?{...w,supabaseSetIds:ids}:w))
-    })
+    ;(async()=>{
+      const workoutId=await insertWorkoutRow(withDate)
+      const ids=await insertWorkoutSetsRows(withDate,workoutId)
+      if(workoutId!=null||ids.length)setWorkoutHistory(h=>h.map(w=>w===withDate?{...w,workoutId,supabaseSetIds:ids}:w))
+    })()
   }
 
   const handleWorkoutUpdate=(histIdx,updated)=>{
     const old=workoutHistory[histIdx]
-    const merged={...updated,date:updated.date||old?.date}
+    const merged={...updated,date:updated.date||old?.date,workoutId:old?.workoutId}
     setWorkoutHistory(h=>h.map((w,i)=>i===histIdx?merged:w))
     ;(async()=>{
+      if(old?.workoutId!=null){
+        const{error}=await supabase.from('workouts').update({
+          name:merged.name||null, color:merged.color||null, date:merged.date,
+          duration:merged.duration!=null?merged.duration:null, comment:merged.comment||null,
+        }).eq('id',old.workoutId)
+        if(error)console.error('Ошибка обновления тренировки в Supabase:',error)
+        await supabase.from('workout_sets').delete().eq('workout_id',old.workoutId)
+        const ids=await insertWorkoutSetsRows(merged,old.workoutId)
+        setWorkoutHistory(h=>h.map((w,i)=>i===histIdx?{...w,supabaseSetIds:ids}:w))
+        return
+      }
+      // Старая запись без workoutId (ещё не переведена на таблицу workouts) —
+      // удаляем прежним способом и создаём заново уже с полноценной привязкой.
       if(old)await deleteWorkoutSetsRows(old)
-      const ids=await insertWorkoutSetsRows(merged)
-      if(ids.length)setWorkoutHistory(h=>h.map((w,i)=>i===histIdx?{...w,supabaseSetIds:ids}:w))
+      const workoutId=await insertWorkoutRow(merged)
+      const ids=await insertWorkoutSetsRows(merged,workoutId)
+      setWorkoutHistory(h=>h.map((w,i)=>i===histIdx?{...w,workoutId,supabaseSetIds:ids}:w))
     })()
   }
 
@@ -4515,8 +4937,8 @@ export default function App() {
       case 'dashboard': return userRole==='trainer'
         ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} />
         : <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} />
-      case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} />
-      case 'workouts':  return <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutActiveChange={setWorkoutActive} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} onOpenAI={m=>aiRef.current?.open(m)} />
+      case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} userId={user?.id} />
+      case 'workouts':  return <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutActiveChange={setWorkoutActive} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} />
       case 'nutrition': return <NutritionView userId={user?.id} />
       case 'library':   return <LibraryView customExercises={customExercises} />
       case 'chat':      return <ChatView />

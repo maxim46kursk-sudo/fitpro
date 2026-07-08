@@ -207,10 +207,13 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'claude-sonnet-4-6',
-          // Тренировочный режим может выдавать SET_PROGRAM — до 6 упражнений по 4
-          // подхода в одном маркере, плюс текст ответа; 1000 токенов (хватает для
-          // обычных реплик и для питания) для этого тесно и рискует обрезать маркер.
-          max_tokens: mode === 'workout' ? 2000 : 1000,
+          // Тренировочный режим может выдавать SET_PROGRAM (до 6 упражнений по 4
+          // подхода) или длинный текст перед маркером удаления; 1000 токенов
+          // (хватает для обычных реплик и для питания) для этого тесно и рискует
+          // обрезать маркер посреди JSON — именно так один раз обрубился DEL_SET
+          // при удалении целой тренировки (см. Журнал изменений). 3000 — запас,
+          // плюс сам маркер удаления тренировки теперь короткий (DEL_WORKOUT).
+          max_tokens: mode === 'workout' ? 3000 : 1000,
           system,
           // Последнее сообщение, если к нему приложено фото, уходит в Anthropic
           // мультимодальным content-массивом (image + text); вся остальная
@@ -271,6 +274,27 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
             } catch (e) { console.error('Ошибка разбора DEL_SET:', e) }
           }
           text = text.replace(/\[DEL_SET:[^\]]+\]/g, '')
+        }
+
+        // DEL_WORKOUT — удаление ВСЕЙ тренировки/дня целиком одним компактным
+        // маркером по дате, а не длинным списком [DEL_SET] на каждый подход.
+        // Список из 15-20 отдельных DEL_SET на реальной тренировке получался
+        // настолько длинным, что упирался в max_tokens и обрывался посреди
+        // JSON — маркер не парсился, ничего не удалялось, а клиент видел в
+        // чате обрубок вида "[DEL_SET:{"" (см. Журнал изменений).
+        const delWorkoutMatches = [...text.matchAll(/\[DEL_WORKOUT:(\{[^}]+\})\]/g)]
+        if (delWorkoutMatches.length) {
+          for (const m of delWorkoutMatches) {
+            try {
+              const del = JSON.parse(m[1])
+              const date = del.date || fresh.today
+              const { error, count } = await supabase.from('workout_sets').delete({ count: 'exact' })
+                .eq('user_id', fresh.user.id).eq('date', date)
+              if (error) console.error('Ошибка удаления тренировки:', error)
+              else if (!count) console.warn(`DEL_WORKOUT: на ${date} не найдено ни одного подхода в workout_sets`)
+            } catch (e) { console.error('Ошибка разбора DEL_WORKOUT:', e) }
+          }
+          text = text.replace(/\[DEL_WORKOUT:[^\]]+\]/g, '')
         }
 
         // EDIT_SET — может быть несколько корректировок за раз
@@ -353,7 +377,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
           }
         }
 
-        if (addSetMatches.length || delSetMatches.length || editSetMatches.length) {
+        if (addSetMatches.length || delSetMatches.length || delWorkoutMatches.length || editSetMatches.length) {
           if (added) flashToast()
           const refreshed = await loadContext(mode)
           if (refreshed) setCtx(refreshed)
@@ -450,6 +474,15 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
           text = text.replace(/\[GOAL:[^\]]+\]/g, '')
         }
       }
+
+      // Защита от оборванного маркера — если ответу не хватило max_tokens и модель
+      // не дописала JSON до конца, в тексте остаётся необработанный обрубок вида
+      // "[DEL_SET:{"" (маркер при этом не сработал, но обрубок всё равно не должен
+      // попасть в то, что видит клиент). Все настоящие маркеры (ADD_SET, DEL_SET,
+      // DEL_WORKOUT, EDIT_SET, SET_PROGRAM, ADD, DEL, CLEAR, GOAL и т.п.) уже
+      // вырезаны выше — если "[СЛОВО...." всё ещё торчит в самом конце текста без
+      // закрывающей "]", это и есть обрубок, режем его целиком.
+      text = text.replace(/\[[A-Z_]{2,}[^\]]*$/, '').trimEnd()
 
       // Компактный вывод — без пустых/пробельных строк после вырезания маркеров
       text = text.replace(/[ \t]*\n[ \t]*(?:\n[ \t]*)+/g, '\n').trim()
