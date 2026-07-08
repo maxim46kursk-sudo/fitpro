@@ -22,7 +22,7 @@ const stripMd = (t) => t
   .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
   .trim()
 
-const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkoutComplete, onGoToWorkoutsDiary }, ref) {
+const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkoutComplete, onGoToWorkoutsDiary, onGoToFoodDiary }, ref) {
   const [isOpen, setIsOpen]     = useState(false)
   const [mode, setMode]         = useState('nutrition')
   const [messages, setMessages] = useState([])
@@ -178,6 +178,13 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
     setAttachedImage(null)
     setLoading(true)
 
+    // Таймаут на ответ — без него зависший /api/chat (долгий ответ Anthropic,
+    // упавшая serverless-функция без ответа и т.п.) оставлял чат в "зависшем"
+    // состоянии навсегда: спиннер крутится, а промис фетча никогда не
+    // резолвится и не реджектится сам по себе.
+    const abortController = new AbortController()
+    const timeoutId = setTimeout(() => abortController.abort(), 45000)
+
     try {
       // Перед каждым запросом перезагружаем данные — единственный источник правды
       const fresh = await loadContext(mode)
@@ -195,6 +202,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
         : buildSystemPrompt(fresh)
 
       const res = await fetch('/api/chat', {
+        signal: abortController.signal,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -454,8 +462,10 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
         { user_id: fresh.user.id, mode, role: 'assistant', content: text },
       ])
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `Ошибка: ${err.message}` }])
+      const message = err.name === 'AbortError' ? 'Не дождались ответа (слишком долго) — попробуй ещё раз' : err.message
+      setMessages(prev => [...prev, { role: 'assistant', content: `Ошибка: ${message}` }])
     } finally {
+      clearTimeout(timeoutId)
       setLoading(false)
     }
   }
@@ -535,6 +545,15 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
                   flexShrink: 0, minHeight: 'unset',
                 }}>📋</button>
             )}
+            {/* Постоянная кнопка в дневник — всегда видна, не только после SET_PROGRAM/ADD.
+                Ведёт в дневник тренировок или питания в зависимости от текущего режима чата. */}
+            <button onClick={() => { setIsOpen(false); (mode === 'workout' ? onGoToWorkoutsDiary : onGoToFoodDiary)?.() }}
+              title={mode === 'workout' ? 'Дневник тренировок' : 'Дневник питания'}
+              style={{
+                width: 34, height: 34, borderRadius: 10, border: '1px solid #e5e7eb', background: '#f9fafb',
+                fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, minHeight: 'unset',
+              }}>📖</button>
             <div style={{ position: 'relative' }}>
               <button onClick={() => setShowClearConfirm(true)} title="Очистить историю чата"
                 disabled={!messages.length}

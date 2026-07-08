@@ -868,15 +868,14 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                             {/* Оценка нагрузки 1-5 — только под рабочими подходами (последние
                                 2 в упражнении, как и считает AI-тренер в workoutPrompt.js) */}
                             {si>=ex.sets.length-2&&(
-                              <div style={{ display:'flex', alignItems:'center', gap:5, marginTop:3, paddingLeft:29 }}>
-                                <span style={{ fontSize:9, color:'#6b7280' }}>Нагрузка:</span>
+                              <div style={{ display:'flex', alignItems:'center', gap:14, marginTop:4, paddingLeft:29 }}>
                                 {[1,2,3,4,5].map(n=>(
                                   <button key={n}
                                     onClick={()=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,rating:s.rating===n?'':n}:s)}:x))}
                                     title={n===1?'1 — совсем легко':n===5?'5 — на пределе':String(n)}
-                                    style={{ width:18, height:18, borderRadius:'50%', border:`1px solid ${set.rating===n?wColor:'#4b5563'}`,
-                                      background:set.rating===n?wColor:'transparent', color:set.rating===n?'#fff':'#9ca3af',
-                                      fontSize:9, fontWeight:700, cursor:'pointer', padding:0, lineHeight:1 }}>
+                                    style={{ background:'none', border:'none', cursor:'pointer', padding:0,
+                                      fontSize:set.rating===n?22:17, fontWeight:set.rating===n?800:600, lineHeight:1,
+                                      color:set.rating===n?wColor:'#4b5563', transition:'font-size .1s, color .1s' }}>
                                     {n}
                                   </button>
                                 ))}
@@ -2477,9 +2476,13 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
       :period==='all'?allWorkoutTons
       :allWorkoutTons.filter(w=>new Date(w.date).getTime()>=Date.now()-PERIOD_DAYS[period]*86400000)
     const totalTonnage=workoutTons.reduce((s,w)=>s+w.ton,0)
-    const chartMaxTon=workoutTons.length?Math.max(...workoutTons.map(w=>w.ton),1):1
+    // Показываем на графике не больше последних 10 столбцов — иначе подписи
+    // (даты и цифры тоннажа над столбиками) наезжают друг на друга и график
+    // становится нечитаемым при длинной истории.
+    const chartTons=workoutTons.length>10?workoutTons.slice(-10):workoutTons
+    const chartMaxTon=chartTons.length?Math.max(...chartTons.map(w=>w.ton),1):1
     const CHART_BAR_H=120
-    const selW=selectedTonBar!==null?workoutTons[selectedTonBar]:null
+    const selW=selectedTonBar!==null?chartTons[selectedTonBar]:null
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
         <BackBtn label="Общий тоннаж" />
@@ -2527,7 +2530,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
             ):(
               <div>
                 <div style={{ display:'flex',alignItems:'flex-end',gap:5,height:CHART_BAR_H }}>
-                  {workoutTons.map((w,i)=>{
+                  {chartTons.map((w,i)=>{
                     const bh=Math.max(10,Math.round((w.ton/chartMaxTon)*(CHART_BAR_H-22)))
                     const on=selectedTonBar===i
                     return(
@@ -2541,11 +2544,13 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 </div>
                 <div style={{ borderTop:'2px solid #f3f4f6' }} />
                 <div style={{ display:'flex',gap:5,paddingTop:5 }}>
-                  {workoutTons.map((w,i)=>(
+                  {chartTons.map((w,i)=>(
                     <div key={i} style={{ flex:1,textAlign:'center',fontSize:9,color:selectedTonBar===i?PUR:'#9ca3af',lineHeight:1.2,minWidth:0,overflow:'hidden' }}>{fmtD(w.date)}</div>
                   ))}
                 </div>
-                <div style={{ textAlign:'center',fontSize:11,color:'#c7cad1',marginTop:10 }}>Нажмите на столбик, чтобы увидеть подробную сводку</div>
+                <div style={{ textAlign:'center',fontSize:11,color:'#c7cad1',marginTop:10 }}>
+                  {workoutTons.length>10?`Показаны последние 10 из ${workoutTons.length} — нажмите на столбик для подробностей`:'Нажмите на столбик, чтобы увидеть подробную сводку'}
+                </div>
               </div>
             )}
           </Card>
@@ -4212,6 +4217,78 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
   )
 }
 
+// Pull-to-refresh — жест "потянуть вниз от самого верха" на мобильном экране
+// перезагружает страницу. Раньше пользователю приходилось закрывать вкладку
+// целиком, чтобы подтянуть свежие данные — нативный pull-to-refresh браузера
+// тут не срабатывает, потому что скроллится не сама страница, а вложенный
+// div (.mobile-content), а не document/body. Полная перезагрузка страницы —
+// самый надёжный способ гарантированно обновить всё, включая данные внутри
+// вложенных полноэкранных подэкранов дневника/тренировок (они рендерятся
+// через createPortal, поэтому точечный рефетч пришлось бы тянуть в каждый
+// из них по отдельности).
+function usePullToRefresh(ref) {
+  const [pull, setPull] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+  const startY = useRef(null)
+  const pullRef = useRef(0)
+  const THRESHOLD = 70
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const onTouchStart = e => {
+      startY.current = el.scrollTop <= 0 ? e.touches[0].clientY : null
+    }
+    const onTouchMove = e => {
+      if (startY.current == null || refreshing) return
+      const diff = e.touches[0].clientY - startY.current
+      if (diff <= 0 || el.scrollTop > 0) { pullRef.current = 0; setPull(0); return }
+      e.preventDefault()
+      const next = Math.min(diff * 0.5, 90)
+      pullRef.current = next
+      setPull(next)
+    }
+    const onTouchEnd = () => {
+      if (pullRef.current > THRESHOLD) {
+        setRefreshing(true)
+        setTimeout(() => window.location.reload(), 250)
+      } else {
+        pullRef.current = 0
+        setPull(0)
+      }
+      startY.current = null
+    }
+    el.addEventListener('touchstart', onTouchStart, { passive: true })
+    el.addEventListener('touchmove', onTouchMove, { passive: false })
+    el.addEventListener('touchend', onTouchEnd, { passive: true })
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart)
+      el.removeEventListener('touchmove', onTouchMove)
+      el.removeEventListener('touchend', onTouchEnd)
+    }
+  }, [ref, refreshing])
+
+  return { pull, refreshing }
+}
+
+function PullToRefreshIndicator({ pull, refreshing }) {
+  if (!refreshing && pull < 4) return null
+  return (
+    <div style={{
+      position: 'absolute', top: 0, left: 0, right: 0, height: 0, overflow: 'visible',
+      display: 'flex', justifyContent: 'center', pointerEvents: 'none', zIndex: 5,
+    }}>
+      <div style={{
+        marginTop: Math.min(pull, 90) - 34, width: 30, height: 30, borderRadius: '50%',
+        border: '3px solid #e5e7eb', borderTopColor: PUR, boxSizing: 'border-box',
+        background: '#fff', transition: refreshing ? 'none' : 'margin-top .1s',
+        animation: refreshing ? 'ptr-spin .7s linear infinite' : 'none',
+        transform: refreshing ? 'none' : `rotate(${pull * 3}deg)`,
+      }} />
+    </div>
+  )
+}
+
 export default function App() {
   const [user,setUser]=useState(null)
   const [authLoading,setAuthLoading]=useState(true)
@@ -4249,6 +4326,8 @@ export default function App() {
   // рендера привела бы к тому, что второй вызов увидел бы уже очищенное
   // значение. Поэтому очистка вынесена в отдельный эффект ниже, который
   // срабатывает уже после коммита — и только при возврате в Дневник.
+  const mobileContentRef=useRef(null)
+  const { pull:ptrPull, refreshing:ptrRefreshing } = usePullToRefresh(mobileContentRef)
   const diarySectionRef=useRef(null)
   const pendingSectionRestoreRef=useRef(null)
   useEffect(()=>{
@@ -4339,27 +4418,70 @@ export default function App() {
     handleNav('dashboard')
   }
 
+  // Тот же переход, но в подраздел дневника питания — для постоянной кнопки
+  // "Дневник" в чате AI-ассистента (режим "Питание").
+  const goToDiaryFood=()=>{
+    pendingSectionRestoreRef.current='food'
+    setDiaryJumpToken(t=>t+1)
+    handleNav('dashboard')
+  }
+
+  // workout_sets — единственный источник правды для AI-тренера (см. workoutPrompt.js),
+  // так же как food_diary для питания. Раньше удаление/правка тренировки в дневнике
+  // трогали только локальную историю (fitpro_history), а строки в workout_sets
+  // оставались висеть — AI при следующем вопросе видел "удалённую" тренировку как
+  // будто она всё ещё существует и отказывался составлять новую. Теперь id
+  // реальных строк Supabase сохраняются на самой записи тренировки (supabaseSetIds)
+  // и используются, чтобы точно удалить их при удалении/правке дневника.
+  const insertWorkoutSetsRows=async(workout)=>{
+    if(!user?.id)return []
+    const isoDate=(workout.date||'').slice(0,10)
+    const rows=[]
+    for(const ex of workout.exercises||[]){
+      for(const s of ex.sets||[]){
+        if(!s.kg&&!s.reps)continue
+        rows.push({user_id:user.id,exercise:ex.n,date:isoDate,kg:s.kg?Number(s.kg):null,reps:s.reps?Number(s.reps):null,note:s.note||null,recommended_kg:s.recKg?Number(s.recKg):null,rating:s.rating?Number(s.rating):null})
+      }
+    }
+    if(!rows.length)return []
+    const{data,error}=await supabase.from('workout_sets').insert(rows).select('id')
+    if(error){console.error('Ошибка синхронизации тренировки с Supabase:',error);return []}
+    return (data||[]).map(r=>r.id)
+  }
+
+  const deleteWorkoutSetsRows=async(workout)=>{
+    if(!user?.id||!workout)return
+    if(workout.supabaseSetIds?.length){
+      const{error}=await supabase.from('workout_sets').delete().in('id',workout.supabaseSetIds)
+      if(error)console.error('Ошибка удаления тренировки из Supabase:',error)
+      return
+    }
+    // Записи без сохранённых id (созданы до этой правки) — fallback по дате и
+    // названиям упражнений, менее точный, но лучше чем оставить AI видеть их вечно.
+    const isoDate=(workout.date||'').slice(0,10)
+    const exerciseNames=[...new Set((workout.exercises||[]).map(ex=>ex.n).filter(Boolean))]
+    if(!isoDate||!exerciseNames.length)return
+    const{error}=await supabase.from('workout_sets').delete().eq('user_id',user.id).eq('date',isoDate).in('exercise',exerciseNames)
+    if(error)console.error('Ошибка удаления тренировки из Supabase (fallback):',error)
+  }
+
   const handleWorkoutComplete=workout=>{
     const withDate={...workout,date:workout.date||new Date().toISOString()}
     setWorkoutHistory(h=>[...h,withDate])
-    // Дублируем реально выполненные подходы в Supabase (workout_sets) — единственный
-    // источник правды для AI-тренера, так же как food_diary для питания. Локальная
-    // история (fitpro_history) остаётся для UI дневника тренировок как было.
-    if(user?.id){
-      const isoDate=(withDate.date||'').slice(0,10)
-      const rows=[]
-      for(const ex of withDate.exercises||[]){
-        for(const s of ex.sets||[]){
-          if(!s.kg&&!s.reps)continue
-          rows.push({user_id:user.id,exercise:ex.n,date:isoDate,kg:s.kg?Number(s.kg):null,reps:s.reps?Number(s.reps):null,note:s.note||null,recommended_kg:s.recKg?Number(s.recKg):null,rating:s.rating?Number(s.rating):null})
-        }
-      }
-      if(rows.length)supabase.from('workout_sets').insert(rows).then(({error})=>{if(error)console.error('Ошибка синхронизации тренировки с Supabase:',error)})
-    }
+    insertWorkoutSetsRows(withDate).then(ids=>{
+      if(ids.length)setWorkoutHistory(h=>h.map(w=>w===withDate?{...w,supabaseSetIds:ids}:w))
+    })
   }
 
   const handleWorkoutUpdate=(histIdx,updated)=>{
-    setWorkoutHistory(h=>h.map((w,i)=>i===histIdx?{...updated,date:updated.date||w.date}:w))
+    const old=workoutHistory[histIdx]
+    const merged={...updated,date:updated.date||old?.date}
+    setWorkoutHistory(h=>h.map((w,i)=>i===histIdx?merged:w))
+    ;(async()=>{
+      if(old)await deleteWorkoutSetsRows(old)
+      const ids=await insertWorkoutSetsRows(merged)
+      if(ids.length)setWorkoutHistory(h=>h.map((w,i)=>i===histIdx?{...w,supabaseSetIds:ids}:w))
+    })()
   }
 
   const handleEditWorkout=(workout,histIdx)=>{
@@ -4369,6 +4491,8 @@ export default function App() {
   }
 
   const handleDeleteWorkout=(histIdx)=>{
+    const workout=workoutHistory[histIdx]
+    if(workout)deleteWorkoutSetsRows(workout)
     setWorkoutHistory(h=>h.filter((_,i)=>i!==histIdx))
   }
 
@@ -4433,6 +4557,8 @@ export default function App() {
           .bottom-nav { padding-bottom: env(safe-area-inset-bottom); }
           .mobile-content { padding-bottom: calc(${BOTTOM_NAV_H}px + env(safe-area-inset-bottom)); }
         }
+
+        @keyframes ptr-spin { to { transform: rotate(360deg); } }
       `}</style>
 
       {isMobile ? (
@@ -4451,7 +4577,8 @@ export default function App() {
             </div>
           </div>
 
-          <div className="mobile-content" style={{ flex:1, overflowY:'auto', padding:`${MOBILE_TOP_H+14}px 16px ${BOTTOM_NAV_H+16}px` }}>
+          <div ref={mobileContentRef} className="mobile-content" style={{ flex:1, overflowY:'auto', padding:`${MOBILE_TOP_H+14}px 16px ${BOTTOM_NAV_H+16}px`, position:'relative' }}>
+            <PullToRefreshIndicator pull={ptrPull} refreshing={ptrRefreshing} />
             {renderMain()}
           </div>
 
@@ -4567,7 +4694,7 @@ export default function App() {
         </div>
       )}
 
-      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onWorkoutComplete={handleWorkoutComplete} onGoToWorkoutsDiary={goToDiaryWorkouts} />
+      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onWorkoutComplete={handleWorkoutComplete} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} />
     </>
   )
 }
