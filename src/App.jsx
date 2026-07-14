@@ -414,6 +414,20 @@ const FOLDER_DESCRIPTIONS={
 }
 const SLOT_COUNT=12
 const SUPERSET_COLORS={'A':PUR,'B':TEA,'C':COR,'D':BLU}
+// Тексты progressNote холодного старта (см. кнопку "▶ Начать тренировку") —
+// раньше показывались инлайн в карточке упражнения, теперь объясняются
+// модалкой "Откуда взялся этот вес" (showProgressionIntro), инлайн-строку
+// для них не рендерим (см. ниже). Два варианта — кг-ось и ось резины/
+// повторений домашней программы, тексты заданы в workoutPrompt.js-логике.
+const COLD_START_NOTES=new Set(['Стартовый вес из программы — дальше подстроим под тебя','Стартовая нагрузка из программы'])
+// Склонение "раз"/"раза" для счётчика повторных прохождений тренировки слота
+// (карточка слота в списке программы, "✓ 14 июля · N раза").
+const pluralizeTimes=n=>{
+  const mod10=n%10,mod100=n%100
+  if(mod10===1&&mod100!==11)return'раз'
+  if(mod10>=2&&mod10<=4&&(mod100<10||mod100>=20))return'раза'
+  return'раз'
+}
 
 const makeDefaultSlots=folder=>
   Array.from({length:SLOT_COUNT},(_,i)=>{
@@ -516,6 +530,19 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     setShowAiTip(false)
   }
 
+  // Модалка "Откуда взялся этот вес" — объясняет холодный старт (красная
+  // рамка на подходах из шаблона программы), в отличие от showAiTip выше
+  // показывается ПРИ КАЖДОЙ тренировке, где есть хотя бы один такой подход
+  // (не один раз навсегда), пока клиент сам не поставит галочку "Больше не
+  // показывать" (fitpro_hide_progression_intro). Открывается и вручную,
+  // иконкой "?" в шапке — тогда независимо от галочки.
+  const [showProgressionIntro,setShowProgressionIntro]=useState(false)
+  const [progressionIntroDontShow,setProgressionIntroDontShow]=useState(false)
+  const dismissProgressionIntro=()=>{
+    if(progressionIntroDontShow){try{localStorage.setItem('fitpro_hide_progression_intro','1')}catch{}}
+    setShowProgressionIntro(false)
+  }
+
   const [timer,setTimer]=useState(0)
   const intervalRef=useRef(null)
 
@@ -537,6 +564,8 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const [sendCopied,setSendCopied]=useState(false)
   const [showFinishToast,setShowFinishToast]=useState(false)
   const [showSaveError,setShowSaveError]=useState(false)
+  const [showProgramSaveError,setShowProgramSaveError]=useState(false)
+  const [showCustomExerciseSaveError,setShowCustomExerciseSaveError]=useState(false)
   const setVideoInputRef=useRef(null)
   const setVideoUploadTarget=useRef(null)
 
@@ -550,10 +579,50 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     return()=>{cancelled=true}
   },[userId])
 
-  const selectProgram=(folder)=>{
+  // Пишет выбранную программу в profiles.program. ДОЖИДАЕМСЯ записи и
+  // проверяем error, прежде чем менять локальный стейт — раньше галочка
+  // "программа выбрана" подставлялась оптимистично СРАЗУ, до подтверждения
+  // записи в Supabase (fire-and-forget без await); если запрос падал
+  // (сеть, RLS), UI молча врал — показывал программу выбранной, а в БД
+  // оставалось старое значение. Теперь при ошибке checkmark не появляется,
+  // модалка-источник вызова остаётся открытой (см. её кнопку — retry без
+  // повторной навигации), клиенту показывается тост-ошибка.
+  const selectProgram=async(folder)=>{
+    if(!userId)return{ok:false}
+    const{error}=await supabase.from('profiles').update({program:folder}).eq('id',userId)
+    if(error){
+      console.error('Ошибка сохранения выбранной программы:',error)
+      setShowProgramSaveError(true)
+      setTimeout(()=>setShowProgramSaveError(false),3500)
+      return{ok:false}
+    }
     setSelectedProgram(folder)
     setInfoFolder(null)
-    if(userId)supabase.from('profiles').update({program:folder}).eq('id',userId)
+    return{ok:true}
+  }
+
+  // Второй путь выбора программы — прямо из "▶ Начать тренировку" в слоте
+  // (первый путь остаётся: "?" на карточке -> "Тренироваться по этой
+  // программе"). Модалки для двух случаев: программа вообще не выбрана
+  // (showAdoptProgramModal, простое подтверждение), и выбрана ДРУГАЯ
+  // программа с выполненными тренировками (showSwitchProgramModal, нужно
+  // явное согласие клиента на переключение).
+  const [showAdoptProgramModal,setShowAdoptProgramModal]=useState(false)
+  const [showSwitchProgramModal,setShowSwitchProgramModal]=useState(null) // {from,to,count}
+
+  // N выполненных тренировок программы — считаем по УНИКАЛЬНЫМ номерам слота,
+  // а не по общему числу записей workouts (клиент мог пройти "тренировку 3"
+  // дважды — это не два разных пункта из 12, а один и тот же выполненный).
+  const countCompletedSlots=programName=>{
+    const prefix=`${programName} — тренировка `
+    const nums=new Set()
+    workoutsLog.forEach(w=>{
+      if(w.name&&w.name.startsWith(prefix)){
+        const rest=w.name.slice(prefix.length)
+        if(/^\d+$/.test(rest))nums.add(rest)
+      }
+    })
+    return nums.size
   }
 
   // История подходов клиента — опора движка прогрессии (buildExerciseAggregates/
@@ -570,6 +639,20 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     setSetsHistory(data||[])
   }
   useEffect(()=>{loadSetsHistory()},[userId])
+
+  // Список сохранённых тренировок (id/name/date) — один запрос, переиспользуется
+  // и для галочки "выполнено" на карточке слота (уровень 1 папки), и для
+  // подсчёта N в модалке смены программы (уровень 2, кнопка "▶ Начать
+  // тренировку"): оба места матчат name по шаблону "{Программа} — тренировка
+  // {N}", им не нужны сами подходы, только сам факт и дата записи.
+  const [workoutsLog,setWorkoutsLog]=useState([])
+  const loadWorkoutsLog=async()=>{
+    if(!userId)return
+    const{data,error}=await supabase.from('workouts').select('id,name,date').eq('user_id',userId).order('date')
+    if(error){console.error('Ошибка загрузки списка тренировок:',error);return}
+    setWorkoutsLog(data||[])
+  }
+  useEffect(()=>{loadWorkoutsLog()},[userId])
 
   useEffect(()=>{
     if(editTarget&&!isEditMode){
@@ -615,6 +698,15 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
   }
 
+  // Поля веса/повторений/уровня резины уже содержат рассчитанную рекомендацию —
+  // тап должен выделять её целиком (первая же цифра заменяет), а не заставлять
+  // стирать посимвольно. iOS Safari иногда не применяет select() синхронно
+  // внутри onFocus — откладываем на следующий тик (setTimeout 0).
+  const selectOnFocus=e=>{
+    const el=e.target
+    setTimeout(()=>el.select(),0)
+  }
+
   const handleAction=key=>{
     setMenuOpen(false)
     const today=new Date().toISOString().split('T')[0]
@@ -635,19 +727,29 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     setPickOpen(false);setPickQ('');setPickMuscle('Все')
   }
 
-  const saveCustomExercise=()=>{
+  // Тот же класс бага, что чинили в selectProgram: раньше упражнение
+  // попадало в локальный список и сразу в текущую тренировку СИНХРОННО, до
+  // того как insert в custom_exercises вообще улетел. Если запись падала —
+  // ошибка уходила только в консоль, клиент не видел ничего, а упражнение
+  // оставалось в списке без supabaseId и пропадало из личной библиотеки при
+  // следующей загрузке. Теперь ждём подтверждения записи и добавляем в
+  // список (с supabaseId) только после него — как selectProgram.
+  const saveCustomExercise=async()=>{
     if(!customForm.n.trim())return
+    if(!userId)return
     const newEx={n:customForm.n.trim(),m:customForm.m.trim(),eq:customForm.eq.trim(),custom:true}
-    setCustomExercises(p=>[...p,newEx])
-    pickExercise(newEx)
+    const{data,error}=await supabase.from('custom_exercises').insert({user_id:userId,name:newEx.n,muscle_group:newEx.m||null,equipment:newEx.eq||null}).select('id').single()
+    if(error){
+      console.error('Ошибка синхронизации своего упражнения с Supabase:',error)
+      setShowCustomExerciseSaveError(true)
+      setTimeout(()=>setShowCustomExerciseSaveError(false),3500)
+      return
+    }
+    const savedEx={...newEx,supabaseId:data?.id}
+    setCustomExercises(p=>[...p,savedEx])
+    pickExercise(savedEx)
     setCustomForm({n:'',m:'',eq:''})
     setCustomOpen(false)
-    if(userId){
-      supabase.from('custom_exercises').insert({user_id:userId,name:newEx.n,muscle_group:newEx.m||null,equipment:newEx.eq||null}).select('id').single().then(({data,error})=>{
-        if(error){console.error('Ошибка синхронизации своего упражнения с Supabase:',error);return}
-        setCustomExercises(list=>list.map(e=>e===newEx?{...e,supabaseId:data?.id}:e))
-      })
-    }
   }
 
   const exitWorkout=()=>{
@@ -698,6 +800,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         setTimeout(()=>setShowFinishToast(false),2500)
       }
       await loadSetsHistory()
+      await loadWorkoutsLog()
     }
     exitWorkout()
   }
@@ -801,6 +904,126 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const allSlots=Object.values(folderSlots).flat()
   const currentSlot=openSlotId?allSlots.find(s=>s.id===openSlotId):null
 
+  // Запуск тренировки из слота программы (движок прогрессии, workoutPrompt.js)
+  // — вынесено из onClick кнопки "▶ Начать тренировку" отдельной функцией,
+  // т.к. теперь перед стартом нужна проверка выбранной программы
+  // (handleStartSlotClick ниже, задача про выбор программы через "Начать
+  // тренировку") — сам запуск может случиться не сразу по клику, а только
+  // после подтверждения в модалке.
+  const startSlotWorkout=()=>{
+    const exs=currentSlot.exercises.filter(e=>e.name)
+    if(exs.length===0)return
+    setWName(`${openFolder} — тренировка ${currentSlot.slotNum}`)
+    setWColor(PUR)
+    // Движок прогрессии (1ПМ, workoutPrompt.js) — та же математика,
+    // что использует test-progression-personas.js. ПОВТОРЕНИЯ
+    // ВСЕГДА берутся из шаблона программы (parseTemplateSets),
+    // движок их не меняет — пересчитывается только рабочий вес,
+    // от накопленной истории этого упражнения (setsHistory,
+    // см. выше).
+    const aggregates=buildExerciseAggregates(setsHistory)
+    // Вторая, независимая ось прогрессии — уровень резины/
+    // повторения (домашняя программа, workoutPrompt.js:
+    // computeProgressSteps/computeBandTarget). Отдельная
+    // строка объяснения от кг-оси, т.к. текст завязан на
+    // "шаги", а не на appliedPct/hardStreak.
+    const bandProgressNote=(ts,agg)=>{
+      if(!agg||!agg.sessions?.length)return'Стартовая нагрузка из программы'
+      const steps=agg.progressSteps
+      const prevSteps=computeProgressSteps(agg.sessions.slice(0,-1))
+      const delta=steps-prevSteps
+      if(delta<0)return'Снизили нагрузку — две прошлые тренировки дались тяжело'
+      if(ts.bandLevel==null)return steps>0?'Добавили повторений':'Держим нагрузку — прошлый раз был тяжёлым'
+      if(delta>0){
+        const prevTarget=computeBandTarget(ts,prevSteps)
+        const currTarget=computeBandTarget(ts,steps)
+        return currTarget.bandLevel>prevTarget.bandLevel
+          ?'Резинка стала жёстче — прошлые тренировки шли легко'
+          :'Добавили повторений — прошлый раз дался легко'
+      }
+      return'Держим нагрузку — прошлый раз был тяжёлым'
+    }
+    const builtExercises=exs.map(ex=>{
+      const templateSets=parseTemplateSets(ex.sets)
+      const agg=aggregates[ex.name]
+      // Одна строка объяснения на упражнение целиком (не на
+      // подход) — все подходы упражнения используют один и тот
+      // же appliedPct/hardStreak (кг-ось) или steps (ось
+      // резины/повторений), так что строка берётся с ПЕРВОГО
+      // подхода, для которого вообще посчиталась нагрузка.
+      let progressNote=null
+      let progressNoteSet=false
+      const parsedSets=templateSets.map(ts=>{
+        // Резина или голые повторения без снаряда (вес тела) —
+        // это НЕ кг-ось: своя прогрессия по шагам, а не по 1ПМ.
+        if(ts.templateKg==null){
+          if(!progressNoteSet){progressNote=bandProgressNote(ts,agg);progressNoteSet=true}
+          // Холодный старт (нет истории вообще) — всё из
+          // шаблона как есть, steps=0.
+          if(!agg||!agg.sessions?.length){
+            return{kg:'',bandLevel:ts.bandLevel,reps:String(ts.reps),recKg:'',rating:'',fromTemplate:ts.bandLevel!=null}
+          }
+          const bandTarget=computeBandTarget(ts,agg.progressSteps)
+          return{kg:'',bandLevel:bandTarget.bandLevel,reps:String(bandTarget.reps),recKg:'',rating:'',fromTemplate:false}
+        }
+        // Холодный старт: по упражнению ещё нет истории —
+        // подставляем стартовый ориентир тренера как есть
+        // (красная рамка в UI, как и раньше).
+        if(!agg||!agg.anchorSet){
+          if(!progressNoteSet){progressNote='Стартовый вес из программы — дальше подстроим под тебя';progressNoteSet=true}
+          return{kg:String(ts.templateKg),bandLevel:null,reps:String(ts.reps),recKg:'',rating:'',fromTemplate:true}
+        }
+        const target=computeTargetWeight(agg.anchorSet,agg.lastSession.effRatings,ts.reps,agg.hardStreak)
+        if(!target){
+          if(!progressNoteSet){progressNote='Стартовый вес из программы — дальше подстроим под тебя';progressNoteSet=true}
+          return{kg:String(ts.templateKg),bandLevel:null,reps:String(ts.reps),recKg:'',rating:'',fromTemplate:true}
+        }
+        if(!progressNoteSet){
+          progressNote=target.isDeload
+            ?'Снизили вес на 15% — две прошлые тренировки дались тяжело'
+            :target.appliedPct>=7?'Подняли вес — прошлый раз дался легко'
+            :target.appliedPct===5?'Немного прибавили — прошлый раз прошёл комфортно'
+            :'Прибавили чуть-чуть — прошлый раз дался тяжело'
+          progressNoteSet=true
+        }
+        return{kg:String(target.kg),bandLevel:null,reps:String(ts.reps),recKg:String(target.kg),rating:'',fromTemplate:false}
+      })
+      return{n:ex.name,m:'',eq:'',sets:parsedSets,done:false,progressNote}
+    })
+    // Холодный старт — хотя бы один подход взят из шаблона как есть
+    // (красная рамка) — показывает модалку-объяснение (showProgressionIntro
+    // выше), если клиент её не отключил галочкой "Больше не показывать".
+    const hasColdStart=builtExercises.some(ex=>ex.sets.some(s=>s.fromTemplate))
+    setWExercises(builtExercises)
+    setWMode('start')
+    setWDate('')
+    setTimer(0);setSwTime(0);setSwRunning(false)
+    setStep('active')
+    setOpenSlotId(null)
+    if(hasColdStart){
+      let hideIntro=false
+      try{hideIntro=localStorage.getItem('fitpro_hide_progression_intro')==='1'}catch{}
+      if(!hideIntro)setShowProgressionIntro(true)
+    }
+  }
+
+  // Клик по "▶ Начать тренировку" — сначала проверяем выбранную программу
+  // клиента (profiles.program), см. задачу "выбор программы через Начать
+  // тренировку": второй путь выбора программы, помимо "?" -> "Тренироваться
+  // по этой программе" на карточке (selectProgram выше, оставлен как есть).
+  const handleStartSlotClick=async()=>{
+    if(!currentSlot||currentSlot.exercises.filter(e=>e.name).length===0)return
+    if(selectedProgram===openFolder){startSlotWorkout();return}
+    if(!selectedProgram){setShowAdoptProgramModal(true);return}
+    const count=countCompletedSlots(selectedProgram)
+    if(count===0){
+      const{ok}=await selectProgram(openFolder)
+      if(ok)startSlotWorkout()
+      return
+    }
+    setShowSwitchProgramModal({from:selectedProgram,to:openFolder,count})
+  }
+
   // ── Активная тренировка
   if(step==='active'){
     return (
@@ -817,6 +1040,21 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             boxShadow:'0 6px 20px rgba(220,38,38,0.35)',
           }}>
             Не удалось сохранить тренировку — проверьте интернет и попробуйте ещё раз
+          </div>
+        )}
+
+        {/* Тост ошибки сохранения своего упражнения — insert в custom_exercises
+            упал (см. saveCustomExercise), попап "Новое упражнение" остаётся
+            открытым для повтора, в список тренировки/библиотеки упражнение
+            не добавляется. */}
+        {showCustomExerciseSaveError&&(
+          <div style={{
+            position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
+            zIndex:1200, padding:'10px 18px', borderRadius:24, maxWidth:320, textAlign:'center',
+            background:'#dc2626', color:'#fff', fontSize:13, fontWeight:700,
+            boxShadow:'0 6px 20px rgba(220,38,38,0.35)',
+          }}>
+            Не удалось сохранить упражнение, проверь связь
           </div>
         )}
 
@@ -910,7 +1148,10 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               </div>
               {wMode==='start'&&<div style={{ fontSize:14, color:'rgba(255,255,255,0.7)', marginTop:3 }}>⏱ {fmt(timer)}</div>}
             </div>
-            <button onClick={()=>setShowExitConfirm(true)} style={{ fontSize:16, color:'#fff', background:'rgba(0,0,0,0.25)', border:'none', borderRadius:6, width:28, height:28, cursor:'pointer', marginTop:4, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', padding:0, minHeight:'unset' }}>✕</button>
+            <div style={{ display:'flex', gap:8, flexShrink:0, marginTop:4 }}>
+              <button onClick={()=>setShowProgressionIntro(true)} style={{ fontSize:15, fontWeight:700, color:'#fff', background:'rgba(0,0,0,0.25)', border:'none', borderRadius:6, width:28, height:28, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', padding:0, minHeight:'unset' }}>?</button>
+              <button onClick={()=>setShowExitConfirm(true)} style={{ fontSize:16, color:'#fff', background:'rgba(0,0,0,0.25)', border:'none', borderRadius:6, width:28, height:28, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', padding:0, minHeight:'unset' }}>✕</button>
+            </div>
           </div>
         </div>
 
@@ -968,6 +1209,34 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           </div>
         )}
 
+        {/* Модалка "Откуда взялся этот вес" — см. showProgressionIntro выше:
+            при каждой тренировке с холодным стартом, плюс вручную по "?" в шапке. */}
+        {showProgressionIntro&&(
+          <div style={{ position:'absolute', inset:0, zIndex:390, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.65)', borderRadius:14, padding:'0 18px' }}
+            onClick={dismissProgressionIntro}>
+            <div style={{ background:'#1c1c1e', borderRadius:16, padding:'20px 20px 16px', width:340, maxWidth:'100%', boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
+              onClick={e=>e.stopPropagation()}>
+              <div style={{ fontSize:16, fontWeight:700, color:'#fff', marginBottom:14, textAlign:'center' }}>Откуда взялся этот вес</div>
+              <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:16 }}>
+                <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55 }}>Красным подсвечен вес, взятый прямо из программы тренера — приложение тебя ещё не знает и не может подобрать вес лично под тебя.</div>
+                <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55 }}>После подхода отметь цифрой, как он дался: 1 — легко, 5 — на пределе.</div>
+                <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55 }}>В следующий раз приложение поставит вес само: далось легко — прибавит побольше, тяжело — прибавит чуть-чуть, было тяжело два раза подряд — снизит, чтобы ты не перегорел.</div>
+                <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55 }}>Вес можно менять руками — приложение запомнит то, что ты реально сделал, и посчитает от него.</div>
+                <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55 }}>Значок «<span style={{ color:PUR, fontWeight:700 }}>+</span>» у поля повторений — впиши число повторений общим счётом на обе стороны сразу, а не отдельно на каждую.</div>
+              </div>
+              <label style={{ display:'flex', alignItems:'center', gap:9, marginBottom:14, cursor:'pointer' }}>
+                <input type="checkbox" checked={progressionIntroDontShow} onChange={e=>setProgressionIntroDontShow(e.target.checked)}
+                  style={{ width:18, height:18, cursor:'pointer', accentColor:wColor, flexShrink:0 }} />
+                <span style={{ fontSize:12.5, color:'#9ca3af' }}>Больше не показывать</span>
+              </label>
+              <button onClick={dismissProgressionIntro}
+                style={{ width:'100%', padding:'12px', borderRadius:10, border:'none', background:wColor, color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer' }}>
+                Понятно
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Контент */}
         <div style={{ flex:1, overflowY:'auto', padding:'14px 18px' }}>
 
@@ -1012,8 +1281,11 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       тренировку" в слоте программы, где считается progressNote) —
                       одна строка на упражнение, почему вес именно такой.
                       Откат — не тревожный красный, а спокойный акцент PUR: это
-                      нормальная часть методики, а не ошибка приложения. */}
-                  {ex.progressNote&&!ex.done&&(
+                      нормальная часть методики, а не ошибка приложения.
+                      Холодный старт (COLD_START_NOTES) сюда не попадает — для
+                      него теперь отдельная модалка "Откуда взялся этот вес"
+                      (showProgressionIntro выше), не инлайн-строка. */}
+                  {ex.progressNote&&!ex.done&&!COLD_START_NOTES.has(ex.progressNote)&&(
                     <div style={{ fontSize:12.5, color:(ex.progressNote.startsWith('Снизили вес')||ex.progressNote.startsWith('Снизили нагрузку'))?PUR:'#9ca3af', marginTop:-4, marginBottom:8 }}>
                       {ex.progressNote}
                     </div>
@@ -1060,22 +1332,25 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                               {isBandSet?(
                                 <input value={set.bandLevel} type="number" min={1} max={5}
                                   onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,bandLevel:e.target.value===''?'':Number(e.target.value),fromTemplate:false}:s)}:x))}
+                                  onFocus={selectOnFocus}
                                   placeholder="1"
                                   style={{ background:isTemplateBand?'rgba(239,68,68,0.14)':'#374151', border:isTemplateBand?'1.5px solid #ef4444':'1px solid #4b5563', borderRadius:6, padding:'6px 6px', fontSize:13, color:isTemplateBand?'#fca5a5':'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
                               ):(
                                 <input value={set.kg}
                                   onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,kg:e.target.value,fromTemplate:false}:s)}:x))}
+                                  onFocus={selectOnFocus}
                                   placeholder="0"
                                   style={{ background:isTemplateWeight?'rgba(239,68,68,0.14)':'#374151', border:isTemplateWeight?'1.5px solid #ef4444':'1px solid #4b5563', borderRadius:6, padding:'6px 6px', fontSize:13, color:isTemplateWeight?'#fca5a5':'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
                               )}
                               <div style={{ position:'relative', width:'100%' }}>
                                 <input value={set.reps}
                                   onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,reps:e.target.value}:s)}:x))}
+                                  onFocus={selectOnFocus}
                                   placeholder="0"
                                   style={{ background:'#374151', border:'1px solid #4b5563', borderRadius:6, padding:'6px 6px', fontSize:13, color:'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
                                 {isOneSidedExercise(ex.n)&&(
                                   <span title="Общее количество повторений на обе стороны, не на одну"
-                                    style={{ position:'absolute', top:-5, right:-4, fontSize:10, fontWeight:700, color:PUR }}>+</span>
+                                    style={{ position:'absolute', top:-12, right:-12, width:44, height:44, display:'flex', alignItems:'center', justifyContent:'center', fontSize:19, fontWeight:800, color:PUR, cursor:'help', lineHeight:1 }}>+</span>
                                 )}
                               </div>
                               <button onClick={()=>setOpenSetNote(noteOpen?null:{ei,si})}
@@ -1092,19 +1367,32 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                               </div>
                             )}
                             {/* Оценка нагрузки 1-5 — только под рабочими подходами (последние
-                                2 в упражнении, как и считает AI-тренер в workoutPrompt.js) */}
+                                2 в упражнении, как и считает AI-тренер в workoutPrompt.js).
+                                На этой шкале держится весь расчёт следующего веса/нагрузки
+                                (computeTargetWeight/computeBandTarget) — тап-зона 44x44
+                                (гайдлайн Apple) и подписи "легко"/"на пределе", чтобы клиент
+                                понимал, что именно он оценивает. */}
                             {si>=ex.sets.length-2&&(
-                              <div style={{ display:'flex', alignItems:'center', gap:14, marginTop:4, paddingLeft:29 }}>
-                                {[1,2,3,4,5].map(n=>(
-                                  <button key={n}
-                                    onClick={()=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,rating:s.rating===n?'':n}:s)}:x))}
-                                    title={n===1?'1 — совсем легко':n===5?'5 — на пределе':String(n)}
-                                    style={{ background:'none', border:'none', cursor:'pointer', padding:0,
-                                      fontSize:set.rating===n?22:17, fontWeight:set.rating===n?800:600, lineHeight:1,
-                                      color:set.rating===n?wColor:'#4b5563', transition:'font-size .1s, color .1s' }}>
-                                    {n}
-                                  </button>
-                                ))}
+                              <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', gap:8, marginTop:6, paddingLeft:29 }}>
+                                <span style={{ fontSize:11, color:'#6b7280', flexShrink:0 }}>Как далось?</span>
+                                <div style={{ display:'flex', gap:3 }}>
+                                  {[1,2,3,4,5].map(n=>(
+                                    <div key={n} style={{ display:'flex', flexDirection:'column', alignItems:'center' }}>
+                                      <button
+                                        onClick={()=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,rating:s.rating===n?'':n}:s)}:x))}
+                                        title={n===1?'1 — совсем легко':n===5?'5 — на пределе':String(n)}
+                                        style={{ width:44, height:44, borderRadius:10, border:'none', cursor:'pointer', padding:0,
+                                          background:set.rating===n?wColor:'#374151',
+                                          fontSize:set.rating===n?19:16, fontWeight:800, lineHeight:1,
+                                          color:set.rating===n?'#fff':'#9ca3af', transition:'background .1s, font-size .1s' }}>
+                                        {n}
+                                      </button>
+                                      <span style={{ fontSize:8.5, color:'#6b7280', marginTop:2, minHeight:10, whiteSpace:'nowrap' }}>
+                                        {n===1?'легко':n===5?'на пределе':''}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
                             )}
                             {noteOpen&&(
@@ -1199,6 +1487,18 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           boxShadow:'0 6px 20px rgba(22,163,74,0.35)',
         }}>
           Тренировка записана в дневник ✓
+        </div>
+      )}
+      {/* Тост ошибки сохранения выбранной программы (см. selectProgram) —
+          галочка НЕ переключилась, потому что запись в Supabase упала. */}
+      {showProgramSaveError&&(
+        <div style={{
+          position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
+          zIndex:1400, padding:'10px 18px', borderRadius:24, maxWidth:320, textAlign:'center',
+          background:'#dc2626', color:'#fff', fontSize:13, fontWeight:700,
+          boxShadow:'0 6px 20px rgba(220,38,38,0.35)',
+        }}>
+          Не удалось сохранить программу — проверьте интернет и попробуйте ещё раз
         </div>
       )}
       {menuOpen&&(
@@ -1379,93 +1679,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           </div>
           <div style={{ flex:1, overflowY:'auto', padding:'14px 16px 32px' }}>
             {currentSlot.exercises.length>0&&(
-              <button
-                onClick={()=>{
-                  const exs=currentSlot.exercises.filter(e=>e.name)
-                  if(exs.length===0)return
-                  setWName(`${openFolder} — тренировка ${currentSlot.slotNum}`)
-                  setWColor(PUR)
-                  // Движок прогрессии (1ПМ, workoutPrompt.js) — та же математика,
-                  // что использует test-progression-personas.js. ПОВТОРЕНИЯ
-                  // ВСЕГДА берутся из шаблона программы (parseTemplateSets),
-                  // движок их не меняет — пересчитывается только рабочий вес,
-                  // от накопленной истории этого упражнения (setsHistory,
-                  // см. выше).
-                  const aggregates=buildExerciseAggregates(setsHistory)
-                  // Вторая, независимая ось прогрессии — уровень резины/
-                  // повторения (домашняя программа, workoutPrompt.js:
-                  // computeProgressSteps/computeBandTarget). Отдельная
-                  // строка объяснения от кг-оси, т.к. текст завязан на
-                  // "шаги", а не на appliedPct/hardStreak.
-                  const bandProgressNote=(ts,agg)=>{
-                    if(!agg||!agg.sessions?.length)return'Стартовая нагрузка из программы'
-                    const steps=agg.progressSteps
-                    const prevSteps=computeProgressSteps(agg.sessions.slice(0,-1))
-                    const delta=steps-prevSteps
-                    if(delta<0)return'Снизили нагрузку — две прошлые тренировки дались тяжело'
-                    if(ts.bandLevel==null)return steps>0?'Добавили повторений':'Держим нагрузку — прошлый раз был тяжёлым'
-                    if(delta>0){
-                      const prevTarget=computeBandTarget(ts,prevSteps)
-                      const currTarget=computeBandTarget(ts,steps)
-                      return currTarget.bandLevel>prevTarget.bandLevel
-                        ?'Резинка стала жёстче — прошлые тренировки шли легко'
-                        :'Добавили повторений — прошлый раз дался легко'
-                    }
-                    return'Держим нагрузку — прошлый раз был тяжёлым'
-                  }
-                  setWExercises(exs.map(ex=>{
-                    const templateSets=parseTemplateSets(ex.sets)
-                    const agg=aggregates[ex.name]
-                    // Одна строка объяснения на упражнение целиком (не на
-                    // подход) — все подходы упражнения используют один и тот
-                    // же appliedPct/hardStreak (кг-ось) или steps (ось
-                    // резины/повторений), так что строка берётся с ПЕРВОГО
-                    // подхода, для которого вообще посчиталась нагрузка.
-                    let progressNote=null
-                    let progressNoteSet=false
-                    const parsedSets=templateSets.map(ts=>{
-                      // Резина или голые повторения без снаряда (вес тела) —
-                      // это НЕ кг-ось: своя прогрессия по шагам, а не по 1ПМ.
-                      if(ts.templateKg==null){
-                        if(!progressNoteSet){progressNote=bandProgressNote(ts,agg);progressNoteSet=true}
-                        // Холодный старт (нет истории вообще) — всё из
-                        // шаблона как есть, steps=0.
-                        if(!agg||!agg.sessions?.length){
-                          return{kg:'',bandLevel:ts.bandLevel,reps:String(ts.reps),recKg:'',rating:'',fromTemplate:ts.bandLevel!=null}
-                        }
-                        const bandTarget=computeBandTarget(ts,agg.progressSteps)
-                        return{kg:'',bandLevel:bandTarget.bandLevel,reps:String(bandTarget.reps),recKg:'',rating:'',fromTemplate:false}
-                      }
-                      // Холодный старт: по упражнению ещё нет истории —
-                      // подставляем стартовый ориентир тренера как есть
-                      // (красная рамка в UI, как и раньше).
-                      if(!agg||!agg.anchorSet){
-                        if(!progressNoteSet){progressNote='Стартовый вес из программы — дальше подстроим под тебя';progressNoteSet=true}
-                        return{kg:String(ts.templateKg),bandLevel:null,reps:String(ts.reps),recKg:'',rating:'',fromTemplate:true}
-                      }
-                      const target=computeTargetWeight(agg.anchorSet,agg.lastSession.effRatings,ts.reps,agg.hardStreak)
-                      if(!target){
-                        if(!progressNoteSet){progressNote='Стартовый вес из программы — дальше подстроим под тебя';progressNoteSet=true}
-                        return{kg:String(ts.templateKg),bandLevel:null,reps:String(ts.reps),recKg:'',rating:'',fromTemplate:true}
-                      }
-                      if(!progressNoteSet){
-                        progressNote=target.isDeload
-                          ?'Снизили вес на 15% — две прошлые тренировки дались тяжело'
-                          :target.appliedPct>=7?'Подняли вес — прошлый раз дался легко'
-                          :target.appliedPct===5?'Немного прибавили — прошлый раз прошёл комфортно'
-                          :'Прибавили чуть-чуть — прошлый раз дался тяжело'
-                        progressNoteSet=true
-                      }
-                      return{kg:String(target.kg),bandLevel:null,reps:String(ts.reps),recKg:String(target.kg),rating:'',fromTemplate:false}
-                    })
-                    return{n:ex.name,m:'',eq:'',sets:parsedSets,done:false,progressNote}
-                  }))
-                  setWMode('start')
-                  setWDate('')
-                  setTimer(0);setSwTime(0);setSwRunning(false)
-                  setStep('active')
-                  setOpenSlotId(null)
-                }}
+              <button onClick={handleStartSlotClick}
                 style={{ display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',padding:'15px',marginBottom:14,borderRadius:12,border:'none',background:TEA,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',boxSizing:'border-box',minHeight:'unset' }}>
                 ▶ Начать тренировку
               </button>
@@ -1554,6 +1768,52 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         </div>
       , document.body)}
 
+      {/* Модалка: программа вообще не выбрана — предлагаем принять текущую
+          по клику "▶ Начать тренировку" (второй путь выбора программы). */}
+      {showAdoptProgramModal&&createPortal(
+        <div onClick={()=>setShowAdoptProgramModal(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1400, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:'#fff', borderRadius:16, padding:'22px 20px', maxWidth:340, width:'100%', boxSizing:'border-box' }}>
+            <div style={{ fontSize:16, fontWeight:700, color:'#111', textAlign:'center', marginBottom:20, lineHeight:1.4 }}>
+              Начать тренироваться по программе «{openFolder}»?
+            </div>
+            <button onClick={async()=>{const{ok}=await selectProgram(openFolder);if(ok){setShowAdoptProgramModal(false);startSlotWorkout()}}}
+              style={{ width:'100%', padding:'13px', borderRadius:12, border:'none', background:PUR, color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', marginBottom:8 }}>
+              Да, это моя программа
+            </button>
+            <button onClick={()=>setShowAdoptProgramModal(false)}
+              style={{ width:'100%', padding:'11px', borderRadius:12, border:'none', background:'none', color:'#9ca3af', fontSize:13, cursor:'pointer' }}>
+              Отмена
+            </button>
+          </div>
+        </div>
+      , document.body)}
+
+      {/* Модалка: выбрана ДРУГАЯ программа с выполненными тренировками —
+          явное согласие на переключение, с объяснением что прогресс по
+          упражнениям не теряется (история хранится по упражнению, не по
+          программе, см. buildExerciseAggregates в workoutPrompt.js). */}
+      {showSwitchProgramModal&&createPortal(
+        <div onClick={()=>setShowSwitchProgramModal(null)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1400, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:'#fff', borderRadius:16, padding:'22px 20px', maxWidth:360, width:'100%', boxSizing:'border-box' }}>
+            <div style={{ fontSize:15, fontWeight:700, color:'#111', textAlign:'center', marginBottom:10, lineHeight:1.4 }}>
+              Ты тренируешься по программе «{showSwitchProgramModal.from}», выполнено {showSwitchProgramModal.count} из {SLOT_COUNT} тренировок.
+              <br />Перейти на «{showSwitchProgramModal.to}»?
+            </div>
+            <div style={{ fontSize:12.5, color:'#6b7280', textAlign:'center', lineHeight:1.5, marginBottom:20 }}>
+              Прогресс не потеряется: веса, которые ты набрал в упражнениях, сохранятся и в новой программе.
+            </div>
+            <button onClick={async()=>{const to=showSwitchProgramModal.to;const{ok}=await selectProgram(to);if(ok){setShowSwitchProgramModal(null);startSlotWorkout()}}}
+              style={{ width:'100%', padding:'13px', borderRadius:12, border:'none', background:PUR, color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', marginBottom:8 }}>
+              Перейти на «{showSwitchProgramModal.to}»
+            </button>
+            <button onClick={()=>setShowSwitchProgramModal(null)}
+              style={{ width:'100%', padding:'11px', borderRadius:12, border:'none', background:'none', color:'#9ca3af', fontSize:13, cursor:'pointer' }}>
+              Остаться на «{showSwitchProgramModal.from}»
+            </button>
+          </div>
+        </div>
+      , document.body)}
+
       {/* ── Уровень 1: список тренировок в папке ── */}
       {openFolder&&createPortal(
         <div style={{ position:'fixed', inset:0, background:'#f3f4f6', zIndex:1000, display:'flex', flexDirection:'column' }}>
@@ -1572,6 +1832,13 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             {folderSlots[openFolder].map(slot=>{
               const ec=slot.exercises.length
               const vc=slot.exercises.filter(e=>e.videoId).length
+              // Отметка выполнения — по записям workouts с именем этого
+              // слота (workoutsLog, один общий запрос выше). Дата последней
+              // тренировки берётся по максимуму, счётчик показывается только
+              // при повторных прохождениях (>1).
+              const slotName=`${openFolder} — тренировка ${slot.slotNum}`
+              const completions=workoutsLog.filter(w=>w.name===slotName)
+              const lastDate=completions.length?completions.reduce((max,w)=>w.date>max?w.date:max,completions[0].date):null
               return (
                 <div key={slot.id} style={{ background:'#fff', borderRadius:13, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', marginBottom:10, display:'flex', flexDirection:'column', alignItems:'center', padding:'16px 16px 14px', cursor:'pointer', position:'relative' }}
                   onClick={()=>setOpenSlotId(slot.id)}>
@@ -1584,6 +1851,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                     <div style={{ fontSize:12, color:'#9ca3af' }}>
                       {ec===0?'Нет упражнений':`${ec} упр.${vc>0?` · ${vc} видео`:''}`}
                     </div>
+                    {completions.length>0&&(
+                      <div style={{ fontSize:11.5, color:'#16a34a', fontWeight:600, marginTop:5 }}>
+                        ✓ {new Date(lastDate).toLocaleDateString('ru',{day:'numeric',month:'long'})}
+                        {completions.length>1?` · ${completions.length} ${pluralizeTimes(completions.length)}`:''}
+                      </div>
+                    )}
                   </div>
                 </div>
               )
