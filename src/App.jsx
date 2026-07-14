@@ -6,7 +6,7 @@ import { FOLDERS, PROGRAMS_MAP, EXERCISES, isOneSidedExercise } from './programs
 import { oneRepMax, weightForReps, roundToPlate, percentTable } from './oneRepMax.js'
 // Движок прогрессии (1ПМ) — врезан в кнопку "▶ Начать тренировку" внутри
 // слота шаблонной программы (WorkoutsView), см. подробный комментарий там.
-import { buildExerciseAggregates, computeTargetWeight, parseTemplateSets } from './workoutPrompt.js'
+import { buildExerciseAggregates, computeTargetWeight, parseTemplateSets, computeProgressSteps, computeBandTarget } from './workoutPrompt.js'
 import './App.css'
 
 const PUR = '#7F77DD'
@@ -565,7 +565,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const loadSetsHistory=async()=>{
     if(!userId)return
     const{data,error}=await supabase.from('workout_sets')
-      .select('id,exercise,date,kg,reps,rating,workout_id').eq('user_id',userId).order('id')
+      .select('id,exercise,date,kg,reps,rating,workout_id,band_level').eq('user_id',userId).order('id')
     if(error){console.error('Ошибка загрузки истории подходов для прогрессии:',error);return}
     setSetsHistory(data||[])
   }
@@ -1008,6 +1008,16 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                     <span style={{ fontSize:14, fontWeight:600, color:ex.done?'#4ade80':wColor }}>{ex.n}</span>
                     {ex.done&&<span style={{ fontSize:11, color:'#4ade80' }}>✓ Выполнено</span>}
                   </div>
+                  {/* Объяснение пересчитанного веса (см. кнопку "▶ Начать
+                      тренировку" в слоте программы, где считается progressNote) —
+                      одна строка на упражнение, почему вес именно такой.
+                      Откат — не тревожный красный, а спокойный акцент PUR: это
+                      нормальная часть методики, а не ошибка приложения. */}
+                  {ex.progressNote&&!ex.done&&(
+                    <div style={{ fontSize:12.5, color:(ex.progressNote.startsWith('Снизили вес')||ex.progressNote.startsWith('Снизили нагрузку'))?PUR:'#9ca3af', marginTop:-4, marginBottom:8 }}>
+                      {ex.progressNote}
+                    </div>
+                  )}
                   {isOneSidedExercise(ex.n)&&(
                     <div style={{ fontSize:10, color:'#6b7280', marginTop:-4, marginBottom:8 }}>
                       + повторения общим числом на обе стороны, не на одну
@@ -1017,9 +1027,9 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   {ex.done?(
                     <div>
                       <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:8 }}>
-                        {ex.sets.map((s,si)=>(s.kg||s.reps)&&(
+                        {ex.sets.map((s,si)=>(s.kg||s.bandLevel||s.reps)&&(
                           <span key={si} style={{ fontSize:11, color:'#9ca3af' }}>
-                            {si+1}. {s.kg||'—'}кг × {s.reps||'—'}
+                            {si+1}. {s.bandLevel!=null?`${s.bandLevel} рез.`:`${s.kg||'—'}кг`} × {s.reps||'—'}
                             {isOneSidedExercise(ex.n)&&<span title="Общее количество повторений на обе стороны, не на одну">+</span>}
                           </span>
                         ))}
@@ -1033,22 +1043,31 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   ):(
                     <>
                       <div style={{ display:'grid', gridTemplateColumns:'24px 1fr 1fr 26px 26px 20px', gap:5, marginBottom:5 }}>
-                        {['#','КГ','ПОВТ','','',''].map((h,i)=>(
+                        {['#',ex.sets.some(s=>s.bandLevel!=null)?'РЕЗИНА':'КГ','ПОВТ','','',''].map((h,i)=>(
                           <span key={i} style={{ fontSize:10, color:'#6b7280', textAlign:'center', textTransform:'uppercase' }}>{h}</span>
                         ))}
                       </div>
                       {ex.sets.map((set,si)=>{
                         const noteOpen=openSetNote?.ei===ei&&openSetNote?.si===si
                         const hasVid=!!setVideos[`${ei}_${si}`]
+                        const isBandSet=set.bandLevel!=null
                         const isTemplateWeight=!!(set.fromTemplate&&set.kg)
+                        const isTemplateBand=!!(set.fromTemplate&&isBandSet)
                         return(
                           <div key={si} style={{ marginBottom:noteOpen?3:5 }}>
                             <div style={{ display:'grid', gridTemplateColumns:'24px 1fr 1fr 26px 26px 20px', gap:5, alignItems:'center' }}>
                               <span style={{ fontSize:12, color:'#6b7280', textAlign:'center', fontWeight:700 }}>{si+1}</span>
-                              <input value={set.kg}
-                                onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,kg:e.target.value,fromTemplate:false}:s)}:x))}
-                                placeholder="0"
-                                style={{ background:isTemplateWeight?'rgba(239,68,68,0.14)':'#374151', border:isTemplateWeight?'1.5px solid #ef4444':'1px solid #4b5563', borderRadius:6, padding:'6px 6px', fontSize:13, color:isTemplateWeight?'#fca5a5':'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
+                              {isBandSet?(
+                                <input value={set.bandLevel} type="number" min={1} max={5}
+                                  onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,bandLevel:e.target.value===''?'':Number(e.target.value),fromTemplate:false}:s)}:x))}
+                                  placeholder="1"
+                                  style={{ background:isTemplateBand?'rgba(239,68,68,0.14)':'#374151', border:isTemplateBand?'1.5px solid #ef4444':'1px solid #4b5563', borderRadius:6, padding:'6px 6px', fontSize:13, color:isTemplateBand?'#fca5a5':'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
+                              ):(
+                                <input value={set.kg}
+                                  onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,kg:e.target.value,fromTemplate:false}:s)}:x))}
+                                  placeholder="0"
+                                  style={{ background:isTemplateWeight?'rgba(239,68,68,0.14)':'#374151', border:isTemplateWeight?'1.5px solid #ef4444':'1px solid #4b5563', borderRadius:6, padding:'6px 6px', fontSize:13, color:isTemplateWeight?'#fca5a5':'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
+                              )}
                               <div style={{ position:'relative', width:'100%' }}>
                                 <input value={set.reps}
                                   onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,reps:e.target.value}:s)}:x))}
@@ -1367,28 +1386,79 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   setWName(`${openFolder} — тренировка ${currentSlot.slotNum}`)
                   setWColor(PUR)
                   // Движок прогрессии (1ПМ, workoutPrompt.js) — та же математика,
-                  // что использует Конструктор (ConstructorView, заморожен) и
-                  // test-progression-personas.js. ПОВТОРЕНИЯ ВСЕГДА берутся из
-                  // шаблона программы (parseTemplateSets), движок их не меняет —
-                  // пересчитывается только рабочий вес, от накопленной истории
-                  // этого упражнения (setsHistory, см. выше).
+                  // что использует test-progression-personas.js. ПОВТОРЕНИЯ
+                  // ВСЕГДА берутся из шаблона программы (parseTemplateSets),
+                  // движок их не меняет — пересчитывается только рабочий вес,
+                  // от накопленной истории этого упражнения (setsHistory,
+                  // см. выше).
                   const aggregates=buildExerciseAggregates(setsHistory)
+                  // Вторая, независимая ось прогрессии — уровень резины/
+                  // повторения (домашняя программа, workoutPrompt.js:
+                  // computeProgressSteps/computeBandTarget). Отдельная
+                  // строка объяснения от кг-оси, т.к. текст завязан на
+                  // "шаги", а не на appliedPct/hardStreak.
+                  const bandProgressNote=(ts,agg)=>{
+                    if(!agg||!agg.sessions?.length)return'Стартовая нагрузка из программы'
+                    const steps=agg.progressSteps
+                    const prevSteps=computeProgressSteps(agg.sessions.slice(0,-1))
+                    const delta=steps-prevSteps
+                    if(delta<0)return'Снизили нагрузку — две прошлые тренировки дались тяжело'
+                    if(ts.bandLevel==null)return steps>0?'Добавили повторений':'Держим нагрузку — прошлый раз был тяжёлым'
+                    if(delta>0){
+                      const prevTarget=computeBandTarget(ts,prevSteps)
+                      const currTarget=computeBandTarget(ts,steps)
+                      return currTarget.bandLevel>prevTarget.bandLevel
+                        ?'Резинка стала жёстче — прошлые тренировки шли легко'
+                        :'Добавили повторений — прошлый раз дался легко'
+                    }
+                    return'Держим нагрузку — прошлый раз был тяжёлым'
+                  }
                   setWExercises(exs.map(ex=>{
                     const templateSets=parseTemplateSets(ex.sets)
                     const agg=aggregates[ex.name]
+                    // Одна строка объяснения на упражнение целиком (не на
+                    // подход) — все подходы упражнения используют один и тот
+                    // же appliedPct/hardStreak (кг-ось) или steps (ось
+                    // резины/повторений), так что строка берётся с ПЕРВОГО
+                    // подхода, для которого вообще посчиталась нагрузка.
+                    let progressNote=null
+                    let progressNoteSet=false
                     const parsedSets=templateSets.map(ts=>{
-                      // Б/в, резина, голые повторения без снаряда — вес движком
-                      // не считается вообще (нечего масштабировать по 1ПМ).
-                      if(ts.templateKg==null)return{kg:'',reps:String(ts.reps),recKg:'',rating:'',fromTemplate:false}
+                      // Резина или голые повторения без снаряда (вес тела) —
+                      // это НЕ кг-ось: своя прогрессия по шагам, а не по 1ПМ.
+                      if(ts.templateKg==null){
+                        if(!progressNoteSet){progressNote=bandProgressNote(ts,agg);progressNoteSet=true}
+                        // Холодный старт (нет истории вообще) — всё из
+                        // шаблона как есть, steps=0.
+                        if(!agg||!agg.sessions?.length){
+                          return{kg:'',bandLevel:ts.bandLevel,reps:String(ts.reps),recKg:'',rating:'',fromTemplate:ts.bandLevel!=null}
+                        }
+                        const bandTarget=computeBandTarget(ts,agg.progressSteps)
+                        return{kg:'',bandLevel:bandTarget.bandLevel,reps:String(bandTarget.reps),recKg:'',rating:'',fromTemplate:false}
+                      }
                       // Холодный старт: по упражнению ещё нет истории —
                       // подставляем стартовый ориентир тренера как есть
                       // (красная рамка в UI, как и раньше).
-                      if(!agg||!agg.anchorSet)return{kg:String(ts.templateKg),reps:String(ts.reps),recKg:'',rating:'',fromTemplate:true}
+                      if(!agg||!agg.anchorSet){
+                        if(!progressNoteSet){progressNote='Стартовый вес из программы — дальше подстроим под тебя';progressNoteSet=true}
+                        return{kg:String(ts.templateKg),bandLevel:null,reps:String(ts.reps),recKg:'',rating:'',fromTemplate:true}
+                      }
                       const target=computeTargetWeight(agg.anchorSet,agg.lastSession.effRatings,ts.reps,agg.hardStreak)
-                      if(!target)return{kg:String(ts.templateKg),reps:String(ts.reps),recKg:'',rating:'',fromTemplate:true}
-                      return{kg:String(target.kg),reps:String(ts.reps),recKg:String(target.kg),rating:'',fromTemplate:false}
+                      if(!target){
+                        if(!progressNoteSet){progressNote='Стартовый вес из программы — дальше подстроим под тебя';progressNoteSet=true}
+                        return{kg:String(ts.templateKg),bandLevel:null,reps:String(ts.reps),recKg:'',rating:'',fromTemplate:true}
+                      }
+                      if(!progressNoteSet){
+                        progressNote=target.isDeload
+                          ?'Снизили вес на 15% — две прошлые тренировки дались тяжело'
+                          :target.appliedPct>=7?'Подняли вес — прошлый раз дался легко'
+                          :target.appliedPct===5?'Немного прибавили — прошлый раз прошёл комфортно'
+                          :'Прибавили чуть-чуть — прошлый раз дался тяжело'
+                        progressNoteSet=true
+                      }
+                      return{kg:String(target.kg),bandLevel:null,reps:String(ts.reps),recKg:String(target.kg),rating:'',fromTemplate:false}
                     })
-                    return{n:ex.name,m:'',eq:'',sets:parsedSets,done:false}
+                    return{n:ex.name,m:'',eq:'',sets:parsedSets,done:false,progressNote}
                   }))
                   setWMode('start')
                   setWDate('')
@@ -4773,9 +4843,10 @@ function buildExerciseEntryFromSets(name, sets) {
   const meta = EXERCISES.find(e => e.n === name)
   return {
     n: name, m: meta?.m || '', eq: meta?.eq || '',
-    done: sets.some(s => s.kg != null),
+    done: sets.some(s => s.kg != null || s.band_level != null),
     sets: sets.map(s => ({
       kg: s.kg != null ? String(s.kg) : '',
+      bandLevel: s.band_level != null ? s.band_level : null,
       reps: s.reps != null ? String(s.reps) : '',
       recKg: s.recommended_kg != null ? String(s.recommended_kg) : '',
       note: s.note || '',
@@ -5139,8 +5210,8 @@ export default function App() {
     const rows=[]
     for(const ex of workout.exercises||[]){
       for(const s of ex.sets||[]){
-        if(!s.kg&&!s.reps)continue
-        rows.push({user_id:user.id,exercise:ex.n,date:isoDate,kg:s.kg?Number(s.kg):null,reps:s.reps?Number(s.reps):null,note:s.note||null,recommended_kg:s.recKg?Number(s.recKg):null,rating:s.rating?Number(s.rating):null,workout_id:workoutId??null})
+        if(!s.kg&&!s.reps&&s.bandLevel==null)continue
+        rows.push({user_id:user.id,exercise:ex.n,date:isoDate,kg:s.kg?Number(s.kg):null,reps:s.reps?Number(s.reps):null,note:s.note||null,recommended_kg:s.recKg?Number(s.recKg):null,rating:s.rating?Number(s.rating):null,workout_id:workoutId??null,band_level:s.bandLevel??null})
       }
     }
     if(!rows.length)return{ids:[],error:null}

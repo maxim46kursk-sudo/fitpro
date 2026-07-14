@@ -32,9 +32,9 @@ import path from 'node:path'
 import os from 'node:os'
 import zlib from 'node:zlib'
 import ExcelJS from 'exceljs'
-import { buildAssignedSessionPlan, buildExerciseAggregates, computeTargetWeight, RATING_GROWTH_PCT } from './src/workoutPrompt.js'
+import { buildAssignedSessionPlan, buildExerciseAggregates, computeTargetWeight, RATING_GROWTH_PCT, parseTemplateSets, computeBandTarget } from './src/workoutPrompt.js'
 import { oneRepMax } from './src/oneRepMax.js'
-import { PROGRAMS_MAP } from './src/programs.js'
+import { PROGRAMS_MAP, EXERCISE_TYPE } from './src/programs.js'
 import { findSimilarExercise } from './src/fuzzyMatch.js'
 
 const CYCLES = 8
@@ -381,6 +381,146 @@ function buildTestCases(results) {
     push('У новичка без инвентаря нет упражнений со штангой/весом', novice.persona.name, 'ни одного подхода с весом в кг', anyWeight ? 'найден подход с весом в кг' : 'ни одного подхода с весом в кг', !anyWeight)
   }
 
+  // 6) Инвариант, не привязанный к конкретной персоне: каждое имя упражнения
+  // из PROGRAMS_MAP (все программы, не только те, что гоняют персоны выше)
+  // должно существовать в EXERCISE_TYPE (собран из EXERCISES в programs.js).
+  // Если названия разошлись (например в шаблоне осталась цифра уровня
+  // резинки, а в библиотеке её нет) — EXERCISE_TYPE[name] молча возвращает
+  // undefined, buildExerciseAggregates тихо подставляет 'compound' по
+  // умолчанию, а "Прогресс по упражнениям" в Дневнике считает такое
+  // упражнение отдельным, не связанным с библиотечным. Регрессия ровно
+  // такого типа уже случалась (HOME_PROGRAM с номерами резинок в названиях).
+  const unknownNames = new Set()
+  for (const slots of Object.values(PROGRAMS_MAP)) {
+    for (const slot of slots) {
+      for (const ex of slot) {
+        if (!(ex.name in EXERCISE_TYPE)) unknownNames.add(ex.name)
+      }
+    }
+  }
+  push('Каждое упражнение из PROGRAMS_MAP есть в библиотеке EXERCISES (EXERCISE_TYPE)', '—',
+    'все названия из шаблонов программ совпадают с библиотекой',
+    unknownNames.size === 0 ? 'все названия из шаблонов программ совпадают с библиотекой' : `не найдены в библиотеке: ${[...unknownNames].join('; ')}`,
+    unknownNames.size === 0)
+
+  return rows
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Тест-кейсы второй оси прогрессии — уровень резины/повторения (домашняя
+// программа, computeProgressSteps/computeBandTarget в workoutPrompt.js).
+// Полностью независима от 1ПМ-оси выше: тестируется напрямую через реальный
+// движок (buildExerciseAggregates даёт progressSteps из синтетической
+// истории подходов, computeBandTarget считает итоговую нагрузку — та же
+// пара функций, что WorkoutsView в App.jsx использует в кнопке
+// "▶ Начать тренировку" для домашней программы).
+// ─────────────────────────────────────────────────────────────────────────
+
+// Синтетическая история: по одному рабочему подходу на сессию, с заданным
+// рейтингом (или null — не оценено, движок считает такое за 3). exercise —
+// реальное имя из EXERCISES (не важно для computeProgressSteps самого по
+// себе, он читает только effRatings, но пусть будет валидным на случай
+// побочных проверок).
+function simulateBandSessions(exercise, ratings) {
+  const sets = ratings.map((rating, i) => ({
+    id: i + 1, exercise, date: addDays(TODAY, i * 3), workout_id: i + 1,
+    rating, kg: null, reps: 10, band_level: null,
+  }))
+  return buildExerciseAggregates(sets)[exercise]
+}
+
+function buildBandTestCases() {
+  const rows = []
+  const push = (name, expected, actual, pass) => rows.push({ name, persona: '— (домашняя программа)', expected: String(expected), actual: String(actual), pass })
+  const EX = 'Тяга резины лежа на полу' // реальное упражнение из EXERCISES, с резиной
+
+  // 1) Холодный старт — истории нет вообще, steps=0, всё из шаблона как есть.
+  {
+    const templateSet = parseTemplateSets('2 рез. × 15')[0]
+    const agg = buildExerciseAggregates([])[EX] // undefined — истории нет
+    const steps = agg ? agg.progressSteps : 0
+    const target = computeBandTarget(templateSet, steps)
+    push('Холодный старт: нет истории → уровень и повторы берутся из шаблона как есть',
+      'bandLevel=2, reps=15 (steps=0)', `bandLevel=${target.bandLevel}, reps=${target.reps} (steps=${steps})`,
+      steps === 0 && target.bandLevel === 2 && target.reps === 15)
+  }
+
+  // 2) 5 лёгких тренировок подряд (рейтинг 2, +1 шаг каждая, без отката) →
+  // steps=5 → уровень +1 (5 шагов = ровно 1 подъём уровня), повторы
+  // возвращаются к базовому шаблону (остаток шагов rest=0, ничего не
+  // уходит в повторения).
+  {
+    const agg = simulateBandSessions(EX, [2, 2, 2, 2, 2])
+    const templateSet = parseTemplateSets('2 рез. × 15')[0]
+    const target = computeBandTarget(templateSet, agg.progressSteps)
+    push('5 лёгких тренировок подряд (рейтинг 2) → уровень +1, повторы возвращаются к базовому шаблону',
+      'steps=5, bandLevel=3, reps=15', `steps=${agg.progressSteps}, bandLevel=${target.bandLevel}, reps=${target.reps}`,
+      agg.progressSteps === 5 && target.bandLevel === 3 && target.reps === 15)
+  }
+
+  // 3) Лесенка (уровень растёт внутри одной сессии по подходам) при
+  // steps=5 — каждый подход лесенки поднимается на 1 уровень независимо
+  // (та же арифметика computeBandTarget применяется к каждому подходу
+  // шаблона отдельно, они не связаны друг с другом).
+  {
+    const lesenka = parseTemplateSets('1 рез. × 15, 2 рез. × 12, 3 рез. × 10')
+    const targets = lesenka.map(ts => computeBandTarget(ts, 5))
+    const levels = targets.map(t => t.bandLevel).join('/')
+    push('Лесенка "1/2/3 рез." при steps=5 → каждый подход поднимается на 1 уровень (2/3/4)',
+      '2/3/4', levels, levels === '2/3/4')
+  }
+
+  // 4) Две тяжёлые тренировки подряд (рейтинг ≥4) → откат -2 к счётчику
+  // шагов; третья тяжёлая подряд НЕ повторяет откат (one-shot, признак
+  // "предыдущая тяжёлая" уже сброшен предыдущим откатом). Сначала 3 лёгкие
+  // тренировки поднимают steps до 3, чтобы откат на -2 был виден не только
+  // по полу в 0.
+  {
+    const ratings = [2, 2, 2, 4, 4, 4]
+    const stepsAt = ratings.map((_, i) => simulateBandSessions(EX, ratings.slice(0, i + 1)).progressSteps)
+    push('Две тяжёлые тренировки подряд → steps -2 (откат); третья тяжёлая подряд откат НЕ повторяет',
+      'steps после 4-й тренировки=3, после 5-й=1 (откат), после 6-й=1 (без повторного отката)',
+      `steps по тренировкам: ${stepsAt.join(', ')}`,
+      stepsAt[3] === 3 && stepsAt[4] === 1 && stepsAt[5] === 1)
+  }
+
+  // 5) Потолок уровня резины (5): подъём, который упирается в потолок, не
+  // теряется — переполнение уходит в повторения (overflow).
+  {
+    const templateSet = { bandLevel: 5, reps: 15 }
+    const target = computeBandTarget(templateSet, 5) // levelUp=1 упёрся в потолок → overflow=1
+    push('Уровень резины уже 5 + steps толкают на подъём уровня → уровень остаётся 5, надбавка уходит в повторения',
+      'bandLevel=5, reps=25', `bandLevel=${target.bandLevel}, reps=${target.reps}`,
+      target.bandLevel === 5 && target.reps === 25)
+  }
+
+  // 6) Упражнение с весом тела (без резины вообще) — растут только
+  // повторения, уровня как понятия для него не существует.
+  {
+    const EX_BW = 'Отжимания от пола'
+    const agg = simulateBandSessions(EX_BW, [2, 2, 2])
+    const templateSet = parseTemplateSets('12, 12, 12, 12')[0]
+    const target = computeBandTarget(templateSet, agg.progressSteps)
+    push('Упражнение с весом тела (Отжимания) → уровня нет, растут только повторения',
+      'bandLevel=null, steps=3, reps=18', `bandLevel=${target.bandLevel}, steps=${agg.progressSteps}, reps=${target.reps}`,
+      target.bandLevel === null && agg.progressSteps === 3 && target.reps === 18)
+  }
+
+  // 7) Инвариант: каждое имя упражнения в HOME_PROGRAM (PROGRAMS_MAP)
+  // существует в библиотеке EXERCISES (EXERCISE_TYPE) — та самая регрессия,
+  // которую эта задача изначально чинит (номера резинок раньше сидели в
+  // названии, а не в строке подходов). Дублирует общий инвариант из
+  // buildTestCases, но специально сузен до домашней программы для этого блока.
+  {
+    const home = PROGRAMS_MAP['Домашние тренировки'] || []
+    const unknown = new Set()
+    for (const slot of home) for (const ex of slot) if (!(ex.name in EXERCISE_TYPE)) unknown.add(ex.name)
+    push('Каждое упражнение из HOME_PROGRAM есть в библиотеке EXERCISES',
+      'все названия совпадают с библиотекой',
+      unknown.size === 0 ? 'все названия совпадают с библиотекой' : `не найдены: ${[...unknown].join('; ')}`,
+      unknown.size === 0)
+  }
+
   return rows
 }
 
@@ -644,7 +784,7 @@ async function buildWorkbook(results) {
     { header: 'Статус', key: 'status', width: 10 },
   ]
   styleHeader(s5.getRow(1))
-  const testRows = buildTestCases(results)
+  const testRows = [...buildTestCases(results), ...buildBandTestCases()]
   for (const t of testRows) s5.addRow({ name: t.name, persona: t.persona, expected: t.expected, actual: t.actual, status: t.pass ? 'PASS' : 'FAIL' })
   s5.eachRow((row, i) => { if (i > 1 && row.getCell('status').value === 'FAIL') row.eachCell(c => { c.fill = RED_FILL }) })
   s5.getColumn('status').eachCell(cell => { cell.alignment = { horizontal: 'center' } })

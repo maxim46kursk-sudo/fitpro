@@ -4,10 +4,10 @@
 // Движок (buildExerciseAggregates/computeTargetWeight/buildAssignedSessionPlan/
 // parseTemplateSets ниже) — общая математика для трёх независимых
 // потребителей: WorkoutsView в App.jsx (кнопка "▶ Начать тренировку" внутри
-// слота шаблонной программы — основной, боевой путь для клиентов), заморо-
-// женного Конструктора (ConstructorView в App.jsx, см.
-// docs/CONSTRUCTOR_FROZEN.md) и test-progression-personas.js. Единица
-// прогрессии — одноповторный максимум (1ПМ), а не тоннаж: тоннаж
+// слота шаблонной программы — основной, боевой путь для клиентов),
+// замороженного src/ConstructorView.jsx (см. docs/CONSTRUCTOR_FROZEN.md) и
+// test-progression-personas.js. Единица прогрессии — одноповторный максимум
+// (1ПМ), а не тоннаж: тоннаж
 // несопоставим между разными повторениями (30кг×15 и вес на 6 повторений
 // нельзя сравнить через суммарный вес×повторения напрямую — это даёт
 // абсурдные скачки), а 1ПМ корректно учитывает нелинейность зависимости
@@ -28,13 +28,17 @@ const FORMAT_RULE = 'ФОРМАТ ОТВЕТА: только сплошной т
 // ─────────────────────────────────────────────────────────────────────────
 // Шаблон сессии программы хранит подходы человекочитаемой строкой ("20 кг ×
 // 15, 25 кг × 12, 25 кг × 12, 25 кг × 12"), но не всегда с весом в кг —
-// вес тела ("б/в × 20"), уровень резины ("1 рез. × 15"), отрицательный вес
-// компенсации гравитрона ("-39 кг × 12") или просто список повторений без
-// снаряда ("30, 30, 30, 30"). Разбираем на подходы {reps, templateKg}:
-// reps есть всегда (повторения ВСЕГДА берутся из шаблона, см.
-// PROGRESSION_RULE), templateKg — только когда в строке реально указан вес
-// в кг, иначе null (для таких подходов 1ПМ-движок вес не считает — это не
-// кг, считать по формуле Эпли нечего).
+// вес тела ("б/в × 20"), уровень резины ("1 рез. × 15" — НАГРУЗКА, аналог
+// килограммов для домашней программы, а не украшение названия, см.
+// programs.js), отрицательный вес компенсации гравитрона ("-39 кг × 12")
+// или просто список повторений без снаряда ("30, 30, 30, 30"). Разбираем на
+// подходы {reps, templateKg, bandLevel}: reps есть всегда (повторения
+// ВСЕГДА берутся из шаблона, см. PROGRESSION_RULE), templateKg — только
+// когда в строке реально указан вес в кг (иначе null, для таких подходов
+// 1ПМ-движок вес не считает — это не кг, считать по формуле Эпли нечего),
+// bandLevel — только когда указан уровень резины (иначе null, для таких
+// подходов вместо 1ПМ считает отдельная ось нагрузки — computeProgressSteps/
+// computeBandTarget ниже).
 //
 // Экспортирована отдельно (не только для buildAssignedSessionPlan ниже) —
 // App.jsx переиспользует её напрямую при запуске тренировки из слота
@@ -46,11 +50,13 @@ export function parseTemplateSets(str) {
   return str.split(',').map(part => {
     const raw = part.trim()
     const kgMatch = raw.match(/(-?\d+(?:[.,]\d+)?)\s*кг\s*[×x]\s*(\d+)/)
-    if (kgMatch) return { templateKg: Number(kgMatch[1].replace(',', '.')), reps: Number(kgMatch[2]) }
+    if (kgMatch) return { templateKg: Number(kgMatch[1].replace(',', '.')), bandLevel: null, reps: Number(kgMatch[2]) }
+    const bandMatch = raw.match(/(\d+)\s*рез\.?\s*[×x]\s*(\d+)/i)
+    if (bandMatch) return { templateKg: null, bandLevel: Number(bandMatch[1]), reps: Number(bandMatch[2]) }
     const repsAfterX = raw.match(/[×x]\s*(\d+)/)
-    if (repsAfterX) return { templateKg: null, reps: Number(repsAfterX[1]) }
+    if (repsAfterX) return { templateKg: null, bandLevel: null, reps: Number(repsAfterX[1]) }
     const repsOnly = raw.match(/^(\d+)$/)
-    if (repsOnly) return { templateKg: null, reps: Number(repsOnly[1]) }
+    if (repsOnly) return { templateKg: null, bandLevel: null, reps: Number(repsOnly[1]) }
     return null
   }).filter(Boolean)
 }
@@ -88,7 +94,10 @@ export function buildExerciseAggregates(sets) {
     }
     const sessions = Object.values(bySession)
       .map(rawSets => {
+        // bandLevel — нормализация из snake_case столбца БД (band_level) в
+        // camelCase, как и остальные поля прогрессии (templateKg и т.п.).
         const daySets = rawSets.slice().sort((a, b) => a.id - b.id)
+          .map(s => ({ ...s, bandLevel: s.band_level ?? null }))
         const workingCount = Math.min(2, daySets.length)
         const workingSets = daySets.slice(daySets.length - workingCount)
         // Оценка рабочего подхода: если клиент её не поставил, считаем 3
@@ -105,7 +114,12 @@ export function buildExerciseAggregates(sets) {
       ? lastSession.workingSets[lastSession.workingSets.length - 1]
       : null
     const hardStreak = computeHardStreak(sessions)
-    result[name] = { type, sessions, lastSession, anchorSet, hardStreak }
+    // Вторая, независимая ось прогрессии — уровень резины/повторения для
+    // домашней программы (computeProgressSteps/computeBandTarget ниже).
+    // Считается всегда (дёшево), используется только там, где у подходов
+    // нет веса в кг.
+    const progressSteps = computeProgressSteps(sessions)
+    result[name] = { type, sessions, lastSession, anchorSet, hardStreak, progressSteps }
   }
   return result
 }
@@ -116,10 +130,10 @@ export function buildExerciseAggregates(sets) {
 export const RATING_GROWTH_PCT = { 1: 10, 2: 7, 3: 5, 4: 3, 5: 2 }
 
 // Слой 2 методики (откат) — портировано 1:1 из hasHardStreak в
-// src/constructorPhases.js (та же логика для Конструктора и здесь, только
-// без пропуска baseline-сессии: там первая сессия — стартовый замер, тут
-// такого понятия нет, первая тренировка идёт по шаблону тренера и
-// участвует в подсчёте наравне со всеми остальными).
+// src/constructorPhases.js, тот же алгоритм без изменений — единственное
+// отличие: здесь без пропуска baseline-сессии (там первая сессия —
+// стартовый замер, тут такого понятия нет, первая тренировка идёт по
+// шаблону тренера и участвует в подсчёте наравне со всеми остальными).
 //
 // Если по упражнению два раза подряд последний рабочий подход тяжёлый
 // (оценка 4-5) — следующая тренировка получает разовый откат: 1ПМ текущего
@@ -141,6 +155,68 @@ function computeHardStreak(sessions) {
     streak = rating >= 4 ? streak + 1 : 0
   }
   return streak >= 2
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Вторая ось прогрессии — уровень резины (1-5) + повторения, для домашней
+// программы (там, где считать 1ПМ нечего — резина или вес тела). Полностью
+// независима от кг/1ПМ-оси выше: своя история, свой счётчик, своя логика
+// отката. Единица здесь — не проценты от 1ПМ, а целочисленные "шаги":
+// каждый шаг — это либо +2 повторения (для подходов без резины), либо (для
+// подходов с резиной) 5 шагов = подъём на 1 уровень резины, остаток шагов —
+// те же +2 повторения (см. computeBandTarget).
+// ─────────────────────────────────────────────────────────────────────────
+
+// Дельта шагов по оценке последнего рабочего подхода сессии (нет оценки —
+// считаем 3, как и на кг-оси).
+const BAND_STEP_DELTA_BY_RATING = { 1: 2, 2: 1, 3: 1, 4: 0, 5: 0 }
+
+// Откат — тот же one-shot принцип, что и в hardStreak (см. выше): если
+// текущая и предыдущая сессия ОБЕ тяжёлые (оценка >= 4), вместо обычной
+// дельты применяется -2 к счётчику, и признак "предыдущая тяжёлая"
+// сбрасывается — повторный откат возможен только после ДВУХ НОВЫХ тяжёлых
+// сессий, случившихся уже после этого отката (третья тяжёлая подряд откат
+// не повторяет). Счётчик никогда не опускается ниже 0.
+export function computeProgressSteps(sessions) {
+  if (!sessions || !sessions.length) return 0
+  let steps = 0
+  let prevHard = false
+  for (const s of sessions) {
+    const rating = s.effRatings.length ? s.effRatings[s.effRatings.length - 1] : 3
+    const isHard = rating >= 4
+    if (prevHard && isHard) {
+      steps = Math.max(0, steps - 2)
+      prevHard = false
+    } else {
+      steps = Math.max(0, steps + BAND_STEP_DELTA_BY_RATING[rating])
+      prevHard = isHard
+    }
+  }
+  return steps
+}
+
+// templateSet — { bandLevel, reps } из шаблона СЕГОДНЯШНЕЙ сессии (правило
+// "повторения всегда из шаблона" действует и здесь: reps в результате —
+// всегда templateSet.reps + добавка, никогда из истории).
+//
+// Без резины (вес тела) — растут только повторения, +2 за шаг.
+// С резиной — каждые 5 шагов поднимают уровень на 1 (остаток шагов, 0-4,
+// уходит в +2 повторения за штуку); уровень не может подняться выше 5 —
+// то, что "не поместилось" в подъём уровня из-за потолка, тоже уходит в
+// повторения (overflow), чтобы прогрессия не останавливалась на потолке
+// резины.
+export function computeBandTarget(templateSet, steps) {
+  if (templateSet.bandLevel == null) {
+    return { bandLevel: null, reps: templateSet.reps + steps * 2 }
+  }
+  const levelUp = Math.floor(steps / 5)
+  const rest = steps % 5
+  const newLevel = Math.min(5, templateSet.bandLevel + levelUp)
+  const overflow = (templateSet.bandLevel + levelUp) - newLevel
+  return {
+    bandLevel: newLevel,
+    reps: templateSet.reps + rest * 2 + overflow * 5 * 2,
+  }
 }
 
 // Единица прогрессии — 1ПМ, не тоннаж (см. заголовок файла). anchorSet —
