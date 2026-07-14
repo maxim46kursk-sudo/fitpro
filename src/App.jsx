@@ -6,7 +6,7 @@ import { FOLDERS, PROGRAMS_MAP, EXERCISES, isOneSidedExercise } from './programs
 import { oneRepMax, weightForReps, roundToPlate, percentTable } from './oneRepMax.js'
 // Движок прогрессии (1ПМ) — врезан в кнопку "▶ Начать тренировку" внутри
 // слота шаблонной программы (WorkoutsView), см. подробный комментарий там.
-import { buildExerciseAggregates, computeTargetWeight, parseTemplateSets, computeProgressSteps, computeBandTarget } from './workoutPrompt.js'
+import { buildExerciseAggregates, computeTemplateScale, parseTemplateSets, computeProgressSteps, computeBandTarget } from './workoutPrompt.js'
 import './App.css'
 
 const PUR = '#7F77DD'
@@ -626,7 +626,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   }
 
   // История подходов клиента — опора движка прогрессии (buildExerciseAggregates/
-  // computeTargetWeight, workoutPrompt.js) для кнопки "▶ Начать тренировку"
+  // computeTemplateScale, workoutPrompt.js) для кнопки "▶ Начать тренировку"
   // внутри слота шаблонной программы (см. ниже). Грузим сразу все подходы
   // пользователя одним запросом — агрегаты считаются на лету из плоского
   // списка, отдельного бэкенд-эндпоинта под конкретное упражнение нет.
@@ -946,6 +946,13 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     const builtExercises=exs.map(ex=>{
       const templateSets=parseTemplateSets(ex.sets)
       const agg=aggregates[ex.name]
+      // Один коэффициент масштабирования на упражнение (computeTemplateScale,
+      // workoutPrompt.js) — не вес под КАЖДЫЙ подход отдельно (так раньше
+      // формула Эпли считала разминку "на отказ" на её же повторения и
+      // разгоняла её быстрее рабочего подхода, а подходы с одинаковыми
+      // повторениями схлопывались в один вес). Шаблон задаёт форму лестницы
+      // весов, scale двигает её целиком — соотношение подходов сохраняется.
+      const scale=(agg&&agg.anchorSet)?computeTemplateScale(agg.anchorSet,agg.lastSession.effRatings,templateSets,agg.hardStreak):null
       // Одна строка объяснения на упражнение целиком (не на
       // подход) — все подходы упражнения используют один и тот
       // же appliedPct/hardStreak (кг-ось) или steps (ось
@@ -966,27 +973,23 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           const bandTarget=computeBandTarget(ts,agg.progressSteps)
           return{kg:'',bandLevel:bandTarget.bandLevel,reps:String(bandTarget.reps),recKg:'',rating:'',fromTemplate:false}
         }
-        // Холодный старт: по упражнению ещё нет истории —
-        // подставляем стартовый ориентир тренера как есть
-        // (красная рамка в UI, как и раньше).
-        if(!agg||!agg.anchorSet){
-          if(!progressNoteSet){progressNote='Стартовый вес из программы — дальше подстроим под тебя';progressNoteSet=true}
-          return{kg:String(ts.templateKg),bandLevel:null,reps:String(ts.reps),recKg:'',rating:'',fromTemplate:true}
-        }
-        const target=computeTargetWeight(agg.anchorSet,agg.lastSession.effRatings,ts.reps,agg.hardStreak)
-        if(!target){
+        // Холодный старт: по упражнению ещё нет истории, либо в шаблоне
+        // нечего масштабировать (scale===null) — подставляем стартовый
+        // ориентир тренера как есть (красная рамка в UI, как и раньше).
+        if(!scale){
           if(!progressNoteSet){progressNote='Стартовый вес из программы — дальше подстроим под тебя';progressNoteSet=true}
           return{kg:String(ts.templateKg),bandLevel:null,reps:String(ts.reps),recKg:'',rating:'',fromTemplate:true}
         }
         if(!progressNoteSet){
-          progressNote=target.isDeload
+          progressNote=scale.isDeload
             ?'Снизили вес на 15% — две прошлые тренировки дались тяжело'
-            :target.appliedPct>=7?'Подняли вес — прошлый раз дался легко'
-            :target.appliedPct===5?'Немного прибавили — прошлый раз прошёл комфортно'
+            :scale.appliedPct>=7?'Подняли вес — прошлый раз дался легко'
+            :scale.appliedPct===5?'Немного прибавили — прошлый раз прошёл комфортно'
             :'Прибавили чуть-чуть — прошлый раз дался тяжело'
           progressNoteSet=true
         }
-        return{kg:String(target.kg),bandLevel:null,reps:String(ts.reps),recKg:String(target.kg),rating:'',fromTemplate:false}
+        const kg=roundToPlate(ts.templateKg*scale.scale)
+        return{kg:String(kg),bandLevel:null,reps:String(ts.reps),recKg:String(kg),rating:'',fromTemplate:false}
       })
       return{n:ex.name,m:'',eq:'',sets:parsedSets,done:false,progressNote}
     })
@@ -1369,7 +1372,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                             {/* Оценка нагрузки 1-5 — только под рабочими подходами (последние
                                 2 в упражнении, как и считает AI-тренер в workoutPrompt.js).
                                 На этой шкале держится весь расчёт следующего веса/нагрузки
-                                (computeTargetWeight/computeBandTarget) — тап-зона 44x44
+                                (computeTemplateScale/computeBandTarget) — тап-зона 44x44
                                 (гайдлайн Apple) и подписи "легко"/"на пределе", чтобы клиент
                                 понимал, что именно он оценивает. */}
                             {si>=ex.sets.length-2&&(

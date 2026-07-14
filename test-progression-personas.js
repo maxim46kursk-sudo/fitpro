@@ -32,8 +32,8 @@ import path from 'node:path'
 import os from 'node:os'
 import zlib from 'node:zlib'
 import ExcelJS from 'exceljs'
-import { buildAssignedSessionPlan, buildExerciseAggregates, computeTargetWeight, RATING_GROWTH_PCT, parseTemplateSets, computeBandTarget } from './src/workoutPrompt.js'
-import { oneRepMax } from './src/oneRepMax.js'
+import { buildAssignedSessionPlan, buildExerciseAggregates, computeTemplateScale, RATING_GROWTH_PCT, parseTemplateSets, computeBandTarget } from './src/workoutPrompt.js'
+import { oneRepMax, roundToPlate } from './src/oneRepMax.js'
 import { PROGRAMS_MAP, EXERCISE_TYPE } from './src/programs.js'
 import { findSimilarExercise } from './src/fuzzyMatch.js'
 
@@ -209,7 +209,7 @@ function buildTestCases(results) {
       '1ПМ не падает нигде, кроме циклов с откатом', growthOk ? '1ПМ не падает нигде, кроме циклов с откатом' : growthFails.join('; '), growthOk)
 
     // 1б) Ассистирующие тренажёры (отрицательный вес = кг компенсации, не
-    // поднятый вес — см. computeTargetWeight в src/workoutPrompt.js):
+    // поднятый вес — см. computeTemplateScale в src/workoutPrompt.js):
     // прогресс означает, что число ПРИБЛИЖАЕТСЯ к нулю (меньше помощи от
     // тренажёра), а не уходит дальше в минус. Направление роста для
     // отрицательного анкера теперь инвертировано в движке — здесь проверяем
@@ -525,6 +525,178 @@ function buildBandTestCases() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Тест-кейсы computeTemplateScale — регресс ровно на баг из ручного теста:
+// buildAssignedSessionPlan/кнопка "Начать тренировку" раньше вызывали
+// computeTargetWeight на КАЖДЫЙ подход шаблона отдельно, подставляя его
+// targetReps — для разминки на 20 повторений Эпли считал вес, близкий к
+// рабочему (разминка "на отказ" на 20 повторений — это не то же самое, что
+// специально лёгкий вес тренера), а подходы с одинаковыми повторениями
+// схлопывались в один вес. Фикс — один scale на упражнение
+// (computeTemplateScale), масштабирующий весь шаблонный ряд целиком: форма
+// лестницы тренера сохраняется, растёт/падает только общий уровень нагрузки.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Синтетическая история: одна сессия с заданными подходами (kg/reps),
+// оценка только на структурно рабочих (последние 2). Возвращает agg
+// (buildExerciseAggregates) для прямого вызова computeTemplateScale —
+// та же пара функций, что App.jsx использует в кнопке "▶ Начать тренировку".
+function simulateKgSession(exercise, loggedSets, workingRatings) {
+  const n = loggedSets.length
+  const rows = loggedSets.map((s, i) => ({
+    id: i + 1, exercise, date: TODAY, workout_id: 1,
+    kg: s.kg, reps: s.reps,
+    rating: i >= n - 2 ? workingRatings[i - (n - 2)] ?? null : null,
+  }))
+  return buildExerciseAggregates(rows)[exercise]
+}
+
+function buildTemplateScaleTestCases() {
+  const rows = []
+  const push = (name, expected, actual, pass) => rows.push({ name, persona: '— (computeTemplateScale)', expected: String(expected), actual: String(actual), pass })
+  const EX = 'Ягодичный мост со штангой' // реальное имя из EXERCISES, конкретное упражнение здесь не принципиально — computeTemplateScale не читает библиотеку
+
+  // 1) ФОРМА ЛЕСТНИЦЫ СОХРАНЯЕТСЯ. Шаблон "20 кг × 20, 30 кг × 15, 30 кг ×
+  // 12, 35 кг × 12", клиент прошёл его ровно как написано, оценки 3 на обоих
+  // рабочих подходах (30×12 и 35×12) → следующий раз 20/32.5/32.5/37.5
+  // (проверено вручную: scale=1.05 точно, т.к. анкер совпадает с последним
+  // подходом шаблона). Соотношение разминки к рабочему подходу (было
+  // 20/35=0.571) должно остаться близким в пределах шага округления 2.5кг.
+  {
+    const templateStr = '20 кг × 20, 30 кг × 15, 30 кг × 12, 35 кг × 12'
+    const templateSets = parseTemplateSets(templateStr)
+    const agg = simulateKgSession(EX, [{ kg: 20, reps: 20 }, { kg: 30, reps: 15 }, { kg: 30, reps: 12 }, { kg: 35, reps: 12 }], [3, 3])
+    const scale = computeTemplateScale(agg.anchorSet, agg.lastSession.effRatings, templateSets, agg.hardStreak)
+    const kgs = templateSets.map(ts => roundToPlate(ts.templateKg * scale.scale))
+    const expectedKgs = [20, 32.5, 32.5, 37.5]
+    const kgsMatch = JSON.stringify(kgs) === JSON.stringify(expectedKgs)
+    const oldRatio = 20 / 35, newRatio = kgs[0] / kgs[3]
+    const ratioClose = Math.abs(newRatio - oldRatio) < 0.05 // допуск на округление до 2.5кг
+    push('Форма лестницы сохраняется: "20/30/30/35" при оценке 3 → "20/32.5/32.5/37.5"',
+      `[${expectedKgs.join(', ')}], соотношение разминка/работа ≈${oldRatio.toFixed(3)}`,
+      `[${kgs.join(', ')}], соотношение ≈${newRatio.toFixed(3)}`,
+      kgsMatch && ratioClose)
+  }
+
+  // 2) РАЗМИНКА НЕ ДОГОНЯЕТ РАБОЧИЙ ВЕС — регресс-тест ровно на найденный
+  // баг. 10 тренировок подряд с оценкой 2 (быстрый рост, +7% 1ПМ за раз):
+  // на каждой проверяем разминка/работа ≤ 0.9 (у бага соотношение росло к
+  // 1, потому что Эпли считал разминку "на отказ" на её собственные 20
+  // повторений и она разгонялась вместе с рабочим весом).
+  {
+    const templateStr = '20 кг × 20, 30 кг × 15, 30 кг × 12, 35 кг × 12'
+    const templateSets = parseTemplateSets(templateStr)
+    const loggedSets = [] // накопленная история, растёт с каждой "тренировкой"
+    let worstRatio = 0
+    let everExceeded = false
+    for (let session = 1; session <= 10; session++) {
+      const agg = buildExerciseAggregates(loggedSets)[EX]
+      const scale = agg && agg.anchorSet ? computeTemplateScale(agg.anchorSet, agg.lastSession.effRatings, templateSets, agg.hardStreak) : null
+      const kgs = templateSets.map(ts => scale ? roundToPlate(ts.templateKg * scale.scale) : ts.templateKg)
+      const ratio = kgs[0] / kgs[3]
+      worstRatio = Math.max(worstRatio, ratio)
+      if (ratio > 0.9) everExceeded = true
+      // Записываем эту сессию в историю ровно тем весом, что дал движок
+      // (клиент прошёл шаблон как рассчитано), оценка 2 на обоих рабочих.
+      const n = templateSets.length
+      templateSets.forEach((ts, i) => {
+        loggedSets.push({ id: loggedSets.length + 1, exercise: EX, date: addDays(TODAY, session * 3), workout_id: session, kg: kgs[i], reps: ts.reps, rating: i >= n - 2 ? 2 : null })
+      })
+    }
+    push('Разминка не догоняет рабочий вес: 10 тренировок подряд с оценкой 2, разминка/работа ≤ 0.9 на каждой',
+      '≤ 0.9 на всех 10 тренировках', `худшее соотношение за 10 тренировок: ${worstRatio.toFixed(3)}`, !everExceeded)
+  }
+
+  // 3) РАЗНЫЕ ВЕСА ПРИ ОДИНАКОВЫХ ПОВТОРЕНИЯХ НЕ СХЛОПЫВАЮТСЯ. Подходы 3 и 4
+  // шаблона (30 кг × 12 и 35 кг × 12, повторения совпадают) обязаны
+  // остаться разными после масштабирования — старый баг считал их оба
+  // через тот же targetReps=12 и получал одно и то же число.
+  {
+    const templateStr = '20 кг × 20, 30 кг × 15, 30 кг × 12, 35 кг × 12'
+    const templateSets = parseTemplateSets(templateStr)
+    const agg = simulateKgSession(EX, [{ kg: 20, reps: 20 }, { kg: 30, reps: 15 }, { kg: 30, reps: 12 }, { kg: 35, reps: 12 }], [3, 3])
+    const scale = computeTemplateScale(agg.anchorSet, agg.lastSession.effRatings, templateSets, agg.hardStreak)
+    const kg3 = roundToPlate(templateSets[2].templateKg * scale.scale)
+    const kg4 = roundToPlate(templateSets[3].templateKg * scale.scale)
+    push('Подходы "30кг×12" и "35кг×12" (одинаковые повторения) остаются разными после масштабирования',
+      'kg3 ≠ kg4', `kg3=${kg3}, kg4=${kg4}`, kg3 !== kg4)
+  }
+
+  // 4) Гравитрон: шаблон "-39 кг × 12", анкер -39×12, оценка 2 → вес стал
+  // МЕНЕЕ отрицательным (меньше помощи тренажёра). Плюс лестница
+  // разминочных подходов ассист-упражнения масштабируется в ту же сторону
+  // (все подходы становятся менее отрицательными, а не в разнобой).
+  {
+    const templateStr = '-39 кг × 12'
+    const templateSets = parseTemplateSets(templateStr)
+    const agg = simulateKgSession(EX, [{ kg: -39, reps: 12 }], [2])
+    const scale = computeTemplateScale(agg.anchorSet, agg.lastSession.effRatings, templateSets, agg.hardStreak)
+    const kg = roundToPlate(templateSets[0].templateKg * scale.scale)
+    push('Гравитрон: "-39 кг × 12", оценка 2 → вес менее отрицательный (меньше помощи)',
+      '> -39 (ближе к нулю)', kg, kg > -39)
+
+    // Лестница разминочных подходов ассист-упражнения — гипотетический
+    // многоподходный шаблон, все подходы одного знака должны получить
+    // одинаковый scale и остаться менее отрицательными, чем в шаблоне.
+    const ladderStr = '-50 кг × 15, -45 кг × 12, -39 кг × 12, -39 кг × 12'
+    const ladderSets = parseTemplateSets(ladderStr)
+    const ladderKgs = ladderSets.map(ts => roundToPlate(ts.templateKg * scale.scale))
+    const allLessNegative = ladderSets.every((ts, i) => ladderKgs[i] > ts.templateKg)
+    push('Гравитрон: разминочная лестница масштабируется в ту же сторону (все подходы менее отрицательны, чем в шаблоне)',
+      'все подходы > своего шаблонного значения', `[${ladderSets.map(ts => ts.templateKg).join(', ')}] → [${ladderKgs.join(', ')}]`, allLessNegative)
+  }
+
+  // 5) Откат: hardStreak → scale считается по фиксированному откату (-15%
+  // от 1ПМ анкера, appliedPct=-15), и ВСЯ лестница шаблона опускается
+  // пропорционально (каждый подход ниже своего шаблонного значения).
+  {
+    const templateStr = '20 кг × 20, 30 кг × 15, 30 кг × 12, 35 кг × 12'
+    const templateSets = parseTemplateSets(templateStr)
+    // Две тяжёлые сессии подряд (оценка 4,4) на анкере 35×12 → hardStreak
+    // истинен для третьей (ещё не случившейся) сессии.
+    const loggedSets = []
+    ;[1, 2].forEach(session => {
+      const n = templateSets.length
+      templateSets.forEach((ts, i) => {
+        loggedSets.push({ id: loggedSets.length + 1, exercise: EX, date: addDays(TODAY, session * 3), workout_id: session, kg: ts.templateKg, reps: ts.reps, rating: i >= n - 2 ? 4 : null })
+      })
+    })
+    const agg = buildExerciseAggregates(loggedSets)[EX]
+    const scale = computeTemplateScale(agg.anchorSet, agg.lastSession.effRatings, templateSets, agg.hardStreak)
+    const kgs = templateSets.map(ts => roundToPlate(ts.templateKg * scale.scale))
+    const allBelowTemplate = templateSets.every((ts, i) => kgs[i] < ts.templateKg)
+    push('Откат (hardStreak): appliedPct=-15, вся лестница опускается пропорционально (каждый подход ниже шаблона)',
+      `hardStreak=true, appliedPct=-15, все подходы < шаблона: [${templateSets.map(ts => ts.templateKg).join(', ')}]`,
+      `hardStreak=${agg.hardStreak}, appliedPct=${scale.appliedPct}, результат: [${kgs.join(', ')}]`,
+      agg.hardStreak === true && scale.appliedPct === -15 && scale.isDeload === true && allBelowTemplate)
+  }
+
+  // 6) РЕГРЕСС НА РЕАЛЬНЫЕ ДАННЫЕ из ручного теста: Ягодичный мост со
+  // штангой, одна сессия 60×20, 100×20, 120×20, 120×20 (рабочие — последние
+  // два, оценка 3 на обоих), шаблон следующей сессии (Full Body слот 3)
+  // "20 кг × 20, 30 кг × 15, 30 кг × 12, 35 кг × 12". Числа проверены
+  // вручную: анкер 120×20 (1ПМ=200), шаблонный анкер 35×12 (1ПМ=49),
+  // scale=210/49=30/7≈4.2857 → 85/127.5/127.5/150. У старого бага здесь
+  // было 125/140/150/150 (разминка 125 вместо 85, подходы 3 и 4 схлопнуты
+  // в 150/150, соотношение разминка/работа 125/150=0.833 вместо 0.57).
+  {
+    const templateStr = '20 кг × 20, 30 кг × 15, 30 кг × 12, 35 кг × 12'
+    const templateSets = parseTemplateSets(templateStr)
+    const agg = simulateKgSession(EX, [{ kg: 60, reps: 20 }, { kg: 100, reps: 20 }, { kg: 120, reps: 20 }, { kg: 120, reps: 20 }], [3, 3])
+    const scale = computeTemplateScale(agg.anchorSet, agg.lastSession.effRatings, templateSets, agg.hardStreak)
+    const kgs = templateSets.map(ts => roundToPlate(ts.templateKg * scale.scale))
+    const expectedKgs = [85, 127.5, 127.5, 150]
+    const kgsMatch = JSON.stringify(kgs) === JSON.stringify(expectedKgs)
+    const ratio = kgs[0] / kgs[3]
+    push('Регресс на реальных данных (Ягодичный мост со штангой, история 60/100/120/120×20 → шаблон 20/30/30/35): точные числа',
+      `[${expectedKgs.join(', ')}], appliedPct=5, соотношение разминка/работа ≈0.567 (не 0.833 как у бага), подходы 3≠4`,
+      `[${kgs.join(', ')}], appliedPct=${scale.appliedPct}, соотношение ≈${ratio.toFixed(3)}, kg3=${kgs[2]} kg4=${kgs[3]}`,
+      kgsMatch && scale.appliedPct === 5 && ratio < 0.7 && kgs[2] !== kgs[3])
+  }
+
+  return rows
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Тест-кейсы матчинга названий — findSimilarExercise из fuzzyMatch.js.
 // ─────────────────────────────────────────────────────────────────────────
 const NAME_MATCH_PAIRS = [
@@ -784,7 +956,7 @@ async function buildWorkbook(results) {
     { header: 'Статус', key: 'status', width: 10 },
   ]
   styleHeader(s5.getRow(1))
-  const testRows = [...buildTestCases(results), ...buildBandTestCases()]
+  const testRows = [...buildTestCases(results), ...buildBandTestCases(), ...buildTemplateScaleTestCases()]
   for (const t of testRows) s5.addRow({ name: t.name, persona: t.persona, expected: t.expected, actual: t.actual, status: t.pass ? 'PASS' : 'FAIL' })
   s5.eachRow((row, i) => { if (i > 1 && row.getCell('status').value === 'FAIL') row.eachCell(c => { c.fill = RED_FILL }) })
   s5.getColumn('status').eachCell(cell => { cell.alignment = { horizontal: 'center' } })

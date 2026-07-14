@@ -257,6 +257,77 @@ export function computeTargetWeight(anchorSet, ratings, targetReps, hardStreak) 
   return { kg: roundToPlate(rawKg), rawKg, isDeload: !!hardStreak, appliedPct }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// computeTargetWeight выше считает вес ПОД ЗАДАННЫЕ ПОВТОРЕНИЯ — это
+// корректно для одного подхода, но неверно для целого шаблона: если вызвать
+// его отдельно на каждый подход шаблона (как раньше делали buildAssignedSessionPlan
+// и кнопка "▶ Начать тренировку" в App.jsx), формула Эпли считает КАЖДЫЙ
+// подход независимым "на отказ" на своё число повторений — а разминочный
+// подход на 20 повторений это НЕ то же самое, что рабочий на отказ на 20
+// повторений, это специально лёгкий вес тренера. В результате разминка
+// росла в разы быстрее рабочего подхода, а подходы с одинаковыми
+// повторениями (например два по 12) схлопывались в один и тот же вес,
+// потому что Эпли зависит только от (вес, повторения) анкера и целевых
+// повторений — форма лестницы шаблона терялась.
+//
+// Правильная модель: шаблон задаёт ФОРМУ нагрузки (соотношение весов между
+// подходами, придуманное тренером), движок считает ОДИН коэффициент
+// масштабирования на упражнение (от анкера истории к целевому 1ПМ) и
+// применяет его ко ВСЕМУ шаблонному ряду весов — соотношение между
+// подходами сохраняется, меняется только общий уровень нагрузки.
+// ─────────────────────────────────────────────────────────────────────────
+
+// anchorSet — последний реальный рабочий подход (buildExerciseAggregates),
+// ratings — оценки двух последних рабочих подходов той же сессии,
+// templateSets — распарсенный ряд подходов ТЕКУЩЕЙ сессии
+// (parseTemplateSets), hardStreak — булев сигнал разового отката
+// (computeHardStreak). Возвращает { scale, appliedPct, isDeload } или null,
+// если масштабировать нечего (нет весового подхода в шаблоне, нет истории,
+// анкер невалиден) — тогда вызывающий код подставляет шаблон как есть
+// (холодный старт, как и раньше).
+export function computeTemplateScale(anchorSet, ratings, templateSets, hardStreak) {
+  // 1. Опорный подход ШАБЛОНА — последний весовой подход в ряду (обычно самый
+  // тяжёлый рабочий подход тренера), от него меряем форму лестницы.
+  let templateAnchor = null
+  for (let i = templateSets.length - 1; i >= 0; i--) {
+    if (templateSets[i].templateKg != null) { templateAnchor = templateSets[i]; break }
+  }
+  if (!templateAnchor) return null
+  const templateRM = oneRepMax(templateAnchor.templateKg, templateAnchor.reps)
+  if (!templateRM) return null
+
+  // 3. Опорный подход ИСТОРИИ — тот же anchorSet, что и в computeTargetWeight.
+  if (!anchorSet || !anchorSet.kg || !anchorSet.reps) return null
+  const anchorKg = Number(anchorSet.kg)
+  const anchorRM = oneRepMax(anchorKg, Number(anchorSet.reps))
+  if (!anchorRM) return null
+
+  // 4-5. Тот же рост/откат, что и в computeTargetWeight — тем же исходом на
+  // тот же вход, чтобы движок и подстановка не расходились. Гравитрон
+  // (отрицательный вес компенсации) — прогресс к нулю, см. комментарий
+  // computeTargetWeight выше.
+  const isAssisted = anchorKg < 0
+  let appliedPct, factorGrowth
+  if (hardStreak) {
+    factorGrowth = isAssisted ? 1.15 : 0.85
+    appliedPct = -15
+  } else {
+    const last2 = ratings.slice(-2)
+    const avgRating = last2.length ? last2.reduce((a, b) => a + b, 0) / last2.length : 3
+    const roundedRating = Math.min(5, Math.max(1, Math.round(avgRating)))
+    appliedPct = RATING_GROWTH_PCT[roundedRating]
+    factorGrowth = isAssisted ? (1 - appliedPct / 100) : (1 + appliedPct / 100)
+  }
+  const targetRM = anchorRM * factorGrowth
+
+  // 6. Коэффициент масштабирования всего шаблонного ряда: во сколько раз
+  // целевой 1ПМ отличается от 1ПМ опорного подхода ШАБЛОНА. Для ассист-
+  // упражнений оба 1ПМ отрицательны — знак сокращается сам, scale выходит
+  // положительным без отдельной инверсии.
+  const scale = targetRM / templateRM
+  return { scale, appliedPct, isDeload: !!hardStreak }
+}
+
 // Какая из сессий назначенной программы — "сегодняшняя", и готовый вес под
 // каждый её подход. AI сам не выбирает сессию (считаем здесь, по кругу
 // 1,2,3...N,1,2..., от того, сколько тренировок по этой же программе уже
@@ -279,13 +350,17 @@ export function buildAssignedSessionPlan(programTemplate, sessionsDone, aggregat
   const exercises = slot.map(ex => {
     const templateSets = parseTemplateSets(ex.sets)
     const agg = aggregates[ex.name]
+    // Один коэффициент на упражнение (computeTemplateScale) — масштабирует
+    // ВЕСЬ шаблонный ряд весов целиком, сохраняя форму лестницы тренера
+    // (см. заголовок computeTemplateScale выше). null — холодный старт
+    // (нет истории, либо в шаблоне нет ни одного весового подхода) —
+    // подставляем шаблон как есть, тем же путём, что и раньше.
+    const scale = (agg && agg.anchorSet) ? computeTemplateScale(agg.anchorSet, agg.lastSession.effRatings, templateSets, agg.hardStreak) : null
     const sets = templateSets.map(ts => {
       if (ts.templateKg == null) return { reps: ts.reps, kg: null, rawKg: null, hasWeight: false, coldStart: false, isDeload: false, appliedPct: null }
-      if (!agg || !agg.anchorSet) return { reps: ts.reps, kg: ts.templateKg, rawKg: ts.templateKg, hasWeight: true, coldStart: true, isDeload: false, appliedPct: null }
-      const target = computeTargetWeight(agg.anchorSet, agg.lastSession.effRatings, ts.reps, agg.hardStreak)
-      return target
-        ? { reps: ts.reps, kg: target.kg, rawKg: target.rawKg, hasWeight: true, coldStart: false, isDeload: target.isDeload, appliedPct: target.appliedPct }
-        : { reps: ts.reps, kg: ts.templateKg, rawKg: ts.templateKg, hasWeight: true, coldStart: true, isDeload: false, appliedPct: null }
+      if (!scale) return { reps: ts.reps, kg: ts.templateKg, rawKg: ts.templateKg, hasWeight: true, coldStart: true, isDeload: false, appliedPct: null }
+      const rawKg = ts.templateKg * scale.scale
+      return { reps: ts.reps, kg: roundToPlate(rawKg), rawKg, hasWeight: true, coldStart: false, isDeload: scale.isDeload, appliedPct: scale.appliedPct }
     })
     return { name: ex.name, sets }
   })
