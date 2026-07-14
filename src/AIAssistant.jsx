@@ -261,12 +261,16 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
       if (mode === 'workout') {
         // Режим консультанта: чат по тренировкам больше не пишет и не читает
         // дневник, не считает вес и не составляет программы — всё это теперь
-        // работа Конструктора (ConstructorView в App.jsx). Единственный маркер,
-        // который здесь может встретиться, — CONTACT_MAX (см. ниже). Если
-        // модель всё же по ошибке выдаст один из старых маркеров действий
-        // (ADD_SET/DEL_SET/DEL_WORKOUT/DEL_ALL_HISTORY/EDIT_SET/SET_PROGRAM),
-        // никакого действия НЕ выполняем — только вырезаем его из текста,
-        // чтобы клиент не увидел сырой JSON (см. общую защитную зачистку ниже).
+        // делает само приложение (шаблонные программы в разделе Тренировки +
+        // 1ПМ-движок в workoutPrompt.js, дневник — отдельный раздел). У чата в
+        // этом режиме нет НИ ОДНОГО инструмента, меняющего данные клиента.
+        // Единственный маркер, который здесь может встретиться, — CONTACT_MAX
+        // (см. ниже). Если модель всё же по ошибке выдаст один из старых
+        // маркеров действий (ADD_SET/DEL_SET/DEL_WORKOUT/DEL_ALL_HISTORY/
+        // EDIT_SET/SET_PROGRAM) — это баг промпта, а не штатная ветка: никакого
+        // действия НЕ выполняем, только вырезаем маркер из текста (чтобы
+        // клиент не увидел сырой JSON) и шлём console.warn — сигнал, что
+        // модель пытается сделать то, чего физически не может.
 
         // SET_PROGRAM использовал вложенный JSON, поэтому границы искались
         // параметром скобок (extractBalancedJson), а не плоским {[^}]+} —
@@ -274,9 +278,12 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
         // из текста, если модель всё-таки его выдаст, без единого действия.
         const spMatch = text.match(/\[SET_PROGRAM\s*:/i)
         if (spMatch) {
+          console.warn('AI-консультант по тренировкам выдал маркер SET_PROGRAM — в этом режиме такого инструмента нет, действие не выполнено')
           const extracted = extractBalancedJson(text, spMatch.index + spMatch[0].length)
           text = extracted ? text.slice(0, spMatch.index) + text.slice(extracted.endIdx + 2) : text.slice(0, spMatch.index)
         }
+        const strayMarkers = ['ADD_SET', 'DEL_SET', 'DEL_WORKOUT', 'DEL_ALL_HISTORY', 'EDIT_SET'].filter(name => new RegExp(`\\[${name}[:\\]]`).test(text))
+        if (strayMarkers.length) console.warn(`AI-консультант по тренировкам выдал маркер(ы) ${strayMarkers.join(', ')} — в этом режиме таких инструментов нет, действие не выполнено`)
         text = text
           .replace(/\[ADD_SET:[^\]]+\]/g, '')
           .replace(/\[DEL_SET:[^\]]+\]/g, '')
