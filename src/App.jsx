@@ -3,6 +3,11 @@ import { createPortal } from 'react-dom'
 import AIAssistant from './AIAssistant'
 import { supabase } from './supabase.js'
 import { FOLDERS, PROGRAMS_MAP, EXERCISES, isOneSidedExercise } from './programs.js'
+import { oneRepMax, weightForReps, roundToPlate, percentTable } from './oneRepMax.js'
+// buildConstructorSessions — используется только syncConstructorHistoryOnDelete
+// ниже (чистит "теневую" историю Конструктора при удалении тренировки из
+// дневника). Остальной Конструктор заморожен, см. docs/CONSTRUCTOR_FROZEN.md.
+import { buildConstructorSessions } from './constructorPhases.js'
 import './App.css'
 
 const PUR = '#7F77DD'
@@ -316,6 +321,11 @@ function ClientsView({ setSC, setNav, userId }) {
   )
 }
 
+// ── Конструктор тренировок — ЗАМОРОЖЕН ───────────────────────────────────
+// Вынесен в src/ConstructorView.jsx, больше не импортируется и не
+// рендерится здесь. Полное описание, причины заморозки и как вернуть —
+// docs/CONSTRUCTOR_FROZEN.md. Таблицы constructor_exercises/constructor_sets
+// в Supabase не удалялись.
 function ClientDetail({ client, goBack }) {
   const lost=+(client.wts[0]-client.wts[client.wts.length-1]).toFixed(1)
   const maxW=Math.max(...client.wts), minW=Math.min(...client.wts), range=maxW-minW||1
@@ -394,6 +404,15 @@ async function idbDelete(id){
 }
 
 const FOLDER_ICONS={'Full Body':'💪','Сплит':'⚡','Похудение':'🏃','Домашние тренировки':'🏠'}
+// Описания программ для карточки-инфо ("?" на карточке в списке программ) —
+// словарь, а не хардкод в разметке, чтобы новые программы (обещано 7+)
+// добавлялись одной строкой здесь, без правки самого рендера.
+const FOLDER_DESCRIPTIONS={
+  'Full Body':'Тренировка на всё тело',
+  'Сплит':'Тренировка, разделённая по группам мышц (например пн — грудь и трицепс)',
+  'Похудение':'Силовые + функциональные тренировки',
+  'Домашние тренировки':'Тренировки дома с минимальным оборудованием (резинки и т.п.)',
+}
 const SLOT_COUNT=12
 const SUPERSET_COLORS={'A':PUR,'B':TEA,'C':COR,'D':BLU}
 
@@ -411,8 +430,10 @@ const makeDefaultFolderSlots=()=>{
   const o={}; FOLDERS.forEach(f=>{o[f]=makeDefaultSlots(f)}); return o
 }
 
-function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutActiveChange, pendingAction, onClearPendingAction, onOpenAI, userId }) {
+function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutActiveChange, pendingAction, onClearPendingAction, userId }) {
   const [openFolder,setOpenFolder]=useState(null)
+  const [infoFolder,setInfoFolder]=useState(null) // карточка-описание программы ("?")
+  const [selectedProgram,setSelectedProgram]=useState(null) // выбранная программа клиента (profiles.program)
   const [openSlotId,setOpenSlotId]=useState(null)
   const [openSlotHeaderMenu,setOpenSlotHeaderMenu]=useState(false)
   const [openExMenu,setOpenExMenu]=useState(null)
@@ -476,6 +497,25 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const [wExercises,setWExercises]=useState([])
   const [wMode,setWMode]=useState('start') // 'start' | 'log'
   const [wDate,setWDate]=useState('')
+  // Дата больше не висит постоянно в шапке — спрашивается только в момент
+  // реального сохранения (через "Сохранить" в окошке выхода, либо через
+  // основную кнопку "Завершить"/"Сохранить" внизу экрана).
+  const [showExitConfirm,setShowExitConfirm]=useState(false)
+  const [showDatePicker,setShowDatePicker]=useState(false)
+
+  // Плашка-объяснение от AI-ассистента на первом экране активной тренировки —
+  // показывается один раз за всё время, дальше флаг в localStorage её глушит навсегда.
+  const [showAiTip,setShowAiTip]=useState(false)
+  useEffect(()=>{
+    if(step!=='active')return
+    let seen=false
+    try{seen=localStorage.getItem('fitpro_active_ai_tip_seen')==='1'}catch{}
+    if(!seen)setShowAiTip(true)
+  },[step])
+  const dismissAiTip=()=>{
+    try{localStorage.setItem('fitpro_active_ai_tip_seen','1')}catch{}
+    setShowAiTip(false)
+  }
 
   const [timer,setTimer]=useState(0)
   const intervalRef=useRef(null)
@@ -499,6 +539,22 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const [showFinishToast,setShowFinishToast]=useState(false)
   const setVideoInputRef=useRef(null)
   const setVideoUploadTarget=useRef(null)
+
+  // Текущая выбранная клиентом программа — для подсветки карточки галочкой.
+  useEffect(()=>{
+    if(!userId)return
+    let cancelled=false
+    supabase.from('profiles').select('program').eq('id',userId).single().then(({data})=>{
+      if(!cancelled&&data)setSelectedProgram(data.program||null)
+    })
+    return()=>{cancelled=true}
+  },[userId])
+
+  const selectProgram=(folder)=>{
+    setSelectedProgram(folder)
+    setInfoFolder(null)
+    if(userId)supabase.from('profiles').update({program:folder}).eq('id',userId)
+  }
 
   useEffect(()=>{
     if(editTarget&&!isEditMode){
@@ -583,7 +639,22 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     setStep(null);setTimer(0);setSwTime(0);setSwRunning(false);setWExercises([]);setWMode('start');setWDate('')
     setIsEditMode(false)
     setWComment('');setOpenSetNote(null);setSetVideos({});setShowSendModal(false)
+    setShowExitConfirm(false);setShowDatePicker(false)
     if(onClearEdit)onClearEdit()
+  }
+
+  // Открывает выбор даты перед сохранением — по умолчанию сегодня, если дата
+  // ещё не была выбрана (например при редактировании уже сохранённой
+  // тренировки wDate уже стоит на её исходной дате — сохраняем).
+  const openDatePicker=()=>{
+    if(!wDate)setWDate(new Date().toISOString().slice(0,10))
+    setShowExitConfirm(false)
+    setShowDatePicker(true)
+  }
+
+  const confirmSaveWithDate=()=>{
+    setShowDatePicker(false)
+    finishWorkout()
   }
 
   const finishWorkout=()=>{
@@ -794,20 +865,66 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             <div>
               <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                 <div style={{ fontSize:22, fontWeight:700, color:'#fff' }}>{wName}</div>
-                {isEditMode&&<span style={{ fontSize:10, padding:'2px 7px', borderRadius:6, background:'rgba(0,0,0,0.25)', color:'#fff' }}>редактирование</span>}
               </div>
-              <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:3, flexWrap:'wrap' }}>
-                {wMode==='start'&&<div style={{ fontSize:14, color:'rgba(255,255,255,0.7)' }}>⏱ {fmt(timer)}</div>}
-                <label style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:13, color:'rgba(255,255,255,0.85)', cursor:'pointer' }}>
-                  📅
-                  <input type="date" value={wDate} onChange={e=>setWDate(e.target.value)}
-                    style={{ background:'rgba(0,0,0,0.22)', border:'none', outline:'none', color:'#fff', fontSize:13, colorScheme:'dark', cursor:'pointer', fontFamily:'inherit', padding:'3px 7px', borderRadius:6 }} />
-                </label>
-              </div>
+              {wMode==='start'&&<div style={{ fontSize:14, color:'rgba(255,255,255,0.7)', marginTop:3 }}>⏱ {fmt(timer)}</div>}
             </div>
-            <button onClick={exitWorkout} style={{ fontSize:12, color:'#fff', background:'rgba(0,0,0,0.25)', border:'none', borderRadius:6, padding:'5px 11px', cursor:'pointer', marginTop:4, flexShrink:0 }}>✕ Выйти</button>
+            <button onClick={()=>setShowExitConfirm(true)} style={{ fontSize:16, color:'#fff', background:'rgba(0,0,0,0.25)', border:'none', borderRadius:6, width:28, height:28, cursor:'pointer', marginTop:4, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', padding:0, minHeight:'unset' }}>✕</button>
           </div>
         </div>
+
+        {/* Окошко выхода — сохранить или выйти без сохранения */}
+        {showExitConfirm&&(
+          <div style={{ position:'absolute', inset:0, zIndex:350, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.6)', borderRadius:14 }}
+            onClick={()=>setShowExitConfirm(false)}>
+            <div style={{ background:'#1c1c1e', borderRadius:14, padding:'22px 20px', width:300, boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
+              onClick={e=>e.stopPropagation()}>
+              <div style={{ fontSize:15, fontWeight:700, color:'#fff', marginBottom:6, textAlign:'center' }}>Выйти из тренировки?</div>
+              <div style={{ fontSize:12, color:'#9ca3af', marginBottom:18, textAlign:'center', lineHeight:1.5 }}>Если выйти без сохранения — все внесённые подходы будут потеряны.</div>
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                <button onClick={openDatePicker} style={{ padding:'11px', borderRadius:10, border:'none', background:wColor, color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer' }}>Сохранить</button>
+                <button onClick={exitWorkout} style={{ padding:'11px', borderRadius:10, border:'1px solid #374151', background:'none', color:'#ef4444', fontSize:14, fontWeight:600, cursor:'pointer' }}>Выйти без сохранения</button>
+                <button onClick={()=>setShowExitConfirm(false)} style={{ padding:'9px', borderRadius:10, border:'none', background:'none', color:'#6b7280', fontSize:13, cursor:'pointer' }}>Отмена</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Выбор даты перед сохранением — единая точка и для "Завершить", и для
+            "Сохранить" из окошка выхода. По умолчанию сегодня, можно сменить. */}
+        {showDatePicker&&(
+          <div style={{ position:'absolute', inset:0, zIndex:360, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.6)', borderRadius:14 }}
+            onClick={()=>setShowDatePicker(false)}>
+            <div style={{ background:'#1c1c1e', borderRadius:14, padding:'22px 20px', width:300, boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
+              onClick={e=>e.stopPropagation()}>
+              <div style={{ fontSize:15, fontWeight:700, color:'#fff', marginBottom:16, textAlign:'center' }}>На какую дату сохранить?</div>
+              <input type="date" value={wDate} onChange={e=>setWDate(e.target.value)} autoFocus
+                style={{ width:'100%', padding:'11px', borderRadius:10, border:'1px solid #374151', background:'#2a2a2e', color:'#fff', fontSize:15, colorScheme:'dark', cursor:'pointer', outline:'none', boxSizing:'border-box', marginBottom:16, textAlign:'center' }} />
+              <div style={{ display:'flex', gap:8 }}>
+                <button onClick={()=>setShowDatePicker(false)} style={{ flex:1, padding:'10px', borderRadius:10, border:'1px solid #374151', background:'none', color:'#9ca3af', fontSize:13, cursor:'pointer' }}>Отмена</button>
+                <button onClick={confirmSaveWithDate} style={{ flex:1, padding:'10px', borderRadius:10, border:'none', background:wColor, color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer' }}>Сохранить</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Плашка-объяснение от AI-ассистента — один раз за всё время */}
+        {showAiTip&&(
+          <div style={{ position:'absolute', inset:0, zIndex:380, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.65)', borderRadius:14, padding:'0 18px' }}
+            onClick={dismissAiTip}>
+            <div style={{ maxWidth:320, width:'100%' }} onClick={e=>e.stopPropagation()}>
+              <div style={{ display:'flex', alignItems:'flex-end', gap:8 }}>
+                <div style={{ width:32, height:32, borderRadius:'50%', background:'linear-gradient(135deg,#7F77DD,#5b54c4)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, flexShrink:0 }}>🤖</div>
+                <div style={{ background:'#1f2937', border:'1px solid #374151', borderRadius:'4px 16px 16px 16px', padding:'14px 16px', fontSize:13.5, color:'#e5e7eb', lineHeight:1.6, whiteSpace:'pre-wrap' }}>
+                  {'Привет! Смотри, как тут всё работает:\n\nВес — это подсказка для старта. Вес горит красным — значит пиши свой вес, только тот, с которым реально позанимался, и обязательно поставь оценку (1 — легко, 5 — тяжело).\n\nПо оценке я сам подберу тебе вес дальше.\nПогнали! 💪'}
+                </div>
+              </div>
+              <button onClick={dismissAiTip}
+                style={{ display:'block', marginLeft:40, marginTop:10, padding:'10px 22px', borderRadius:20, border:'none', background:wColor, color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer' }}>
+                Понятно!
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Контент */}
         <div style={{ flex:1, overflowY:'auto', padding:'14px 18px' }}>
@@ -881,14 +998,15 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       {ex.sets.map((set,si)=>{
                         const noteOpen=openSetNote?.ei===ei&&openSetNote?.si===si
                         const hasVid=!!setVideos[`${ei}_${si}`]
+                        const isTemplateWeight=!!(set.fromTemplate&&set.kg)
                         return(
                           <div key={si} style={{ marginBottom:noteOpen?3:5 }}>
                             <div style={{ display:'grid', gridTemplateColumns:'24px 1fr 1fr 26px 26px 20px', gap:5, alignItems:'center' }}>
                               <span style={{ fontSize:12, color:'#6b7280', textAlign:'center', fontWeight:700 }}>{si+1}</span>
                               <input value={set.kg}
-                                onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,kg:e.target.value}:s)}:x))}
+                                onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,kg:e.target.value,fromTemplate:false}:s)}:x))}
                                 placeholder="0"
-                                style={{ background:'#374151', border:'1px solid #4b5563', borderRadius:6, padding:'6px 6px', fontSize:13, color:'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
+                                style={{ background:isTemplateWeight?'rgba(239,68,68,0.14)':'#374151', border:isTemplateWeight?'1.5px solid #ef4444':'1px solid #4b5563', borderRadius:6, padding:'6px 6px', fontSize:13, color:isTemplateWeight?'#fca5a5':'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
                               <div style={{ position:'relative', width:'100%' }}>
                                 <input value={set.reps}
                                   onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,reps:e.target.value}:s)}:x))}
@@ -971,7 +1089,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         {/* Нижняя панель */}
         <div style={{ padding:'10px 18px', display:'flex', justifyContent:'space-between', alignItems:'center', background:'#111', flexShrink:0 }}>
           <button onClick={()=>setPickOpen(true)} style={{ width:42, height:42, borderRadius:'50%', border:'2px solid #374151', background:'none', color:'#9ca3af', fontSize:22, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>+</button>
-          <button onClick={finishWorkout} style={{ padding:'12px 36px', borderRadius:24, border:'none', background:wColor, color:'#fff', fontSize:15, fontWeight:700, cursor:'pointer', boxShadow:`0 4px 16px ${wColor}66` }}>
+          <button onClick={openDatePicker} style={{ padding:'12px 36px', borderRadius:24, border:'none', background:wColor, color:'#fff', fontSize:15, fontWeight:700, cursor:'pointer', boxShadow:`0 4px 16px ${wColor}66` }}>
             {isEditMode?'Сохранить':'Завершить'}
           </button>
           <button onClick={()=>setShowSendModal(true)} style={{ width:42, height:42, borderRadius:'50%', border:'2px solid #374151', background:'none', color:'#9ca3af', fontSize:20, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>📤</button>
@@ -1059,7 +1177,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             </h3>
             <div style={{ borderBottom:'1px solid #2c2c2e', paddingBottom:14, marginBottom:14, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
               <span style={{ fontSize:15, color:'#fff' }}>Название</span>
-              <input value={wName} onChange={e=>setWName(e.target.value)}
+              <input value={wName} onChange={e=>setWName(e.target.value)} onFocus={e=>e.target.select()}
                 style={{ background:'none', border:'none', outline:'none', fontSize:15, color:'#9ca3af', textAlign:'right', width:170 }} />
             </div>
             {wMode==='log'&&(
@@ -1204,7 +1322,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                 onClick={()=>{
                   const exs=currentSlot.exercises.filter(e=>e.name)
                   if(exs.length===0)return
-                  setWName(currentSlot.title)
+                  setWName(`${openFolder} — тренировка ${currentSlot.slotNum}`)
                   setWColor(PUR)
                   setWExercises(exs.map(ex=>{
                     const str=(ex.sets||'').trim()
@@ -1212,7 +1330,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                     // "20 кг × 15, 25 кг × 12" — подходы с весом
                     const kgMatches=[...str.matchAll(/(\d+(?:[.,]\d+)?)\s*кг\s*[×x]\s*(\d+)/g)]
                     if(kgMatches.length>0){
-                      parsedSets=kgMatches.map(m=>({kg:m[1].replace(',','.'),reps:m[2]}))
+                      parsedSets=kgMatches.map(m=>({kg:m[1].replace(',','.'),reps:m[2],fromTemplate:true}))
                     } else {
                       // "3×12" — количество × повторы
                       const sm=str.match(/^(\d+)\s*[×x]\s*(\d+)$/)
@@ -1358,26 +1476,18 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         </div>
       , document.body)}
 
-      {/* ── Плашка AI тренера ── */}
-      {onOpenAI&&(
-        <div onClick={()=>onOpenAI('workout')} style={{ display:'flex',alignItems:'center',gap:12,background:'linear-gradient(135deg,#7F77DD18,#5b54c408)',border:'1.5px solid #7F77DD44',borderRadius:14,padding:'12px 16px',marginBottom:14,cursor:'pointer' }}>
-          <div style={{ width:38,height:38,borderRadius:'50%',background:'linear-gradient(135deg,#7F77DD,#5b54c4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0 }}>🤖</div>
-          <div style={{ flex:1 }}>
-            <div style={{ fontSize:13,fontWeight:700,color:'#7F77DD' }}>Спросить AI тренера</div>
-            <div style={{ fontSize:11,color:'#9ca3af',marginTop:1 }}>Как увеличивать нагрузку правильно</div>
-          </div>
-          <span style={{ fontSize:18,color:'#7F77DD' }}>›</span>
-        </div>
-      )}
-
       {/* ── Уровень 0: список папок ── */}
       {FOLDERS.map(folder=>{
         const totalEx=folderSlots[folder].reduce((s,sl)=>s+sl.exercises.length,0)
         const totalVids=folderSlots[folder].reduce((s,sl)=>s+sl.exercises.filter(e=>e.videoId).length,0)
+        const isSelected=selectedProgram===folder
         return (
-          <Card key={folder} style={{ marginBottom:10, cursor:'pointer', position:'relative' }}
+          <Card key={folder} style={{ marginBottom:10, cursor:'pointer', position:'relative', border:isSelected?`1.5px solid ${PUR}`:'1.5px solid transparent', background:isSelected?'#EEEDFE':'#fff' }}
             onClick={()=>setOpenFolder(folder)}>
             <span style={{ position:'absolute', top:'50%', right:16, transform:'translateY(-50%)', fontSize:20, color:'#c7cad1' }}>›</span>
+            <button onClick={e=>{e.stopPropagation();setInfoFolder(folder)}}
+              style={{ position:'absolute', top:10, left:12, width:22, height:22, borderRadius:'50%', border:'1px solid #e5e7eb', background:'#f9fafb', color:'#9ca3af', fontSize:12, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset', padding:0 }}>?</button>
+            {isSelected&&<span style={{ position:'absolute', top:10, right:16, fontSize:15, color:PUR }}>✓</span>}
             <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingRight:20 }}>
               <div style={{ fontSize:28, marginBottom:6 }}>{FOLDER_ICONS[folder]}</div>
               <div style={{ fontSize:16, fontWeight:700, color:'#111', textAlign:'center' }}>{folder}</div>
@@ -1388,6 +1498,25 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           </Card>
         )
       })}
+
+      {/* ── Модалка описания программы ── */}
+      {infoFolder&&createPortal(
+        <div onClick={()=>setInfoFolder(null)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:1300, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:'#fff', borderRadius:16, padding:'22px 20px', maxWidth:340, width:'100%', boxSizing:'border-box' }}>
+            <div style={{ fontSize:32, textAlign:'center', marginBottom:8 }}>{FOLDER_ICONS[infoFolder]}</div>
+            <div style={{ fontSize:17, fontWeight:700, color:'#111', textAlign:'center', marginBottom:8 }}>{infoFolder}</div>
+            <div style={{ fontSize:13, color:'#6b7280', textAlign:'center', lineHeight:1.5, marginBottom:18 }}>{FOLDER_DESCRIPTIONS[infoFolder]||''}</div>
+            <button onClick={()=>selectProgram(infoFolder)}
+              style={{ width:'100%', padding:'13px', borderRadius:12, border:'none', background:selectedProgram===infoFolder?'#e5e7eb':PUR, color:selectedProgram===infoFolder?'#6b7280':'#fff', fontSize:14, fontWeight:700, cursor:'pointer', marginBottom:8 }}>
+              {selectedProgram===infoFolder?'✓ Эта программа выбрана':'Тренироваться по этой программе'}
+            </button>
+            <button onClick={()=>setInfoFolder(null)}
+              style={{ width:'100%', padding:'11px', borderRadius:12, border:'none', background:'none', color:'#9ca3af', fontSize:13, cursor:'pointer' }}>
+              Закрыть
+            </button>
+          </div>
+        </div>
+      , document.body)}
     </div>
   )
 }
@@ -2343,11 +2472,17 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const [showWorkoutMenu,setShowWorkoutMenu]=useState(false)
   const [openCardMenu,setOpenCardMenu]=useState(null)
   const [openSelWorkoutMenu,setOpenSelWorkoutMenu]=useState(false)
-  const [openActiveRecMenu,setOpenActiveRecMenu]=useState(false)
   const [showScheduleForm,setShowScheduleForm]=useState(false)
   const [scheduleForm,setScheduleForm]=useState({name:'',date:''})
   const [plannedWorkouts,setPlannedWorkouts]=useState(()=>{try{return JSON.parse(localStorage.getItem('fitpro_planned')||'[]')}catch{return[]}})
   const [templateMsg,setTemplateMsg]=useState('')
+  // калькулятор 1ПМ
+  const [rmMode,setRmMode]=useState('direct') // direct | reverse | table
+  const [rmWeight,setRmWeight]=useState('')
+  const [rmReps,setRmReps]=useState('')
+  const [rmTargetRM,setRmTargetRM]=useState('')
+  const [rmTargetReps,setRmTargetReps]=useState('')
+  const [rmTableRM,setRmTableRM]=useState('')
 
   // Запланированные тренировки — как и остальное, подтягиваются из Supabase,
   // чтобы совпадать на любом устройстве/origin. Локальные записи без supabaseId
@@ -2828,9 +2963,19 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                   </Card>
                   {activeRec&&(
                     <Card style={{ marginTop:4,border:`1.5px solid ${PUR}33` }}>
-                      <div style={{ marginBottom:10 }}>
-                        <div style={{ fontSize:14,fontWeight:600,color:'#111' }}>{fmtFull(activeRec.date)}</div>
-                        {activeRec.workoutName&&<div style={{ fontSize:12,color:'#9ca3af',marginTop:2 }}>{activeRec.workoutName}</div>}
+                      <div style={{ marginBottom:10,display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8 }}>
+                        <div style={{ minWidth:0 }}>
+                          <div style={{ fontSize:14,fontWeight:600,color:'#111' }}>{fmtFull(activeRec.date)}</div>
+                          {activeRec.workoutName&&<div style={{ fontSize:12,color:'#9ca3af',marginTop:2 }}>{activeRec.workoutName}</div>}
+                        </div>
+                        <div style={{ display:'flex',gap:6,flexShrink:0 }}>
+                          <button onClick={e=>{e.stopPropagation();onEditWorkout(workoutHistory[activeRec.histIdx],activeRec.histIdx)}}
+                            title="Редактировать"
+                            style={{ width:30,height:30,borderRadius:8,border:'1px solid #e5e7eb',background:'#f9fafb',cursor:'pointer',fontSize:13,color:'#6b7280',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>✏️</button>
+                          <button onClick={e=>{e.stopPropagation();if(window.confirm('Удалить тренировку?')){onDeleteWorkout(activeRec.histIdx)}}}
+                            title="Удалить"
+                            style={{ width:30,height:30,borderRadius:8,border:'1px solid #fecaca',background:'#fef2f2',cursor:'pointer',fontSize:13,color:'#ef4444',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>🗑</button>
+                        </div>
                       </div>
                       <div style={{ display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:12 }}>
                         {[{label:'Тоннаж',value:`${activeRec.tonnage} кг`,accent:true},{label:'Макс. вес',value:`${activeRec.maxKg} кг`,accent:false},{label:'Подходов',value:(activeRec.sets||[]).filter(s=>s.kg||s.reps).length,accent:false}].map(c=>(
@@ -2851,21 +2996,6 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                             <span style={{ fontSize:13,fontWeight:600,color:PUR }}>{(parseFloat(s.kg)||0)*(parseInt(s.reps)||0)} кг</span>
                           </div>
                         ))}
-                      </div>
-                      <div style={{ position:'relative',marginTop:12,display:'inline-block' }}>
-                        <button onClick={e=>{e.stopPropagation();setOpenActiveRecMenu(v=>!v)}}
-                          style={{ fontSize:12,padding:'6px 16px',borderRadius:7,border:'1px solid #e5e7eb',background:'#f9fafb',cursor:'pointer',color:'#6b7280',fontWeight:500,letterSpacing:2 }}>⋯</button>
-                        {openActiveRecMenu&&(
-                          <>
-                            <div onClick={()=>setOpenActiveRecMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
-                            <div style={{ position:'absolute',bottom:38,right:0,background:'#fff',borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:200,overflow:'hidden',border:'1px solid #f0f0f0' }}>
-                              <button onClick={()=>{setOpenActiveRecMenu(false);onEditWorkout(workoutHistory[activeRec.histIdx],activeRec.histIdx)}}
-                                style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:'1px solid #f3f4f6',background:'transparent',cursor:'pointer',textAlign:'left',color:'#111',fontSize:13 }}>✏️ Редактировать</button>
-                              <button onClick={()=>{setOpenActiveRecMenu(false);if(window.confirm('Удалить тренировку?')){onDeleteWorkout(activeRec.histIdx)}}}
-                                style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:'#ef4444',fontSize:13 }}>🗑 Удалить</button>
-                            </div>
-                          </>
-                        )}
                       </div>
                     </Card>
                   )}
@@ -3370,13 +3500,124 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     , document.body)
   }
 
-  // ── ГЛАВНАЯ: 4 папки
+  if(section==='onerm'){
+    const directRM=oneRepMax(rmWeight,rmReps,'epley')
+    const reverseW=weightForReps(rmTargetRM,rmTargetReps,'epley')
+    const tableSource=rmTableRM || (directRM?directRM.toFixed(1):'')
+    const table=percentTable(tableSource,'epley')
+    const tabBtn=(mode,label)=>(
+      <button onClick={()=>{if(mode==='table'&&!rmTableRM&&directRM)setRmTableRM(roundToPlate(directRM).toString());setRmMode(mode)}}
+        style={{ flex:1,padding:'10px 6px',borderRadius:9,border:'none',background:rmMode===mode?PUR:'#f3f4f6',color:rmMode===mode?'#fff':'#6b7280',fontSize:12.5,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>
+        {label}
+      </button>
+    )
+    const inputStyle={ width:'100%',padding:'11px 12px',fontSize:15,borderRadius:9,border:'1.5px solid #e5e7eb',outline:'none',boxSizing:'border-box',color:'#111',background:'#fff' }
+    const fieldLabel={ fontSize:12,color:'#6b7280',marginBottom:5,fontWeight:600 }
+    return createPortal(
+      <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
+        <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 16px',display:'flex',alignItems:'center',gap:10,flexShrink:0 }}>
+          <button onClick={()=>setSection(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
+          <span style={{ fontSize:17,fontWeight:700,color:'#111',flex:1 }}>🧮 Калькулятор 1ПМ</span>
+        </div>
+        <div style={{ flex:1,overflowY:'auto',padding:'14px 16px 32px' }}>
+
+          {/* Табы режимов */}
+          <div style={{ display:'flex',gap:8,marginBottom:14 }}>
+            {tabBtn('direct','Прямой')}
+            {tabBtn('reverse','Обратный')}
+            {tabBtn('table','Таблица %')}
+          </div>
+
+          {rmMode==='direct'&&(
+            <>
+              <Card style={{ marginBottom:12 }}>
+                <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:10 }}>
+                  <div>
+                    <div style={fieldLabel}>Вес, кг</div>
+                    <input type="number" inputMode="decimal" placeholder="100" value={rmWeight} onChange={e=>setRmWeight(e.target.value)}
+                      style={inputStyle} onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                  </div>
+                  <div>
+                    <div style={fieldLabel}>Повторения</div>
+                    <input type="number" inputMode="numeric" placeholder="5" value={rmReps} onChange={e=>setRmReps(e.target.value)}
+                      style={inputStyle} onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                  </div>
+                </div>
+              </Card>
+              <Card style={{ textAlign:'center',padding:'22px 16px' }}>
+                <div style={{ fontSize:12,color:'#9ca3af',fontWeight:600,marginBottom:6 }}>Твой 1ПМ</div>
+                <div style={{ fontSize:40,fontWeight:800,color:PUR,lineHeight:1 }}>
+                  {directRM?`≈ ${roundToPlate(directRM)} кг`:'—'}
+                </div>
+              </Card>
+            </>
+          )}
+
+          {rmMode==='reverse'&&(
+            <>
+              <Card style={{ marginBottom:12 }}>
+                <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:10 }}>
+                  <div>
+                    <div style={fieldLabel}>1ПМ, кг</div>
+                    <input type="number" inputMode="decimal" placeholder="120" value={rmTargetRM} onChange={e=>setRmTargetRM(e.target.value)}
+                      style={inputStyle} onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                  </div>
+                  <div>
+                    <div style={fieldLabel}>Хочу повторений</div>
+                    <input type="number" inputMode="numeric" placeholder="8" value={rmTargetReps} onChange={e=>setRmTargetReps(e.target.value)}
+                      style={inputStyle} onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                  </div>
+                </div>
+              </Card>
+              <Card style={{ textAlign:'center',padding:'22px 16px' }}>
+                <div style={{ fontSize:12,color:'#9ca3af',fontWeight:600,marginBottom:6 }}>Рабочий вес</div>
+                <div style={{ fontSize:40,fontWeight:800,color:PUR,lineHeight:1 }}>
+                  {reverseW?`≈ ${roundToPlate(reverseW)} кг`:'—'}
+                </div>
+              </Card>
+            </>
+          )}
+
+          {rmMode==='table'&&(
+            <>
+              <Card style={{ marginBottom:12 }}>
+                <div style={fieldLabel}>1ПМ, кг</div>
+                <input type="number" inputMode="decimal" placeholder="120" value={rmTableRM} onChange={e=>setRmTableRM(e.target.value)}
+                  style={inputStyle} onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+              </Card>
+              {table.length>0?(
+                <Card style={{ padding:0,overflow:'hidden' }}>
+                  <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr 1fr',padding:'10px 14px',background:'#f9fafb',borderBottom:'1px solid #e5e7eb' }}>
+                    <div style={{ fontSize:11,color:'#9ca3af',fontWeight:700 }}>Повторы</div>
+                    <div style={{ fontSize:11,color:'#9ca3af',fontWeight:700,textAlign:'center' }}>% от 1ПМ</div>
+                    <div style={{ fontSize:11,color:'#9ca3af',fontWeight:700,textAlign:'right' }}>Вес</div>
+                  </div>
+                  {table.map((row,i)=>(
+                    <div key={row.reps} style={{ display:'grid',gridTemplateColumns:'1fr 1fr 1fr',padding:'11px 14px',borderBottom:i<table.length-1?'1px solid #f3f4f6':'none' }}>
+                      <div style={{ fontSize:14,fontWeight:700,color:'#111' }}>{row.reps}</div>
+                      <div style={{ fontSize:13,color:'#6b7280',textAlign:'center' }}>≈{row.percent}%</div>
+                      <div style={{ fontSize:14,fontWeight:700,color:PUR,textAlign:'right' }}>≈ {row.weight} кг</div>
+                    </div>
+                  ))}
+                </Card>
+              ):(
+                <div style={{ textAlign:'center',color:'#9ca3af',fontSize:13,padding:'20px 0' }}>Введи 1ПМ, чтобы увидеть таблицу</div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    , document.body)
+  }
+
+  // ── ГЛАВНАЯ: папки
   const totalTon=allWorkoutTons.reduce((s,w)=>s+w.ton,0)
   const FOLDERS_DIARY=[
     {key:'tonnage',icon:'⚖️',label:'Общий тоннаж',color:PUR,sub:`${totalTon.toLocaleString('ru')} кг · ${allWorkoutTons.length} тренировок`},
     {key:'exercises',icon:'📈',label:'Прогресс по упражнениям',color:TEA,sub:`${exerciseNames.length} упражнений отслеживается`},
     {key:'workouts',icon:'🏋️',label:'Мои тренировки',color:COR,sub:allWorkoutTons.length>0?`Последняя: ${fmtFull(allWorkoutTons[allWorkoutTons.length-1].date)}`:'Нет записей'},
     {key:'food',icon:'🥗',label:'Питание',color:BLU,sub:'Дневник питания · макросы'},
+    {key:'onerm',icon:'🧮',label:'Калькулятор 1ПМ',color:'#F59E0B',sub:''},
   ]
   return(
     <div>
@@ -3389,7 +3630,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           </div>
           <div style={{ flex:1,minWidth:0 }}>
             <div style={{ fontSize:15,fontWeight:700,color:'#111' }}>{f.label}</div>
-            <div style={{ fontSize:11,color:'#9ca3af',marginTop:3 }}>{f.sub}</div>
+            {f.sub&&<div style={{ fontSize:11,color:'#9ca3af',marginTop:3 }}>{f.sub}</div>}
           </div>
           <span style={{ fontSize:22,color:'#c7cad1',flexShrink:0 }}>›</span>
         </div>
@@ -3763,11 +4004,27 @@ function SettingsView({ user }) {
     setChatCount(0);setClearConfirm(false)
   }
 
+  // "Удалить все мои данные" раньше чистила только chat_messages/food_diary/
+  // food_goals + localStorage — ни workouts/workout_sets (дневник тренировок),
+  // ни constructor_sets/constructor_exercises (история Конструктора) не
+  // трогались вообще. Из-за этого дневник выглядел пустым локально (localStorage
+  // стёрт, signOut), но данные в Supabase переживали "очистку" и either
+  // возвращались при следующем входе, либо оставались невидимым источником
+  // рекомендаций в Конструкторе. Теперь удаляем реально всё, что принадлежит
+  // пользователю, во всех таблицах — без исключений и без возможности
+  // восстановления. workout_sets чистим по user_id напрямую (не полагаясь
+  // только на ON DELETE CASCADE от workouts), чтобы захватить и старые строки
+  // без workout_id — их не задел бы каскад.
   const deleteAll=async()=>{
     if(!user?.id)return
     await supabase.from('chat_messages').delete().eq('user_id',user.id)
     await supabase.from('food_diary').delete().eq('user_id',user.id)
     await supabase.from('food_goals').delete().eq('user_id',user.id)
+    await supabase.from('workout_sets').delete().eq('user_id',user.id)
+    await supabase.from('workouts').delete().eq('user_id',user.id)
+    await supabase.from('planned_workouts').delete().eq('user_id',user.id)
+    await supabase.from('constructor_sets').delete().eq('user_id',user.id)
+    await supabase.from('constructor_exercises').delete().eq('user_id',user.id)
     Object.keys(localStorage).filter(k=>k.startsWith('fitpro_')).forEach(k=>localStorage.removeItem(k))
     await supabase.auth.signOut()
   }
@@ -4842,18 +5099,68 @@ export default function App() {
     return (data||[]).map(r=>r.id)
   }
 
+  // Удаление тренировки из дневника раньше чистило только workouts/
+  // workout_sets — "теневая" копия в Конструкторе (constructor_sets) не
+  // трогалась вообще, ровно тот же класс бага, что чинили в "Удалить все
+  // данные": история продолжала невидимо висеть и подсказывать вес по
+  // тренировке, которую пользователь считает удалённой. Прямой связи между
+  // workout_sets и constructor_sets в схеме нет, поэтому сопоставляем сессию
+  // Конструктора с удаляемой тренировкой по (название упражнения, дата) +
+  // ближайшему created_at — тем же способом, каким buildConstructorSessions
+  // вообще определяет границы сессии, так что риск задеть ДРУГУЮ, реально
+  // отдельную тренировку того же упражнения в тот же день исключён: если бы
+  // они были разными сессиями, buildConstructorSessions уже развела бы их по
+  // времени (порог 30 минут), и в выборку попадёт только ближайшая.
+  const syncConstructorHistoryOnDelete=async(deletedRows)=>{
+    if(!user?.id||!deletedRows?.length)return
+    const byExercise={}
+    for(const r of deletedRows){
+      if(!r.exercise||!r.date)continue
+      ;(byExercise[r.exercise]??=[]).push(r)
+    }
+    for(const[exerciseName,rows]of Object.entries(byExercise)){
+      const{data:exRows}=await supabase.from('constructor_exercises').select('id').eq('user_id',user.id).eq('name',exerciseName)
+      if(!exRows?.length)continue // обычная ручная запись, не из Конструктора — пропускаем
+      const targetDate=rows[0].date
+      const times=rows.map(r=>new Date(r.created_at).getTime()).filter(t=>!Number.isNaN(t))
+      const refTime=times.length?Math.min(...times):NaN
+      for(const exRow of exRows){
+        const{data:history}=await supabase.from('constructor_sets').select('*').eq('exercise_id',exRow.id).eq('user_id',user.id).order('id')
+        if(!history?.length)continue
+        const sessions=buildConstructorSessions(history)
+        const sameDateSessions=sessions.filter(s=>s.date===targetDate)
+        if(!sameDateSessions.length)continue
+        let best=sameDateSessions[0],bestDist=Infinity
+        for(const s of sameDateSessions){
+          const t=new Date(s.sets[0].created_at).getTime()
+          const dist=Number.isNaN(t)||Number.isNaN(refTime)?0:Math.abs(t-refTime)
+          if(dist<bestDist){bestDist=dist;best=s}
+        }
+        const idsToDelete=best.sets.map(s=>s.id)
+        if(idsToDelete.length){
+          const{error}=await supabase.from('constructor_sets').delete().in('id',idsToDelete)
+          if(error)console.error('Синхронизация Конструктора при удалении тренировки:',error)
+        }
+      }
+    }
+  }
+
   const deleteWorkoutSetsRows=async(workout)=>{
     if(!user?.id||!workout)return
     if(workout.workoutId!=null){
       // Одна запись в workouts — удаление каскадом (ON DELETE CASCADE) чистит
       // все её строки в workout_sets разом, без угадывания по дате/названию.
+      const{data:deletedRows}=await supabase.from('workout_sets').select('exercise,date,created_at').eq('workout_id',workout.workoutId)
       const{error}=await supabase.from('workouts').delete().eq('id',workout.workoutId)
       if(error)console.error('Ошибка удаления тренировки из Supabase:',error)
+      else await syncConstructorHistoryOnDelete(deletedRows)
       return
     }
     if(workout.supabaseSetIds?.length){
+      const{data:deletedRows}=await supabase.from('workout_sets').select('exercise,date,created_at').in('id',workout.supabaseSetIds)
       const{error}=await supabase.from('workout_sets').delete().in('id',workout.supabaseSetIds)
       if(error)console.error('Ошибка удаления тренировки из Supabase:',error)
+      else await syncConstructorHistoryOnDelete(deletedRows)
       return
     }
     // Записи без workoutId/supabaseSetIds (старые подходы ещё до перехода на
@@ -4862,8 +5169,10 @@ export default function App() {
     const isoDate=(workout.date||'').slice(0,10)
     const exerciseNames=[...new Set((workout.exercises||[]).map(ex=>ex.n).filter(Boolean))]
     if(!isoDate||!exerciseNames.length)return
+    const{data:deletedRows}=await supabase.from('workout_sets').select('exercise,date,created_at').eq('user_id',user.id).eq('date',isoDate).in('exercise',exerciseNames)
     const{error}=await supabase.from('workout_sets').delete().eq('user_id',user.id).eq('date',isoDate).in('exercise',exerciseNames)
     if(error)console.error('Ошибка удаления тренировки из Supabase (fallback):',error)
+    else await syncConstructorHistoryOnDelete(deletedRows)
   }
 
   const handleWorkoutComplete=workout=>{
@@ -4938,7 +5247,7 @@ export default function App() {
         ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} />
         : <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} />
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} userId={user?.id} />
-      case 'workouts':  return <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutActiveChange={setWorkoutActive} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} />
+      case 'workouts':  return <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutActiveChange={setWorkoutActive} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} />
       case 'nutrition': return <NutritionView userId={user?.id} />
       case 'library':   return <LibraryView customExercises={customExercises} />
       case 'chat':      return <ChatView />
@@ -5116,7 +5425,7 @@ export default function App() {
         </div>
       )}
 
-      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onWorkoutComplete={handleWorkoutComplete} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} />
+      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} hideButton={workoutActive} />
     </>
   )
 }

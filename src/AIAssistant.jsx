@@ -1,9 +1,7 @@
 import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { supabase } from './supabase'
 import { buildSystemPrompt } from './aiPrompt'
-import { buildWorkoutSystemPrompt } from './workoutPrompt'
-import { PROGRAMS_MAP, EXERCISES } from './programs'
-import TrainingSurvey from './TrainingSurvey'
+import { buildWorkoutSystemPrompt, extractBalancedJson } from './workoutPrompt'
 
 const PUR = '#7F77DD'
 // Та же ссылка, что и кнопка "Написать тренеру" в Настройках → Поддержка (App.jsx) —
@@ -11,7 +9,25 @@ const PUR = '#7F77DD'
 const MAX_TELEGRAM_URL = 'https://t.me/maxim_athlete'
 
 const HINTS = ['Какой рацион мне подойдет?', 'Что съесть после тренировки?', 'Можно ли мне алкоголь?']
-const HINTS_WORKOUT = ['Жим 50кг на 8 было легко, какой вес дальше?', 'Что у меня растёт, а что стоит на месте?', 'Побаливает плечо на жиме, что делать?']
+const HINTS_WORKOUT = ['Правда что от приседаний ноги станут огромными?', 'Как правильно дышать при жиме лёжа?', 'Сколько отдыхать между подходами?']
+
+// Сырые тексты ошибок (Overloaded, сетевые сбои, таймауты) клиенту показывать
+// нельзя — непонятно и пугает. Переводим в человеческие сообщения, техническая
+// причина остаётся только в консоли для отладки.
+const getFriendlyErrorMessage = (err, status, rawMessage) => {
+  console.error('Ошибка AI-чата:', err || rawMessage, status != null ? `(status ${status})` : '')
+  if (err?.name === 'AbortError' || err instanceof TypeError) {
+    return 'Не удалось связаться с сервером. Проверь интернет и попробуй снова.'
+  }
+  const text = `${rawMessage || ''} ${err?.message || ''}`.toLowerCase()
+  if (status === 529 || text.includes('overloaded')) {
+    return 'Сервис сейчас загружен, попробуй ещё раз через минуту 🙏'
+  }
+  if (text.includes('network') || text.includes('failed to fetch') || text.includes('timeout')) {
+    return 'Не удалось связаться с сервером. Проверь интернет и попробуй снова.'
+  }
+  return 'Что-то пошло не так, попробуй ещё раз.'
+}
 
 const stripMd = (t) => t
   .replace(/\*\*(.*?)\*\*/g, '$1')
@@ -22,7 +38,7 @@ const stripMd = (t) => t
   .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
   .trim()
 
-const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkoutComplete, onGoToWorkoutsDiary, onGoToFoodDiary }, ref) {
+const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWorkoutsDiary, onGoToFoodDiary, hideButton = false }, ref) {
   const [isOpen, setIsOpen]     = useState(false)
   const [mode, setMode]         = useState('nutrition')
   const [messages, setMessages] = useState([])
@@ -30,7 +46,6 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
   const [loading, setLoading]   = useState(false)
   const [ctx, setCtx]           = useState(null) // { user, today, diary, goals, profile } — свежак из Supabase
   const [showToast, setShowToast] = useState(false)
-  const [showSurvey, setShowSurvey] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [attachedImage, setAttachedImage] = useState(null) // { dataUrl, mediaType, base64 } — фото питания перед отправкой (режим "Питание")
@@ -85,9 +100,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
   }
 
   // Свежие данные пользователя из Supabase — только Supabase, никакого localStorage.
-  // Дневник питания грузим за 30 дней. Тренировки — за 90 дней: волновой цикл
-  // тренера Максима (см. workoutPrompt.js) крутится по нескольким полным
-  // циклам Объём/Развитие/Сила, 30 дней их не покрывают.
+  // Дневник питания грузим за 30 дней.
   const loadContext = async (m) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
@@ -95,13 +108,8 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
     if (m === 'workout') {
-      const workoutSince = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-      const [{ data: sets }, { data: profile }, { data: survey }] = await Promise.all([
-        supabase.from('workout_sets').select('*').eq('user_id', user.id).gte('date', workoutSince).order('date'),
-        supabase.from('profiles').select('*').eq('id', user.id).single(),
-        supabase.from('training_survey').select('*').eq('user_id', user.id).single(),
-      ])
-      return { user, today, sets: sets || [], profile: profile || {}, survey: survey || null }
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+      return { user, today, profile: profile || {} }
     }
 
     const [{ data: diary }, { data: goals }, { data: profile }] = await Promise.all([
@@ -192,14 +200,23 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
       setCtx(fresh)
 
       const system = mode === 'workout'
-        ? buildWorkoutSystemPrompt({
-            profile: fresh.profile,
-            programTemplate: PROGRAMS_MAP[fresh.profile.program] || null,
-            sets: fresh.sets,
-            survey: fresh.survey,
-            today: fresh.today,
-          })
+        ? buildWorkoutSystemPrompt({ profile: fresh.profile })
         : buildSystemPrompt(fresh)
+
+      // Модели отправляем не всю историю чата целиком, а только последние
+      // MAX_HISTORY_MESSAGES реплик — иначе устаревшие фразы из старой части
+      // переписки (например "программа составлена" за 20 сообщений до того, как
+      // клиент удалил её вручную через Дневник) остаются в контексте навсегда и
+      // модель на них опирается вместо свежих данных выше (см. FRESH_DATA_RULE
+      // в workoutPrompt.js/aiPrompt.js — то же самое лечится с двух сторон).
+      // Полная история при этом никуда не девается — она как хранилась в
+      // chat_messages и показывается в UI целиком, ограничение только на то,
+      // что реально уходит в запрос к модели.
+      const MAX_HISTORY_MESSAGES = 14
+      let sendMsgs = newMsgs.slice(-MAX_HISTORY_MESSAGES)
+      // Anthropic API требует, чтобы список сообщений начинался с role:"user" —
+      // если срез отрезал историю ровно на "assistant", убираем один лишний.
+      if (sendMsgs.length && sendMsgs[0].role !== 'user') sendMsgs = sendMsgs.slice(1)
 
       const res = await fetch('/api/chat', {
         signal: abortController.signal,
@@ -219,8 +236,8 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
           // мультимодальным content-массивом (image + text); вся остальная
           // история — как обычно, плоской строкой. api/chat — чистый прокси,
           // прогоняет body как есть, поэтому это не требует правок на бэкенде.
-          messages: newMsgs.map((m, i) => {
-            if (hasImage && i === newMsgs.length - 1) {
+          messages: sendMsgs.map((m, i) => {
+            if (hasImage && i === sendMsgs.length - 1) {
               const blocks = [{ type: 'image', source: { type: 'base64', media_type: sentImage.mediaType, data: sentImage.base64 } }]
               if (m.content) blocks.push({ type: 'text', text: m.content })
               return { role: m.role, content: blocks }
@@ -231,163 +248,43 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
       })
       const data = await res.json()
       if (!data.content?.[0]?.text) {
-        setMessages(prev => [...prev, { role: 'assistant', content: `Ошибка: ${data.error?.message || 'что-то пошло не так'}` }])
+        setMessages(prev => [...prev, { role: 'assistant', content: getFriendlyErrorMessage(null, res.status, data.error?.message) }])
+        setInput(userMsg.content)
+        if (hasImage) setAttachedImage(sentImage)
         return
       }
 
       let text = stripMd(data.content[0].text)
       let added = false
-      let suggestSurvey = false
-      let programSet = false
       let contactMax = false
 
       if (mode === 'workout') {
-        // ADD_SET — может быть несколько подходов за раз
-        const addSetMatches = [...text.matchAll(/\[ADD_SET:(\{[^}]+\})\]/g)]
-        if (addSetMatches.length) {
-          for (const m of addSetMatches) {
-            try {
-              const entry = JSON.parse(m[1])
-              const { error } = await supabase.from('workout_sets').insert({
-                user_id: fresh.user.id, exercise: entry.exercise, date: entry.date || fresh.today,
-                kg: entry.kg != null ? Number(entry.kg) : null,
-                reps: entry.reps != null ? Number(entry.reps) : null,
-                rating: entry.rating != null ? Number(entry.rating) : null,
-              })
-              if (error) console.error('Ошибка записи подхода:', error)
-              else added = true
-            } catch (e) { console.error('Ошибка разбора ADD_SET:', e) }
-          }
-          text = text.replace(/\[ADD_SET:[^\]]+\]/g, '')
+        // Режим консультанта: чат по тренировкам больше не пишет и не читает
+        // дневник, не считает вес и не составляет программы — всё это теперь
+        // работа Конструктора (ConstructorView в App.jsx). Единственный маркер,
+        // который здесь может встретиться, — CONTACT_MAX (см. ниже). Если
+        // модель всё же по ошибке выдаст один из старых маркеров действий
+        // (ADD_SET/DEL_SET/DEL_WORKOUT/DEL_ALL_HISTORY/EDIT_SET/SET_PROGRAM),
+        // никакого действия НЕ выполняем — только вырезаем его из текста,
+        // чтобы клиент не увидел сырой JSON (см. общую защитную зачистку ниже).
+
+        // SET_PROGRAM использовал вложенный JSON, поэтому границы искались
+        // параметром скобок (extractBalancedJson), а не плоским {[^}]+} —
+        // тот же приём применяем здесь только чтобы вырезать маркер целиком
+        // из текста, если модель всё-таки его выдаст, без единого действия.
+        const spMatch = text.match(/\[SET_PROGRAM\s*:/i)
+        if (spMatch) {
+          const extracted = extractBalancedJson(text, spMatch.index + spMatch[0].length)
+          text = extracted ? text.slice(0, spMatch.index) + text.slice(extracted.endIdx + 2) : text.slice(0, spMatch.index)
         }
+        text = text
+          .replace(/\[ADD_SET:[^\]]+\]/g, '')
+          .replace(/\[DEL_SET:[^\]]+\]/g, '')
+          .replace(/\[DEL_WORKOUT:[^\]]+\]/g, '')
+          .replace(/\[DEL_ALL_HISTORY\]/g, '')
+          .replace(/\[EDIT_SET:[^\]]+\]/g, '')
 
-        // DEL_SET — может быть несколько записей за раз
-        const delSetMatches = [...text.matchAll(/\[DEL_SET:(\{[^}]+\})\]/g)]
-        if (delSetMatches.length) {
-          for (const m of delSetMatches) {
-            try {
-              const del = JSON.parse(m[1])
-              const { error, count } = await supabase.from('workout_sets').delete({ count: 'exact' })
-                .eq('id', del.id).eq('user_id', fresh.user.id)
-              if (error) console.error('Ошибка удаления подхода:', error)
-              else if (!count) console.warn(`DEL_SET: id:${del.id} не найден в workout_sets — AI сообщил об удалении записи, которой не существовало`)
-            } catch (e) { console.error('Ошибка разбора DEL_SET:', e) }
-          }
-          text = text.replace(/\[DEL_SET:[^\]]+\]/g, '')
-        }
-
-        // DEL_WORKOUT — удаление ВСЕЙ тренировки/дня целиком одним компактным
-        // маркером по дате, а не длинным списком [DEL_SET] на каждый подход.
-        // Список из 15-20 отдельных DEL_SET на реальной тренировке получался
-        // настолько длинным, что упирался в max_tokens и обрывался посреди
-        // JSON — маркер не парсился, ничего не удалялось, а клиент видел в
-        // чате обрубок вида "[DEL_SET:{"" (см. Журнал изменений).
-        const delWorkoutMatches = [...text.matchAll(/\[DEL_WORKOUT:(\{[^}]+\})\]/g)]
-        if (delWorkoutMatches.length) {
-          for (const m of delWorkoutMatches) {
-            try {
-              const del = JSON.parse(m[1])
-              const date = del.date || fresh.today
-              const { error, count } = await supabase.from('workout_sets').delete({ count: 'exact' })
-                .eq('user_id', fresh.user.id).eq('date', date)
-              if (error) console.error('Ошибка удаления тренировки:', error)
-              else if (!count) console.warn(`DEL_WORKOUT: на ${date} не найдено ни одного подхода в workout_sets`)
-            } catch (e) { console.error('Ошибка разбора DEL_WORKOUT:', e) }
-          }
-          text = text.replace(/\[DEL_WORKOUT:[^\]]+\]/g, '')
-        }
-
-        // EDIT_SET — может быть несколько корректировок за раз
-        const editSetMatches = [...text.matchAll(/\[EDIT_SET:(\{[^}]+\})\]/g)]
-        if (editSetMatches.length) {
-          for (const m of editSetMatches) {
-            try {
-              const edit = JSON.parse(m[1])
-              const patch = {}
-              if (edit.kg != null) patch.kg = Number(edit.kg)
-              if (edit.reps != null) patch.reps = Number(edit.reps)
-              if (edit.rating != null) patch.rating = Number(edit.rating)
-              const { error } = await supabase.from('workout_sets').update(patch)
-                .eq('id', edit.id).eq('user_id', fresh.user.id)
-              if (error) console.error('Ошибка изменения подхода:', error)
-            } catch (e) { console.error('Ошибка разбора EDIT_SET:', e) }
-          }
-          text = text.replace(/\[EDIT_SET:[^\]]+\]/g, '')
-        }
-
-        // SET_PROGRAM — составленная AI программа (несколько сессий/упражнений/подходов).
-        // Вложенный JSON не укладывается в плоский шаблон {[^}]+} остальных маркеров,
-        // поэтому границы ищем по индексу открывающей метки и последней "]" в ответе
-        // (маркер всегда ставится в конце, см. workoutPrompt.js).
-        // Каждая сессия становится полноценной записью в дневнике тренировок — тем
-        // же путём, что и обычная выполненная тренировка (onWorkoutComplete),
-        // поэтому она сразу видна в "Мои тренировки" и синхронизируется в
-        // workout_sets с проставленным recommended_kg. Кнопка "Перейти к
-        // тренировке" в чате должна появляться, только если это реально
-        // получилось — отсюда флаг programSet выставляется только когда
-        // хотя бы одна сессия успешно превратилась в запись.
-        const spIdx = text.indexOf('[SET_PROGRAM:')
-        if (spIdx !== -1) {
-          const jsonStart = spIdx + '[SET_PROGRAM:'.length
-          const jsonEnd = text.lastIndexOf(']')
-          if (jsonEnd > jsonStart) {
-            try {
-              const program = JSON.parse(text.slice(jsonStart, jsonEnd))
-              // Защита от дублей: если на эту дату уже лежит запланированная
-              // (ещё не выполненная — kg пуст, recommended_kg заполнен) программа,
-              // не создаём вторую, даже если модель по ошибке прислала SET_PROGRAM
-              // повторно (см. buildPlannedProgramSection в workoutPrompt.js — сама
-              // модель тоже должна это видеть и не пересоставлять, но код подстраховывает).
-              const plannedDates = new Set(
-                (fresh.sets || []).filter(s => s.kg == null && s.recommended_kg != null).map(s => s.date)
-              )
-              let createdCount = 0
-              for (const session of program.sessions || []) {
-                const date = session.date || fresh.today
-                if (plannedDates.has(date)) {
-                  console.warn(`SET_PROGRAM: на ${date} уже есть запланированная тренировка — пропускаю дубль`)
-                  continue
-                }
-                const exercises = (session.exercises || [])
-                  .filter(ex => ex.exercise && ex.sets?.length)
-                  .map(ex => {
-                    const meta = EXERCISES.find(e => e.n === ex.exercise)
-                    return {
-                      n: ex.exercise, m: meta?.m || '', eq: meta?.eq || '',
-                      sets: ex.sets.map(s => ({
-                        kg: '', reps: s.reps != null ? String(s.reps) : '',
-                        recKg: s.recKg != null ? String(s.recKg) : '',
-                      })),
-                      done: false,
-                    }
-                  })
-                if (!exercises.length) continue
-                const dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('ru', { day: 'numeric', month: 'long' })
-                onWorkoutComplete?.({
-                  name: `Тренировка от AI-ассистента, ${dateLabel}`,
-                  color: PUR, exercises, duration: null,
-                  date: new Date(date + 'T12:00:00').toISOString(), comment: '',
-                })
-                createdCount++
-                plannedDates.add(date)
-              }
-              if (createdCount) programSet = true
-            } catch (e) { console.error('Ошибка разбора SET_PROGRAM:', e) }
-            text = text.slice(0, spIdx) + text.slice(jsonEnd + 1)
-          }
-        }
-
-        if (addSetMatches.length || delSetMatches.length || delWorkoutMatches.length || editSetMatches.length) {
-          if (added) flashToast()
-          const refreshed = await loadContext(mode)
-          if (refreshed) setCtx(refreshed)
-        }
-
-        // SUGGEST_SURVEY — AI предлагает заполнить анкету перед составлением программы
-        suggestSurvey = /\[SUGGEST_SURVEY\]/.test(text)
-        if (suggestSurvey) text = text.replace(/\[SUGGEST_SURVEY\]/g, '')
-
-        // CONTACT_MAX — AI ответил на вопрос-миф и предлагает написать Максиму за подробностями
+        // CONTACT_MAX — AI ответил на вопрос-миф/медицинский вопрос и предлагает написать Максиму
         contactMax = /\[CONTACT_MAX\]/.test(text)
         if (contactMax) text = text.replace(/\[CONTACT_MAX\]/g, '')
       } else {
@@ -477,17 +374,17 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
 
       // Защита от оборванного маркера — если ответу не хватило max_tokens и модель
       // не дописала JSON до конца, в тексте остаётся необработанный обрубок вида
-      // "[DEL_SET:{"" (маркер при этом не сработал, но обрубок всё равно не должен
-      // попасть в то, что видит клиент). Все настоящие маркеры (ADD_SET, DEL_SET,
-      // DEL_WORKOUT, EDIT_SET, SET_PROGRAM, ADD, DEL, CLEAR, GOAL и т.п.) уже
-      // вырезаны выше — если "[СЛОВО...." всё ещё торчит в самом конце текста без
-      // закрывающей "]", это и есть обрубок, режем его целиком.
+      // "[DEL:{"" (маркер при этом не сработал, но обрубок всё равно не должен
+      // попасть в то, что видит клиент). Все настоящие маркеры (ADD, DEL, CLEAR,
+      // GOAL, CONTACT_MAX и т.п.) уже вырезаны выше — если "[СЛОВО...." всё ещё
+      // торчит в самом конце текста без закрывающей "]", это и есть обрубок,
+      // режем его целиком.
       text = text.replace(/\[[A-Z_]{2,}[^\]]*$/, '').trimEnd()
 
       // Компактный вывод — без пустых/пробельных строк после вырезания маркеров
       text = text.replace(/[ \t]*\n[ \t]*(?:\n[ \t]*)+/g, '\n').trim()
 
-      setMessages(prev => [...prev, { role: 'assistant', content: text, added, suggestSurvey, programSet, contactMax }])
+      setMessages(prev => [...prev, { role: 'assistant', content: text, added, contactMax }])
 
       await supabase.from('chat_messages').insert([
         // Фото не сохраняем как base64 в текстовое поле — только пометку, что оно было.
@@ -495,8 +392,9 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
         { user_id: fresh.user.id, mode, role: 'assistant', content: text },
       ])
     } catch (err) {
-      const message = err.name === 'AbortError' ? 'Не дождались ответа (слишком долго) — попробуй ещё раз' : err.message
-      setMessages(prev => [...prev, { role: 'assistant', content: `Ошибка: ${message}` }])
+      setMessages(prev => [...prev, { role: 'assistant', content: getFriendlyErrorMessage(err, null, null) }])
+      setInput(userMsg.content)
+      if (hasImage) setAttachedImage(sentImage)
     } finally {
       clearTimeout(timeoutId)
       setLoading(false)
@@ -524,7 +422,12 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
           кнопке своей fixed-inset:0 областью. При этом ниже диалогов поверх
           всего — чат (1050, но кнопка и чат никогда не показаны одновременно),
           шторка профиля (1100), тосты/модалки (1200+), анкета (1300). */}
-      {!isOpen && (
+      {/* hideButton — во время активной тренировки (обычной или Конструктора)
+          кнопка своим высоким z-index перекрывает клик по крайним элементам
+          экрана (например, оценке "5" в ряду 1-5) — на этих экранах прячем
+          сам плавающий триггер, чат по-прежнему открывается программно
+          (aiRef.current?.open) со всех остальных экранов. */}
+      {!isOpen && !hideButton && (
         <button onClick={() => setIsOpen(true)} style={{
           position: 'fixed', bottom: BTN_BOTTOM, right: 18, zIndex: 1070,
           width: 52, height: 52, borderRadius: '50%', border: 'none',
@@ -570,14 +473,6 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
               <div style={{ fontSize: 15, fontWeight: 700, color: '#111', lineHeight: 1.2 }}>AI Ассистент</div>
               <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 500 }}>● онлайн</div>
             </div>
-            {mode === 'workout' && (
-              <button onClick={() => setShowSurvey(true)} title="Заполнить анкету"
-                style={{
-                  width: 34, height: 34, borderRadius: 10, border: '1px solid #e5e7eb', background: '#f9fafb',
-                  fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0, minHeight: 'unset',
-                }}>📋</button>
-            )}
             {/* Постоянная кнопка в дневник — всегда видна, не только после SET_PROGRAM/ADD.
                 Ведёт в дневник тренировок или питания в зависимости от текущего режима чата. */}
             <button onClick={() => { setIsOpen(false); (mode === 'workout' ? onGoToWorkoutsDiary : onGoToFoodDiary)?.() }}
@@ -655,7 +550,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
                     </div>
                     <div style={{ fontSize: 13, color: '#9ca3af', lineHeight: 1.65, marginBottom: 20 }}>
                       {mode === 'workout'
-                        ? <>Вижу твою программу и историю —{'\n'}спрашивай про вес и прогресс</>
+                        ? <>Спрашивай про технику, восстановление —{'\n'}и любые мифы о тренировках</>
                         : <>Вижу твой дневник и норму —{'\n'}спрашивай что угодно</>}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
@@ -701,25 +596,6 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
                           <span style={{ fontSize: 14, color: '#22c55e' }}>✓</span>
                           <span style={{ fontSize: 13, fontWeight: 600, color: '#22c55e' }}>Записано в дневник ✓</span>
                         </div>
-                      </div>
-                    )}
-                    {/* Кнопка «Перейти к тренировке» под ответом с SET_PROGRAM-маркером —
-                        только если запись в дневник реально прошла (m.programSet). */}
-                    {m.role === 'assistant' && m.programSet && (
-                      <div style={{ paddingLeft: 36 }}>
-                        <button onClick={() => { setIsOpen(false); onGoToWorkoutsDiary?.() }}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 20, background: PUR, border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                          📋 Перейти к тренировке
-                        </button>
-                      </div>
-                    )}
-                    {/* Кнопка «Заполнить анкету» под ответом с SUGGEST_SURVEY-маркером */}
-                    {m.role === 'assistant' && m.suggestSurvey && (
-                      <div style={{ paddingLeft: 36 }}>
-                        <button onClick={() => setShowSurvey(true)}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 20, background: PUR, border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                          📋 Заполнить анкету
-                        </button>
                       </div>
                     )}
                     {/* Кнопка «Написать Максиму» под ответом на вопрос-миф (CONTACT_MAX-маркер) */}
@@ -789,7 +665,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-                  placeholder={mode === 'workout' ? 'Расскажи как прошёл подход...' : attachedImage ? 'Можно добавить комментарий...' : 'Спроси про питание или продукт...'}
+                  placeholder={mode === 'workout' ? 'Спроси про технику, восстановление...' : attachedImage ? 'Можно добавить комментарий...' : 'Спроси про питание или продукт...'}
                   style={{
                     flex: 1, padding: '11px 16px', borderRadius: 24,
                     border: '1.5px solid #e5e7eb', fontSize: 14,
@@ -812,10 +688,6 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onWorkou
               </div>
             </>
         </div>
-      )}
-
-      {showSurvey && (
-        <TrainingSurvey onClose={() => setShowSurvey(false)} onSaved={() => { if (mode === 'workout') loadContext('workout').then(c => c && setCtx(c)) }} />
       )}
     </>
   )
