@@ -38,7 +38,7 @@ const stripMd = (t) => t
   .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
   .trim()
 
-const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWorkoutsDiary, onGoToFoodDiary, hideButton = false }, ref) {
+const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWorkoutsDiary, onGoToFoodDiary, hideButton = false, extraBottomOffset = 0 }, ref) {
   const [isOpen, setIsOpen]     = useState(false)
   const [mode, setMode]         = useState('nutrition')
   const [messages, setMessages] = useState([])
@@ -408,7 +408,10 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
     }
   }
 
-  const BTN_BOTTOM = isMobile ? 78 : 24
+  // extraBottomOffset — поднимает кнопку на высоту плашки свёрнутой
+  // тренировки (App.jsx), пока та видна, чтобы плашка не перекрыла кнопку
+  // (известный ранее z-index-баг с плавающими элементами внизу экрана).
+  const BTN_BOTTOM = (isMobile ? 78 : 24) + extraBottomOffset
 
   return (
     <>

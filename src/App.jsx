@@ -428,6 +428,10 @@ const pluralizeTimes=n=>{
   if(mod10>=2&&mod10<=4&&(mod100<10||mod100>=20))return'раза'
   return'раз'
 }
+// Расшифровка оценки тяжести подхода (1-5, workout_sets.rating) — общая для
+// шкалы в активной тренировке (WorkoutsView) и истории в Дневнике (DiaryView):
+// без этой оценки невозможно понять, почему движок прогрессии изменил вес.
+const RATING_LABELS={1:'легко',2:'легковато',3:'в рабочем режиме',4:'тяжело',5:'на пределе'}
 
 const makeDefaultSlots=folder=>
   Array.from({length:SLOT_COUNT},(_,i)=>{
@@ -443,7 +447,7 @@ const makeDefaultFolderSlots=()=>{
   const o={}; FOLDERS.forEach(f=>{o[f]=makeDefaultSlots(f)}); return o
 }
 
-function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutActiveChange, pendingAction, onClearPendingAction, userId }) {
+function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize }) {
   const [openFolder,setOpenFolder]=useState(null)
   const [infoFolder,setInfoFolder]=useState(null) // карточка-описание программы ("?")
   const [selectedProgram,setSelectedProgram]=useState(null) // выбранная программа клиента (profiles.program)
@@ -543,12 +547,78 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     setShowProgressionIntro(false)
   }
 
-  const [timer,setTimer]=useState(0)
-  const intervalRef=useRef(null)
+  // "Начать новую поверх свёрнутой" — если step уже 'active' (пусть даже
+  // тренировка сейчас свёрнута), новый старт не затирает её молча: действие
+  // откладывается сюда, модалка (см. return ниже) спрашивает подтверждение.
+  const [pendingConflictStart,setPendingConflictStart]=useState(null) // fn | null
+  const confirmStartOverActive=()=>{
+    const run=pendingConflictStart
+    setPendingConflictStart(null)
+    exitWorkout() // отбрасывает свёрнутую тренировку и её черновик — как "Выйти без сохранения"
+    if(run)run()
+  }
+  const cancelStartOverActive=()=>setPendingConflictStart(null)
 
-  const [swTime,setSwTime]=useState(0)
-  const [swRunning,setSwRunning]=useState(false)
-  const swRef=useRef(null)
+  // Предупреждение о правке повторений — только для тренировок, реально
+  // запущенных из слота программы (wIsFromProgram, ставится в
+  // startSlotWorkout, сбрасывается при ручном старте/логировании и при
+  // редактировании прошлой тренировки). Повторения задают фазу цикла
+  // (объём/развитие/сила) — движок их не трогает, а правка руками уводит
+  // клиента из фазы, хоть расчёт веса и отработает любые цифры (это НЕ
+  // ошибка данных). Показываем один раз за тренировку, не на каждый подход —
+  // repsWarningShownThisWorkout взводится при первом срабатывании и больше
+  // не сбрасывается до конца сессии (даже если клиент нажмёт "Вернуть как было").
+  const [wIsFromProgram,setWIsFromProgram]=useState(false)
+  const [showRepsWarning,setShowRepsWarning]=useState(false)
+  const [repsWarningShownThisWorkout,setRepsWarningShownThisWorkout]=useState(false)
+  const [repsWarningRevert,setRepsWarningRevert]=useState(null) // {ei,si,prevValue}
+  const handleRepsChange=(ei,si,newValue)=>{
+    const prevValue=wExercises[ei]?.sets[si]?.reps
+    setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,reps:newValue}:s)}:x))
+    if(wIsFromProgram&&!repsWarningShownThisWorkout&&newValue!==prevValue){
+      setRepsWarningShownThisWorkout(true)
+      setRepsWarningRevert({ei,si,prevValue})
+      setShowRepsWarning(true)
+    }
+  }
+  const revertRepsWarning=()=>{
+    if(repsWarningRevert){
+      const{ei,si,prevValue}=repsWarningRevert
+      setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,reps:prevValue}:s)}:x))
+    }
+    setShowRepsWarning(false)
+  }
+
+  // Таймер тренировки и секундомер — считаются ОТ ОТМЕТКИ ВРЕМЕНИ
+  // (startedAt/swStartedAt, Date.now()), а не прибавлением +1 в setInterval.
+  // КРИТИЧНО для свёрнутой тренировки: iOS душит таймеры фоновых вкладок —
+  // setInterval(()=>setTimer(t=>t+1),1000) в фоне тикает реже раза в
+  // секунду и отстаёт от реальности. Date.now()-startedAt всегда точен,
+  // сколько бы тиков ни было пропущено — интервал ниже нужен только чтобы
+  // перерисовать компонент раз в секунду, а не чтобы накапливать время.
+  const [startedAt,setStartedAt]=useState(null) // ms, Date.now() на старте тренировки
+  const [nowTick,setNowTick]=useState(()=>Date.now())
+  const timer=startedAt?Math.max(0,Math.floor((nowTick-startedAt)/1000)):0
+
+  // Секундомер — та же модель, но с паузой: swAccumMs копит время УЖЕ
+  // завершённых запусков, swStartedAt — отметка ТЕКУЩЕГО запуска (null на
+  // паузе). Итоговое время — сумма накопленного и (если не на паузе) того,
+  // что прошло с текущего старта — пауза не теряет накопленное, как раньше
+  // терялась бы при простом +1 в setInterval, если бы интервал не успевал
+  // тикать в фоне.
+  const [swAccumMs,setSwAccumMs]=useState(0)
+  const [swStartedAt,setSwStartedAt]=useState(null)
+  const swRunning=swStartedAt!=null
+  const swTime=Math.floor((swAccumMs+(swStartedAt?Math.max(0,nowTick-swStartedAt):0))/1000)
+  const toggleStopwatch=()=>{
+    if(swStartedAt!=null){
+      setSwAccumMs(a=>a+Math.max(0,Date.now()-swStartedAt))
+      setSwStartedAt(null)
+    } else {
+      setSwStartedAt(Date.now())
+    }
+  }
+  const resetStopwatch=()=>{setSwStartedAt(null);setSwAccumMs(0)}
 
   const [pickOpen,setPickOpen]=useState(false)
   const [pickQ,setPickQ]=useState('')
@@ -568,6 +638,69 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const [showCustomExerciseSaveError,setShowCustomExerciseSaveError]=useState(false)
   const setVideoInputRef=useRef(null)
   const setVideoUploadTarget=useRef(null)
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Черновик активной тренировки в localStorage — переживает перезагрузку
+  // страницы и закрытие приложения (в зале человек постоянно сворачивает и
+  // возвращается). Персистим только СВЕЖИЕ тренировки (не редактирование
+  // прошлой записи — isEditMode — там своя история, editTarget/histIdx,
+  // персистить черновик для неё отдельная, более редкая история, вне
+  // рамок этой задачи).
+  // ─────────────────────────────────────────────────────────────────────
+  const DRAFT_KEY='fitpro_active_workout'
+  const draftRestoredRef=useRef(false) // однократная проверка при монтировании
+  const [staleDraft,setStaleDraft]=useState(null) // черновик старше 24ч — ждёт решения клиента
+
+  const applyDraft=(draft)=>{
+    setWName(draft.wName||'Тренировка')
+    setWColor(draft.wColor||PUR)
+    setWExercises(draft.wExercises||[])
+    setWMode(draft.wMode||'start')
+    setWDate(draft.wDate||'')
+    setWComment(draft.wComment||'')
+    setStartedAt(draft.startedAt||Date.now())
+    setWIsFromProgram(!!draft.wIsFromProgram)
+    setRepsWarningShownThisWorkout(!!draft.repsWarningShownThisWorkout)
+    setStep('active')
+  }
+
+  // Восстановление ОДИН раз при монтировании (WorkoutsView теперь смонтирован
+  // всегда за время сессии — см. renderMain в App — поэтому это ровно момент
+  // загрузки приложения, не каждое переключение вкладки).
+  useEffect(()=>{
+    if(draftRestoredRef.current)return
+    draftRestoredRef.current=true
+    let raw=null
+    try{raw=localStorage.getItem(DRAFT_KEY)}catch{}
+    if(!raw)return
+    let draft=null
+    try{draft=JSON.parse(raw)}catch{}
+    if(!draft||!draft.startedAt)return
+    const ageMs=Date.now()-draft.startedAt
+    if(ageMs>24*3600*1000){
+      setStaleDraft(draft)
+      return
+    }
+    applyDraft(draft)
+  },[])
+
+  const confirmStaleDraft=()=>{
+    if(staleDraft)applyDraft(staleDraft)
+    setStaleDraft(null)
+  }
+  const discardStaleDraft=()=>{
+    try{localStorage.removeItem(DRAFT_KEY)}catch{}
+    setStaleDraft(null)
+  }
+
+  // Сохраняем на КАЖДОЕ изменение, пока тренировка активна — вес/повторы/
+  // оценки/уровень резины уже внутри wExercises, отдельно перечислять поля
+  // не нужно.
+  useEffect(()=>{
+    if(step!=='active'||isEditMode)return
+    const draft={wName,wColor,wExercises,wMode,wDate,wComment,startedAt,wIsFromProgram,repsWarningShownThisWorkout}
+    try{localStorage.setItem(DRAFT_KEY,JSON.stringify(draft))}catch{}
+  },[step,isEditMode,wName,wColor,wExercises,wMode,wDate,wComment,startedAt,wIsFromProgram,repsWarningShownThisWorkout])
 
   // Текущая выбранная клиентом программа — для подсветки карточки галочкой.
   useEffect(()=>{
@@ -638,7 +771,16 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     if(error){console.error('Ошибка загрузки истории подходов для прогрессии:',error);return}
     setSetsHistory(data||[])
   }
-  useEffect(()=>{loadSetsHistory()},[userId])
+  // historyVersion (прокинут из App) растёт при КАЖДОМ подтверждённом
+  // изменении тренировок — не только тех, что сделаны отсюда (finishWorkout
+  // ниже и так дожидается своей записи и сам перечитывает историю), но и
+  // сделанных из DiaryView (удаление/правка/копия) — отдельного компонента,
+  // у которого нет доступа к setsHistory этого компонента. Без подписки на
+  // historyVersion WorkoutsView, если он в этот момент смонтирован, продолжал
+  // бы считать вес по уже удалённой/изменённой тренировке до следующего
+  // размонтирования — движок прогрессии не хранит состояние сам, но UI должен
+  // ему давать актуальные данные.
+  useEffect(()=>{loadSetsHistory()},[userId,historyVersion])
 
   // Список сохранённых тренировок (id/name/date) — один запрос, переиспользуется
   // и для галочки "выполнено" на карточке слота (уровень 1 папки), и для
@@ -652,7 +794,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     if(error){console.error('Ошибка загрузки списка тренировок:',error);return}
     setWorkoutsLog(data||[])
   }
-  useEffect(()=>{loadWorkoutsLog()},[userId])
+  useEffect(()=>{loadWorkoutsLog()},[userId,historyVersion])
 
   useEffect(()=>{
     if(editTarget&&!isEditMode){
@@ -663,35 +805,55 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       const isLog=w.duration===null||w.duration===undefined
       setWMode(isLog?'log':'start')
       if(w.date)setWDate(new Date(w.date).toISOString().split('T')[0])
-      setTimer(0);setSwTime(0);setSwRunning(false)
+      setStartedAt(Date.now());setSwAccumMs(0);setSwStartedAt(null)
       setWComment(w.comment||'')
       setIsEditMode(true)
+      // Редактирование прошлой тренировки — не запуск из слота программы,
+      // предупреждение про повторения (wIsFromProgram) здесь не показываем.
+      setWIsFromProgram(false)
+      setRepsWarningShownThisWorkout(false)
       setStep('active')
     }
   },[editTarget])
 
+  // Небольшой снимок для плашки свёрнутой тренировки (App.jsx рендерит саму
+  // плашку — ей нужен доступ к другим экранам/AI-кнопке для z-index, поэтому
+  // проще отдать наверх три поля для отображения, чем выносить туда весь
+  // стейт тренировки целиком (wExercises и т.п. остаются здесь). Таймер
+  // считается на стороне плашки от startedAt самостоятельно.
   useEffect(()=>{
-    if(onWorkoutActiveChange)onWorkoutActiveChange(step==='active')
-  },[step])
+    if(onWorkoutMeta)onWorkoutMeta(step==='active'?{wName,wColor,startedAt}:null)
+  },[step,wName,wColor,startedAt])
 
+  // Если тренировка уже активна (в т.ч. свёрнута) — не затираем её молча
+  // новым стартом: реальный путь сюда — "Начать тренировку" с Главной/из
+  // Дневника (pendingAction), пока на экране тренировки была НЕ в фокусе
+  // (см. isForeground/nav в App) — сам список программ, откуда вызывается
+  // startSlotWorkout(), в это время недостижим (пока step==='active',
+  // WorkoutsView всегда показывает именно активный экран — см. return ниже),
+  // так что оттуда конфликт по факту не возникает, но проверка оставлена
+  // и там как явная защита, а не только в этом эффекте.
   useEffect(()=>{
-    if(pendingAction&&(pendingAction==='start'||pendingAction==='done')&&!step&&!isEditMode){
-      handleAction(pendingAction)
+    if(pendingAction&&(pendingAction==='start'||pendingAction==='done')&&!isEditMode){
+      if(step==='active'){
+        setPendingConflictStart(()=>()=>runHandleAction(pendingAction))
+      } else {
+        runHandleAction(pendingAction)
+      }
       if(onClearPendingAction)onClearPendingAction()
     }
   },[pendingAction])
 
+  // Единственная задача интервала — перерисовать (nowTick), не накапливать
+  // время: сама величина всегда считается от startedAt/swStartedAt заново.
+  // Работает даже если браузер пропустил часть тиков (свёрнутое приложение,
+  // фоновая вкладка) — как только тик долетит, время досчитается верно.
   useEffect(()=>{
-    if(step==='active'&&wMode==='start'){intervalRef.current=setInterval(()=>setTimer(t=>t+1),1000)}
-    else{clearInterval(intervalRef.current)}
-    return ()=>clearInterval(intervalRef.current)
-  },[step,wMode])
-
-  useEffect(()=>{
-    if(swRunning){swRef.current=setInterval(()=>setSwTime(t=>t+1),1000)}
-    else{clearInterval(swRef.current)}
-    return ()=>clearInterval(swRef.current)
-  },[swRunning])
+    const need=(step==='active'&&wMode==='start')||swRunning
+    if(!need)return
+    const id=setInterval(()=>setNowTick(Date.now()),1000)
+    return ()=>clearInterval(id)
+  },[step,wMode,swRunning])
 
   const fmt=s=>{
     const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60
@@ -707,15 +869,38 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     setTimeout(()=>el.select(),0)
   }
 
-  const handleAction=key=>{
+  // runHandleAction — сам сброс на новую тренировку, БЕЗ проверки конфликта
+  // (проверка — в handleAction ниже и в pendingAction-эффекте выше). Нужна
+  // отдельно, чтобы confirmStartOverActive мог вызвать её напрямую уже
+  // ПОСЛЕ того как старая тренировка отброшена (exitWorkout), не проверяя
+  // step повторно — на момент вызова setStep(null) из exitWorkout ещё не
+  // долетел до этого замыкания (тот же тик), проверка увидела бы старое
+  // значение и ошибочно посчитала бы это новым конфликтом.
+  const runHandleAction=key=>{
     setMenuOpen(false)
     const today=new Date().toISOString().split('T')[0]
+    // Ручной старт/логирование — не слот программы, предупреждение про
+    // повторения (wIsFromProgram) здесь не показываем.
+    setWIsFromProgram(false)
+    setRepsWarningShownThisWorkout(false)
     if(key==='start'){
-      setWName('Новая тренировка');setWColor('#D85A30');setWExercises([]);setTimer(0);setSwTime(0);setSwRunning(false);setWMode('start');setWDate(today);setStep('naming')
+      setWName('Новая тренировка');setWColor('#D85A30');setWExercises([]);setStartedAt(Date.now());setSwAccumMs(0);setSwStartedAt(null);setWMode('start');setWDate(today);setStep('naming')
     }
     if(key==='done'){
       setWName('Тренировка');setWColor('#1D9E75');setWExercises([]);setWMode('log');setWDate(today);setStep('naming')
     }
+  }
+  // Точка входа с кнопок меню "Новая тренировка" — список программ (откуда
+  // виден этот пункт меню) недостижим, пока step==='active' (см. return
+  // ниже), так что на практике проверка здесь не срабатывает никогда, но
+  // оставлена как явная защита на случай, если это когда-нибудь изменится.
+  const handleAction=key=>{
+    if(step==='active'){
+      setMenuOpen(false)
+      setPendingConflictStart(()=>()=>runHandleAction(key))
+      return
+    }
+    runHandleAction(key)
   }
 
   const allExercises=[...EXERCISES,...customExercises]
@@ -753,11 +938,25 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   }
 
   const exitWorkout=()=>{
-    setStep(null);setTimer(0);setSwTime(0);setSwRunning(false);setWExercises([]);setWMode('start');setWDate('')
+    setStep(null);setStartedAt(null);setSwAccumMs(0);setSwStartedAt(null);setWExercises([]);setWMode('start');setWDate('')
     setIsEditMode(false)
     setWComment('');setOpenSetNote(null);setSetVideos({});setShowSendModal(false)
     setShowExitConfirm(false);setShowDatePicker(false)
+    setWIsFromProgram(false);setShowRepsWarning(false);setRepsWarningShownThisWorkout(false);setRepsWarningRevert(null)
+    try{localStorage.removeItem('fitpro_active_workout')}catch{}
     if(onClearEdit)onClearEdit()
+  }
+
+  // Свернуть — явный жест "хочу отсюда уйти" (крестик в шапке), но тренировка
+  // НЕ прерывается: step остаётся 'active', таймер и wExercises не трогаем,
+  // черновик в localStorage не удаляется. Просто закрываем модалку и просим
+  // App увести nav с 'workouts' (тем же путём, что и обычный "назад") —
+  // WorkoutsView остаётся смонтированным (см. renderMain в App), просто
+  // перестаёт быть видимым экраном, вместо него везде показывается плашка
+  // свёрнутой тренировки.
+  const minimizeWorkout=()=>{
+    setShowExitConfirm(false)
+    if(onMinimize)onMinimize()
   }
 
   // Открывает выбор даты перед сохранением — по умолчанию сегодня, если дата
@@ -910,7 +1109,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   // (handleStartSlotClick ниже, задача про выбор программы через "Начать
   // тренировку") — сам запуск может случиться не сразу по клику, а только
   // после подтверждения в модалке.
-  const startSlotWorkout=()=>{
+  const runStartSlotWorkout=()=>{
     const exs=currentSlot.exercises.filter(e=>e.name)
     if(exs.length===0)return
     setWName(`${openFolder} — тренировка ${currentSlot.slotNum}`)
@@ -933,12 +1132,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       const prevSteps=computeProgressSteps(agg.sessions.slice(0,-1))
       const delta=steps-prevSteps
       if(delta<0)return'Снизили нагрузку — две прошлые тренировки дались тяжело'
-      if(ts.bandLevel==null)return steps>0?'Добавили повторений':'Держим нагрузку — прошлый раз был тяжёлым'
+      if(ts.bandLevel==null)return steps>0?'Добавлены повторения':'Держим нагрузку — прошлый раз был тяжёлым'
       if(delta>0){
         const prevTarget=computeBandTarget(ts,prevSteps)
         const currTarget=computeBandTarget(ts,steps)
         return currTarget.bandLevel>prevTarget.bandLevel
-          ?'Резинка стала жёстче — прошлые тренировки шли легко'
+          ?'Резинка жёстче, повторения вернулись к базовым'
           :'Добавили повторений — прошлый раз дался легко'
       }
       return'Держим нагрузку — прошлый раз был тяжёлым'
@@ -982,10 +1181,10 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         }
         if(!progressNoteSet){
           progressNote=scale.isDeload
-            ?'Снизили вес на 15% — две прошлые тренировки дались тяжело'
-            :scale.appliedPct>=7?'Подняли вес — прошлый раз дался легко'
-            :scale.appliedPct===5?'Немного прибавили — прошлый раз прошёл комфортно'
-            :'Прибавили чуть-чуть — прошлый раз дался тяжело'
+            ?'Разгрузка: две тяжёлые тренировки подряд. Вес снижен намеренно, дальше снова пойдём вверх.'
+            :scale.appliedPct>=7?'Прибавка больше обычной — прошлый раз дался легко'
+            :scale.appliedPct===5?'Плановая прибавка'
+            :'Осторожная прибавка — прошлый раз был тяжёлым'
           progressNoteSet=true
         }
         const kg=roundToPlate(ts.templateKg*scale.scale)
@@ -1000,7 +1199,11 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     setWExercises(builtExercises)
     setWMode('start')
     setWDate('')
-    setTimer(0);setSwTime(0);setSwRunning(false)
+    setStartedAt(Date.now());setSwAccumMs(0);setSwStartedAt(null)
+    // Тренировка реально запущена из слота программы — предупреждение про
+    // правку повторений (handleRepsChange) действует именно для неё.
+    setWIsFromProgram(true)
+    setRepsWarningShownThisWorkout(false)
     setStep('active')
     setOpenSlotId(null)
     if(hasColdStart){
@@ -1008,6 +1211,18 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       try{hideIntro=localStorage.getItem('fitpro_hide_progression_intro')==='1'}catch{}
       if(!hideIntro)setShowProgressionIntro(true)
     }
+  }
+  // Точка входа кнопки "▶ Начать тренировку" — список программ (откуда она
+  // вызывается) недостижим, пока step==='active' (см. return ниже), так что
+  // на практике проверка здесь не срабатывает никогда, но оставлена как
+  // явная защита на случай, если это когда-нибудь изменится (см. тот же
+  // комментарий у handleAction).
+  const startSlotWorkout=()=>{
+    if(step==='active'){
+      setPendingConflictStart(()=>runStartSlotWorkout)
+      return
+    }
+    runStartSlotWorkout()
   }
 
   // Клик по "▶ Начать тренировку" — сначала проверяем выбранную программу
@@ -1165,9 +1380,9 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             <div style={{ background:'#1c1c1e', borderRadius:14, padding:'22px 20px', width:300, boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
               onClick={e=>e.stopPropagation()}>
               <div style={{ fontSize:15, fontWeight:700, color:'#fff', marginBottom:6, textAlign:'center' }}>Выйти из тренировки?</div>
-              <div style={{ fontSize:12, color:'#9ca3af', marginBottom:18, textAlign:'center', lineHeight:1.5 }}>Если выйти без сохранения — все внесённые подходы будут потеряны.</div>
+              <div style={{ fontSize:12, color:'#9ca3af', marginBottom:18, textAlign:'center', lineHeight:1.5 }}>Можно свернуть — тренировка продолжится в фоне, ничего не потеряется.</div>
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                <button onClick={openDatePicker} style={{ padding:'11px', borderRadius:10, border:'none', background:wColor, color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer' }}>Сохранить</button>
+                <button onClick={minimizeWorkout} style={{ padding:'11px', borderRadius:10, border:'none', background:wColor, color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer' }}>Свернуть</button>
                 <button onClick={exitWorkout} style={{ padding:'11px', borderRadius:10, border:'1px solid #374151', background:'none', color:'#ef4444', fontSize:14, fontWeight:600, cursor:'pointer' }}>Выйти без сохранения</button>
                 <button onClick={()=>setShowExitConfirm(false)} style={{ padding:'9px', borderRadius:10, border:'none', background:'none', color:'#6b7280', fontSize:13, cursor:'pointer' }}>Отмена</button>
               </div>
@@ -1225,7 +1440,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                 <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55 }}>После подхода отметь цифрой, как он дался: 1 — легко, 5 — на пределе.</div>
                 <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55 }}>В следующий раз приложение поставит вес само: далось легко — прибавит побольше, тяжело — прибавит чуть-чуть, было тяжело два раза подряд — снизит, чтобы ты не перегорел.</div>
                 <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55 }}>Вес можно менять руками — приложение запомнит то, что ты реально сделал, и посчитает от него.</div>
-                <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55 }}>Значок «<span style={{ color:PUR, fontWeight:700 }}>+</span>» у поля повторений — впиши число повторений общим счётом на обе стороны сразу, а не отдельно на каждую.</div>
+                <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55 }}>Значок «<span style={{ color:PUR, fontWeight:700 }}>+</span>» у повторений означает, что упражнение делается на обе стороны, а повторения считаются суммарно, а не на каждую ногу отдельно.</div>
               </div>
               <label style={{ display:'flex', alignItems:'center', gap:9, marginBottom:14, cursor:'pointer' }}>
                 <input type="checkbox" checked={progressionIntroDontShow} onChange={e=>setProgressionIntroDontShow(e.target.checked)}
@@ -1236,6 +1451,61 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                 style={{ width:'100%', padding:'12px', borderRadius:10, border:'none', background:wColor, color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer' }}>
                 Понятно
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Предупреждение о правке повторений (см. handleRepsChange выше) —
+            только для тренировок, реально запущенных из слота программы,
+            один раз за тренировку. Текст — правда: расчёт веса отработает
+            любые цифры, проблема не в поломке, а в том, что клиент выходит
+            из фазы цикла (объём/развитие/сила), заданной шаблоном тренера. */}
+        {showRepsWarning&&(
+          <div style={{ position:'absolute', inset:0, zIndex:395, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.65)', borderRadius:14, padding:'0 18px' }}
+            onClick={()=>setShowRepsWarning(false)}>
+            <div style={{ background:'#1c1c1e', borderRadius:16, padding:'20px 20px 16px', width:340, maxWidth:'100%', boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
+              onClick={e=>e.stopPropagation()}>
+              <div style={{ fontSize:16, fontWeight:700, color:'#fff', marginBottom:14, textAlign:'center' }}>Повторения из плана</div>
+              <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55, marginBottom:18 }}>
+                Повторения подобраны тренером под текущий этап программы. Менять их не рекомендуется — от них зависит, какую нагрузку приложение подберёт дальше. Если сделал меньше или больше, чем в плане — впиши как есть, приложение учтёт реальный результат.
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                <button onClick={()=>setShowRepsWarning(false)}
+                  style={{ padding:'12px', borderRadius:10, border:'none', background:wColor, color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer' }}>
+                  Понятно
+                </button>
+                <button onClick={revertRepsWarning}
+                  style={{ padding:'11px', borderRadius:10, border:'1px solid #374151', background:'none', color:'#9ca3af', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                  Вернуть как было
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* "Начать новую поверх свёрнутой" — сюда попадаем, только если
+            step уже 'active' в момент попытки стартовать другую тренировку
+            (см. pendingConflictStart выше) — то есть по факту только с
+            "Начать тренировку" на Главной/в Дневнике, пока эта тренировка
+            была свёрнута. */}
+        {pendingConflictStart&&(
+          <div style={{ position:'absolute', inset:0, zIndex:398, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.65)', borderRadius:14, padding:'0 18px' }}
+            onClick={cancelStartOverActive}>
+            <div style={{ background:'#1c1c1e', borderRadius:16, padding:'20px 20px 16px', width:340, maxWidth:'100%', boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
+              onClick={e=>e.stopPropagation()}>
+              <div style={{ fontSize:15, color:'#d1d5db', lineHeight:1.55, marginBottom:18, textAlign:'center' }}>
+                У тебя есть незавершённая тренировка «{wName}». Начать новую? Незавершённая будет удалена.
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                <button onClick={confirmStartOverActive}
+                  style={{ padding:'12px', borderRadius:10, border:'none', background:'#ef4444', color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer' }}>
+                  Начать новую
+                </button>
+                <button onClick={cancelStartOverActive}
+                  style={{ padding:'11px', borderRadius:10, border:'1px solid #374151', background:'none', color:'#9ca3af', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                  Вернуться к незавершённой
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1251,11 +1521,11 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                 {fmt(swTime)}
               </div>
               <div style={{ display:'flex', gap:10, justifyContent:'center' }}>
-                <button onClick={()=>setSwRunning(r=>!r)}
+                <button onClick={toggleStopwatch}
                   style={{ padding:'10px 32px', borderRadius:8, border:'none', background:swRunning?'#374151':wColor, color:'#fff', fontSize:14, fontWeight:600, cursor:'pointer' }}>
                   {swRunning?'⏸ Стоп':'▶ Старт'}
                 </button>
-                <button onClick={()=>{setSwRunning(false);setSwTime(0)}}
+                <button onClick={resetStopwatch}
                   style={{ padding:'10px 18px', borderRadius:8, border:'1px solid #374151', background:'none', color:'#9ca3af', fontSize:14, cursor:'pointer' }}>
                   ↺
                 </button>
@@ -1289,13 +1559,13 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       него теперь отдельная модалка "Откуда взялся этот вес"
                       (showProgressionIntro выше), не инлайн-строка. */}
                   {ex.progressNote&&!ex.done&&!COLD_START_NOTES.has(ex.progressNote)&&(
-                    <div style={{ fontSize:12.5, color:(ex.progressNote.startsWith('Снизили вес')||ex.progressNote.startsWith('Снизили нагрузку'))?PUR:'#9ca3af', marginTop:-4, marginBottom:8 }}>
+                    <div style={{ fontSize:12.5, color:(ex.progressNote.startsWith('Разгрузка')||ex.progressNote.startsWith('Снизили нагрузку'))?PUR:'#9ca3af', marginTop:-4, marginBottom:8 }}>
                       {ex.progressNote}
                     </div>
                   )}
                   {isOneSidedExercise(ex.n)&&(
                     <div style={{ fontSize:10, color:'#6b7280', marginTop:-4, marginBottom:8 }}>
-                      + повторения общим числом на обе стороны, не на одну
+                      Повторения считаются суммарно на обе стороны
                     </div>
                   )}
 
@@ -1305,7 +1575,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                         {ex.sets.map((s,si)=>(s.kg||s.bandLevel||s.reps)&&(
                           <span key={si} style={{ fontSize:11, color:'#9ca3af' }}>
                             {si+1}. {s.bandLevel!=null?`${s.bandLevel} рез.`:`${s.kg||'—'}кг`} × {s.reps||'—'}
-                            {isOneSidedExercise(ex.n)&&<span title="Общее количество повторений на обе стороны, не на одну">+</span>}
+                            {isOneSidedExercise(ex.n)&&<span title="Повторения считаются суммарно на обе стороны">+</span>}
                           </span>
                         ))}
                       </div>
@@ -1347,13 +1617,18 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                               )}
                               <div style={{ position:'relative', width:'100%' }}>
                                 <input value={set.reps}
-                                  onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,reps:e.target.value}:s)}:x))}
+                                  onChange={e=>handleRepsChange(ei,si,e.target.value)}
                                   onFocus={selectOnFocus}
                                   placeholder="0"
                                   style={{ background:'#374151', border:'1px solid #4b5563', borderRadius:6, padding:'6px 6px', fontSize:13, color:'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
                                 {isOneSidedExercise(ex.n)&&(
-                                  <span title="Общее количество повторений на обе стороны, не на одну"
-                                    style={{ position:'absolute', top:-12, right:-12, width:44, height:44, display:'flex', alignItems:'center', justifyContent:'center', fontSize:19, fontWeight:800, color:PUR, cursor:'help', lineHeight:1 }}>+</span>
+                                  // Метка "выполняется на обе стороны" — НЕ кнопка (нет onClick,
+                                  // isOneSidedExercise в programs.js только определяет упражнение
+                                  // по названию для этой подписи). Тап-зону 44x44 не делаем —
+                                  // это ввело бы в заблуждение, что значок интерактивный.
+                                  // Заметнее визуально (кружок-бейдж), но по размеру = самому себе.
+                                  <span title="Повторения считаются суммарно на обе стороны"
+                                    style={{ position:'absolute', top:-8, right:-8, width:17, height:17, borderRadius:'50%', background:PUR, display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:800, color:'#fff', lineHeight:1 }}>+</span>
                                 )}
                               </div>
                               <button onClick={()=>setOpenSetNote(noteOpen?null:{ei,si})}
@@ -1377,7 +1652,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                 понимал, что именно он оценивает. */}
                             {si>=ex.sets.length-2&&(
                               <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', gap:8, marginTop:6, paddingLeft:29 }}>
-                                <span style={{ fontSize:11, color:'#6b7280', flexShrink:0 }}>Как далось?</span>
+                                <span style={{ fontSize:11, color:'#6b7280', flexShrink:0 }}>Тяжесть подхода</span>
                                 <div style={{ display:'flex', gap:3 }}>
                                   {[1,2,3,4,5].map(n=>(
                                     <div key={n} style={{ display:'flex', flexDirection:'column', alignItems:'center' }}>
@@ -1482,6 +1757,24 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   // ── Список программ
   return (
     <div style={{ position:'relative' }}>
+      {/* Черновик тренировки старше 24ч, найденный при загрузке приложения —
+          через портал: WorkoutsView может быть скрыт (display:none, см.
+          renderMain в App), если клиент открыл приложение не на вкладке
+          "Тренировки" — модалка всё равно должна быть видна сразу. */}
+      {staleDraft&&createPortal(
+        <div style={{ position:'fixed', inset:0, zIndex:1450, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.6)', padding:'0 18px' }}>
+          <div style={{ background:'#1c1c1e', borderRadius:16, padding:'22px 20px', width:340, maxWidth:'100%', boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}>
+            <div style={{ fontSize:15, fontWeight:700, color:'#fff', marginBottom:8, textAlign:'center' }}>Незавершённая тренировка</div>
+            <div style={{ fontSize:13, color:'#d1d5db', marginBottom:18, textAlign:'center', lineHeight:1.5 }}>
+              Осталась незавершённая тренировка от {new Date(staleDraft.startedAt).toLocaleDateString('ru',{day:'numeric',month:'long'})}. Продолжить или удалить?
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              <button onClick={confirmStaleDraft} style={{ padding:'11px', borderRadius:10, border:'none', background:PUR, color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer' }}>Продолжить</button>
+              <button onClick={discardStaleDraft} style={{ padding:'11px', borderRadius:10, border:'1px solid #374151', background:'none', color:'#ef4444', fontSize:14, fontWeight:600, cursor:'pointer' }}>Удалить</button>
+            </div>
+          </div>
+        </div>
+      , document.body)}
       {showFinishToast&&(
         <div style={{
           position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
@@ -3197,6 +3490,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                       {(ex.sets||[]).map((s,si)=>(s.kg||s.reps)&&(
                         <span key={si} style={{ fontSize:11,color:'#6b7280',background:'#f3f4f6',padding:'2px 8px',borderRadius:5 }}>
                           {si+1}. {s.kg||'—'} кг × {s.reps||'—'}
+                          {s.rating&&<span style={{ color:PUR,fontWeight:600 }}> · {s.rating} · {RATING_LABELS[s.rating]}</span>}
                         </span>
                       ))}
                     </div>
@@ -3384,6 +3678,13 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                               <span style={{ fontSize:11,fontWeight:600,color:'#d1d5db',width:16,textAlign:'center' }}>{si+1}</span>
                               <span style={{ fontSize:14,fontWeight:600,color:'#111' }}>{parseFloat(s.kg)||0} кг</span>
                               <span style={{ fontSize:13,color:'#9ca3af' }}>× {parseInt(s.reps)||0} повт.</span>
+                              {/* Оценка тяжести подхода (workout_sets.rating) — без неё не видно,
+                                  почему движок прогрессии изменил вес на следующий раз (см. задачу 1). */}
+                              {s.rating&&(
+                                <span style={{ fontSize:11,fontWeight:600,color:PUR,background:`${PUR}18`,padding:'2px 8px',borderRadius:6 }}>
+                                  {s.rating} · {RATING_LABELS[s.rating]}
+                                </span>
+                              )}
                             </div>
                             <span style={{ fontSize:13,fontWeight:600,color:PUR }}>{(parseFloat(s.kg)||0)*(parseInt(s.reps)||0)} кг</span>
                           </div>
@@ -5270,6 +5571,51 @@ function PullToRefreshIndicator({ pull, refreshing }) {
   )
 }
 
+// Плашка свёрнутой тренировки — показывается на ЛЮБОМ экране, кроме самого
+// экрана активной тренировки (см. isWorkoutForeground в App). Портал в
+// document.body — не зависит от того, где в дереве она объявлена, и не
+// перехватывает события других вкладок (кроме своей собственной area).
+// Таймер считается от meta.startedAt независимо от WorkoutsView (та же
+// логика "от отметки", не тиками — см. задачу про таймер), так что даже
+// если WorkoutsView скрыт (display:none) и не перерисовывается, плашка
+// всё равно идёт секунда в секунду.
+function MinimizedWorkoutBar({ meta, isMobile, bottomOffset, onClick }) {
+  const [now,setNow]=useState(()=>Date.now())
+  useEffect(()=>{
+    const id=setInterval(()=>setNow(Date.now()),1000)
+    return()=>clearInterval(id)
+  },[])
+  const elapsed=meta.startedAt?Math.max(0,Math.floor((now-meta.startedAt)/1000)):0
+  const fmt=s=>{
+    const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
+  }
+  return createPortal(
+    // z-index 1065 — выше полноэкранных Профиля (1050) и Настроек (1060),
+    // чтобы плашка была видна и там (см. задачу "любой другой путь ухода"),
+    // но ниже шторки профиля (1100) и тостов/модалок (1200+) — те открыты
+    // считаные секунды, плашка на это время просто не видна, а не перекрывает
+    // их кнопки поверх. AI-кнопка (1070) с плашкой не пересекается вообще:
+    // при видимой плашке кнопка приподнята на её высоту (extraBottomOffset).
+    <div onClick={onClick} style={{
+      position:'fixed', left:0, right:0, bottom:bottomOffset, zIndex:1065,
+      background:meta.wColor||PUR, color:'#fff', cursor:'pointer',
+      display:'flex', alignItems:'center', justifyContent:'space-between',
+      padding:'10px 16px', boxShadow:'0 -2px 12px rgba(0,0,0,0.18)',
+      paddingBottom:isMobile?'max(10px, env(safe-area-inset-bottom))':10,
+    }}>
+      <div style={{ display:'flex', alignItems:'center', gap:10, minWidth:0 }}>
+        <span style={{ fontSize:18, flexShrink:0 }}>🏋️</span>
+        <div style={{ minWidth:0 }}>
+          <div style={{ fontSize:13, fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{meta.wName}</div>
+          <div style={{ fontSize:11, opacity:0.85, fontVariantNumeric:'tabular-nums' }}>⏱ {fmt(elapsed)}</div>
+        </div>
+      </div>
+      <span style={{ fontSize:13, fontWeight:700, flexShrink:0, marginLeft:10, whiteSpace:'nowrap' }}>Вернуться ›</span>
+    </div>
+  , document.body)
+}
+
 export default function App() {
   const [user,setUser]=useState(null)
   const [authLoading,setAuthLoading]=useState(true)
@@ -5321,12 +5667,33 @@ export default function App() {
   const [diaryJumpToken,setDiaryJumpToken]=useState(0)
   const [sc,setSC]=useState(null)
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768)
-  const [workoutActive,setWorkoutActive]=useState(false)
   const [pendingWorkoutAction,setPendingWorkoutAction]=useState(null)
   const [showProfileView,setShowProfileView]=useState(false)
   const [showProfileSheet,setShowProfileSheet]=useState(false)
   const [showSettingsView,setShowSettingsView]=useState(false)
   const aiRef=useRef()
+
+  // Тренировка "на переднем плане" — виден именно её полный экран, а не
+  // плашка свёрнутой тренировки. nav==='workouts' само по себе НЕ
+  // достаточно: аватар/Профиль/Настройки открываются как оверлеи ПОВЕРХ
+  // текущего nav (не меняя его), поэтому даже если nav всё ещё 'workouts',
+  // пока один из этих оверлеев открыт, тренировку с экрана реально не
+  // видно — плашка должна показываться и там (см. задачу про "любой другой
+  // путь ухода с экрана тренировки").
+  const isWorkoutForeground = nav==='workouts' && !showProfileView && !showSettingsView && !showProfileSheet
+  // Снимок активной тренировки для плашки (см. onWorkoutMeta в WorkoutsView) —
+  // null, когда тренировки нет. Плашка показывается когда снимок есть И
+  // тренировка не на переднем плане.
+  const [workoutMeta,setWorkoutMeta]=useState(null) // {wName,wColor,startedAt} | null
+  const workoutMinimized = !!workoutMeta && !isWorkoutForeground
+  // Открыть свёрнутую тренировку — закрывает все оверлеи, которые могли её
+  // загородить (см. isWorkoutForeground), и возвращает nav на 'workouts'.
+  const reopenWorkout=()=>{
+    setShowProfileView(false)
+    setShowSettingsView(false)
+    setShowProfileSheet(false)
+    setNav('workouts')
+  }
 
   // Проверка ?trainer=1 в URL при загрузке
   useEffect(()=>{
@@ -5373,6 +5740,18 @@ export default function App() {
   const [workoutHistory,setWorkoutHistory]=useState(()=>{
     try{return JSON.parse(localStorage.getItem('fitpro_history')||'[]')}catch{return []}
   })
+  // Счётчик версии истории тренировок — растёт на 1 при КАЖДОМ подтверждённом
+  // изменении workouts/workout_sets (завершение, правка, удаление, копия),
+  // независимо от того, кто инициировал изменение — WorkoutsView (сама
+  // перечитывает свою setsHistory сразу после сохранения) или DiaryView
+  // (не имеет доступа к setsHistory/workoutsLog WorkoutsView вообще, это
+  // отдельный, часто размонтированный компонент). WorkoutsView подписан на
+  // этот счётчик отдельным пропом (historyVersion) и перечитывает историю
+  // при каждом его изменении — без этого движок прогрессии мог посчитать
+  // вес по уже удалённой/изменённой тренировке, если WorkoutsView в момент
+  // изменения был смонтирован (например остался открытым на другом
+  // устройстве/вкладке, или просто не размонтировался между действиями).
+  const [historyVersion,setHistoryVersion]=useState(0)
   const [customExercises,setCustomExercises]=useState(()=>{
     try{return JSON.parse(localStorage.getItem('fitpro_custom_ex')||'[]')}catch{return []}
   })
@@ -5434,11 +5813,16 @@ export default function App() {
 
   const [editTarget,setEditTarget]=useState(null)
 
+  // Переход по нижнему меню во время активной тренировки — НЕ спрашивает
+  // подтверждения (раньше здесь был window.confirm "Прогресс будет
+  // потерян" — неверно, клиент не просил ничего выкидывать, он просто
+  // переключает экран). Тренировка молча сворачивается: WorkoutsView
+  // остаётся смонтированным (см. renderMain ниже, always-mounted +
+  // display:none), её внутренний step не трогаем — только nav уходит с
+  // 'workouts', и это само по себе делает тренировку "не на переднем
+  // плане" (см. isWorkoutForeground) — везде показывается плашка
+  // свёрнутой тренировки с таймером.
   const handleNav=(id)=>{
-    if(workoutActive&&id!=='workouts'){
-      if(!window.confirm('Тренировка в процессе. Выйти? Прогресс будет потерян.'))return
-      setWorkoutActive(false)
-    }
     setNav(id)
   }
 
@@ -5535,7 +5919,7 @@ export default function App() {
     const{id:workoutId,error:rowError}=await insertWorkoutRow(withDate)
     const{ids,error:setsError}=await insertWorkoutSetsRows(withDate,workoutId)
     const ok=!rowError&&!setsError
-    if(ok)setWorkoutHistory(h=>h.map(w=>w===withDate?{...w,workoutId,supabaseSetIds:ids}:w))
+    if(ok){setWorkoutHistory(h=>h.map(w=>w===withDate?{...w,workoutId,supabaseSetIds:ids}:w));setHistoryVersion(v=>v+1)}
     return{ok}
   }
 
@@ -5553,7 +5937,7 @@ export default function App() {
       if(delError)console.error('Ошибка удаления старых подходов при обновлении тренировки:',delError)
       const{ids,error:setsError}=await insertWorkoutSetsRows(merged,old.workoutId)
       const ok=!updateError&&!delError&&!setsError
-      if(ok)setWorkoutHistory(h=>h.map((w,i)=>i===histIdx?{...w,supabaseSetIds:ids}:w))
+      if(ok){setWorkoutHistory(h=>h.map((w,i)=>i===histIdx?{...w,supabaseSetIds:ids}:w));setHistoryVersion(v=>v+1)}
       return{ok}
     }
     // Старая запись без workoutId (ещё не переведена на таблицу workouts) —
@@ -5562,7 +5946,7 @@ export default function App() {
     const{id:workoutId,error:rowError}=await insertWorkoutRow(merged)
     const{ids,error:setsError}=await insertWorkoutSetsRows(merged,workoutId)
     const ok=!rowError&&!setsError
-    if(ok)setWorkoutHistory(h=>h.map((w,i)=>i===histIdx?{...w,workoutId,supabaseSetIds:ids}:w))
+    if(ok){setWorkoutHistory(h=>h.map((w,i)=>i===histIdx?{...w,workoutId,supabaseSetIds:ids}:w));setHistoryVersion(v=>v+1)}
     return{ok}
   }
 
@@ -5572,10 +5956,16 @@ export default function App() {
     setNav('workouts')
   }
 
-  const handleDeleteWorkout=(histIdx)=>{
+  // async + await удаления в Supabase (было fire-and-forget) — historyVersion
+  // растёт ТОЛЬКО после того, как запрос на удаление реально отработал, а не
+  // сразу по клику. Без этого WorkoutsView (если смонтирован) мог перечитать
+  // setsHistory РАНЬШЕ, чем строка реально исчезла из workout_sets, и всё
+  // равно увидеть удалённую тренировку в новой выборке.
+  const handleDeleteWorkout=async(histIdx)=>{
     const workout=workoutHistory[histIdx]
-    if(workout)deleteWorkoutSetsRows(workout)
+    if(workout)await deleteWorkoutSetsRows(workout)
     setWorkoutHistory(h=>h.filter((_,i)=>i!==histIdx))
+    setHistoryVersion(v=>v+1)
   }
 
   const handleCopyWorkout=(workout)=>{
@@ -5591,14 +5981,15 @@ export default function App() {
   if(authLoading) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#08080f',color:'#9ca3af',fontSize:14}}>Загрузка...</div>
   if(!user) return <LandingPage onEnter={setUser} />
 
-  const renderMain=()=>{
+  // Всё, КРОМЕ Тренировок — обычная свитч-навигация, монтируется/
+  // размонтируется по nav, как и раньше.
+  const renderOther=()=>{
     if(nav==='cdetail'&&sc)return <ClientDetail client={sc} goBack={goBackNav} />
     switch(nav){
       case 'dashboard': return userRole==='trainer'
         ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} />
         : <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} />
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} userId={user?.id} />
-      case 'workouts':  return <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutActiveChange={setWorkoutActive} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} />
       case 'nutrition': return <NutritionView userId={user?.id} />
       case 'library':   return <LibraryView customExercises={customExercises} />
       case 'chat':      return <ChatView />
@@ -5607,8 +5998,27 @@ export default function App() {
     }
   }
 
+  // WorkoutsView — ВСЕГДА смонтирован (не через switch/case), а не только
+  // когда nav==='workouts'. Свёрнутая тренировка должна пережить переход на
+  // любую другую вкладку — её локальный стейт (wExercises, таймер,
+  // черновик и т.п.) живёт внутри самого компонента, а не в App (см. задачу
+  // "состояние тренировки должно переживать навигацию"); unmount уничтожил
+  // бы его безвозвратно. Видимость переключается через display:none —
+  // компонент не размонтируется никогда за время сессии, включая когда сам
+  // экран тренировки не активен (там просто нет активной тренировки, но
+  // компонент всё равно смонтирован и слушает свою историю/профиль).
+  const renderMain=()=>(
+    <>
+      <div style={{ display: nav==='workouts' ? 'block' : 'none' }}>
+        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} />
+      </div>
+      {nav!=='workouts'&&renderOther()}
+    </>
+  )
+
   const BOTTOM_NAV_H = 62
   const MOBILE_TOP_H = 48
+  const MINIMIZED_BAR_H = 56
 
   return (
     <>
@@ -5776,7 +6186,21 @@ export default function App() {
         </div>
       )}
 
-      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} hideButton={workoutActive} />
+      {/* Плашка свёрнутой тренировки — на любом экране, кроме самого экрана
+          активной тренировки (см. workoutMinimized выше). Позиция — над
+          нижним меню на мобильном (BOTTOM_NAV_H), у самого низа на
+          десктопе (там нижнего меню нет вообще). */}
+      {workoutMinimized&&(
+        <MinimizedWorkoutBar meta={workoutMeta} isMobile={isMobile} bottomOffset={isMobile?BOTTOM_NAV_H:0} onClick={reopenWorkout} />
+      )}
+
+      {/* hideButton — скрываем плавающую кнопку AI-ассистента только когда
+          виден именно полный экран активной тренировки (там она была бы
+          лишней, см. исходный комментарий ниже) — НЕ когда тренировка
+          просто свёрнута: тогда кнопка возвращается, но приподнятая на
+          высоту плашки (extraBottomOffset), чтобы плашка её не перекрыла
+          (известный ранее z-index-баг, явно проверяем каждый раз). */}
+      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} hideButton={isWorkoutForeground} extraBottomOffset={workoutMinimized?MINIMIZED_BAR_H:0} />
     </>
   )
 }

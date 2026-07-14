@@ -693,6 +693,26 @@ function buildTemplateScaleTestCases() {
       kgsMatch && scale.appliedPct === 5 && ratio < 0.7 && kgs[2] !== kgs[3])
   }
 
+  // 7) Удаление единственной тренировки упражнения → снова холодный старт.
+  // Движок не хранит состояние сам — buildExerciseAggregates каждый раз
+  // пересчитывает всё заново из плоского списка подходов (setsHistory),
+  // который WorkoutsView перечитывает из workout_sets. "Удаление" здесь —
+  // buildExerciseAggregates на пустом списке, ровно то, что вернёт Supabase
+  // после DELETE и последующего перечитывания (см. historyVersion в App.jsx —
+  // без него после удаления в DiaryView WorkoutsView мог продолжать считать
+  // вес по уже удалённой тренировке, если оставался смонтированным).
+  {
+    const templateStr = '20 кг × 20, 30 кг × 15, 30 кг × 12, 35 кг × 12'
+    const templateSets = parseTemplateSets(templateStr)
+    const withHistory = simulateKgSession(EX, [{ kg: 20, reps: 20 }, { kg: 30, reps: 15 }, { kg: 30, reps: 12 }, { kg: 35, reps: 12 }], [3, 3])
+    const scaleWithHistory = computeTemplateScale(withHistory.anchorSet, withHistory.lastSession.effRatings, templateSets, withHistory.hardStreak)
+    const afterDelete = buildExerciseAggregates([])[EX] // пустой список подходов — как после удаления и перечитывания
+    push('Удаление единственной тренировки упражнения → холодный старт при следующем появлении (agg отсутствует, scale=null)',
+      'до удаления: scale посчитан (не холодный старт); после: agg отсутствует → холодный старт',
+      `до: ${scaleWithHistory ? `scale=${scaleWithHistory.scale.toFixed(3)}` : 'null'}; после: ${afterDelete ? 'agg есть (БАГ)' : 'agg отсутствует'}`,
+      !!scaleWithHistory && afterDelete === undefined)
+  }
+
   return rows
 }
 
