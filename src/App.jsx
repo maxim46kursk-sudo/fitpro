@@ -4,10 +4,9 @@ import AIAssistant from './AIAssistant'
 import { supabase } from './supabase.js'
 import { FOLDERS, PROGRAMS_MAP, EXERCISES, isOneSidedExercise } from './programs.js'
 import { oneRepMax, weightForReps, roundToPlate, percentTable } from './oneRepMax.js'
-// buildConstructorSessions — используется только syncConstructorHistoryOnDelete
-// ниже (чистит "теневую" историю Конструктора при удалении тренировки из
-// дневника). Остальной Конструктор заморожен, см. docs/CONSTRUCTOR_FROZEN.md.
-import { buildConstructorSessions } from './constructorPhases.js'
+// Движок прогрессии (1ПМ) — врезан в кнопку "▶ Начать тренировку" внутри
+// слота шаблонной программы (WorkoutsView), см. подробный комментарий там.
+import { buildExerciseAggregates, computeTargetWeight, parseTemplateSets } from './workoutPrompt.js'
 import './App.css'
 
 const PUR = '#7F77DD'
@@ -537,6 +536,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const [showSendModal,setShowSendModal]=useState(false)
   const [sendCopied,setSendCopied]=useState(false)
   const [showFinishToast,setShowFinishToast]=useState(false)
+  const [showSaveError,setShowSaveError]=useState(false)
   const setVideoInputRef=useRef(null)
   const setVideoUploadTarget=useRef(null)
 
@@ -555,6 +555,21 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     setInfoFolder(null)
     if(userId)supabase.from('profiles').update({program:folder}).eq('id',userId)
   }
+
+  // История подходов клиента — опора движка прогрессии (buildExerciseAggregates/
+  // computeTargetWeight, workoutPrompt.js) для кнопки "▶ Начать тренировку"
+  // внутри слота шаблонной программы (см. ниже). Грузим сразу все подходы
+  // пользователя одним запросом — агрегаты считаются на лету из плоского
+  // списка, отдельного бэкенд-эндпоинта под конкретное упражнение нет.
+  const [setsHistory,setSetsHistory]=useState([])
+  const loadSetsHistory=async()=>{
+    if(!userId)return
+    const{data,error}=await supabase.from('workout_sets')
+      .select('id,exercise,date,kg,reps,rating,workout_id').eq('user_id',userId).order('id')
+    if(error){console.error('Ошибка загрузки истории подходов для прогрессии:',error);return}
+    setSetsHistory(data||[])
+  }
+  useEffect(()=>{loadSetsHistory()},[userId])
 
   useEffect(()=>{
     if(editTarget&&!isEditMode){
@@ -657,19 +672,32 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     finishWorkout()
   }
 
-  const finishWorkout=()=>{
+  const finishWorkout=async()=>{
     if(wExercises.length>0){
       const date=wDate
         ?new Date(wDate+'T12:00:00').toISOString()
         :(isEditMode&&editTarget?editTarget.workout.date:new Date().toISOString())
       const updated={name:wName,color:wColor,exercises:wExercises,duration:wMode==='start'?timer:null,date,comment:wComment}
-      if(isEditMode&&editTarget){
-        onWorkoutUpdate(editTarget.histIdx,updated)
-      } else {
-        onWorkoutComplete(updated)
+      // onWorkoutComplete/onWorkoutUpdate (handleWorkoutComplete/handleWorkoutUpdate
+      // в App) теперь возвращают промис {ok}, который резолвится ПОСЛЕ реальной
+      // записи в Supabase — ждём его перед перезагрузкой setsHistory, иначе
+      // следующая тренировка в этой же сессии приложения посчитается по
+      // устаревшей истории (buildExerciseAggregates ниже). Если запись
+      // упала — не перезагружаем историю молча и не выходим с экрана, чтобы
+      // клиент не потерял введённые данные и мог повторить попытку.
+      const{ok}=isEditMode&&editTarget
+        ?await onWorkoutUpdate(editTarget.histIdx,updated)
+        :await onWorkoutComplete(updated)
+      if(!ok){
+        setShowSaveError(true)
+        setTimeout(()=>setShowSaveError(false),3500)
+        return
+      }
+      if(!(isEditMode&&editTarget)){
         setShowFinishToast(true)
         setTimeout(()=>setShowFinishToast(false),2500)
       }
+      await loadSetsHistory()
     }
     exitWorkout()
   }
@@ -777,6 +805,20 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   if(step==='active'){
     return (
       <div style={{ display:'flex', flexDirection:'column', height:'calc(100vh - 40px)', background:'#111', borderRadius:14, overflow:'hidden', color:'#fff', position:'relative' }}>
+
+        {/* Тост ошибки сохранения — тренировка НЕ записалась в Supabase,
+            остаёмся на экране (см. finishWorkout), клиент ничего не теряет
+            и может повторить попытку кнопкой "Завершить"/"Сохранить". */}
+        {showSaveError&&(
+          <div style={{
+            position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
+            zIndex:1200, padding:'10px 18px', borderRadius:24, maxWidth:320, textAlign:'center',
+            background:'#dc2626', color:'#fff', fontSize:13, fontWeight:700,
+            boxShadow:'0 6px 20px rgba(220,38,38,0.35)',
+          }}>
+            Не удалось сохранить тренировку — проверьте интернет и попробуйте ещё раз
+          </div>
+        )}
 
         {/* Мини-попап нового упражнения */}
         {customOpen&&(
@@ -1324,24 +1366,28 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   if(exs.length===0)return
                   setWName(`${openFolder} — тренировка ${currentSlot.slotNum}`)
                   setWColor(PUR)
+                  // Движок прогрессии (1ПМ, workoutPrompt.js) — та же математика,
+                  // что использует Конструктор (ConstructorView, заморожен) и
+                  // test-progression-personas.js. ПОВТОРЕНИЯ ВСЕГДА берутся из
+                  // шаблона программы (parseTemplateSets), движок их не меняет —
+                  // пересчитывается только рабочий вес, от накопленной истории
+                  // этого упражнения (setsHistory, см. выше).
+                  const aggregates=buildExerciseAggregates(setsHistory)
                   setWExercises(exs.map(ex=>{
-                    const str=(ex.sets||'').trim()
-                    let parsedSets
-                    // "20 кг × 15, 25 кг × 12" — подходы с весом
-                    const kgMatches=[...str.matchAll(/(\d+(?:[.,]\d+)?)\s*кг\s*[×x]\s*(\d+)/g)]
-                    if(kgMatches.length>0){
-                      parsedSets=kgMatches.map(m=>({kg:m[1].replace(',','.'),reps:m[2],fromTemplate:true}))
-                    } else {
-                      // "3×12" — количество × повторы
-                      const sm=str.match(/^(\d+)\s*[×x]\s*(\d+)$/)
-                      if(sm){
-                        parsedSets=Array.from({length:parseInt(sm[1])},()=>({kg:'',reps:sm[2]}))
-                      } else {
-                        // "30, 30, 30, 30" — повторы без веса
-                        const parts=str.split(',').map(s=>s.trim()).filter(s=>/^\d+$/.test(s))
-                        parsedSets=parts.length>0?parts.map(r=>({kg:'',reps:r})):[{kg:'',reps:''}]
-                      }
-                    }
+                    const templateSets=parseTemplateSets(ex.sets)
+                    const agg=aggregates[ex.name]
+                    const parsedSets=templateSets.map(ts=>{
+                      // Б/в, резина, голые повторения без снаряда — вес движком
+                      // не считается вообще (нечего масштабировать по 1ПМ).
+                      if(ts.templateKg==null)return{kg:'',reps:String(ts.reps),recKg:'',rating:'',fromTemplate:false}
+                      // Холодный старт: по упражнению ещё нет истории —
+                      // подставляем стартовый ориентир тренера как есть
+                      // (красная рамка в UI, как и раньше).
+                      if(!agg||!agg.anchorSet)return{kg:String(ts.templateKg),reps:String(ts.reps),recKg:'',rating:'',fromTemplate:true}
+                      const target=computeTargetWeight(agg.anchorSet,agg.lastSession.effRatings,ts.reps,agg.hardStreak)
+                      if(!target)return{kg:String(ts.templateKg),reps:String(ts.reps),recKg:'',rating:'',fromTemplate:true}
+                      return{kg:String(target.kg),reps:String(ts.reps),recKg:String(target.kg),rating:'',fromTemplate:false}
+                    })
                     return{n:ex.name,m:'',eq:'',sets:parsedSets,done:false}
                   }))
                   setWMode('start')
@@ -5073,18 +5119,22 @@ export default function App() {
   // либо угадывали нужные строки по дате+названию. Теперь каждая тренировка —
   // отдельная строка в workouts, её id (workoutId) хранится на самой записи и
   // однозначно определяет "чьи это подходы", включая на любом другом устройстве.
+  // {id,error} вместо голого id/null — вызывающему (handleWorkoutComplete/
+  // handleWorkoutUpdate) нужно уметь отличить "ошибка записи" от "писать
+  // было нечего", чтобы честно вернуть {ok:false} в WorkoutsView и не
+  // перезагружать setsHistory молча по несуществующим данным.
   const insertWorkoutRow=async(workout)=>{
-    if(!user?.id)return null
+    if(!user?.id)return{id:null,error:null}
     const{data,error}=await supabase.from('workouts').insert({
       user_id:user.id, name:workout.name||null, color:workout.color||null,
       date:workout.date, duration:workout.duration!=null?workout.duration:null, comment:workout.comment||null,
     }).select('id').single()
-    if(error){console.error('Ошибка создания тренировки в Supabase:',error);return null}
-    return data?.id??null
+    if(error){console.error('Ошибка создания тренировки в Supabase:',error);return{id:null,error}}
+    return{id:data?.id??null,error:null}
   }
 
   const insertWorkoutSetsRows=async(workout,workoutId)=>{
-    if(!user?.id)return []
+    if(!user?.id)return{ids:[],error:null}
     const isoDate=(workout.date||'').slice(0,10)
     const rows=[]
     for(const ex of workout.exercises||[]){
@@ -5093,56 +5143,10 @@ export default function App() {
         rows.push({user_id:user.id,exercise:ex.n,date:isoDate,kg:s.kg?Number(s.kg):null,reps:s.reps?Number(s.reps):null,note:s.note||null,recommended_kg:s.recKg?Number(s.recKg):null,rating:s.rating?Number(s.rating):null,workout_id:workoutId??null})
       }
     }
-    if(!rows.length)return []
+    if(!rows.length)return{ids:[],error:null}
     const{data,error}=await supabase.from('workout_sets').insert(rows).select('id')
-    if(error){console.error('Ошибка синхронизации тренировки с Supabase:',error);return []}
-    return (data||[]).map(r=>r.id)
-  }
-
-  // Удаление тренировки из дневника раньше чистило только workouts/
-  // workout_sets — "теневая" копия в Конструкторе (constructor_sets) не
-  // трогалась вообще, ровно тот же класс бага, что чинили в "Удалить все
-  // данные": история продолжала невидимо висеть и подсказывать вес по
-  // тренировке, которую пользователь считает удалённой. Прямой связи между
-  // workout_sets и constructor_sets в схеме нет, поэтому сопоставляем сессию
-  // Конструктора с удаляемой тренировкой по (название упражнения, дата) +
-  // ближайшему created_at — тем же способом, каким buildConstructorSessions
-  // вообще определяет границы сессии, так что риск задеть ДРУГУЮ, реально
-  // отдельную тренировку того же упражнения в тот же день исключён: если бы
-  // они были разными сессиями, buildConstructorSessions уже развела бы их по
-  // времени (порог 30 минут), и в выборку попадёт только ближайшая.
-  const syncConstructorHistoryOnDelete=async(deletedRows)=>{
-    if(!user?.id||!deletedRows?.length)return
-    const byExercise={}
-    for(const r of deletedRows){
-      if(!r.exercise||!r.date)continue
-      ;(byExercise[r.exercise]??=[]).push(r)
-    }
-    for(const[exerciseName,rows]of Object.entries(byExercise)){
-      const{data:exRows}=await supabase.from('constructor_exercises').select('id').eq('user_id',user.id).eq('name',exerciseName)
-      if(!exRows?.length)continue // обычная ручная запись, не из Конструктора — пропускаем
-      const targetDate=rows[0].date
-      const times=rows.map(r=>new Date(r.created_at).getTime()).filter(t=>!Number.isNaN(t))
-      const refTime=times.length?Math.min(...times):NaN
-      for(const exRow of exRows){
-        const{data:history}=await supabase.from('constructor_sets').select('*').eq('exercise_id',exRow.id).eq('user_id',user.id).order('id')
-        if(!history?.length)continue
-        const sessions=buildConstructorSessions(history)
-        const sameDateSessions=sessions.filter(s=>s.date===targetDate)
-        if(!sameDateSessions.length)continue
-        let best=sameDateSessions[0],bestDist=Infinity
-        for(const s of sameDateSessions){
-          const t=new Date(s.sets[0].created_at).getTime()
-          const dist=Number.isNaN(t)||Number.isNaN(refTime)?0:Math.abs(t-refTime)
-          if(dist<bestDist){bestDist=dist;best=s}
-        }
-        const idsToDelete=best.sets.map(s=>s.id)
-        if(idsToDelete.length){
-          const{error}=await supabase.from('constructor_sets').delete().in('id',idsToDelete)
-          if(error)console.error('Синхронизация Конструктора при удалении тренировки:',error)
-        }
-      }
-    }
+    if(error){console.error('Ошибка синхронизации тренировки с Supabase:',error);return{ids:[],error}}
+    return{ids:(data||[]).map(r=>r.id),error:null}
   }
 
   const deleteWorkoutSetsRows=async(workout)=>{
@@ -5150,17 +5154,13 @@ export default function App() {
     if(workout.workoutId!=null){
       // Одна запись в workouts — удаление каскадом (ON DELETE CASCADE) чистит
       // все её строки в workout_sets разом, без угадывания по дате/названию.
-      const{data:deletedRows}=await supabase.from('workout_sets').select('exercise,date,created_at').eq('workout_id',workout.workoutId)
       const{error}=await supabase.from('workouts').delete().eq('id',workout.workoutId)
       if(error)console.error('Ошибка удаления тренировки из Supabase:',error)
-      else await syncConstructorHistoryOnDelete(deletedRows)
       return
     }
     if(workout.supabaseSetIds?.length){
-      const{data:deletedRows}=await supabase.from('workout_sets').select('exercise,date,created_at').in('id',workout.supabaseSetIds)
       const{error}=await supabase.from('workout_sets').delete().in('id',workout.supabaseSetIds)
       if(error)console.error('Ошибка удаления тренировки из Supabase:',error)
-      else await syncConstructorHistoryOnDelete(deletedRows)
       return
     }
     // Записи без workoutId/supabaseSetIds (старые подходы ещё до перехода на
@@ -5169,13 +5169,15 @@ export default function App() {
     const isoDate=(workout.date||'').slice(0,10)
     const exerciseNames=[...new Set((workout.exercises||[]).map(ex=>ex.n).filter(Boolean))]
     if(!isoDate||!exerciseNames.length)return
-    const{data:deletedRows}=await supabase.from('workout_sets').select('exercise,date,created_at').eq('user_id',user.id).eq('date',isoDate).in('exercise',exerciseNames)
     const{error}=await supabase.from('workout_sets').delete().eq('user_id',user.id).eq('date',isoDate).in('exercise',exerciseNames)
     if(error)console.error('Ошибка удаления тренировки из Supabase (fallback):',error)
-    else await syncConstructorHistoryOnDelete(deletedRows)
   }
 
-  const handleWorkoutComplete=workout=>{
+  // Возвращает {ok} ПОСЛЕ фактического завершения записи в Supabase —
+  // WorkoutsView (finishWorkout) ждёт этот промис перед перезагрузкой
+  // setsHistory (движок прогрессии) и не должен обновлять историю молча,
+  // если запись не удалась.
+  const handleWorkoutComplete=async workout=>{
     // workoutId/supabaseSetIds намеренно не копируем из workout (может прийти
     // из handleCopyWorkout, который спредит старую запись) — это ВСЕГДА новая
     // тренировка и ей нужна своя собственная строка в Supabase, а не связь со
@@ -5183,36 +5185,38 @@ export default function App() {
     const{workoutId:_wid,supabaseSetIds:_sids,...rest}=workout
     const withDate={...rest,date:workout.date||new Date().toISOString()}
     setWorkoutHistory(h=>[...h,withDate])
-    ;(async()=>{
-      const workoutId=await insertWorkoutRow(withDate)
-      const ids=await insertWorkoutSetsRows(withDate,workoutId)
-      if(workoutId!=null||ids.length)setWorkoutHistory(h=>h.map(w=>w===withDate?{...w,workoutId,supabaseSetIds:ids}:w))
-    })()
+    const{id:workoutId,error:rowError}=await insertWorkoutRow(withDate)
+    const{ids,error:setsError}=await insertWorkoutSetsRows(withDate,workoutId)
+    const ok=!rowError&&!setsError
+    if(ok)setWorkoutHistory(h=>h.map(w=>w===withDate?{...w,workoutId,supabaseSetIds:ids}:w))
+    return{ok}
   }
 
-  const handleWorkoutUpdate=(histIdx,updated)=>{
+  const handleWorkoutUpdate=async(histIdx,updated)=>{
     const old=workoutHistory[histIdx]
     const merged={...updated,date:updated.date||old?.date,workoutId:old?.workoutId}
     setWorkoutHistory(h=>h.map((w,i)=>i===histIdx?merged:w))
-    ;(async()=>{
-      if(old?.workoutId!=null){
-        const{error}=await supabase.from('workouts').update({
-          name:merged.name||null, color:merged.color||null, date:merged.date,
-          duration:merged.duration!=null?merged.duration:null, comment:merged.comment||null,
-        }).eq('id',old.workoutId)
-        if(error)console.error('Ошибка обновления тренировки в Supabase:',error)
-        await supabase.from('workout_sets').delete().eq('workout_id',old.workoutId)
-        const ids=await insertWorkoutSetsRows(merged,old.workoutId)
-        setWorkoutHistory(h=>h.map((w,i)=>i===histIdx?{...w,supabaseSetIds:ids}:w))
-        return
-      }
-      // Старая запись без workoutId (ещё не переведена на таблицу workouts) —
-      // удаляем прежним способом и создаём заново уже с полноценной привязкой.
-      if(old)await deleteWorkoutSetsRows(old)
-      const workoutId=await insertWorkoutRow(merged)
-      const ids=await insertWorkoutSetsRows(merged,workoutId)
-      setWorkoutHistory(h=>h.map((w,i)=>i===histIdx?{...w,workoutId,supabaseSetIds:ids}:w))
-    })()
+    if(old?.workoutId!=null){
+      const{error:updateError}=await supabase.from('workouts').update({
+        name:merged.name||null, color:merged.color||null, date:merged.date,
+        duration:merged.duration!=null?merged.duration:null, comment:merged.comment||null,
+      }).eq('id',old.workoutId)
+      if(updateError)console.error('Ошибка обновления тренировки в Supabase:',updateError)
+      const{error:delError}=await supabase.from('workout_sets').delete().eq('workout_id',old.workoutId)
+      if(delError)console.error('Ошибка удаления старых подходов при обновлении тренировки:',delError)
+      const{ids,error:setsError}=await insertWorkoutSetsRows(merged,old.workoutId)
+      const ok=!updateError&&!delError&&!setsError
+      if(ok)setWorkoutHistory(h=>h.map((w,i)=>i===histIdx?{...w,supabaseSetIds:ids}:w))
+      return{ok}
+    }
+    // Старая запись без workoutId (ещё не переведена на таблицу workouts) —
+    // удаляем прежним способом и создаём заново уже с полноценной привязкой.
+    if(old)await deleteWorkoutSetsRows(old)
+    const{id:workoutId,error:rowError}=await insertWorkoutRow(merged)
+    const{ids,error:setsError}=await insertWorkoutSetsRows(merged,workoutId)
+    const ok=!rowError&&!setsError
+    if(ok)setWorkoutHistory(h=>h.map((w,i)=>i===histIdx?{...w,workoutId,supabaseSetIds:ids}:w))
+    return{ok}
   }
 
   const handleEditWorkout=(workout,histIdx)=>{

@@ -1,10 +1,12 @@
 // Расчётный движок прогрессии тренировок (1ПМ, формула Эпли из oneRepMax.js)
 // + системный промпт AI-консультанта в режиме "Тренировки".
 //
-// Движок (buildExerciseAggregates/computeTargetWeight/buildAssignedSessionPlan
-// ниже) — общая математика для Конструктора (ConstructorView в App.jsx,
-// который считает вес и прогрессию НАПРЯМУЮ через эти функции, без единого
-// слова диалога с AI) и для test-progression-personas.js. Единица
+// Движок (buildExerciseAggregates/computeTargetWeight/buildAssignedSessionPlan/
+// parseTemplateSets ниже) — общая математика для трёх независимых
+// потребителей: WorkoutsView в App.jsx (кнопка "▶ Начать тренировку" внутри
+// слота шаблонной программы — основной, боевой путь для клиентов), заморо-
+// женного Конструктора (ConstructorView в App.jsx, см.
+// docs/CONSTRUCTOR_FROZEN.md) и test-progression-personas.js. Единица
 // прогрессии — одноповторный максимум (1ПМ), а не тоннаж: тоннаж
 // несопоставим между разными повторениями (30кг×15 и вес на 6 повторений
 // нельзя сравнить через суммарный вес×повторения напрямую — это даёт
@@ -13,37 +15,15 @@
 //
 // Промпт (buildWorkoutSystemPrompt ниже) — режим консультанта: чат отвечает
 // на вопросы по технике/методике/мифам, но НЕ считает вес, НЕ составляет
-// программы и НЕ трогает дневник — это теперь целиком работа Конструктора.
-// Раньше движок использовался и здесь (модель получала уже посчитанный вес
-// и сама писала его в дневник маркерами ADD_SET/SET_PROGRAM и т.п.) — этот
-// путь закрыт полностью, см. историю правок.
+// программы и НЕ трогает дневник — весь расчёт веса теперь делает движок
+// выше напрямую внутри WorkoutsView, без единого слова диалога с AI. Раньше
+// движок использовался и здесь (модель получала уже посчитанный вес и сама
+// писала его в дневник маркерами ADD_SET/SET_PROGRAM и т.п.) — этот путь
+// закрыт полностью, см. историю правок.
 import { EXERCISE_TYPE } from './programs.js'
 import { oneRepMax, weightForReps, roundToPlate } from './oneRepMax.js'
 
 const FORMAT_RULE = 'ФОРМАТ ОТВЕТА: только сплошной текст. Категорически запрещены символы в начале строк: дефис, тире, звёздочка, точка с цифрой. Любые перечисления пиши в одну строку через запятую.'
-
-// ─────────────────────────────────────────────────────────────────────────
-// Диапазоны повторений по фазе и типу упражнения — только для классификации
-// сессии внутри buildExerciseAggregates (buildDeload использует получившуюся
-// историю сессий), сам вес по фазе не считается (это 1ПМ-движок, см. ниже).
-// ─────────────────────────────────────────────────────────────────────────
-const REP_RANGES = {
-  compound:  { volume: [15, 15], development: [10, 12], strength: [6, 8] },
-  isolation: { volume: [20, 20], development: [15, 15], strength: [10, 12] },
-}
-const PHASE_ORDER = ['volume', 'development', 'strength']
-
-function classifyPhase(type, reps) {
-  if (!reps) return null
-  const ranges = REP_RANGES[type] || REP_RANGES.compound
-  let best = null, bestDist = Infinity
-  for (const phase of PHASE_ORDER) {
-    const [lo, hi] = ranges[phase]
-    const dist = reps < lo ? lo - reps : reps > hi ? reps - hi : 0
-    if (dist < bestDist) { bestDist = dist; best = phase }
-  }
-  return best
-}
 
 // ─────────────────────────────────────────────────────────────────────────
 // Шаблон сессии программы хранит подходы человекочитаемой строкой ("20 кг ×
@@ -55,8 +35,13 @@ function classifyPhase(type, reps) {
 // PROGRESSION_RULE), templateKg — только когда в строке реально указан вес
 // в кг, иначе null (для таких подходов 1ПМ-движок вес не считает — это не
 // кг, считать по формуле Эпли нечего).
+//
+// Экспортирована отдельно (не только для buildAssignedSessionPlan ниже) —
+// App.jsx переиспользует её напрямую при запуске тренировки из слота
+// программы (WorkoutsView, кнопка "▶ Начать тренировку"), чтобы не
+// дублировать регулярку разбора шаблона.
 // ─────────────────────────────────────────────────────────────────────────
-function parseTemplateSets(str) {
+export function parseTemplateSets(str) {
   if (!str) return []
   return str.split(',').map(part => {
     const raw = part.trim()
@@ -71,15 +56,24 @@ function parseTemplateSets(str) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// История тренировок — группировка по упражнению и дате (сессии), с фазой
-// (только метка дня + правила 1/4), оценками нагрузки на рабочих подходах,
-// последним реальным подходом (опора 1ПМ-движка) и сигналом отката.
+// История тренировок — группировка по упражнению и сессии, с оценками
+// нагрузки на рабочих подходах, последним реальным подходом (опора
+// 1ПМ-движка) и сигналом разового отката.
 // ─────────────────────────────────────────────────────────────────────────
 
 // Рабочие подходы определяются СТРУКТУРНО, а не по наличию оценки: у каждого
-// упражнения за день несколько подходов, первые — разминочные, последние 2
-// (или меньше, если записано неполно) — рабочие (см. buildMethodSection).
-// Сортировка по id — порядок логирования внутри сессии.
+// упражнения за сессию несколько подходов, первые — разминочные, последние
+// 2 (или меньше, если записано неполно) — рабочие. Сессия — не календарный
+// день, а РЕАЛЬНАЯ тренировка: строки группируются по workout_id (одна
+// запись в "Мои тренировки" = одна сессия, сколько бы дней между ними ни
+// прошло, и сколько бы тренировок одного упражнения ни было в один день).
+// Старые строки без workout_id (до перехода на таблицу workouts, а также
+// синтетические источники вроде constructor_sets, где этого столбца в
+// принципе нет) группируются по date — предыдущее поведение, обратная
+// совместимость. Сортировка внутри сессии — по id (порядок логирования).
+// Порядок самих сессий — по МИНИМАЛЬНОМУ id строки в сессии (устойчиво к
+// тому, что дата тренировки может быть проставлена задним числом, а id
+// всегда отражает реальный порядок записи).
 export function buildExerciseAggregates(sets) {
   const byExercise = {}
   for (const s of sets) (byExercise[s.exercise] ??= []).push(s)
@@ -87,32 +81,31 @@ export function buildExerciseAggregates(sets) {
   const result = {}
   for (const [name, list] of Object.entries(byExercise)) {
     const type = EXERCISE_TYPE[name] || 'compound'
-    const byDate = {}
-    for (const s of list) (byDate[s.date] ??= []).push(s)
-    const dates = Object.keys(byDate).sort()
-    const sessions = dates.map(date => {
-      const daySets = byDate[date].slice().sort((a, b) => a.id - b.id)
-      const workingCount = Math.min(2, daySets.length)
-      const workingSets = daySets.slice(daySets.length - workingCount)
-      const repsCount = {}
-      workingSets.forEach(s => { if (s.reps) repsCount[s.reps] = (repsCount[s.reps] || 0) + 1 })
-      const modeReps = Object.entries(repsCount).sort((a, b) => b[1] - a[1])[0]?.[0]
-      const phase = modeReps ? classifyPhase(type, Number(modeReps)) : null
-      // Оценка рабочего подхода: если клиент её не поставил, считаем 3
-      // (комфортно) — скрытое допущение только для расчёта, клиенту как его
-      // выбор не показываем.
-      const effRatings = workingSets.map(s => s.rating ?? 3)
-      return { date, sets: daySets, workingSets, phase, effRatings }
-    })
+    const bySession = {}
+    for (const s of list) {
+      const key = s.workout_id != null ? `w${s.workout_id}` : `d${s.date}`
+      ;(bySession[key] ??= []).push(s)
+    }
+    const sessions = Object.values(bySession)
+      .map(rawSets => {
+        const daySets = rawSets.slice().sort((a, b) => a.id - b.id)
+        const workingCount = Math.min(2, daySets.length)
+        const workingSets = daySets.slice(daySets.length - workingCount)
+        // Оценка рабочего подхода: если клиент её не поставил, считаем 3
+        // (комфортно) — скрытое допущение только для расчёта, клиенту как
+        // его выбор не показываем.
+        const effRatings = workingSets.map(s => s.rating ?? 3)
+        return { date: daySets[0].date, sets: daySets, workingSets, effRatings, minId: daySets[0].id }
+      })
+      .sort((a, b) => a.minId - b.minId)
     const lastSession = sessions.length ? sessions[sessions.length - 1] : null
     // Последний реальный рабочий подход упражнения — единственная опора для
-    // расчёта следующего веса (см. PROGRESSION_RULE). НЕ "последний в этой
-    // же фазе" — прогрессия больше не ждёт возврата в ту же фазу цикла.
+    // расчёта следующего веса (см. PROGRESSION_RULE).
     const anchorSet = lastSession && lastSession.workingSets.length
       ? lastSession.workingSets[lastSession.workingSets.length - 1]
       : null
-    const deload = buildDeload(sessions)
-    result[name] = { type, sessions, lastSession, anchorSet, deload }
+    const hardStreak = computeHardStreak(sessions)
+    result[name] = { type, sessions, lastSession, anchorSet, hardStreak }
   }
   return result
 }
@@ -122,91 +115,70 @@ export function buildExerciseAggregates(sets) {
 // Нет оценки → считаем 3 (+5%).
 export const RATING_GROWTH_PCT = { 1: 10, 2: 7, 3: 5, 4: 3, 5: 2 }
 
-// Слой 2 методики: если по упражнению два раза подряд (независимо от фазы)
-// последний рабочий подход тяжёлый (оценка 4-5) — клиент не справляется,
-// откатываем 1ПМ этого упражнения назад до последнего уровня, где было
-// комфортно (оценка 3, включая скрытую авто-3 за пропущенную оценку).
-// Одинаково для базы и изоляции, без обмена нагрузкой между ними. Отдаём
-// реальные вес×повторения того комфортного подхода — 1ПМ и целевой вес под
-// сегодняшние повторения считает уже computeTargetWeight ниже, здесь только
-// опорная точка отката.
+// Слой 2 методики (откат) — портировано 1:1 из hasHardStreak в
+// src/constructorPhases.js (та же логика для Конструктора и здесь, только
+// без пропуска baseline-сессии: там первая сессия — стартовый замер, тут
+// такого понятия нет, первая тренировка идёт по шаблону тренера и
+// участвует в подсчёте наравне со всеми остальными).
 //
-// БАГ (найден test-progression-personas.js, "мёртвый откат"): если условие
-// "2 подряд тяжёлых" выполнено, но подхода с оценкой РОВНО 3 в истории ещё
-// ни разу не было (клиент тяжело тянет с самого начала, или тройка ещё не
-// успела появиться), цикл ниже находил её "ни разу" и раньше молча отдавал
-// null — то есть откат формально признавался нужным, но фактически вес не
-// снижался ни на грамм. Теперь при отсутствии оценки 3 откатываемся к
-// САМОМУ РАННЕМУ известному подходу упражнения (первая когда-либо
-// выполненная сессия) — это единственная объективная точка отсчёта, если
-// "комфортного" уровня в истории не было вообще, и она гарантированно не
-// тяжелее текущего анкера (вес между сессиями только рос, откат к началу
-// не может оказаться тяжелее того, что клиент уже осилил раньше).
-function buildDeload(sessions) {
-  if (sessions.length < 2) return null
-  const lastTwo = sessions.slice(-2)
-  const bothHard = lastTwo.every(s => s.effRatings.length && s.effRatings[s.effRatings.length - 1] >= 4)
-  if (!bothHard) return null
-  for (let i = sessions.length - 1; i >= 0; i--) {
-    const ws = sessions[i].workingSets
-    for (let j = ws.length - 1; j >= 0; j--) {
-      const eff = ws[j].rating ?? 3
-      if (eff === 3) {
-        return { kg: Number(ws[j].kg) || 0, reps: Number(ws[j].reps) || 0, date: sessions[i].date }
-      }
-    }
+// Если по упражнению два раза подряд последний рабочий подход тяжёлый
+// (оценка 4-5) — следующая тренировка получает разовый откат: 1ПМ текущего
+// анкера ×0.85 (×1.15 для ассист-тренажёров, см. computeTargetWeight)
+// вместо обычного роста по таблице оценок. Разовый: как только откат
+// применился, счётчик подряд тяжёлых обнуляется — следующий откат возможен
+// только после ДВУХ НОВЫХ тяжёлых тренировок, случившихся уже после этого
+// отката. Без сброса пара, которая уже вызвала откат, при сдвиге окна на
+// одну сессию вперёд повторно засчиталась бы во вторую тяжёлую пару подряд.
+//
+// Пересчитывается заново из истории при каждом обращении, никакого
+// отдельного состояния/флага в БД не хранится.
+function computeHardStreak(sessions) {
+  if (!sessions || sessions.length < 2) return false
+  let streak = 0
+  for (const s of sessions) {
+    if (streak >= 2) streak = 0 // эта тренировка уже получила откат — счётчик с неё стартует заново
+    const rating = s.effRatings.length ? s.effRatings[s.effRatings.length - 1] : 3
+    streak = rating >= 4 ? streak + 1 : 0
   }
-  const earliest = sessions[0]
-  const ews = earliest.workingSets
-  const anchor = ews[ews.length - 1]
-  if (!anchor) return null
-  return { kg: Number(anchor.kg) || 0, reps: Number(anchor.reps) || 0, date: earliest.date }
+  return streak >= 2
 }
 
 // Единица прогрессии — 1ПМ, не тоннаж (см. заголовок файла). anchorSet —
 // последний реальный рабочий подход (buildExerciseAggregates), ratings —
 // оценки двух последних рабочих подходов той же сессии, targetReps —
 // сколько повторений требует шаблон СЕГОДНЯШНЕЙ сессии для этого подхода
-// (правило "повторения всегда из шаблона"). deload — опорная точка отката
-// (buildDeload); если она есть, вместо роста 1ПМ откатывается к её уровню
-// без прибавки.
+// (правило "повторения всегда из шаблона"). hardStreak — булев сигнал
+// разового отката (computeHardStreak); если true, вместо роста 1ПМ по
+// таблице оценок применяется фиксированный откат −15% (+15% для ассист-
+// тренажёров, см. ниже) от текущего анкера.
 //
 // Ассистирующие тренажёры (гравитрон и т.п.) хранят вес ОТРИЦАТЕЛЬНЫМ — это
 // кг компенсации, а не поднятый вес: "-39кг" означает, что тренажёр помогает
 // на 39кг. Признак — сам знак anchorSet.kg, отдельного флага не заводим.
 // Для такого веса прогресс движется К НУЛЮ (меньше помощи = сильнее клиент),
-// а не от него — поэтому направление роста инвертируется: тот же процент из
-// RATING_GROWTH_PCT применяется к МОДУЛЮ и УМЕНЬШАЕТ его, а не увеличивает.
-// Ветка отката (deload) НЕ требует отдельной инверсии: она вообще не
-// применяет процент роста (appliedPct всегда 0) — только линейно
-// пересчитывает исторический "комфортный" анкер под целевые повторения
-// (oneRepMax/weightForReps — чистое масштабирование на положительный
-// коэффициент), а линейное масштабирование сохраняет знак и корректно
-// работает для отрицательных чисел само по себе. Поскольку анкер отката —
-// это более ранняя (обычно более отрицательная, т.е. с большей помощью)
-// точка истории, откат для ассист-упражнения автоматически означает
-// "больше помощи" — ровно то поведение, которое и требуется.
-export function computeTargetWeight(anchorSet, ratings, targetReps, deload) {
+// а не от него — поэтому направление роста инвертируется: тот же процент
+// (из RATING_GROWTH_PCT или фиксированные 15% отката) применяется к МОДУЛЮ
+// и УМЕНЬШАЕТ его при росте, а при откате УВЕЛИЧИВАЕТ (больше помощи).
+export function computeTargetWeight(anchorSet, ratings, targetReps, hardStreak) {
   if (!targetReps) return null
-  if (deload) {
-    const safeRM = oneRepMax(deload.kg, deload.reps)
-    if (!safeRM) return null
-    const rawKg = weightForReps(safeRM, targetReps)
-    return { kg: roundToPlate(rawKg), rawKg, isDeload: true, appliedPct: 0 }
-  }
   if (!anchorSet || !anchorSet.kg || !anchorSet.reps) return null
   const anchorKg = Number(anchorSet.kg)
   const isAssisted = anchorKg < 0
   const anchorRM = oneRepMax(anchorKg, Number(anchorSet.reps))
   if (!anchorRM) return null
-  const last2 = ratings.slice(-2)
-  const avgRating = last2.length ? last2.reduce((a, b) => a + b, 0) / last2.length : 3
-  const roundedRating = Math.min(5, Math.max(1, Math.round(avgRating)))
-  const appliedPct = RATING_GROWTH_PCT[roundedRating]
-  const growthFactor = isAssisted ? (1 - appliedPct / 100) : (1 + appliedPct / 100)
-  const grownRM = anchorRM * growthFactor
-  const rawKg = weightForReps(grownRM, targetReps)
-  return { kg: roundToPlate(rawKg), rawKg, isDeload: false, appliedPct }
+  let appliedPct, factor
+  if (hardStreak) {
+    factor = isAssisted ? 1.15 : 0.85
+    appliedPct = -15
+  } else {
+    const last2 = ratings.slice(-2)
+    const avgRating = last2.length ? last2.reduce((a, b) => a + b, 0) / last2.length : 3
+    const roundedRating = Math.min(5, Math.max(1, Math.round(avgRating)))
+    appliedPct = RATING_GROWTH_PCT[roundedRating]
+    factor = isAssisted ? (1 - appliedPct / 100) : (1 + appliedPct / 100)
+  }
+  const rawKg = weightForReps(anchorRM * factor, targetReps)
+  return { kg: roundToPlate(rawKg), rawKg, isDeload: !!hardStreak, appliedPct }
 }
 
 // Какая из сессий назначенной программы — "сегодняшняя", и готовый вес под
@@ -234,7 +206,7 @@ export function buildAssignedSessionPlan(programTemplate, sessionsDone, aggregat
     const sets = templateSets.map(ts => {
       if (ts.templateKg == null) return { reps: ts.reps, kg: null, rawKg: null, hasWeight: false, coldStart: false, isDeload: false, appliedPct: null }
       if (!agg || !agg.anchorSet) return { reps: ts.reps, kg: ts.templateKg, rawKg: ts.templateKg, hasWeight: true, coldStart: true, isDeload: false, appliedPct: null }
-      const target = computeTargetWeight(agg.anchorSet, agg.lastSession.effRatings, ts.reps, agg.deload)
+      const target = computeTargetWeight(agg.anchorSet, agg.lastSession.effRatings, ts.reps, agg.hardStreak)
       return target
         ? { reps: ts.reps, kg: target.kg, rawKg: target.rawKg, hasWeight: true, coldStart: false, isDeload: target.isDeload, appliedPct: target.appliedPct }
         : { reps: ts.reps, kg: ts.templateKg, rawKg: ts.templateKg, hasWeight: true, coldStart: true, isDeload: false, appliedPct: null }

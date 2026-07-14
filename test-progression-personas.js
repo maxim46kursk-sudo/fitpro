@@ -15,52 +15,31 @@
 // фактически по записанным данным, как защита от регрессии старого бага.
 //
 // 8 циклов прогрессии считаются НАПРЯМУЮ через реальный движок
-// (buildAssignedSessionPlan/buildExerciseAggregates из src/workoutPrompt.js —
-// та же математика, что использует Конструктор), а не копией расчётов —
-// иначе тест не ловил бы регрессии в самом движке. С переходом AI-чата в
-// режим консультанта (см. workoutPrompt.js — buildWorkoutSystemPrompt больше
-// не составляет программы и не выдаёт SET_PROGRAM) здесь больше нет вызовов
-// Claude вообще: движок тестируется напрямую, без сети и без API-ключа.
+// (buildAssignedSessionPlan/buildExerciseAggregates из src/workoutPrompt.js,
+// той же самой, что WorkoutsView в App.jsx врезает в кнопку "▶ Начать
+// тренировку"), а не копией расчётов — иначе тест не ловил бы регрессии в
+// самом движке. Никакой сети — ни Claude (чат тренировок в режиме
+// консультанта не считает вес и не составляет программы, см.
+// buildWorkoutSystemPrompt), ни Supabase (Конструктор, который раньше здесь
+// тестировался отдельным блоком через реальные таблицы, вынесен из
+// приложения и заморожен, см. docs/CONSTRUCTOR_FROZEN.md) — движок
+// тестируется напрямую, в памяти.
 //
 // Запуск: node test-progression-personas.js
 
-import { mkdirSync, readFileSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import zlib from 'node:zlib'
 import ExcelJS from 'exceljs'
-import { createClient } from '@supabase/supabase-js'
 import { buildAssignedSessionPlan, buildExerciseAggregates, computeTargetWeight, RATING_GROWTH_PCT } from './src/workoutPrompt.js'
 import { oneRepMax } from './src/oneRepMax.js'
 import { PROGRAMS_MAP } from './src/programs.js'
 import { findSimilarExercise } from './src/fuzzyMatch.js'
 
-function loadEnv() {
-  try {
-    const text = readFileSync(new URL('./.env', import.meta.url), 'utf8')
-    for (const line of text.split('\n')) {
-      const m = line.match(/^\s*([\w.-]+)\s*=\s*(.*)\s*$/)
-      if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '')
-    }
-  } catch { /* .env может отсутствовать в CI — тогда переменные должны быть в env */ }
-}
-loadEnv()
-
 const CYCLES = 8
 const TODAY = new Date().toISOString().slice(0, 10)
 const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10) }
-
-// ─────────────────────────────────────────────────────────────────────────
-// Блок 2: флоу Конструктора через реальные таблицы Supabase (constructor_
-// exercises/constructor_sets), под настоящим аутентифицированным клиентом
-// (RLS проверяется по-настоящему, не в обход) — см. CONSTRUCTOR_TEST_EMAIL/
-// CONSTRUCTOR_TEST_PASSWORD в .env. Префикс "ТЕСТ-ФЛОУ:" у всех созданных
-// здесь упражнений — чтобы их можно было надёжно найти и удалить в cleanup,
-// не задев ничего, что реально есть у этого аккаунта.
-// ─────────────────────────────────────────────────────────────────────────
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://kybazlnscyzfrrafggxe.supabase.co'
-const SUPABASE_KEY = process.env.VITE_SUPABASE_KEY || 'sb_publishable_8E9Baxz1q-rKOiV8-jbXtw_DIGOztMg'
-const TEST_PREFIX = 'ТЕСТ-ФЛОУ:'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Персоны
@@ -93,15 +72,20 @@ const PERSONAS = [
     key: 'intermediate_recovery', name: 'Наталья', age: 40, level: 'Средний',
     description: 'В зале, восстановление формы после перерыва',
     program: 'Full Body', sessionIndex: 0, // тот же слот 1, Приседания — упражнение с форс-откатом
-    // Специально для проверки отката: на "Приседания" (первое упражнение слота)
-    // 3 тяжёлых рейтинга подряд (циклы 1-3, 4-5). Механика buildDeload:
-    // сигнал требует, чтобы последние ДВЕ записанные сессии упражнения были
-    // тяжёлыми — при ratings=[4,5,4,...] это выполняется дважды подряд:
-    // (цикл1,цикл2) оба ≥4 → откат применяется к циклу 3; затем
-    // (цикл2,цикл3) тоже оба ≥4 → откат применяется ЕЩЁ и к циклу 4. С цикла 4
-    // рейтинг падает до 3 — откат перестаёт требоваться, дальше обычный рост.
-    // Остальные упражнения — ровный средний рейтинг, чтобы не путать сигнал.
-    ratingFn: (cycle, exIdx, exName) => (exName === 'Приседания' ? [4, 5, 4, 3, 3, 3, 3, 3][cycle - 1] : 3),
+    // Специально для проверки ONE-SHOT отката (computeHardStreak в
+    // workoutPrompt.js — разовое срабатывание, счётчик подряд-тяжёлых
+    // обнуляется сразу после отката) на "Приседания" (первое упражнение
+    // слота), ratings = [4, 5, 4, 3, 4, 5, 3, 3]:
+    // циклы 1,2 тяжёлые подряд → откат на цикле 3 (первое срабатывание).
+    // Цикл 3 ТОЖЕ тяжёлый (третий тяжёлый подряд) — но счётчик уже
+    // сброшен откатом, поэтому цикл 4 откат НЕ повторяет (one-shot).
+    // Цикл 4 — комфортно (3), чисто размыкает серию, чтобы следующая пара
+    // была заведомо НОВОЙ, а не хвостом предыдущей. Циклы 5,6 — снова
+    // тяжёлые подряд → откат срабатывает ЕЩЁ РАЗ на цикле 7 (доказывает,
+    // что one-shot не "выжигает" механизм навсегда, а просто требует
+    // заново набрать пару). Остальные упражнения — ровный средний рейтинг,
+    // чтобы не путать сигнал.
+    ratingFn: (cycle, exIdx, exName) => (exName === 'Приседания' ? [4, 5, 4, 3, 4, 5, 3, 3][cycle - 1] : 3),
   },
   {
     key: 'advanced', name: 'Виктория', age: 35, level: 'Продолжающий',
@@ -112,150 +96,6 @@ const PERSONAS = [
     ratingFn: () => 2,
   },
 ]
-
-// ─────────────────────────────────────────────────────────────────────────
-// Персоны Конструктора — те же 5 личностей, но каждая проходит один
-// конкретный сценарий флоу Конструктора (создание упражнения → 8 сессий с
-// реальными вставками в constructor_exercises/constructor_sets), а не общую
-// программу тренировки. Марина — не обычный прогресс, а отдельная проверка
-// "вес привязан к exercise_id, а не к тексту" (см. runDuplicateNameFlow).
-// ─────────────────────────────────────────────────────────────────────────
-const CONSTRUCTOR_PERSONAS = [
-  {
-    name: 'Алина', purpose: 'Обычная прогрессия (контроль)',
-    exerciseName: `${TEST_PREFIX} Приседания (Алина)`,
-    baseline: { kg: 10, reps: 15 },
-    // Ровный средний рейтинг — чистая проверка "рекомендация со 2-й сессии".
-    ratingFn: () => 3,
-  },
-  {
-    name: 'Ольга', purpose: 'Обычная прогрессия (контроль)',
-    exerciseName: `${TEST_PREFIX} Тяга нижнего блока (Ольга)`,
-    baseline: { kg: 20, reps: 12 },
-    ratingFn: (session) => (session % 2 === 0 ? 2 : 3),
-  },
-  {
-    name: 'Наталья', purpose: 'Откат: 2 подряд тяжёлых оценки',
-    exerciseName: `${TEST_PREFIX} Жим ногами (Наталья)`,
-    baseline: { kg: 40, reps: 12 },
-    // Тот же паттерн, что и в движковом тесте: циклы 1-2 оба ≥4 → откат на
-    // сессию 3; циклы 2-3 оба ≥4 → откат ещё и на сессию 4; дальше ровно.
-    ratingFn: (session) => [4, 5, 4, 3, 3, 3, 3, 3][session - 1],
-  },
-  {
-    name: 'Виктория', purpose: 'Ассистирующий тренажёр (гравитрон) → к нулю',
-    exerciseName: `${TEST_PREFIX} Гравитрон (Виктория)`,
-    baseline: { kg: -39, reps: 12 }, // отрицательный вес = кг компенсации тренажёра
-    ratingFn: () => 2, // стабильно легко — рост означает движение к нулю без откатов
-  },
-]
-
-// ─────────────────────────────────────────────────────────────────────────
-// Один живой сценарий Конструктора для персоны — ТОЧНО тот же путь, что
-// проходит ConstructorView (App.jsx): создать упражнение → на каждой сессии
-// сначала прочитать историю подходов из constructor_sets ПО exercise_id,
-// собрать движок (buildExerciseAggregates/computeTargetWeight) ровно как
-// openExercise/saveSet там, и только потом писать новый подход. Никакого
-// локального дублирования состояния между сессиями — каждая сессия читает
-// то, что реально лежит в БД после предыдущей записи.
-// ─────────────────────────────────────────────────────────────────────────
-async function runConstructorFlowPersona(supabase, userId, persona) {
-  const { data: created, error: createErr } = await supabase.from('constructor_exercises')
-    .insert({ user_id: userId, name: persona.exerciseName }).select('*').single()
-  if (createErr) throw new Error(`[${persona.name}] создание упражнения: ${createErr.message}`)
-  const exerciseId = created.id
-
-  const sessionsLog = []
-  for (let session = 1; session <= CYCLES; session++) {
-    const { data: history, error: histErr } = await supabase.from('constructor_sets')
-      .select('*').eq('exercise_id', exerciseId).eq('user_id', userId).order('id')
-    if (histErr) throw new Error(`[${persona.name}] чтение истории сессии ${session}: ${histErr.message}`)
-
-    // Точно как ConstructorView.engineSets — ключ агрегации exercise: String(id), не название.
-    const engineSets = (history || []).map(s => ({ id: s.id, exercise: String(exerciseId), date: s.date, kg: s.kg, reps: s.reps, rating: s.rating }))
-    const aggregates = buildExerciseAggregates(engineSets)
-    const agg = aggregates[String(exerciseId)]
-    const isBaseline = !agg || !agg.anchorSet
-
-    let recommendation = null
-    let targetReps = persona.baseline.reps
-    if (!isBaseline) {
-      const lastDaySets = agg.lastSession.sets
-      targetReps = lastDaySets[lastDaySets.length - 1].reps
-      recommendation = computeTargetWeight(agg.anchorSet, agg.lastSession.effRatings, targetReps, agg.deload)
-    }
-
-    const date = addDays(TODAY, (session - 1) * 3)
-    const rating = Math.min(5, Math.max(1, Math.round(persona.ratingFn(session))))
-    // Сессия 1 — стартовый замер: клиент сам задаёт вес/повторы (см. isBaseline
-    // в ConstructorView). Дальше клиент выполняет ровно ту рекомендацию,
-    // которую показал Конструктор (форма там предзаполняется recommendation.kg).
-    const kgToRecord = session === 1 ? persona.baseline.kg : (recommendation ? recommendation.kg : persona.baseline.kg)
-    const repsToRecord = session === 1 ? persona.baseline.reps : targetReps
-
-    const { data: savedSet, error: insErr } = await supabase.from('constructor_sets').insert({
-      user_id: userId, exercise_id: exerciseId, date, kg: kgToRecord, reps: repsToRecord, rating,
-    }).select('*').single()
-    if (insErr) throw new Error(`[${persona.name}] запись подхода сессии ${session}: ${insErr.message}`)
-
-    sessionsLog.push({
-      session, date, isBaseline, recommendation,
-      kgRecorded: kgToRecord, repsRecorded: repsToRecord, rating,
-      isDeload: recommendation?.isDeload || false,
-      appliedPct: recommendation?.appliedPct ?? null,
-      setId: savedSet.id,
-    })
-  }
-
-  return { persona, exerciseId, sessionsLog }
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// Проверка "вес привязан к exercise_id, а не к тексту": две записи в
-// constructor_exercises с ОДИНАКОВЫМ названием (как если бы клиент
-// проигнорировал мягкое предупреждение о дубле, см. fuzzyMatch.js), но
-// разными id и разными траекториями оценок. Если бы движок агрегировал по
-// названию, а не по id, их истории/рекомендации слились бы в одну — здесь
-// проверяем, что этого не происходит: обе линии считаются независимо, и на
-// БД-уровне подходы каждого id физически не видны для другого.
-// ─────────────────────────────────────────────────────────────────────────
-async function runDuplicateNameFlow(supabase, userId) {
-  const sharedName = `${TEST_PREFIX} Жим гантелей (дубль по названию)`
-  // Вес взят достаточно большим (40кг, а не лёгкий гантельный), чтобы
-  // расхождение траекторий было видно даже ПОСЛЕ округления до шага
-  // "блинов" (roundToPlate) — на лёгких весах шаг округления иногда
-  // схлопывает разные по сути траектории в одно и то же отображаемое число
-  // (см. rawKg — он в любом случае разный и даже это не обязательно для
-  // вывода, т.к. паттерн отката ниже расходится однозначно).
-  const personaA = { name: 'Марина-A', purpose: 'дубль по имени, ветка A (лёгкие оценки — рост)', exerciseName: sharedName, baseline: { kg: 40, reps: 12 }, ratingFn: () => 2 }
-  const personaB = { name: 'Марина-B', purpose: 'дубль по имени, ветка B (тяжёлые оценки — откат)', exerciseName: sharedName, baseline: { kg: 40, reps: 12 }, ratingFn: () => 5 }
-
-  const resA = await runConstructorFlowPersona(supabase, userId, personaA)
-  const resB = await runConstructorFlowPersona(supabase, userId, personaB)
-
-  const { data: setsA } = await supabase.from('constructor_sets').select('id').eq('exercise_id', resA.exerciseId).eq('user_id', userId)
-  const { data: setsB } = await supabase.from('constructor_sets').select('id').eq('exercise_id', resB.exerciseId).eq('user_id', userId)
-
-  const lastA = resA.sessionsLog[resA.sessionsLog.length - 1]
-  const lastB = resB.sessionsLog[resB.sessionsLog.length - 1]
-  // Расхождение проверяем и по итоговому весу, и по паттерну отката — вес
-  // может теоретически совпасть после округления до шага "блинов" на
-  // некоторых весах, а вот "ни разу не откатилась" (A, ровные лёгкие оценки)
-  // против "откатывается с 3-й сессии" (B, ровные тяжёлые оценки) — это
-  // структурно разные траектории, которые невозможно получить из общей,
-  // слитой по названию истории.
-  const deloadPatternA = resA.sessionsLog.map(s => s.isDeload).join(',')
-  const deloadPatternB = resB.sessionsLog.map(s => s.isDeload).join(',')
-
-  return {
-    resA, resB,
-    isolationOk: (setsA || []).length === CYCLES && (setsB || []).length === CYCLES,
-    setsCountA: (setsA || []).length, setsCountB: (setsB || []).length,
-    diverged: lastA.kgRecorded !== lastB.kgRecorded || deloadPatternA !== deloadPatternB,
-    lastKgA: lastA.kgRecorded, lastKgB: lastB.kgRecorded,
-    deloadPatternA, deloadPatternB,
-  }
-}
 
 // ─────────────────────────────────────────────────────────────────────────
 // Симуляция одной персоны: 8 циклов прогрессии через движок
@@ -283,7 +123,7 @@ function simulatePersona(persona) {
     plan.exercises.forEach((ex, exIdx) => {
       if (!ex.sets.length) return
       const agg = aggregates[ex.name]
-      const deloadSignal = !!agg?.deload
+      const deloadSignal = !!agg?.hardStreak
       const rating = Math.min(5, Math.max(1, Math.round(persona.ratingFn(cycle, exIdx, ex.name))))
       const setLogs = []
       ex.sets.forEach((s, si) => {
@@ -430,12 +270,38 @@ function buildTestCases(results) {
       deloadCount === 0 ? 'откатов не было в этом прогоне' : `${deloadCount} срабатывани${deloadCount === 1 ? 'е' : 'й'}: ${deloadCauseDetails.join('; ')}`,
       deloadCauseOk)
 
-    // 2б) НОВОЕ — обратная сторона импликации, которой раньше не было: "если
-    // на упражнении 2 подряд высоких рейтинга — откат ОБЯЗАН сработать в
-    // следующем цикле". Без неё тест пропускал бы "мёртвый" откат — код,
-    // который никогда фактически не срабатывает даже когда условие
-    // выполнено (2а проверяет только уже сработавшие случаи, молчит про
-    // случаи, где должен был сработать, но не сработал).
+    // 2б) ПЕРЕПИСАНО под ONE-SHOT откат (см. computeHardStreak в
+    // workoutPrompt.js): раньше здесь проверялась обратная импликация "2
+    // подряд высоких рейтинга -> откат ОБЯЗАН сработать в следующем цикле"
+    // без исключений — это был тест-кейс под старый buildDeload (не
+    // one-shot, срабатывал на КАЖДОЙ паре подряд тяжёлых, без сброса
+    // счётчика). При one-shot это правило больше не универсально: если
+    // предыдущий откат уже "потратил" одну из сессий пары, третья тяжёлая
+    // подряд НЕ обязана вызвать повторный откат немедленно (счётчик
+    // сброшен и стартует заново с этой сессии). Поэтому вместо ручной
+    // расстановки ожиданий по циклам (легко ошибиться на off-by-one на
+    // границе сброса) сверяем реальный agg.hardStreak движка с независимой
+    // эталонной реализацией ТОЧНО того же алгоритма, что описан в задаче
+    // (дословно как hasHardStreak в constructorPhases.js, но без пропуска
+    // baseline — здесь её нет, первая тренировка участвует в подсчёте
+    // наравне со всеми). Это одновременно и универсальная регрессия (на
+    // всех персонах/упражнениях), и — отдельным кейсом ниже — предметная
+    // демонстрация one-shot на Наталье: разовое срабатывание, отсутствие
+    // немедленного повтора, и повторное срабатывание позже на новой паре.
+    function referenceHardStreak(ratingsInOrder) {
+      // ratingsInOrder[i] — рейтинг (i+1)-й по счёту сессии. Возвращает
+      // массив той же длины: hardStreak СРАЗУ ПОСЛЕ i-й сессии — то самое
+      // значение, которое движок использует для расчёта ВЕСА СЛЕДУЮЩЕЙ,
+      // (i+2)-й по счёту, сессии (см. buildExerciseAggregates: hardStreak
+      // считается из sessions 1..N и применяется к ещё не рассчитанной N+1).
+      let streak = 0
+      return ratingsInOrder.map(r => {
+        if (streak >= 2) streak = 0
+        streak = r >= 4 ? streak + 1 : 0
+        return streak >= 2
+      })
+    }
+
     const ratingsSeqByExercise = {} // exercise -> [{cycle, rating}]
     const deloadFlagByKey = {} // "имя|цикл" -> deloadSignal
     for (const c of cycles) {
@@ -444,23 +310,45 @@ function buildTestCases(results) {
         deloadFlagByKey[`${ex.name}|${c.cycle}`] = ex.deloadSignal
       }
     }
-    let mustFireOk = true
-    let mustFireChecked = 0
-    const mustFireDetails = []
+
+    let matchOk = true
+    let matchChecked = 0
+    const matchDetails = []
     for (const [name, seq] of Object.entries(ratingsSeqByExercise)) {
-      for (let i = 0; i < seq.length - 1; i++) {
-        if (seq[i].rating < 4 || seq[i + 1].rating < 4) continue
-        const triggerCycle = seq[i + 1].cycle + 1
-        if (triggerCycle > CYCLES) continue // некуда сработать в пределах 8 циклов
-        mustFireChecked++
-        const fired = !!deloadFlagByKey[`${name}|${triggerCycle}`]
-        if (!fired) { mustFireOk = false; mustFireDetails.push(`${name}: 2 тяжёлых подряд (циклы ${seq[i].cycle}, ${seq[i + 1].cycle}) — откат в цикле ${triggerCycle} НЕ сработал`) }
+      const ref = referenceHardStreak(seq.map(s => s.rating))
+      for (let i = 0; i < seq.length; i++) {
+        const targetCycle = seq[i].cycle + 1
+        if (targetCycle > CYCLES) continue // некуда применить в пределах 8 циклов
+        matchChecked++
+        const expected = ref[i]
+        const actual = !!deloadFlagByKey[`${name}|${targetCycle}`]
+        if (expected !== actual) { matchOk = false; matchDetails.push(`${name}: цикл ${targetCycle} ожидался hardStreak=${expected} (эталон), движок дал ${actual}`) }
       }
     }
-    push('Если 2 подряд высоких рейтинга на упражнении — откат ОБЯЗАН сработать в следующем цикле', persona.name,
-      mustFireChecked ? `все ${mustFireChecked} случай(ев) вызвали откат` : 'в этом прогоне не было 2 подряд высоких рейтингов',
-      mustFireChecked === 0 ? 'в этом прогоне не было 2 подряд высоких рейтингов' : (mustFireOk ? `все ${mustFireChecked} случай(ев) вызвали откат` : mustFireDetails.join('; ')),
-      mustFireOk)
+    push('Откат (one-shot): agg.hardStreak движка совпадает с эталонной реализацией алгоритма на каждом цикле', persona.name,
+      `все ${matchChecked} проверенных цикла(ов) совпадают с эталоном`,
+      matchOk ? `все ${matchChecked} проверенных цикла(ов) совпадают с эталоном` : matchDetails.join('; '),
+      matchOk)
+
+    // Предметная демонстрация one-shot на "Приседания" (персона Наталья,
+    // ratingFn = [4, 5, 4, 3, 4, 5, 3, 3]): ищем и разовость (тяжёлая
+    // оценка сразу после срабатывания НЕ вызывает повтор), и повторное
+    // срабатывание позже на новой паре — без этого тест мог бы "случайно"
+    // пройти на персоне, где откат вообще ни разу не всплывал.
+    const squatsSeq = ratingsSeqByExercise['Приседания']
+    if (persona.key === 'intermediate_recovery' && squatsSeq) {
+      const ref = referenceHardStreak(squatsSeq.map(s => s.rating))
+      const fireCount = ref.filter(Boolean).length
+      let suppressedAfterFire = false
+      for (let i = 1; i < ref.length; i++) {
+        if (ref[i - 1] && !ref[i] && squatsSeq[i].rating >= 4) suppressedAfterFire = true
+      }
+      const refired = fireCount >= 2
+      push('Откат (one-shot) на Наталье: разовое срабатывание не повторяется немедленно, но срабатывает снова позже на новой паре', persona.name,
+        'минимум 1 случай "тяжёлая сразу после отката не вызвала повтор" И минимум 2 срабатывания отката за 8 циклов',
+        `срабатываний всего: ${fireCount}; суппрессия сразу после отката: ${suppressedAfterFire ? 'да' : 'нет'}`,
+        suppressedAfterFire && refired)
+    }
 
     // 3) Проценты роста — строго из таблицы методики, ничего не выдумано.
     const allowedPct = new Set(Object.values(RATING_GROWTH_PCT))
@@ -497,76 +385,7 @@ function buildTestCases(results) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Тест-кейсы флоу Конструктора (Блок 1) — на данных, реально прочитанных из
-// constructor_sets между сессиями, а не на локальном состоянии теста.
-// ─────────────────────────────────────────────────────────────────────────
-function buildConstructorFlowTestCases(flowResults, dupResult) {
-  const rows = []
-  const push = (name, personaName, expected, actual, pass) => rows.push({ name, persona: personaName, expected: String(expected), actual: String(actual), pass })
-
-  for (const { persona, sessionsLog } of flowResults) {
-    // 1) Рекомендация появляется начиная со 2-й сессии (не на 1-й).
-    const s1 = sessionsLog[0]
-    const rest = sessionsLog.slice(1)
-    const s1Ok = s1.isBaseline === true && s1.recommendation === null
-    const restOk = rest.every(s => s.isBaseline === false && s.recommendation != null)
-    const bad = []
-    if (!s1Ok) bad.push(`сессия 1: isBaseline=${s1.isBaseline}, recommendation=${s1.recommendation ? 'есть' : 'нет'} (ожидалось isBaseline=true, без рекомендации)`)
-    rest.forEach(s => { if (!(s.isBaseline === false && s.recommendation != null)) bad.push(`сессия ${s.session}: isBaseline=${s.isBaseline}, recommendation=${s.recommendation ? 'есть' : 'нет'}`) })
-    push('Рекомендация появляется начиная со 2-й сессии, не на 1-й', persona.name,
-      'сессия 1 без рекомендации (стартовый замер), сессии 2-8 с рекомендацией',
-      (s1Ok && restOk) ? 'сессия 1 без рекомендации (стартовый замер), сессии 2-8 с рекомендацией' : bad.join('; '),
-      s1Ok && restOk)
-  }
-
-  // 2) Вес привязан к exercise_id, а не к тексту (два упражнения с ОДИНАКОВЫМ
-  // названием, разными id — истории должны быть физически изолированы в БД
-  // и давать разные результаты).
-  push('Вес привязан к exercise_id, а не к тексту (два упражнения с одинаковым названием)', 'Марина (A/B)',
-    `изоляция в БД: по ${CYCLES} подходов на каждый id; траектории (вес и/или паттерн отката) разошлись`,
-    `id A: ${dupResult.setsCountA} подходов, кг сессии 8=${dupResult.lastKgA}, откаты=[${dupResult.deloadPatternA}]; id B: ${dupResult.setsCountB} подходов, кг сессии 8=${dupResult.lastKgB}, откаты=[${dupResult.deloadPatternB}]`,
-    dupResult.isolationOk && dupResult.diverged)
-
-  // 3) Откат: 2 подряд тяжёлых оценки → isDeload + вес не растёт.
-  const natasha = flowResults.find(r => r.persona.name === 'Наталья')
-  if (natasha) {
-    const deloadSessions = natasha.sessionsLog.filter(s => s.isDeload)
-    const deloadHappened = deloadSessions.length > 0
-    const deloadWeightOk = deloadSessions.every(s => {
-      const prev = natasha.sessionsLog.find(p => p.session === s.session - 1)
-      return prev && s.kgRecorded <= prev.kgRecorded
-    })
-    push('Откат срабатывает после 2 подряд тяжёлых оценок (флаг isDeload + вес не растёт)', 'Наталья',
-      'откат сработал минимум раз, appliedPct=0, вес на откате ≤ веса предыдущей сессии',
-      deloadHappened
-        ? `откат на сессии: ${deloadSessions.map(s => s.session).join(', ')}; вес ${deloadWeightOk ? 'не растёт (корректно)' : 'вырос — ОШИБКА'}`
-        : 'откат ни разу не сработал',
-      deloadHappened && deloadWeightOk)
-  }
-
-  // 4) Ассистирующий тренажёр (гравитрон) — рост означает движение К НУЛЮ
-  // (вес отрицательный, помощь тренажёра уменьшается), без откатов при
-  // стабильно лёгких оценках.
-  const victoria = flowResults.find(r => r.persona.name === 'Виктория')
-  if (victoria) {
-    const growthSessions = victoria.sessionsLog.slice(1) // со 2-й сессии — там уже рекомендации
-    const movesTowardZero = growthSessions.every((s, i) => {
-      const prev = i === 0 ? victoria.sessionsLog[0] : growthSessions[i - 1]
-      return s.kgRecorded > prev.kgRecorded // отрицательное число растёт к нулю
-    })
-    const noDeloads = growthSessions.every(s => !s.isDeload)
-    const trace = victoria.sessionsLog.map(s => s.kgRecorded).join(' → ')
-    push('Ассистирующий тренажёр (гравитрон): вес движется к нулю без откатов', 'Виктория',
-      'кг монотонно растёт (приближается к 0) на всех сессиях 2-8, откатов нет',
-      `траектория кг: ${trace}${movesTowardZero && noDeloads ? '' : ' — ОШИБКА: ' + (!movesTowardZero ? 'вес не монотонно приближается к 0' : 'случился откат там, где не должен был')}`,
-      movesTowardZero && noDeloads)
-  }
-
-  return rows
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// Тест-кейсы матчинга названий (Блок 2) — findSimilarExercise из fuzzyMatch.js.
+// Тест-кейсы матчинга названий — findSimilarExercise из fuzzyMatch.js.
 // ─────────────────────────────────────────────────────────────────────────
 const NAME_MATCH_PAIRS = [
   { a: 'Тяга верхнего блока', b: 'Тяга нижнего блока', expected: false, note: 'разные упражнения (разный блок)' },
@@ -695,7 +514,7 @@ function styleHeader(row) {
   row.height = 24
 }
 
-async function buildWorkbook(results, flowResults, dupResult) {
+async function buildWorkbook(results) {
   const wb = new ExcelJS.Workbook()
   wb.creator = 'test-progression-personas.js'
   wb.created = new Date()
@@ -830,58 +649,9 @@ async function buildWorkbook(results, flowResults, dupResult) {
   s5.eachRow((row, i) => { if (i > 1 && row.getCell('status').value === 'FAIL') row.eachCell(c => { c.fill = RED_FILL }) })
   s5.getColumn('status').eachCell(cell => { cell.alignment = { horizontal: 'center' } })
 
-  // ── Лист 6: Флоу конструктора ──
-  const s6 = wb.addWorksheet('Флоу конструктора')
+  // ── Лист 6: Матчинг названий ──
+  const s6 = wb.addWorksheet('Матчинг названий')
   s6.columns = [
-    { header: 'Персона', key: 'persona', width: 14 },
-    { header: 'Назначение', key: 'purpose', width: 34 },
-    { header: 'Сессия', key: 'session', width: 9 },
-    { header: 'Дата', key: 'date', width: 12 },
-    { header: 'Стартовый замер?', key: 'baseline', width: 16 },
-    { header: 'Рекомендация (кг)', key: 'recKg', width: 16 },
-    { header: 'Записано (кг×повт)', key: 'recorded', width: 18 },
-    { header: 'Оценка усилия', key: 'rating', width: 14 },
-    { header: 'Откат?', key: 'deload', width: 10 },
-    { header: '% роста применён', key: 'pct', width: 16 },
-  ]
-  styleHeader(s6.getRow(1))
-  for (const { persona, sessionsLog } of flowResults) {
-    for (const s of sessionsLog) {
-      s6.addRow({
-        persona: persona.name, purpose: persona.purpose, session: s.session, date: s.date,
-        baseline: s.isBaseline ? 'Да (без рекомендации)' : 'Нет',
-        recKg: s.recommendation ? s.recommendation.kg : '—',
-        recorded: `${s.kgRecorded}кг×${s.repsRecorded}`,
-        rating: s.rating,
-        deload: s.isDeload ? 'Да' : 'Нет',
-        pct: s.appliedPct ?? '—',
-      })
-    }
-    s6.addRow([])
-  }
-  s6.eachRow((row, i) => { if (i > 1 && row.getCell('deload').value === 'Да') row.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3CD' } } }) })
-
-  const dupNoteRow = s6.lastRow.number + 1
-  s6.getCell(`A${dupNoteRow}`).value = `Проверка "вес привязан к exercise_id, а не к тексту": Марина-A и Марина-B — два отдельных упражнения с ОДИНАКОВЫМ названием ("${TEST_PREFIX} Жим гантелей (дубль по названию)"), разные exercise_id. Ветка A (лёгкие оценки, рост): ${dupResult.setsCountA} подходов в БД, кг сессии 8 = ${dupResult.lastKgA}, откаты по сессиям = [${dupResult.deloadPatternA}]. Ветка B (тяжёлые оценки, откат): ${dupResult.setsCountB} подходов в БД, кг сессии 8 = ${dupResult.lastKgB}, откаты по сессиям = [${dupResult.deloadPatternB}]. ${dupResult.isolationOk && dupResult.diverged ? 'Истории физически изолированы и разошлись — вес считается по id, не по названию.' : 'ОШИБКА — истории смешались или не разошлись.'}`
-  s6.getCell(`A${dupNoteRow}`).font = { italic: true, size: 10, color: { argb: 'FF6B7280' } }
-  s6.mergeCells(`A${dupNoteRow}:J${dupNoteRow}`)
-  s6.getCell(`A${dupNoteRow}`).alignment = { wrapText: true }
-
-  const flowTestRows = buildConstructorFlowTestCases(flowResults, dupResult)
-  const flowCasesStartRow = dupNoteRow + 2
-  s6.getCell(`A${flowCasesStartRow}`).value = 'Тест-кейсы флоу Конструктора'
-  s6.getCell(`A${flowCasesStartRow}`).font = { bold: true }
-  const flowHeaderRow = s6.getRow(flowCasesStartRow + 1)
-  flowHeaderRow.values = ['Тест', 'Персона', 'Ожидалось', 'Получено', 'Статус']
-  styleHeader(flowHeaderRow)
-  for (const t of flowTestRows) {
-    const row = s6.addRow([t.name, t.persona, t.expected, t.actual, t.pass ? 'PASS' : 'FAIL'])
-    if (!t.pass) row.eachCell(c => { c.fill = RED_FILL })
-  }
-
-  // ── Лист 7: Матчинг названий ──
-  const s7 = wb.addWorksheet('Матчинг названий')
-  s7.columns = [
     { header: 'Название A', key: 'a', width: 26 },
     { header: 'Название B', key: 'b', width: 26 },
     { header: 'Комментарий', key: 'note', width: 34 },
@@ -889,34 +659,17 @@ async function buildWorkbook(results, flowResults, dupResult) {
     { header: 'Получено', key: 'actual', width: 26 },
     { header: 'Статус', key: 'status', width: 10 },
   ]
-  styleHeader(s7.getRow(1))
+  styleHeader(s6.getRow(1))
   const nameMatchRows = buildNameMatchTestCases()
   for (const t of nameMatchRows) {
-    s7.addRow({ a: t.a, b: t.b, note: t.note, expected: t.expectedLabel, actual: t.actualLabel, status: t.pass ? 'PASS' : 'FAIL' })
+    s6.addRow({ a: t.a, b: t.b, note: t.note, expected: t.expectedLabel, actual: t.actualLabel, status: t.pass ? 'PASS' : 'FAIL' })
   }
-  s7.eachRow((row, i) => { if (i > 1 && row.getCell('status').value === 'FAIL') row.eachCell(c => { c.fill = RED_FILL }) })
-  s7.getColumn('status').eachCell(cell => { cell.alignment = { horizontal: 'center' } })
+  s6.eachRow((row, i) => { if (i > 1 && row.getCell('status').value === 'FAIL') row.eachCell(c => { c.fill = RED_FILL }) })
+  s6.getColumn('status').eachCell(cell => { cell.alignment = { horizontal: 'center' } })
 
-  for (const ws of [s1, s2, s3, s4, s5, s6, s7]) ws.views = [{ state: 'frozen', ySplit: 1 }]
+  for (const ws of [s1, s2, s3, s4, s5, s6]) ws.views = [{ state: 'frozen', ySplit: 1 }]
 
-  return { wb, testRows, flowTestRows, nameMatchRows }
-}
-
-// Удаляет ВСЁ, что этот прогон создал в Конструкторе тестового аккаунта —
-// находит по префиксу TEST_PREFIX в названии, чтобы не задеть ничего, что
-// реально принадлежит этому аккаунту. Вызывается и при успехе, и при ошибке
-// (см. try/finally в main) — тестовые данные не должны оставаться в БД.
-async function cleanupConstructorTestData(supabase, userId) {
-  const { data: exercises, error } = await supabase.from('constructor_exercises')
-    .select('id').eq('user_id', userId).like('name', `${TEST_PREFIX}%`)
-  if (error) { console.error('Очистка: ошибка чтения тестовых упражнений:', error.message); return 0 }
-  const ids = (exercises || []).map(e => e.id)
-  if (!ids.length) return 0
-  const { error: setsErr } = await supabase.from('constructor_sets').delete().in('exercise_id', ids).eq('user_id', userId)
-  if (setsErr) console.error('Очистка: ошибка удаления подходов:', setsErr.message)
-  const { error: exErr } = await supabase.from('constructor_exercises').delete().in('id', ids).eq('user_id', userId)
-  if (exErr) console.error('Очистка: ошибка удаления упражнений:', exErr.message)
-  return ids.length
+  return { wb, testRows, nameMatchRows }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -931,39 +684,12 @@ async function main() {
     results.push(r)
   }
 
-  const TEST_EMAIL = process.env.CONSTRUCTOR_TEST_EMAIL
-  const TEST_PASSWORD = process.env.CONSTRUCTOR_TEST_PASSWORD
-  if (!TEST_EMAIL || !TEST_PASSWORD) { console.error('Нет CONSTRUCTOR_TEST_EMAIL/CONSTRUCTOR_TEST_PASSWORD (проверь .env)'); process.exit(1) }
-
-  const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
-  const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({ email: TEST_EMAIL, password: TEST_PASSWORD })
-  if (authErr) { console.error('Ошибка входа тестового пользователя Конструктора:', authErr.message); process.exit(1) }
-  const userId = authData.user.id
-  console.log(`\n▶ Вход тестовым пользователем Конструктора выполнен (${TEST_EMAIL})`)
-
-  let flowResults = [], dupResult
-  try {
-    console.log('▶ Прогоняю флоу Конструктора (создание упражнения → 8 сессий) для каждой персоны...')
-    for (const persona of CONSTRUCTOR_PERSONAS) {
-      process.stdout.write(`  ${persona.name} (${persona.purpose})... `)
-      flowResults.push(await runConstructorFlowPersona(supabase, userId, persona))
-      console.log('готово')
-    }
-    process.stdout.write('  Марина (дубль по названию, ветки A/B)... ')
-    dupResult = await runDuplicateNameFlow(supabase, userId)
-    console.log('готово')
-  } finally {
-    const cleaned = await cleanupConstructorTestData(supabase, userId)
-    console.log(`▶ Очищено тестовых упражнений в Конструкторе: ${cleaned}`)
-    await supabase.auth.signOut()
-  }
-
   const reportsDir = path.join(process.cwd(), 'reports')
   mkdirSync(reportsDir, { recursive: true })
   const reportPath = path.join(reportsDir, 'progression-report.xlsx')
   const desktopPath = path.join(os.homedir(), 'Desktop', 'progression-report.xlsx')
 
-  const { wb, testRows, flowTestRows, nameMatchRows } = await buildWorkbook(results, flowResults, dupResult)
+  const { wb, testRows, nameMatchRows } = await buildWorkbook(results)
   await wb.xlsx.writeFile(reportPath)
   await wb.xlsx.writeFile(desktopPath)
 
@@ -971,11 +697,6 @@ async function main() {
   console.log('\n── Тест-кейсы (движок) ──────────────────────────────────')
   for (const t of testRows) { console.log(`${t.pass ? '✓ PASS' : '✗ FAIL'}  [${t.persona}] ${t.name}`); if (!t.pass) console.log(`   → ${t.actual}`) }
   console.log(`Итого: ${passed}/${testRows.length}`)
-
-  const flowPassed = flowTestRows.filter(t => t.pass).length
-  console.log('\n── Тест-кейсы (флоу Конструктора) ───────────────────────')
-  for (const t of flowTestRows) { console.log(`${t.pass ? '✓ PASS' : '✗ FAIL'}  [${t.persona}] ${t.name}`); if (!t.pass) console.log(`   → ${t.actual}`) }
-  console.log(`Итого: ${flowPassed}/${flowTestRows.length}`)
 
   const namePassed = nameMatchRows.filter(t => t.pass).length
   console.log('\n── Тест-кейсы (матчинг названий) ────────────────────────')
@@ -985,7 +706,7 @@ async function main() {
   console.log(`\nExcel-отчёт сохранён: ${reportPath}`)
   console.log(`Копия на Рабочем столе: ${desktopPath}`)
 
-  const allPassed = passed === testRows.length && flowPassed === flowTestRows.length && namePassed === nameMatchRows.length
+  const allPassed = passed === testRows.length && namePassed === nameMatchRows.length
   process.exit(allPassed ? 0 : 1)
 }
 
