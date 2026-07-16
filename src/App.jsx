@@ -4575,6 +4575,8 @@ function LandingPage({ onEnter }) {
   const [forgotMode,setForgotMode]=useState(false)
   const [forgotEmail,setForgotEmail]=useState('')
   const [forgotDone,setForgotDone]=useState(false)
+  const [forgotBusy,setForgotBusy]=useState(false)
+  const [forgotError,setForgotError]=useState('')
 
   useEffect(()=>{
     const fn=()=>setMobile(window.innerWidth<640)
@@ -4582,7 +4584,7 @@ function LandingPage({ onEnter }) {
     return()=>window.removeEventListener('resize',fn)
   },[])
 
-  const switchTab=(tab)=>{setAuthTab(tab);setAuthError('');setForgotMode(false);setForgotDone(false);setForm({name:'',email:'',password:'',confirm:''})}
+  const switchTab=(tab)=>{setAuthTab(tab);setAuthError('');setForgotMode(false);setForgotDone(false);setForgotError('');setForm({name:'',email:'',password:'',confirm:''})}
 
   const openForm=(tab)=>{setAuthTab(tab);setView('form')}
 
@@ -4612,6 +4614,15 @@ function LandingPage({ onEnter }) {
     if(error){setAuthError('Неверный email или пароль');setAuthBusy(false);return}
     setAuthBusy(false)
     // onAuthStateChange в App() автоматически установит пользователя
+  }
+
+  const handleForgot=async()=>{
+    if(!forgotEmail.trim()){setForgotError('Введи email');return}
+    setForgotBusy(true);setForgotError('')
+    const{error}=await supabase.auth.resetPasswordForEmail(forgotEmail.trim(),{redirectTo:window.location.origin})
+    if(error){setForgotError(error.message);setForgotBusy(false);return}
+    setForgotBusy(false)
+    setForgotDone(true)
   }
 
   const G='rgba(255,255,255,0.06)'
@@ -4734,7 +4745,7 @@ function LandingPage({ onEnter }) {
         /* ── Форма входа / регистрации */
         <div style={{ minHeight:'calc(100vh - 62px)',display:'flex',alignItems:'center',justifyContent:'center',padding:'28px 18px' }}>
           <div style={{ width:'100%',maxWidth:400 }}>
-            <button onClick={()=>{setView('hero');setAuthError('');setForgotMode(false)}} style={{ background:'none',border:'none',color:'rgba(255,255,255,0.38)',fontSize:14,cursor:'pointer',padding:'0 0 18px',display:'flex',alignItems:'center',gap:6 }}>
+            <button onClick={()=>{setView('hero');setAuthError('');setForgotMode(false);setForgotError('')}} style={{ background:'none',border:'none',color:'rgba(255,255,255,0.38)',fontSize:14,cursor:'pointer',padding:'0 0 18px',display:'flex',alignItems:'center',gap:6 }}>
               ← Назад
             </button>
             <div style={{ background:'rgba(255,255,255,0.04)',border:GB,borderRadius:20,padding:'30px 24px' }}>
@@ -4742,7 +4753,7 @@ function LandingPage({ onEnter }) {
               {forgotMode ? (
                 /* ── Восстановление пароля */
                 <div>
-                  <button onClick={()=>{setForgotMode(false);setForgotDone(false);setForgotEmail('')}} style={{ background:'none',border:'none',color:'rgba(255,255,255,0.38)',fontSize:13,cursor:'pointer',padding:'0 0 16px',display:'flex',alignItems:'center',gap:5 }}>
+                  <button onClick={()=>{setForgotMode(false);setForgotDone(false);setForgotEmail('');setForgotError('')}} style={{ background:'none',border:'none',color:'rgba(255,255,255,0.38)',fontSize:13,cursor:'pointer',padding:'0 0 16px',display:'flex',alignItems:'center',gap:5 }}>
                     ← Назад к входу
                   </button>
                   <h2 style={{ fontSize:20,fontWeight:800,margin:'0 0 6px' }}>Восстановление пароля</h2>
@@ -4760,14 +4771,19 @@ function LandingPage({ onEnter }) {
                       <div>
                         <label style={{ fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.45)',display:'block',marginBottom:6 }}>Email</label>
                         <input value={forgotEmail} type="email" placeholder="ivan@example.com"
-                          onChange={e=>setForgotEmail(e.target.value)}
-                          onKeyDown={e=>e.key==='Enter'&&forgotEmail.trim()&&setForgotDone(true)}
+                          onChange={e=>{setForgotEmail(e.target.value);setForgotError('')}}
+                          onKeyDown={e=>e.key==='Enter'&&!forgotBusy&&handleForgot()}
                           style={{ width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.05)',color:'#fff',fontSize:14,outline:'none',boxSizing:'border-box' }}
                           onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'} />
                       </div>
-                      <button onClick={()=>forgotEmail.trim()&&setForgotDone(true)} disabled={!forgotEmail.trim()}
-                        style={{ padding:'14px',borderRadius:11,border:'none',background:forgotEmail.trim()?PUR:`${PUR}35`,color:'#fff',fontSize:15,fontWeight:700,cursor:forgotEmail.trim()?'pointer':'default',transition:'all 0.15s' }}>
-                        Отправить инструкции
+                      {forgotError && (
+                        <div style={{ padding:'10px 14px',borderRadius:9,background:'rgba(239,68,68,0.12)',border:'1px solid rgba(239,68,68,0.3)',fontSize:13,color:'#fca5a5' }}>
+                          {forgotError}
+                        </div>
+                      )}
+                      <button onClick={handleForgot} disabled={!forgotEmail.trim()||forgotBusy}
+                        style={{ padding:'14px',borderRadius:11,border:'none',background:(forgotEmail.trim()&&!forgotBusy)?PUR:`${PUR}35`,color:'#fff',fontSize:15,fontWeight:700,cursor:(forgotEmail.trim()&&!forgotBusy)?'pointer':'default',transition:'all 0.15s' }}>
+                        {forgotBusy?'Отправка...':'Отправить инструкции'}
                       </button>
                     </div>
                   )}
@@ -4858,6 +4874,86 @@ function LandingPage({ onEnter }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── ResetPasswordView ────────────────────────────────────────────────────────
+// Показывается вместо LandingPage/основного приложения, пока App() держит
+// recoveryMode===true (переход по ссылке из письма "Восстановление пароля" —
+// supabase-js ловит токен из URL и создаёт временную сессию с событием
+// PASSWORD_RECOVERY). Стиль карточки — тот же, что у форм LandingPage.
+function ResetPasswordView({ onDone }) {
+  const [newPassword,setNewPassword]=useState('')
+  const [confirmPassword,setConfirmPassword]=useState('')
+  const [error,setError]=useState('')
+  const [busy,setBusy]=useState(false)
+  const [done,setDone]=useState(false)
+
+  const handleSave=async()=>{
+    if(!newPassword.trim()||!confirmPassword.trim()){setError('Заполни оба поля');return}
+    if(newPassword!==confirmPassword){setError('Пароли не совпадают');return}
+    if(newPassword.length<6){setError('Пароль минимум 6 символов');return}
+    setBusy(true);setError('')
+    const{error}=await supabase.auth.updateUser({password:newPassword})
+    if(error){setError(error.message);setBusy(false);return}
+    setBusy(false)
+    setDone(true)
+    // Временную recovery-сессию гасим сразу — иначе после onDone() (сброс
+    // recoveryMode) user всё ещё не null и вместо экрана входа откроется
+    // обычное приложение под старой сессией восстановления.
+    await supabase.auth.signOut({ scope: 'local' }).catch(()=>{})
+    setTimeout(onDone,1600)
+  }
+
+  const GB='1px solid rgba(255,255,255,0.09)'
+
+  return(
+    <div style={{ minHeight:'100vh',background:'#08080f',color:'#fff',fontFamily:'system-ui,-apple-system,sans-serif',display:'flex',alignItems:'center',justifyContent:'center',padding:'28px 18px' }}>
+      <div style={{ width:'100%',maxWidth:400 }}>
+        <div style={{ background:'rgba(255,255,255,0.04)',border:GB,borderRadius:20,padding:'30px 24px' }}>
+          {done ? (
+            <div style={{ textAlign:'center',padding:'24px 0' }}>
+              <div style={{ fontSize:42,marginBottom:14 }}>✅</div>
+              <p style={{ fontSize:15,color:'#22c55e',fontWeight:700,margin:0 }}>Пароль изменён</p>
+            </div>
+          ) : (
+            <div>
+              <h2 style={{ fontSize:20,fontWeight:800,margin:'0 0 6px' }}>Новый пароль</h2>
+              <p style={{ fontSize:13,color:'rgba(255,255,255,0.38)',margin:'0 0 22px',lineHeight:1.65 }}>
+                Придумай новый пароль для входа
+              </p>
+              <div style={{ display:'flex',flexDirection:'column',gap:14 }}>
+                <div>
+                  <label style={{ fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.45)',display:'block',marginBottom:6 }}>Новый пароль</label>
+                  <input value={newPassword} type="password" placeholder="Минимум 6 символов"
+                    onChange={e=>{setNewPassword(e.target.value);setError('')}}
+                    onKeyDown={e=>e.key==='Enter'&&!busy&&handleSave()}
+                    style={{ width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.05)',color:'#fff',fontSize:14,outline:'none',boxSizing:'border-box' }}
+                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'} />
+                </div>
+                <div>
+                  <label style={{ fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.45)',display:'block',marginBottom:6 }}>Подтверди пароль</label>
+                  <input value={confirmPassword} type="password" placeholder="Повтори пароль"
+                    onChange={e=>{setConfirmPassword(e.target.value);setError('')}}
+                    onKeyDown={e=>e.key==='Enter'&&!busy&&handleSave()}
+                    style={{ width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.05)',color:'#fff',fontSize:14,outline:'none',boxSizing:'border-box' }}
+                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'} />
+                </div>
+                {error && (
+                  <div style={{ padding:'10px 14px',borderRadius:9,background:'rgba(239,68,68,0.12)',border:'1px solid rgba(239,68,68,0.3)',fontSize:13,color:'#fca5a5' }}>
+                    {error}
+                  </div>
+                )}
+                <button onClick={handleSave} disabled={busy}
+                  style={{ padding:'14px',borderRadius:11,border:'none',background:busy?'#6b7280':PUR,color:'#fff',fontSize:15,fontWeight:700,cursor:busy?'not-allowed':'pointer',marginTop:2,boxShadow:`0 6px 22px ${PUR}44`,transition:'all 0.15s' }}>
+                  {busy?'Сохраняем...':'Сохранить пароль'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -5834,6 +5930,10 @@ function MinimizedWorkoutBar({ meta, isMobile, bottomOffset, onClick }) {
 export default function App() {
   const [user,setUser]=useState(null)
   const [authLoading,setAuthLoading]=useState(true)
+  // Взводится событием PASSWORD_RECOVERY из onAuthStateChange (переход по
+  // ссылке "Восстановление пароля" из письма) — пока true, показываем
+  // ResetPasswordView вместо обычного входа/приложения, см. ниже.
+  const [recoveryMode,setRecoveryMode]=useState(false)
   const [userRole,setUserRole]=useState(()=>localStorage.getItem('fitpro_role')||'client')
   const [nav,setNav]=useState('dashboard')
   // История переходов верхнего уровня — чтобы "назад" из экранов вроде деталей
@@ -5939,7 +6039,11 @@ export default function App() {
       setUser(mergeUserWithProfile(session?.user??null))
       setAuthLoading(false)
     })
-    const{data:{subscription}}=supabase.auth.onAuthStateChange((_,session)=>{
+    const{data:{subscription}}=supabase.auth.onAuthStateChange((event,session)=>{
+      // Переход по ссылке восстановления пароля создаёт временную сессию —
+      // это НЕ обычный вход, обычный setUser() увёл бы сразу в приложение
+      // вместо формы смены пароля (см. ResetPasswordView).
+      if(event==='PASSWORD_RECOVERY'){setRecoveryMode(true);return}
       setUser(mergeUserWithProfile(session?.user??null))
     })
     return()=>subscription.unsubscribe()
@@ -6215,6 +6319,7 @@ export default function App() {
     handleNav('workouts')
   }
 
+  if(recoveryMode) return <ResetPasswordView onDone={()=>setRecoveryMode(false)} />
   if(authLoading) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#08080f',color:'#9ca3af',fontSize:14}}>Загрузка...</div>
   if(!user) return <LandingPage onEnter={setUser} />
 
