@@ -21,6 +21,14 @@ const clearFitproData = () => {
     .forEach(k => localStorage.removeItem(k))
 }
 
+// "Сегодня" по МЕСТНОМУ времени клиента, а не по UTC. new Date().toISOString()
+// всегда отдаёт дату в UTC — поздним вечером/ночью (когда местное время уже
+// перевалило за полночь, а UTC ещё нет, или наоборот) это давало дефолт даты
+// тренировки, отличающийся от реального календарного дня клиента, пока
+// дневник питания (foodDate в DiaryView) уже был локальным — тренировка и еда
+// одного вечера расходились по дням.
+const localTodayISO = () => { const d = new Date(); const p = n => String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}` }
+
 const CLIENTS = [
   { id:1, name:'Анна Соколова',   goal:'Похудение',    program:'Кардио + Сила',     progress:78, av:'АС', cal:1800, wk:4, wts:[75,74.2,73.5,72.8,72,71.5,71] },
   { id:2, name:'Дмитрий Козлов', goal:'Набор массы',   program:'Силовые тренировки', progress:62, av:'ДК', cal:2800, wk:3, wts:[70,70.5,71,71.8,72.5,73,73.5] },
@@ -800,16 +808,21 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   // считается (ключа в localStorage просто нет, since=null, фильтр не
   // применяется). После сброса галочки/счётчик "выполнено N из 12" должны
   // показывать прогресс ТЕКУЩЕГО круга, а не всех кругов за всё время —
-  // иначе клиент не поймёт, где он в новом прохождении. Дата хранится как
-  // ISO-строка (Date.toISOString()) — тот же формат, что у workouts.date,
-  // сравнение строк лексикографически совпадает с хронологическим.
+  // иначе клиент не поймёт, где он в новом прохождении. Дата круга хранится
+  // как ДЕНЬ (YYYY-MM-DD, localTodayISO()), а не точный момент — дата
+  // тренировки хранится с якорем на полдень (см. confirmSaveWithDate), и
+  // сравнение "точный таймстамп сброса vs дата тренировки" ломалось: "Пройти
+  // заново" после полудня делало сброс "позже" тренировки того же дня, и она
+  // выпадала из нового круга. Сравниваем по дню с ОБЕИХ сторон (.slice(0,10))
+  // — это заодно совместимо со старыми cycleStart, сохранёнными как полный
+  // таймстамп до этой правки (без миграции).
   const cycleStartKey=programName=>`fitpro_cycle_start_${programName}`
   const getCycleStart=programName=>{
     try{return localStorage.getItem(cycleStartKey(programName))}catch{return null}
   }
   const workoutsSinceCycleStart=programName=>{
     const since=getCycleStart(programName)
-    return since?workoutsLog.filter(w=>w.date>=since):workoutsLog
+    return since?workoutsLog.filter(w=>(w.date||'').slice(0,10)>=(since||'').slice(0,10)):workoutsLog
   }
 
   // N выполненных тренировок программы (текущего круга) — считаем по
@@ -842,7 +855,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     const programName=FOLDERS.find(f=>savedName&&savedName.startsWith(`${f} — тренировка `))
     if(!programName)return
     const cycleStart=getCycleStart(programName)
-    const relevant=cycleStart?freshLog.filter(w=>w.date>=cycleStart):freshLog
+    const relevant=cycleStart?freshLog.filter(w=>(w.date||'').slice(0,10)>=(cycleStart||'').slice(0,10)):freshLog
     if(!isProgramFullyCompleted(relevant,programName))return
     const flagKey=completedFlagKey(programName,cycleStart)
     let alreadyShown=false
@@ -858,7 +871,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   // тренировка 1 не должна снова стать холодным стартом). profiles.program
   // остаётся той же программой X — тут менять нечего, она и так выбрана.
   const startNewProgramCycle=(programName)=>{
-    const now=new Date().toISOString()
+    const now=localTodayISO()
     try{localStorage.setItem(cycleStartKey(programName),now)}catch{}
     setCompletedProgramModal(null)
     setOpenFolder(programName)
@@ -999,7 +1012,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   // значение и ошибочно посчитала бы это новым конфликтом.
   const runHandleAction=key=>{
     setMenuOpen(false)
-    const today=new Date().toISOString().split('T')[0]
+    const today=localTodayISO()
     // Ручной старт/логирование — не слот программы, предупреждение про
     // повторения (wIsFromProgram) здесь не показываем.
     setWIsFromProgram(false)
@@ -1084,7 +1097,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   // ещё не была выбрана (например при редактировании уже сохранённой
   // тренировки wDate уже стоит на её исходной дате — сохраняем).
   const openDatePicker=()=>{
-    if(!wDate)setWDate(new Date().toISOString().slice(0,10))
+    if(!wDate)setWDate(localTodayISO())
     setShowExitConfirm(false)
     setShowDatePicker(true)
   }

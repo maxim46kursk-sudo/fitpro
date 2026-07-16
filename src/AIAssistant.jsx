@@ -27,6 +27,13 @@ const getFriendlyErrorMessage = (err, status, rawMessage) => {
   return 'Что-то пошло не так, попробуй ещё раз.'
 }
 
+// "Сегодня" по МЕСТНОМУ времени клиента — new Date().toISOString() отдаёт
+// UTC-дату, из-за чего поздним вечером/ночью fresh.today для AI (тренировки
+// и питание) мог отличаться от реального календарного дня клиента, пока
+// дневник питания в App.jsx уже был локальным. Тот же helper, что в App.jsx —
+// маленький, дублировать нормально.
+const localTodayISO = () => { const d = new Date(); const p = n => String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}` }
+
 const stripMd = (t) => t
   .replace(/\*\*(.*?)\*\*/g, '$1')
   .replace(/\*(.*?)\*/g, '$1')
@@ -102,7 +109,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
   const loadContext = async (m) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localTodayISO()
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
     if (m === 'workout') {
