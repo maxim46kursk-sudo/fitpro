@@ -382,6 +382,11 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
           } catch (e) { console.error('Ошибка разбора GOAL:', e); writeFailed = true }
           text = text.replace(/\[GOAL:[^\]]+\]/g, '')
         }
+
+        // CONTACT_MAX — AI отказался автоматически ставить дефицитную норму
+        // при недоборе веса (см. aiPrompt.js) и предлагает написать Максиму.
+        contactMax = /\[CONTACT_MAX\]/.test(text)
+        if (contactMax) text = text.replace(/\[CONTACT_MAX\]/g, '')
       }
 
       // Защита от оборванного маркера — если ответу не хватило max_tokens и модель
