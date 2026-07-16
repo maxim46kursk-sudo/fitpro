@@ -3320,7 +3320,7 @@ function DateScroller({ value, onChange }) {
 }
 
 // ── Дневник
-function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, onOpenAI, userId, initialSection, diaryJumpToken, onSectionChange }) {
+function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, onOpenAI, userId, initialSection, diaryJumpToken, onSectionChange, historyLoading, historyLoadError, onRetryHistory }) {
   const [section, setSection] = useState(()=>initialSection??null)
   // Сообщаем родителю текущий подраздел — чтобы App мог его запомнить и вернуть
   // при повторном монтировании DiaryView после вынужденного перехода на другую
@@ -3437,6 +3437,12 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const flashFoodSaveError=()=>{setShowFoodSaveError(true);setTimeout(()=>setShowFoodSaveError(false),3500)}
   const [foodGoals,setFoodGoals]=useState({kcal:2000,p:150,c:200,f:60})
   const [goalsForm,setGoalsForm]=useState(foodGoals)
+  // Загрузка дневника питания (полная, см. эффект ниже) — тот же принцип,
+  // что historyLoading/historyLoadError в App() для тренировок: не выглядеть
+  // так, будто данных нет, пока они ещё в пути с сервера.
+  const [foodLoading,setFoodLoading]=useState(false)
+  const [foodLoadError,setFoodLoadError]=useState(false)
+  const [foodReloadToken,setFoodReloadToken]=useState(0)
 
   // Полная загрузка дневника питания при входе — Supabase как единственный
   // источник правды (см. задачу про logout/источник правды, тот же принцип,
@@ -3450,10 +3456,16 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   useEffect(()=>{
     if(!userId)return
     let cancelled=false
+    setFoodLoading(true)
+    setFoodLoadError(false)
     supabase.from('food_diary').select('*').eq('user_id',userId).order('created_at')
       .then(({data,error})=>{
         if(cancelled)return
-        if(error){console.error('Ошибка полной загрузки дневника питания:',error);return}
+        if(error){
+          console.error('Ошибка полной загрузки дневника питания:',error)
+          setFoodLoadError(true);setFoodLoading(false)
+          return
+        }
         const byDate={}
         for(const r of (data||[])){
           const entry={id:r.id,name:r.name,kcal:String(r.kcal||0),p:String(r.p||0),c:String(r.c||0),f:String(r.f||0)}
@@ -3461,9 +3473,10 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         }
         setFoodDiary(byDate)
         localStorage.setItem('fitpro_food_diary',JSON.stringify(byDate))
+        setFoodLoading(false)
       })
     return()=>{cancelled=true}
-  },[userId])
+  },[userId,foodReloadToken])
 
   // Загрузка дневника из Supabase при смене даты
   useEffect(()=>{
@@ -3828,7 +3841,14 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           <input value={exQuery} onChange={e=>setExQuery(e.target.value)} placeholder="Поиск упражнения..."
             style={{ width:'100%',padding:'10px 16px',fontSize:14,borderRadius:10,border:'1.5px solid #e5e7eb',boxSizing:'border-box',outline:'none',marginBottom:10,color:'#111',background:'#fff' }}
             onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
-          {exerciseNames.length===0?(
+          {historyLoading&&workoutHistory.length===0?(
+            <div style={{ textAlign:'center',color:'#9ca3af',fontSize:13,marginTop:40 }}>Загрузка…</div>
+          ):historyLoadError?(
+            <div style={{ textAlign:'center',color:'#9ca3af',fontSize:13,marginTop:40 }}>
+              <div style={{ marginBottom:10 }}>Не удалось загрузить. Проверь связь.</div>
+              <button onClick={onRetryHistory} style={{ fontSize:12,padding:'7px 16px',borderRadius:8,border:'none',background:PUR,color:'#fff',cursor:'pointer',fontWeight:600,minHeight:'unset' }}>Повторить</button>
+            </div>
+          ):exerciseNames.length===0?(
             <div style={{ textAlign:'center',color:'#9ca3af',fontSize:13,marginTop:40 }}>Завершите тренировку с упражнениями, чтобы видеть аналитику</div>
           ):sortedExerciseNames.length===0?(
             <div style={{ textAlign:'center',color:'#9ca3af',fontSize:13,marginTop:40 }}>Нет тренировок за выбранный период</div>
@@ -4332,7 +4352,16 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 <div style={{ fontSize:36,fontWeight:800,color:PUR,lineHeight:1 }}>{dayTotal.kcal}</div>
                 <div style={{ fontSize:14,color:'#9ca3af',paddingBottom:4 }}>/ {foodGoals.kcal} ккал</div>
                 {over('kcal')>0&&<div style={{ fontSize:11,color:COR,fontWeight:600,paddingBottom:4 }}>+{over('kcal')} перебор</div>}
-                {dayTotal.kcal===0&&<div style={{ fontSize:11,color:'#9ca3af',paddingBottom:4 }}>добавьте продукты</div>}
+                {foodLoading&&dayEntries.length===0?(
+                  <div style={{ fontSize:11,color:'#9ca3af',paddingBottom:4 }}>загрузка…</div>
+                ):foodLoadError?(
+                  <div style={{ fontSize:11,color:COR,paddingBottom:4,display:'flex',alignItems:'center',gap:6 }}>
+                    не удалось загрузить
+                    <button onClick={()=>setFoodReloadToken(t=>t+1)} style={{ fontSize:10,padding:'2px 8px',borderRadius:6,border:'none',background:COR,color:'#fff',cursor:'pointer',fontWeight:600,minHeight:'unset' }}>Повторить</button>
+                  </div>
+                ):dayTotal.kcal===0&&(
+                  <div style={{ fontSize:11,color:'#9ca3af',paddingBottom:4 }}>добавьте продукты</div>
+                )}
               </div>
               <div style={{ height:10,background:'#f3f4f6',borderRadius:5,overflow:'hidden',marginBottom:14 }}>
                 <div style={{ height:'100%',width:`${pct('kcal')}%`,background:over('kcal')>0?COR:PUR,borderRadius:5,transition:'width 0.3s' }} />
@@ -5890,6 +5919,7 @@ async function loadWorkoutHistoryFromSupabase(userId) {
   ])
   if (we) console.error('Ошибка загрузки тренировок из Supabase:', we)
   if (se) console.error('Ошибка загрузки подходов из Supabase:', se)
+  const hadError = !!(we || se)
 
   const byWorkoutId = {}
   const byDateLegacy = {}
@@ -5928,7 +5958,7 @@ async function loadWorkoutHistoryFromSupabase(userId) {
     })
   }
   result.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-  return result
+  return { history: result, error: hadError }
 }
 
 function PullToRefreshIndicator({ pull, refreshing }) {
@@ -6167,6 +6197,12 @@ export default function App() {
   // изменения был смонтирован (например остался открытым на другом
   // устройстве/вкладке, или просто не размонтировался между действиями).
   const [historyVersion,setHistoryVersion]=useState(0)
+  // Загрузка истории тренировок из Supabase (см. эффект ниже) — на новом
+  // телефоне/слабой связи данные приходят не мгновенно, а до этого экраны
+  // DiaryView не должны выглядеть так, будто тренировок вообще не было.
+  const [historyLoading,setHistoryLoading]=useState(false)
+  const [historyLoadError,setHistoryLoadError]=useState(false)
+  const [historyReloadToken,setHistoryReloadToken]=useState(0)
 
   useEffect(()=>{localStorage.setItem('fitpro_history',JSON.stringify(workoutHistory))},[workoutHistory])
   useEffect(()=>{localStorage.setItem('fitpro_custom_ex',JSON.stringify(customExercises))},[customExercises])
@@ -6236,13 +6272,18 @@ export default function App() {
   useEffect(()=>{
     if(!user?.id)return
     let cancelled=false
+    setHistoryLoading(true)
+    setHistoryLoadError(false)
     ;(async()=>{
       await migrateLocalWorkoutHistoryToSupabase(user.id)
-      const history=await loadWorkoutHistoryFromSupabase(user.id)
-      if(!cancelled)setWorkoutHistory(history)
+      const{history,error}=await loadWorkoutHistoryFromSupabase(user.id)
+      if(cancelled)return
+      if(error)setHistoryLoadError(true)
+      else setWorkoutHistory(history)
+      setHistoryLoading(false)
     })()
     return()=>{cancelled=true}
-  },[user?.id])
+  },[user?.id,historyReloadToken])
 
   // Имя/пол/фото/telegram — сразу при входе обогащаем user данными из Supabase
   // (mergeUserWithProfile до этого брал их только из localStorage, поэтому шапка
@@ -6435,12 +6476,12 @@ export default function App() {
     switch(nav){
       case 'dashboard': return userRole==='trainer'
         ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} />
-        : <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} />
+        : <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} />
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} userId={user?.id} />
       case 'nutrition': return <NutritionView userId={user?.id} />
       case 'library':   return <LibraryView customExercises={customExercises} />
       case 'chat':      return <ChatView />
-      case 'progress':  return <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} />
+      case 'progress':  return <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} />
       default:          return null
     }
   }
