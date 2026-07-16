@@ -414,6 +414,11 @@ const FOLDER_DESCRIPTIONS={
   'Домашние тренировки':'Тренировки дома с минимальным оборудованием (резинки и т.п.)',
 }
 const SLOT_COUNT=12
+// Сколько сессий подряд без реальной оценки нагрузки допустимо, прежде чем
+// движок останавливает рост веса по упражнению (см. runStartSlotWorkout,
+// agg.unratedStreak из buildExerciseAggregates) — дальше расти "вслепую" на
+// угаданной оценке 3 небезопасно.
+const UNRATED_STOP_AFTER=2
 const SUPERSET_COLORS={'A':PUR,'B':TEA,'C':COR,'D':BLU}
 // Тексты progressNote холодного старта (см. кнопку "▶ Начать тренировку") —
 // раньше показывались инлайн в карточке упражнения, теперь объясняются
@@ -1234,13 +1239,18 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     const builtExercises=exs.map(ex=>{
       const templateSets=parseTemplateSets(ex.sets)
       const agg=aggregates[ex.name]
+      // Клиент долго не ставит оценку — движок не должен молча растить вес
+      // на угаданной "3" до бесконечности (см. unratedStreak в
+      // buildExerciseAggregates). Резинки/повторения (домашняя программа) в
+      // это правило пока не входят — своя, отдельная ось, см. bandProgressNote.
+      const progressionStopped=!!(agg&&agg.unratedStreak>=UNRATED_STOP_AFTER)
       // Один коэффициент масштабирования на упражнение (computeTemplateScale,
       // workoutPrompt.js) — не вес под КАЖДЫЙ подход отдельно (так раньше
       // формула Эпли считала разминку "на отказ" на её же повторения и
       // разгоняла её быстрее рабочего подхода, а подходы с одинаковыми
       // повторениями схлопывались в один вес). Шаблон задаёт форму лестницы
       // весов, scale двигает её целиком — соотношение подходов сохраняется.
-      const scale=(agg&&agg.anchorSet)?computeTemplateScale(agg.anchorSet,agg.lastSession.effRatings,templateSets,agg.hardStreak):null
+      const scale=(agg&&agg.anchorSet)?computeTemplateScale(agg.anchorSet,agg.lastSession.effRatings,templateSets,agg.hardStreak,progressionStopped):null
       // Одна строка объяснения на упражнение целиком (не на
       // подход) — все подходы упражнения используют один и тот
       // же appliedPct/hardStreak (кг-ось) или steps (ось
@@ -1252,6 +1262,16 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         // Резина или голые повторения без снаряда (вес тела) —
         // это НЕ кг-ось: своя прогрессия по шагам, а не по 1ПМ.
         if(ts.templateKg==null){
+          // То же правило "стоп без оценки", что и на кг-оси (progressionStopped
+          // выше, общий на упражнение) — держим уровень резинки/повторения на
+          // последней РЕАЛЬНО оценённой сессии, не даём им ползти вверх от
+          // подставленной оценки 3 за пропущенные сессии.
+          if(progressionStopped){
+            if(!progressNoteSet){progressNote='Прогрессия нагрузки остановлена. Без твоей оценки я не могу безопасно повышать нагрузку — риск травмы. Оцени последние тренировки, и прогрессия продолжится.';progressNoteSet=true}
+            const heldSteps=computeProgressSteps(agg.sessions.slice(0,agg.sessions.length-agg.unratedStreak))
+            const bandTarget=computeBandTarget(ts,heldSteps)
+            return{kg:'',bandLevel:bandTarget.bandLevel,reps:String(bandTarget.reps),recKg:'',rating:'',fromTemplate:false}
+          }
           if(!progressNoteSet){progressNote=bandProgressNote(ts,agg);progressNoteSet=true}
           // Холодный старт (нет истории вообще) — всё из
           // шаблона как есть, steps=0.
@@ -1269,7 +1289,9 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           return{kg:String(ts.templateKg),bandLevel:null,reps:String(ts.reps),recKg:'',rating:'',fromTemplate:true}
         }
         if(!progressNoteSet){
-          progressNote=scale.isDeload
+          progressNote=progressionStopped
+            ?'Прогрессия нагрузки остановлена. Без твоей оценки я не могу безопасно повышать вес — риск травмы. Оцени последние тренировки, и прогрессия продолжится.'
+            :scale.isDeload
             ?'Разгрузка: две тяжёлые тренировки подряд. Вес снижен намеренно, дальше снова пойдём вверх.'
             :scale.appliedPct>=7?'Прибавка больше обычной — прошлый раз дался легко'
             :scale.appliedPct===5?'Плановая прибавка'
@@ -1279,7 +1301,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         const kg=roundToPlate(ts.templateKg*scale.scale)
         return{kg:String(kg),bandLevel:null,reps:String(ts.reps),recKg:String(kg),rating:'',fromTemplate:false}
       })
-      return{n:ex.name,m:'',eq:'',sets:parsedSets,done:false,progressNote}
+      return{n:ex.name,m:'',eq:'',sets:parsedSets,done:false,progressNote,progressStopped:progressionStopped}
     })
     // Холодный старт — хотя бы один подход взят из шаблона как есть
     // (красная рамка) — показывает модалку-объяснение (showProgressionIntro
@@ -1683,7 +1705,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       него теперь отдельная модалка "Откуда взялся этот вес"
                       (showProgressionIntro выше), не инлайн-строка. */}
                   {ex.progressNote&&!ex.done&&!COLD_START_NOTES.has(ex.progressNote)&&(
-                    <div style={{ fontSize:12.5, color:(ex.progressNote.startsWith('Разгрузка')||ex.progressNote.startsWith('Снизили нагрузку'))?PUR:'#9ca3af', marginTop:-4, marginBottom:8 }}>
+                    <div style={{
+                      fontSize:ex.progressStopped?13.5:12.5,
+                      fontWeight:ex.progressStopped?700:400,
+                      color:ex.progressStopped?'#ef4444':(ex.progressNote.startsWith('Разгрузка')||ex.progressNote.startsWith('Снизили нагрузку'))?PUR:'#9ca3af',
+                      marginTop:-4, marginBottom:8,
+                    }}>
                       {ex.progressNote}
                     </div>
                   )}

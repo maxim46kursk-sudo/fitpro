@@ -104,7 +104,11 @@ export function buildExerciseAggregates(sets) {
         // (комфортно) — скрытое допущение только для расчёта, клиенту как
         // его выбор не показываем.
         const effRatings = workingSets.map(s => s.rating ?? 3)
-        return { date: daySets[0].date, sets: daySets, workingSets, effRatings, minId: daySets[0].id }
+        // rated — была ли у сессии хотя бы одна РЕАЛЬНАЯ оценка (не
+        // подмена ?? 3 выше) — основа для unratedStreak ниже, не путать с
+        // effRatings (та всегда содержит числа, в том числе угаданные).
+        const rated = workingSets.some(s => s.rating != null)
+        return { date: daySets[0].date, sets: daySets, workingSets, effRatings, rated, minId: daySets[0].id }
       })
       .sort((a, b) => a.minId - b.minId)
     const lastSession = sessions.length ? sessions[sessions.length - 1] : null
@@ -119,7 +123,16 @@ export function buildExerciseAggregates(sets) {
     // Считается всегда (дёшево), используется только там, где у подходов
     // нет веса в кг.
     const progressSteps = computeProgressSteps(sessions)
-    result[name] = { type, sessions, lastSession, anchorSet, hardStreak, progressSteps }
+    // Сколько последних сессий ПОДРЯД (считая с конца истории) прошли без
+    // реальной оценки — если клиент долго не оценивает, движок не должен
+    // молча растить вес до бесконечности на угаданной "3" (см. forceHold в
+    // computeTemplateScale). Оценка в любой сессии обнуляет счётчик.
+    let unratedStreak = 0
+    for (let i = sessions.length - 1; i >= 0; i--) {
+      if (sessions[i].rated) break
+      unratedStreak++
+    }
+    result[name] = { type, sessions, lastSession, anchorSet, hardStreak, progressSteps, unratedStreak }
   }
   return result
 }
@@ -281,11 +294,14 @@ export function computeTargetWeight(anchorSet, ratings, targetReps, hardStreak) 
 // ratings — оценки двух последних рабочих подходов той же сессии,
 // templateSets — распарсенный ряд подходов ТЕКУЩЕЙ сессии
 // (parseTemplateSets), hardStreak — булев сигнал разового отката
-// (computeHardStreak). Возвращает { scale, appliedPct, isDeload } или null,
-// если масштабировать нечего (нет весового подхода в шаблоне, нет истории,
-// анкер невалиден) — тогда вызывающий код подставляет шаблон как есть
-// (холодный старт, как и раньше).
-export function computeTemplateScale(anchorSet, ratings, templateSets, hardStreak) {
+// (computeHardStreak). forceHold — клиент долго (см. UNRATED_STOP_AFTER в
+// App.jsx) не ставит реальную оценку: вместо роста/отката по угаданной "3"
+// держим вес на уровне анкера (factorGrowth=1.0) — расти дальше вслепую
+// небезопасно. Возвращает { scale, appliedPct, isDeload } или null, если
+// масштабировать нечего (нет весового подхода в шаблоне, нет истории, анкер
+// невалиден) — тогда вызывающий код подставляет шаблон как есть (холодный
+// старт, как и раньше).
+export function computeTemplateScale(anchorSet, ratings, templateSets, hardStreak, forceHold = false) {
   // 1. Опорный подход ШАБЛОНА — последний весовой подход в ряду (обычно самый
   // тяжёлый рабочий подход тренера), от него меряем форму лестницы.
   let templateAnchor = null
@@ -308,7 +324,10 @@ export function computeTemplateScale(anchorSet, ratings, templateSets, hardStrea
   // computeTargetWeight выше.
   const isAssisted = anchorKg < 0
   let appliedPct, factorGrowth
-  if (hardStreak) {
+  if (forceHold) {
+    factorGrowth = 1.0
+    appliedPct = 0
+  } else if (hardStreak) {
     factorGrowth = isAssisted ? 1.15 : 0.85
     appliedPct = -15
   } else {
@@ -325,7 +344,7 @@ export function computeTemplateScale(anchorSet, ratings, templateSets, hardStrea
   // упражнений оба 1ПМ отрицательны — знак сокращается сам, scale выходит
   // положительным без отдельной инверсии.
   const scale = targetRM / templateRM
-  return { scale, appliedPct, isDeload: !!hardStreak }
+  return { scale, appliedPct, isDeload: !forceHold && !!hardStreak }
 }
 
 // Какая из сессий назначенной программы — "сегодняшняя", и готовый вес под

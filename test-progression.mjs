@@ -174,5 +174,90 @@ console.log('\n── Кейс 9: откат на резинках (симмет
   assertEqual('Кейс 9: computeProgressSteps([1,1,5,5]) → 2 (две лёгкие +4, откат -2)', computeProgressSteps(sessions), 2)
 }
 
+console.log('\n── Кейс 10: остановка "слепого" роста без оценки (unratedStreak/forceHold) ──')
+
+// Фейковая история: одна сессия (свой workout_id) на каждый элемент —
+// rating:null означает "клиент не оценил", число — реальная оценка. Тот же
+// приём, что и fakeHardStreak выше.
+function fakeUnratedRows(ratingsSeq) {
+  return ratingsSeq.map((rating, i) => ({
+    id: i + 1, exercise: 'Приседания', date: `2026-02-${String(i + 1).padStart(2, '0')}`,
+    kg: 25, reps: 12, rating, workout_id: i + 1,
+  }))
+}
+
+{
+  // 10а) 1 сессия без оценки — рост как раньше (default 3, +5%), порог ещё не достигнут
+  const agg = buildExerciseAggregates(fakeUnratedRows([null]))['Приседания']
+  assertEqual('Кейс 10а: 1 сессия без оценки → unratedStreak=1', agg.unratedStreak, 1)
+  const progressionStopped = agg.unratedStreak >= 2
+  assertEqual('Кейс 10а: порог (2) ещё не достигнут → progressionStopped=false', progressionStopped, false)
+  const scale = computeTemplateScale(agg.anchorSet, agg.lastSession.effRatings, squatTemplate, agg.hardStreak, progressionStopped)
+  assertClose('Кейс 10а: вес всё ещё растёт (scale ≈ 1.05, угаданная оценка 3)', scale.scale, 1.05)
+}
+{
+  // 10б) 2 сессии подряд без оценки — следующая рекомендация ДЕРЖИТ вес
+  const agg = buildExerciseAggregates(fakeUnratedRows([null, null]))['Приседания']
+  assertEqual('Кейс 10б: 2 сессии подряд без оценки → unratedStreak=2', agg.unratedStreak, 2)
+  const progressionStopped = agg.unratedStreak >= 2
+  assertEqual('Кейс 10б: порог достигнут → progressionStopped=true', progressionStopped, true)
+  const scale = computeTemplateScale(agg.anchorSet, agg.lastSession.effRatings, squatTemplate, agg.hardStreak, progressionStopped)
+  assertClose('Кейс 10б: вес держится (scale ≈ 1.0, forceHold)', scale.scale, 1.0)
+  assertEqual('Кейс 10б: appliedPct === 0 при forceHold', scale.appliedPct, 0)
+  assertEqual('Кейс 10б: isDeload === false при forceHold', scale.isDeload, false)
+}
+{
+  // 10в) оценка после пропусков обнуляет счётчик, рост возвращается
+  const agg = buildExerciseAggregates(fakeUnratedRows([null, null, 1]))['Приседания']
+  assertEqual('Кейс 10в: оценка после пропусков → unratedStreak=0', agg.unratedStreak, 0)
+  const progressionStopped = agg.unratedStreak >= 2
+  const scale = computeTemplateScale(agg.anchorSet, agg.lastSession.effRatings, squatTemplate, agg.hardStreak, progressionStopped)
+  assertClose('Кейс 10в: рост возвращается (scale ≈ 1.10, оценка «легко»)', scale.scale, 1.10)
+}
+
+console.log('\n── Кейс 11: то же правило остановки на резинках/весе тела ─────────────')
+
+// Та же фейковая история, что и в кейсе 10, но упражнение с резиной —
+// bandTemplateSet имитирует ts (распарсенный шаблонный подход СЕГОДНЯШНЕЙ
+// сессии), band_level в строках истории не важен для computeProgressSteps
+// (тот смотрит только на rating), но нужен для реализма fromSupabase-формы.
+function fakeBandRows(ratingsSeq) {
+  return ratingsSeq.map((rating, i) => ({
+    id: i + 1, exercise: 'Приседания с резиной', date: `2026-03-${String(i + 1).padStart(2, '0')}`,
+    kg: null, reps: 15, rating, band_level: 2, workout_id: i + 1,
+  }))
+}
+const bandTemplateSet = { bandLevel: 2, reps: 15 }
+
+{
+  // 11а) 1 сессия без оценки — шаги растут как раньше (default 3 → +1 шаг)
+  const agg = buildExerciseAggregates(fakeBandRows([null]))['Приседания с резиной']
+  assertEqual('Кейс 11а: 1 сессия без оценки → unratedStreak=1', agg.unratedStreak, 1)
+  const progressionStopped = agg.unratedStreak >= 2
+  assertEqual('Кейс 11а: порог ещё не достигнут → progressionStopped=false', progressionStopped, false)
+  assertEqual('Кейс 11а: шаги растут (default оценка 3 → +1)', agg.progressSteps, 1)
+  assertDeepEqual('Кейс 11а: bandTarget по agg.progressSteps → {bandLevel:2,reps:17}',
+    computeBandTarget(bandTemplateSet, agg.progressSteps), { bandLevel: 2, reps: 17 })
+}
+{
+  // 11б) 2 сессии подряд без оценки — следующая рекомендация ДЕРЖИТ уровень/повторения
+  const agg = buildExerciseAggregates(fakeBandRows([null, null]))['Приседания с резиной']
+  assertEqual('Кейс 11б: 2 сессии подряд без оценки → unratedStreak=2', agg.unratedStreak, 2)
+  const progressionStopped = agg.unratedStreak >= 2
+  assertEqual('Кейс 11б: порог достигнут → progressionStopped=true', progressionStopped, true)
+  const heldSteps = computeProgressSteps(agg.sessions.slice(0, agg.sessions.length - agg.unratedStreak))
+  assertEqual('Кейс 11б: heldSteps=0 (нет ни одной реально оценённой сессии)', heldSteps, 0)
+  assertDeepEqual('Кейс 11б: bandTarget держится на шаблоне → {bandLevel:2,reps:15}',
+    computeBandTarget(bandTemplateSet, heldSteps), { bandLevel: 2, reps: 15 })
+}
+{
+  // 11в) оценка после пропусков обнуляет счётчик, рост возвращается
+  const agg = buildExerciseAggregates(fakeBandRows([null, null, 1]))['Приседания с резиной']
+  assertEqual('Кейс 11в: оценка после пропусков → unratedStreak=0', agg.unratedStreak, 0)
+  assertEqual('Кейс 11в: шаги посчитаны по всей истории (не held) → 4', agg.progressSteps, 4)
+  assertDeepEqual('Кейс 11в: bandTarget по agg.progressSteps → {bandLevel:2,reps:23}',
+    computeBandTarget(bandTemplateSet, agg.progressSteps), { bandLevel: 2, reps: 23 })
+}
+
 console.log(`\nИтого: ${pass}/${pass + fail}`)
 if (fail > 0) process.exit(1)
