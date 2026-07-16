@@ -1804,14 +1804,14 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                   placeholder="1"
                                   style={{ background:isTemplateBand?'rgba(239,68,68,0.14)':'#374151', border:isTemplateBand?'1.5px solid #ef4444':'1px solid #4b5563', borderRadius:6, padding:'6px 6px', fontSize:13, color:isTemplateBand?'#fca5a5':'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
                               ):(
-                                <input value={set.kg}
+                                <input value={set.kg} inputMode="decimal"
                                   onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,kg:e.target.value,fromTemplate:false}:s)}:x))}
                                   onFocus={selectOnFocus}
                                   placeholder="0"
                                   style={{ background:isTemplateWeight?'rgba(239,68,68,0.14)':'#374151', border:isTemplateWeight?'1.5px solid #ef4444':'1px solid #4b5563', borderRadius:6, padding:'6px 6px', fontSize:13, color:isTemplateWeight?'#fca5a5':'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
                               )}
                               <div style={{ position:'relative', width:'100%' }}>
-                                <input value={set.reps}
+                                <input value={set.reps} inputMode="numeric"
                                   onChange={e=>handleRepsChange(ei,si,e.target.value)}
                                   onFocus={selectOnFocus}
                                   placeholder="0"
@@ -1836,7 +1836,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                             {set.recKg&&(
                               <div style={{ display:'grid', gridTemplateColumns:'24px 1fr 1fr 26px 26px 20px', gap:5 }}>
                                 <span />
-                                <span style={{ fontSize:9, color:PUR, textAlign:'center', marginTop:2 }}>реком. {set.recKg}кг</span>
+                                <span style={{ fontSize:11, color:PUR, textAlign:'center', marginTop:2 }}>реком. {set.recKg}кг</span>
                               </div>
                             )}
                             {/* Оценка нагрузки 1-5 — только под рабочими подходами (последние
@@ -1860,7 +1860,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                           color:set.rating===n?'#fff':'#9ca3af', transition:'background .1s, font-size .1s' }}>
                                         {n}
                                       </button>
-                                      <span style={{ fontSize:8.5, color:'#6b7280', marginTop:2, minHeight:10, whiteSpace:'nowrap' }}>
+                                      <span style={{ fontSize:11, color:'#6b7280', marginTop:2, minHeight:13, whiteSpace:'nowrap' }}>
                                         {n===1?'легко':n===5?'на пределе':''}
                                       </span>
                                     </div>
@@ -5295,7 +5295,10 @@ function SettingsView({ user, performLogout }) {
       <Section title="Единицы измерения">
         <Row label="Вес" right={
           <div style={{display:'flex',gap:4}}>
-            {['kg','lbs'].map(v=>(
+            {/* Только кг — пересчёта в фунты нет, показывать выбор lbs было бы
+                обманом (переключатель есть, а поведение не меняется). units.weight
+                и saveUnits не трогаем — на случай если пересчёт появится позже. */}
+            {['kg'].map(v=>(
               <button key={v} onClick={()=>saveUnits({...units,weight:v})} style={{
                 padding:'5px 12px',borderRadius:8,border:`1.5px solid ${units.weight===v?PUR:'#e5e7eb'}`,
                 background:units.weight===v?`${PUR}15`:'#fff',color:units.weight===v?PUR:'#6b7280',
