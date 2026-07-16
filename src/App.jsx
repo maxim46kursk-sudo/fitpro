@@ -176,6 +176,10 @@ function ClientsView({ setSC, setNav, userId }) {
   const [localClients,setLocalClients]=useState(()=>{
     try{ return JSON.parse(localStorage.getItem('fitpro_local_clients')||'[]') }catch{ return [] }
   })
+  // Тост ошибки записи/удаления клиента — тот же паттерн, что showFoodSaveError
+  // в DiaryView, своя копия т.к. компонент отдельный.
+  const [showClientSaveError,setShowClientSaveError]=useState(false)
+  const flashClientSaveError=()=>{setShowClientSaveError(true);setTimeout(()=>setShowClientSaveError(false),3500)}
 
   const saveLocal=(list)=>{
     setLocalClients(list)
@@ -227,7 +231,17 @@ function ClientsView({ setSC, setNav, userId }) {
     setShowAdd(false)
     if(userId){
       supabase.from('trainer_clients').insert({trainer_id:userId,name:newC.name,goal:newC.goal||null,program:newC.program||null,progress:0}).select('id').single().then(({data,error})=>{
-        if(error){console.error('Ошибка синхронизации клиента с Supabase:',error);return}
+        if(error){
+          console.error('Ошибка синхронизации клиента с Supabase:',error)
+          // Откат оптимистичной вставки — сервер её не принял.
+          setLocalClients(list=>{
+            const rolledBack=list.filter(c=>c!==newC)
+            localStorage.setItem('fitpro_local_clients',JSON.stringify(rolledBack))
+            return rolledBack
+          })
+          flashClientSaveError()
+          return
+        }
         setLocalClients(list=>{
           const updated=list.map(c=>c===newC?{...c,supabaseId:data?.id}:c)
           localStorage.setItem('fitpro_local_clients',JSON.stringify(updated))
@@ -237,10 +251,17 @@ function ClientsView({ setSC, setNav, userId }) {
     }
   }
 
-  const deleteLocal=(id)=>{
+  const deleteLocal=async(id)=>{
     const target=localClients.find(c=>c.id===id)
-    saveLocal(localClients.filter(c=>c.id!==id))
-    if(target?.supabaseId!=null)supabase.from('trainer_clients').delete().eq('id',target.supabaseId)
+    if(target?.supabaseId!=null){
+      const{error}=await supabase.from('trainer_clients').delete().eq('id',target.supabaseId)
+      if(error){console.error('Ошибка удаления клиента:',error);flashClientSaveError();return}
+    }
+    setLocalClients(list=>{
+      const next=list.filter(c=>c.id!==id)
+      localStorage.setItem('fitpro_local_clients',JSON.stringify(next))
+      return next
+    })
   }
 
   const allClients=[...CLIENTS,...localClients]
@@ -248,6 +269,16 @@ function ClientsView({ setSC, setNav, userId }) {
 
   return (
     <div>
+      {showClientSaveError&&(
+        <div style={{
+          position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
+          zIndex:1200, padding:'10px 18px', borderRadius:24, maxWidth:320, textAlign:'center',
+          background:'#dc2626', color:'#fff', fontSize:13, fontWeight:700,
+          boxShadow:'0 6px 20px rgba(220,38,38,0.35)',
+        }}>
+          Не удалось сохранить — проверь связь и повтори
+        </div>
+      )}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
         <h2 style={{ fontSize:20, fontWeight:500, color:'#111', margin:0 }}>Клиенты</h2>
         <button onClick={()=>setShowAdd(true)} style={{ fontSize:13, padding:'7px 14px', background:PUR, color:'#fff', border:'none', borderRadius:8, cursor:'pointer' }}>+ Добавить</button>
@@ -3983,7 +4014,18 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
       const next=[...plannedWorkouts,pw];setPlannedWorkouts(next);localStorage.setItem('fitpro_planned',JSON.stringify(next))
       if(userId){
         supabase.from('planned_workouts').insert({user_id:userId,name:pw.name||null,date:pw.date||null}).select('id').single().then(({data,error})=>{
-          if(error){console.error('Ошибка синхронизации плана тренировки:',error);return}
+          if(error){
+            console.error('Ошибка синхронизации плана тренировки:',error)
+            // Откат оптимистичной вставки — сервер её не принял, "зомби"-запись
+            // без supabaseId иначе осталась бы висеть только локально.
+            setPlannedWorkouts(list=>{
+              const rolledBack=list.filter(p=>p!==pw)
+              localStorage.setItem('fitpro_planned',JSON.stringify(rolledBack))
+              return rolledBack
+            })
+            flashFoodSaveError()
+            return
+          }
           setPlannedWorkouts(list=>{
             const updated=list.map(p=>p===pw?{...p,supabaseId:data?.id}:p)
             localStorage.setItem('fitpro_planned',JSON.stringify(updated))
@@ -3992,21 +4034,44 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         })
       }
     }
-    const deletePlanned=(id)=>{
+    const deletePlanned=async(id)=>{
       const target=plannedWorkouts.find(p=>p.id===id)
-      const next=plannedWorkouts.filter(p=>p.id!==id);setPlannedWorkouts(next);localStorage.setItem('fitpro_planned',JSON.stringify(next))
-      if(target?.supabaseId!=null)supabase.from('planned_workouts').delete().eq('id',target.supabaseId)
+      if(target?.supabaseId!=null){
+        const{error}=await supabase.from('planned_workouts').delete().eq('id',target.supabaseId)
+        if(error){console.error('Ошибка удаления плана тренировки:',error);flashFoodSaveError();return}
+      }
+      setPlannedWorkouts(list=>{
+        const next=list.filter(p=>p.id!==id)
+        localStorage.setItem('fitpro_planned',JSON.stringify(next))
+        return next
+      })
     }
-    const saveTemplate=(workout)=>{
+    const saveTemplate=async(workout)=>{
       const tpl={id:Date.now(),name:workout.name,exercises:(workout.exercises||[]).map(ex=>({n:ex.n,m:ex.m,eq:ex.eq}))}
+      if(userId){
+        const{error}=await supabase.from('workout_templates').insert({user_id:userId,name:tpl.name,exercises:tpl.exercises})
+        if(error){console.error('Ошибка сохранения шаблона тренировки:',error);flashFoodSaveError();return}
+      }
       const existing=JSON.parse(localStorage.getItem('fitpro_user_templates')||'[]')
       localStorage.setItem('fitpro_user_templates',JSON.stringify([...existing,tpl]))
       setTemplateMsg(`Шаблон «${workout.name}» сохранён`)
       setTimeout(()=>setTemplateMsg(''),2500)
-      if(userId)supabase.from('workout_templates').insert({user_id:userId,name:tpl.name,exercises:tpl.exercises})
     }
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
+        {/* Тост ошибки записи — тот же showFoodSaveError, что и в секции
+            "Питание" (общий на DiaryView), просто отрисован ещё и здесь:
+            savePlanned/deletePlanned/saveTemplate тоже могут упасть в Supabase. */}
+        {showFoodSaveError&&(
+          <div style={{
+            position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
+            zIndex:1200, padding:'10px 18px', borderRadius:24, maxWidth:320, textAlign:'center',
+            background:'#dc2626', color:'#fff', fontSize:13, fontWeight:700,
+            boxShadow:'0 6px 20px rgba(220,38,38,0.35)',
+          }}>
+            Не удалось сохранить — проверь связь и повтори
+          </div>
+        )}
         {/* ─ Шапка с кнопкой + */}
         <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0,position:'sticky',top:0,zIndex:10 }}>
           <div style={{ display:'flex',alignItems:'center',gap:14 }}>
@@ -5065,6 +5130,9 @@ function SettingsView({ user, performLogout }) {
   const [deleteConfirm,setDeleteConfirm]=useState(false)
   const [dataMsg,setDataMsg]=useState('')
   const [aiStyle,setAiStyle]=useState('act')
+  // Тост ошибки записи настроек — тот же паттерн, что showFoodSaveError и т.п.
+  const [showSettingsSaveError,setShowSettingsSaveError]=useState(false)
+  const flashSettingsSaveError=()=>{setShowSettingsSaveError(true);setTimeout(()=>setShowSettingsSaveError(false),3500)}
 
   useEffect(()=>{
     if(!user?.id)return
@@ -5082,21 +5150,53 @@ function SettingsView({ user, performLogout }) {
       })
   },[user?.id])
 
-  const saveNotifs=(next)=>{
+  const saveNotifs=async(next)=>{
+    const prev=notifs
     setNotifs(next);localStorage.setItem('fitpro_notifs',JSON.stringify(next))
-    if(user?.id)supabase.from('profiles').update({notifs:next}).eq('id',user.id)
+    if(user?.id){
+      const{error}=await supabase.from('profiles').update({notifs:next}).eq('id',user.id)
+      if(error){
+        console.error('Ошибка сохранения уведомлений:',error)
+        setNotifs(prev);localStorage.setItem('fitpro_notifs',JSON.stringify(prev))
+        flashSettingsSaveError()
+      }
+    }
   }
-  const saveUnits=(next)=>{
+  const saveUnits=async(next)=>{
+    const prev=units
     setUnits(next);localStorage.setItem('fitpro_units',JSON.stringify(next))
-    if(user?.id)supabase.from('profiles').update({units:next}).eq('id',user.id)
+    if(user?.id){
+      const{error}=await supabase.from('profiles').update({units:next}).eq('id',user.id)
+      if(error){
+        console.error('Ошибка сохранения единиц измерения:',error)
+        setUnits(prev);localStorage.setItem('fitpro_units',JSON.stringify(prev))
+        flashSettingsSaveError()
+      }
+    }
   }
-  const saveLang=(v)=>{
+  const saveLang=async(v)=>{
+    const prev=lang
     setLang(v);localStorage.setItem('fitpro_lang',v)
-    if(user?.id)supabase.from('profiles').update({lang:v}).eq('id',user.id)
+    if(user?.id){
+      const{error}=await supabase.from('profiles').update({lang:v}).eq('id',user.id)
+      if(error){
+        console.error('Ошибка сохранения языка:',error)
+        setLang(prev);localStorage.setItem('fitpro_lang',prev)
+        flashSettingsSaveError()
+      }
+    }
   }
-  const saveAiStyle=(v)=>{
+  const saveAiStyle=async(v)=>{
+    const prev=aiStyle
     setAiStyle(v)
-    if(user?.id)supabase.from('profiles').update({ai_style:v}).eq('id',user.id)
+    if(user?.id){
+      const{error}=await supabase.from('profiles').update({ai_style:v}).eq('id',user.id)
+      if(error){
+        console.error('Ошибка сохранения стиля AI-ассистента:',error)
+        setAiStyle(prev)
+        flashSettingsSaveError()
+      }
+    }
   }
 
   const clearChat=async()=>{
@@ -5160,6 +5260,16 @@ function SettingsView({ user, performLogout }) {
 
   return(
     <div style={{padding:'16px 16px 40px',display:'flex',flexDirection:'column',gap:0}}>
+      {showSettingsSaveError&&(
+        <div style={{
+          position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
+          zIndex:1200, padding:'10px 18px', borderRadius:24, maxWidth:320, textAlign:'center',
+          background:'#dc2626', color:'#fff', fontSize:13, fontWeight:700,
+          boxShadow:'0 6px 20px rgba(220,38,38,0.35)',
+        }}>
+          Не удалось сохранить — проверь связь и повтори
+        </div>
+      )}
 
       {/* Уведомления */}
       <Section title="Уведомления">
@@ -5302,6 +5412,10 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
   const [userEdit,setUserEdit]=useState({name:user?.name||'',email:user?.email||'',telegram:user?.telegram||'',gender:user?.gender||'',photoURL:user?.photoURL||''})
   const photoInputPVRef=useRef(null)
   const [saved,setSaved]=useState(false)
+  // Тост ошибки записи — тот же паттерн, что showFoodSaveError/showClientSaveError,
+  // своя копия т.к. компонент отдельный.
+  const [showProfileSaveError,setShowProfileSaveError]=useState(false)
+  const flashProfileSaveError=()=>{setShowProfileSaveError(true);setTimeout(()=>setShowProfileSaveError(false),3500)}
   const [showGoalPicker,setShowGoalPicker]=useState(false)
   const [customGoal,setCustomGoal]=useState('')
   const [typedText,setTypedText]=useState('')
@@ -5452,7 +5566,17 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
         shoulders:entry.shoulders||null,underarm:entry.underarm||null,chest:entry.chest||null,waist:entry.waist||null,
         glutes:entry.glutes||null,thigh:entry.thigh||null,calf:entry.calf||null,bicep:entry.bicep||null,
       }).select('id').single().then(({data,error})=>{
-        if(error){console.error('Ошибка синхронизации замера с Supabase:',error);return}
+        if(error){
+          console.error('Ошибка синхронизации замера с Supabase:',error)
+          // Откат оптимистичной вставки — сервер её не принял.
+          setMeasurements(list=>{
+            const rolledBack=list.filter(m=>m!==entry)
+            localStorage.setItem('fitpro_measurements',JSON.stringify(rolledBack))
+            return rolledBack
+          })
+          flashProfileSaveError()
+          return
+        }
         setMeasurements(list=>{
           const next=list.map(m=>m===entry?{...m,supabaseId:data?.id}:m)
           localStorage.setItem('fitpro_measurements',JSON.stringify(next))
@@ -5466,6 +5590,16 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
 
   return(
     <div style={{position:'fixed',inset:0,background:'#f9fafb',zIndex:1050,display:'flex',flexDirection:'column',fontFamily:'system-ui,sans-serif'}}>
+      {showProfileSaveError&&(
+        <div style={{
+          position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
+          zIndex:1200, padding:'10px 18px', borderRadius:24, maxWidth:320, textAlign:'center',
+          background:'#dc2626', color:'#fff', fontSize:13, fontWeight:700,
+          boxShadow:'0 6px 20px rgba(220,38,38,0.35)',
+        }}>
+          Не удалось сохранить — проверь связь и повтори
+        </div>
+      )}
       {/* Хедер */}
       <div style={{background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
         <button onClick={onClose} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset'}}>←</button>
