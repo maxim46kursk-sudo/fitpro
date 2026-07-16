@@ -1456,7 +1456,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               {wMode==='start'&&<div style={{ fontSize:14, color:'rgba(255,255,255,0.7)', marginTop:3 }}>⏱ {fmt(timer)}</div>}
             </div>
             <div style={{ display:'flex', gap:8, flexShrink:0, marginTop:4 }}>
-              <button onClick={()=>setShowProgressionIntro(true)} style={{ fontSize:15, fontWeight:700, color:'#fff', background:'rgba(0,0,0,0.25)', border:'none', borderRadius:6, width:28, height:28, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', padding:0, minHeight:'unset' }}>?</button>
+              {wIsFromProgram&&<button onClick={()=>setShowProgressionIntro(true)} style={{ fontSize:15, fontWeight:700, color:'#fff', background:'rgba(0,0,0,0.25)', border:'none', borderRadius:6, width:28, height:28, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', padding:0, minHeight:'unset' }}>?</button>}
               <button onClick={()=>setShowExitConfirm(true)} style={{ fontSize:16, color:'#fff', background:'rgba(0,0,0,0.25)', border:'none', borderRadius:6, width:28, height:28, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', padding:0, minHeight:'unset' }}>✕</button>
             </div>
           </div>
@@ -1518,7 +1518,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
 
         {/* Модалка "Откуда взялся этот вес" — см. showProgressionIntro выше:
             при каждой тренировке с холодным стартом, плюс вручную по "?" в шапке. */}
-        {showProgressionIntro&&(
+        {showProgressionIntro&&wIsFromProgram&&(
           <div style={{ position:'absolute', inset:0, zIndex:390, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.65)', borderRadius:14, padding:'0 18px' }}
             onClick={dismissProgressionIntro}>
             <div style={{ background:'#1c1c1e', borderRadius:16, padding:'20px 20px 16px', width:340, maxWidth:'100%', boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
@@ -1774,7 +1774,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                 (computeTemplateScale/computeBandTarget) — тап-зона 44x44
                                 (гайдлайн Apple) и подписи "легко"/"на пределе", чтобы клиент
                                 понимал, что именно он оценивает. */}
-                            {si>=ex.sets.length-2&&(
+                            {wIsFromProgram&&si>=ex.sets.length-2&&(
                               <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', gap:8, marginTop:6, paddingLeft:29 }}>
                                 <span style={{ fontSize:11, color:'#6b7280', flexShrink:0 }}>Оценка нагрузки</span>
                                 <div style={{ display:'flex', gap:3 }}>
@@ -3403,6 +3403,11 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const [openFoodMenu,setOpenFoodMenu]=useState(null)
   const [calPickerMonth,setCalPickerMonth]=useState(()=>{const t=new Date();return{y:t.getFullYear(),m:t.getMonth()}})
   const [showGoals,setShowGoals]=useState(false)
+  // Тост ошибки записи в дневник питания/нормы — addFood/removeFood/
+  // saveEditFood/сохранение нормы КБЖУ падают в Supabase молча (см. задачу),
+  // тот же паттерн, что и showCustomExerciseSaveError у своих упражнений.
+  const [showFoodSaveError,setShowFoodSaveError]=useState(false)
+  const flashFoodSaveError=()=>{setShowFoodSaveError(true);setTimeout(()=>setShowFoodSaveError(false),3500)}
   const [foodGoals,setFoodGoals]=useState({kcal:2000,p:150,c:200,f:60})
   const [goalsForm,setGoalsForm]=useState(foodGoals)
 
@@ -3517,11 +3522,12 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     if(!foodForm.name.trim())return
     let entry={id:Date.now(),...foodForm}
     if(userId){
-      const {data}=await supabase.from('food_diary').insert({
+      const {data,error}=await supabase.from('food_diary').insert({
         user_id:userId,date:foodDate,name:foodForm.name,
         kcal:+foodForm.kcal||0,p:+foodForm.p||0,c:+foodForm.c||0,f:+foodForm.f||0,
       }).select().single()
-      if(data)entry={...entry,id:data.id}
+      if(error){console.error('Ошибка записи в дневник питания:',error);flashFoodSaveError();return}
+      entry={...entry,id:data.id}
     }
     setFoodDiary(d=>{
       const updated={...d,[foodDate]:[...(d[foodDate]||[]),entry]}
@@ -3533,7 +3539,10 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     setShowFoodForm(false)
   }
   const removeFood=async(id)=>{
-    if(userId)await supabase.from('food_diary').delete().eq('id',id)
+    if(userId){
+      const{error}=await supabase.from('food_diary').delete().eq('id',id)
+      if(error){console.error('Ошибка удаления записи дневника питания:',error);flashFoodSaveError();return}
+    }
     setFoodDiary(d=>{
       const updated={...d,[foodDate]:(d[foodDate]||[]).filter(e=>e.id!==id)}
       const all={...JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'),[foodDate]:updated[foodDate]}
@@ -3544,10 +3553,13 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const startEditFood=(e)=>{setEditFoodForm({name:e.name,kcal:e.kcal||'',p:e.p||'',c:e.c||'',f:e.f||'',items:e.items||[]});setEditingFoodId(e.id)}
   const saveEditFood=async()=>{
     if(!editFoodForm.name.trim())return
-    if(userId)await supabase.from('food_diary').update({
-      name:editFoodForm.name,kcal:+editFoodForm.kcal||0,
-      p:+editFoodForm.p||0,c:+editFoodForm.c||0,f:+editFoodForm.f||0,
-    }).eq('id',editingFoodId)
+    if(userId){
+      const{error}=await supabase.from('food_diary').update({
+        name:editFoodForm.name,kcal:+editFoodForm.kcal||0,
+        p:+editFoodForm.p||0,c:+editFoodForm.c||0,f:+editFoodForm.f||0,
+      }).eq('id',editingFoodId)
+      if(error){console.error('Ошибка сохранения правки записи дневника питания:',error);flashFoodSaveError();return}
+    }
     setFoodDiary(d=>{
       const updated={...d,[foodDate]:(d[foodDate]||[]).map(e=>e.id===editingFoodId?{...e,...editFoodForm}:e)}
       const all={...JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'),[foodDate]:updated[foodDate]}
@@ -4128,6 +4140,18 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     const pct=(k)=>foodGoals[k]?Math.min(100,Math.round((dayTotal[k]/foodGoals[k])*100)):0
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
+        {/* Тост ошибки записи в дневник/нормы — addFood/removeFood/saveEditFood/
+            сохранение нормы КБЖУ упали в Supabase, локально ничего не менялось. */}
+        {showFoodSaveError&&(
+          <div style={{
+            position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
+            zIndex:1200, padding:'10px 18px', borderRadius:24, maxWidth:320, textAlign:'center',
+            background:'#dc2626', color:'#fff', fontSize:13, fontWeight:700,
+            boxShadow:'0 6px 20px rgba(220,38,38,0.35)',
+          }}>
+            Не удалось сохранить — проверь связь и повтори
+          </div>
+        )}
         {/* Шапка */}
         <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 16px',display:'flex',alignItems:'center',gap:10,flexShrink:0 }}>
           <button onClick={()=>setSection(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
@@ -4166,9 +4190,12 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 ))}
               </div>
               <button onClick={async()=>{
+                if(userId){
+                  const{error}=await supabase.from('food_goals').upsert({user_id:userId,...goalsForm,updated_at:new Date().toISOString()})
+                  if(error){console.error('Ошибка сохранения нормы КБЖУ:',error);flashFoodSaveError();return}
+                }
                 setFoodGoals(goalsForm);setShowGoals(false)
                 localStorage.setItem('fitpro_food_goals',JSON.stringify(goalsForm))
-                if(userId)await supabase.from('food_goals').upsert({user_id:userId,...goalsForm,updated_at:new Date().toISOString()})
               }}
                 style={{ width:'100%',padding:'10px',borderRadius:9,border:'none',background:PUR,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>
                 Сохранить
@@ -4566,6 +4593,27 @@ const NAV_MOBILE=[
   {id:'clients',icon:'👥',label:'Клиенты'},
 ]
 
+// Поле пароля с кнопкой-глазиком (показать/скрыть) — переиспользуется на
+// экранах входа, регистрации и смены пароля, чтобы вид/поведение совпадали
+// и не дублировался код. Видимость — своё состояние на каждый инстанс.
+function PasswordInput({ value, onChange, placeholder, onKeyDown }) {
+  const [visible,setVisible]=useState(false)
+  return (
+    <div style={{ position:'relative' }}>
+      <input value={value} type={visible?'text':'password'} placeholder={placeholder}
+        onChange={onChange} onKeyDown={onKeyDown}
+        style={{ width:'100%',padding:'12px 40px 12px 14px',borderRadius:10,border:'1.5px solid rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.05)',color:'#fff',fontSize:14,outline:'none',boxSizing:'border-box' }}
+        onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'} />
+      <button type="button" onClick={()=>setVisible(v=>!v)} aria-label={visible?'Скрыть пароль':'Показать пароль'}
+        style={{ position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',padding:4,cursor:'pointer',fontSize:16,color:'rgba(255,255,255,0.45)',lineHeight:1,minHeight:'unset' }}
+        onMouseEnter={e=>e.currentTarget.style.color='rgba(255,255,255,0.8)'}
+        onMouseLeave={e=>e.currentTarget.style.color='rgba(255,255,255,0.45)'}>
+        {visible?'👁‍🗨':'👁'}
+      </button>
+    </div>
+  )
+}
+
 function LandingPage({ onEnter }) {
   const [view,setView]=useState('hero')
   const [authTab,setAuthTab]=useState('login')
@@ -4824,21 +4872,17 @@ function LandingPage({ onEnter }) {
 
                     <div>
                       <label style={{ fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.45)',display:'block',marginBottom:6 }}>Пароль <span style={{ color:COR }}>*</span></label>
-                      <input value={form.password} type="password" placeholder="Минимум 6 символов"
+                      <PasswordInput value={form.password} placeholder="Минимум 6 символов"
                         onChange={e=>{setForm(v=>({...v,password:e.target.value}));setAuthError('')}}
-                        onKeyDown={e=>e.key==='Enter'&&(authTab==='login'?handleLogin():handleRegister())}
-                        style={{ width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.05)',color:'#fff',fontSize:14,outline:'none',boxSizing:'border-box' }}
-                        onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'} />
+                        onKeyDown={e=>e.key==='Enter'&&(authTab==='login'?handleLogin():handleRegister())} />
                     </div>
 
                     {authTab==='register' && (
                       <div>
                         <label style={{ fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.45)',display:'block',marginBottom:6 }}>Подтверди пароль <span style={{ color:COR }}>*</span></label>
-                        <input value={form.confirm} type="password" placeholder="Повтори пароль"
+                        <PasswordInput value={form.confirm} placeholder="Повтори пароль"
                           onChange={e=>{setForm(v=>({...v,confirm:e.target.value}));setAuthError('')}}
-                          onKeyDown={e=>e.key==='Enter'&&handleRegister()}
-                          style={{ width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.05)',color:'#fff',fontSize:14,outline:'none',boxSizing:'border-box' }}
-                          onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'} />
+                          onKeyDown={e=>e.key==='Enter'&&handleRegister()} />
                       </div>
                     )}
 
@@ -4926,19 +4970,15 @@ function ResetPasswordView({ onDone }) {
               <div style={{ display:'flex',flexDirection:'column',gap:14 }}>
                 <div>
                   <label style={{ fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.45)',display:'block',marginBottom:6 }}>Новый пароль</label>
-                  <input value={newPassword} type="password" placeholder="Минимум 6 символов"
+                  <PasswordInput value={newPassword} placeholder="Минимум 6 символов"
                     onChange={e=>{setNewPassword(e.target.value);setError('')}}
-                    onKeyDown={e=>e.key==='Enter'&&!busy&&handleSave()}
-                    style={{ width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.05)',color:'#fff',fontSize:14,outline:'none',boxSizing:'border-box' }}
-                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'} />
+                    onKeyDown={e=>e.key==='Enter'&&!busy&&handleSave()} />
                 </div>
                 <div>
                   <label style={{ fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.45)',display:'block',marginBottom:6 }}>Подтверди пароль</label>
-                  <input value={confirmPassword} type="password" placeholder="Повтори пароль"
+                  <PasswordInput value={confirmPassword} placeholder="Повтори пароль"
                     onChange={e=>{setConfirmPassword(e.target.value);setError('')}}
-                    onKeyDown={e=>e.key==='Enter'&&!busy&&handleSave()}
-                    style={{ width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.05)',color:'#fff',fontSize:14,outline:'none',boxSizing:'border-box' }}
-                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.1)'} />
+                    onKeyDown={e=>e.key==='Enter'&&!busy&&handleSave()} />
                 </div>
                 {error && (
                   <div style={{ padding:'10px 14px',borderRadius:9,background:'rgba(239,68,68,0.12)',border:'1px solid rgba(239,68,68,0.3)',fontSize:13,color:'#fca5a5' }}>
@@ -5804,8 +5844,8 @@ async function migrateLocalWorkoutHistoryToSupabase(userId) {
       const rows = []
       for (const ex of workout.exercises || []) {
         for (const s of ex.sets || []) {
-          if (!s.kg && !s.reps) continue
-          rows.push({ user_id: userId, exercise: ex.n, date: isoDate, kg: s.kg ? Number(s.kg) : null, reps: s.reps ? Number(s.reps) : null, note: s.note || null, recommended_kg: s.recKg ? Number(s.recKg) : null, rating: s.rating ? Number(s.rating) : null, workout_id: workoutId })
+          if (!s.kg && !s.reps && s.bandLevel == null) continue
+          rows.push({ user_id: userId, exercise: ex.n, date: isoDate, kg: s.kg ? Number(s.kg) : null, reps: s.reps ? Number(s.reps) : null, note: s.note || null, recommended_kg: s.recKg ? Number(s.recKg) : null, rating: s.rating ? Number(s.rating) : null, workout_id: workoutId, band_level: s.bandLevel ?? null })
         }
       }
       if (rows.length) {
@@ -6092,6 +6132,18 @@ export default function App() {
   // пользователем на этом же табе мелькнули бы чужие старые данные до того,
   // как отработает загрузка из Supabase (см. задачу про источник правды).
   const performLogout = () => {
+    // Несохранённая тренировка (workoutId==null, не синтетическая копия из
+    // базы — тот же фильтр, что в migrateLocalWorkoutHistoryToSupabase) живёт
+    // только в localStorage/памяти; clearFitproData() ниже стирает её
+    // безвозвратно. Если офлайн (или миграция ещё не успела) — предупреждаем
+    // до сброса, а не после.
+    const unsavedCount = workoutHistory.filter(w =>
+      w.workoutId == null && !w.fromSupabaseFallback && !(w.name === 'Тренировка' && !w.comment && w.duration == null)
+    ).length
+    if (unsavedCount > 0) {
+      const ok = window.confirm(`У тебя есть ${unsavedCount} несохранённых тренировок — они ещё не попали в базу (возможно, не было интернета). Если выйти сейчас, они потеряются. Выйти всё равно?`)
+      if (!ok) return
+    }
     setUser(null)
     setWorkoutHistory([])
     setCustomExercises([])

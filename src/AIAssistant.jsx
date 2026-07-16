@@ -255,6 +255,13 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
       let text = stripMd(data.content[0].text)
       let added = false
       let contactMax = false
+      // Тихая потеря данных: если запись в Supabase падает (нет связи и
+      // т.п.), сейчас ошибка уходит только в console.error, а текст модели
+      // ("записал"/"удалил"/"норма установлена") остаётся единственным, что
+      // видит клиент — ложный успех. writeFailed взводится в любом error-
+      // или catch-случае ниже (режим питания) и добавляет дисклеймер к
+      // тексту перед показом, см. ниже.
+      let writeFailed = false
 
       if (mode === 'workout') {
         // Режим консультанта: чат по тренировкам больше не пишет и не читает
@@ -304,9 +311,9 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
                 name: entry.name, kcal: +entry.kcal || 0,
                 p: +entry.p || 0, c: +entry.c || 0, f: +entry.f || 0,
               })
-              if (error) console.error('Ошибка записи в дневник:', error)
+              if (error) { console.error('Ошибка записи в дневник:', error); writeFailed = true }
               else added = true
-            } catch (e) { console.error('Ошибка разбора ADD:', e) }
+            } catch (e) { console.error('Ошибка разбора ADD:', e); writeFailed = true }
           }
           text = text.replace(/\[ADD:[^\]]+\]/g, '')
           if (added) {
@@ -326,9 +333,9 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
               const del = JSON.parse(m[1])
               const { error } = await supabase.from('food_diary').delete()
                 .eq('id', del.id).eq('user_id', fresh.user.id).eq('date', del.date || fresh.today)
-              if (error) console.error('Ошибка удаления записи:', error)
+              if (error) { console.error('Ошибка удаления записи:', error); writeFailed = true }
               else deleted = true
-            } catch (e) { console.error('Ошибка разбора DEL:', e) }
+            } catch (e) { console.error('Ошибка разбора DEL:', e); writeFailed = true }
           }
           text = text.replace(/\[DEL:[^\]]+\]/g, '')
           if (deleted) {
@@ -348,9 +355,9 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
               const clear = JSON.parse(m[1])
               const { error } = await supabase.from('food_diary').delete()
                 .eq('user_id', fresh.user.id).eq('date', clear.date || fresh.today)
-              if (error) console.error('Ошибка очистки дневника:', error)
+              if (error) { console.error('Ошибка очистки дневника:', error); writeFailed = true }
               else cleared = true
-            } catch (e) { console.error('Ошибка разбора CLEAR:', e) }
+            } catch (e) { console.error('Ошибка разбора CLEAR:', e); writeFailed = true }
           }
           text = text.replace(/\[CLEAR:[^\]]+\]/g, '')
           if (cleared) {
@@ -370,9 +377,9 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
               kcal: +goal.kcal || 0, p: +goal.p || 0, c: +goal.c || 0, f: +goal.f || 0,
               updated_at: new Date().toISOString(),
             })
-            if (error) console.error('Ошибка обновления нормы:', error)
+            if (error) { console.error('Ошибка обновления нормы:', error); writeFailed = true }
             window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
-          } catch (e) { console.error('Ошибка разбора GOAL:', e) }
+          } catch (e) { console.error('Ошибка разбора GOAL:', e); writeFailed = true }
           text = text.replace(/\[GOAL:[^\]]+\]/g, '')
         }
       }
@@ -388,6 +395,12 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
 
       // Компактный вывод — без пустых/пробельных строк после вырезания маркеров
       text = text.replace(/[ \t]*\n[ \t]*(?:\n[ \t]*)+/g, '\n').trim()
+
+      // Дописываем СНИЗУ, не стирая текст модели — иначе клиент останется с
+      // ложным "записал"/"удалил"/"норма установлена", хотя данные не долетели.
+      if (writeFailed) {
+        text += '\n\n⚠️ Не удалось сохранить это в дневник — похоже, пропала связь. Проверь интернет и повтори, пожалуйста.'
+      }
 
       setMessages(prev => [...prev, { role: 'assistant', content: text, added, contactMax }])
 

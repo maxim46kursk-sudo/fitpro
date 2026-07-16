@@ -146,7 +146,7 @@ export const RATING_GROWTH_PCT = { 1: 10, 2: 7, 3: 5, 4: 3, 5: 2 }
 //
 // Пересчитывается заново из истории при каждом обращении, никакого
 // отдельного состояния/флага в БД не хранится.
-function computeHardStreak(sessions) {
+export function computeHardStreak(sessions) {
   if (!sessions || sessions.length < 2) return false
   let streak = 0
   for (const s of sessions) {
