@@ -2,11 +2,9 @@ import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 're
 import { supabase } from './supabase'
 import { buildSystemPrompt } from './aiPrompt'
 import { buildWorkoutSystemPrompt, extractBalancedJson } from './workoutPrompt'
+import { MAX_TELEGRAM_URL } from './config.js'
 
 const PUR = '#7F77DD'
-// Та же ссылка, что и кнопка "Написать тренеру" в Настройках → Поддержка (App.jsx) —
-// один и тот же контакт Максима в Telegram, не заводим вторую ссылку.
-const MAX_TELEGRAM_URL = 'https://t.me/maxim_athlete'
 
 const HINTS = ['Какой рацион мне подойдет?', 'Что съесть после тренировки?', 'Можно ли мне алкоголь?']
 const HINTS_WORKOUT = ['Правда что от приседаний ноги станут огромными?', 'Как правильно дышать при жиме лёжа?', 'Сколько отдыхать между подходами?']

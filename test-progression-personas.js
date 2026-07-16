@@ -34,7 +34,7 @@ import zlib from 'node:zlib'
 import ExcelJS from 'exceljs'
 import { buildAssignedSessionPlan, buildExerciseAggregates, computeTemplateScale, RATING_GROWTH_PCT, parseTemplateSets, computeBandTarget } from './src/workoutPrompt.js'
 import { oneRepMax, roundToPlate } from './src/oneRepMax.js'
-import { PROGRAMS_MAP, EXERCISE_TYPE } from './src/programs.js'
+import { PROGRAMS_MAP, EXERCISE_TYPE, countCompletedProgramSlots, isProgramFullyCompleted } from './src/programs.js'
 import { findSimilarExercise } from './src/fuzzyMatch.js'
 
 const CYCLES = 8
@@ -717,6 +717,56 @@ function buildTemplateScaleTestCases() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Тест-кейсы завершения программы (countCompletedProgramSlots/
+// isProgramFullyCompleted, programs.js) — СТРОГОЕ определение: все N слотов
+// программы пройдены хотя бы раз, порядок не важен, повторы одного слота не
+// компенсируют пропуск другого. Отдельный от прогрессии запрос (имя
+// ТРЕНИРОВКИ, workouts, а не имя упражнения, workout_sets) — см. задачу.
+// ─────────────────────────────────────────────────────────────────────────
+function buildProgramCompletionTestCases() {
+  const rows = []
+  const push = (name, expected, actual, pass) => rows.push({ name, persona: '— (завершение программы)', expected: String(expected), actual: String(actual), pass })
+  const PROGRAM = 'Full Body' // реальная программа из PROGRAMS_MAP, 12 слотов
+  const total = PROGRAMS_MAP[PROGRAM].length
+  const mkLog = nums => nums.map((n, i) => ({ name: `${PROGRAM} — тренировка ${n}`, date: addDays(TODAY, i) }))
+
+  // 1) 11 из 12 -> НЕ завершено (даже если это "последний" недостающий слот
+  // прямо по порядку — пропуска быть не должно).
+  {
+    const log = mkLog(Array.from({ length: 11 }, (_, i) => i + 1)) // 1..11, слота 12 нет
+    const count = countCompletedProgramSlots(log, PROGRAM)
+    const done = isProgramFullyCompleted(log, PROGRAM)
+    push(`11 из ${total} слотов → НЕ завершено`, `count=11, completed=false`, `count=${count}, completed=${done}`, count === 11 && done === false)
+  }
+
+  // 2) 12 из 12 в ПЕРЕМЕШАННОМ порядке -> завершено. Порядок прохождения не
+  // влияет на результат — это буквально одно из требований задачи.
+  {
+    const shuffled = [7, 2, 12, 1, 9, 4, 11, 3, 8, 5, 10, 6]
+    const log = mkLog(shuffled)
+    const count = countCompletedProgramSlots(log, PROGRAM)
+    const done = isProgramFullyCompleted(log, PROGRAM)
+    push(`12 из ${total} слотов в перемешанном порядке → завершено`, `count=12, completed=true`, `count=${count}, completed=${done}`, count === 12 && done === true)
+  }
+
+  // 3) 12 записей, но один слот пройден ДВАЖДЫ, а другой не пройден вообще
+  // (реально уникальных слотов — 11) -> НЕ завершено. Регресс ровно на
+  // наивную ошибку "считать по числу строк workouts", а не по уникальным
+  // номерам слота (слот 3 здесь дважды, слота 12 нет вообще).
+  {
+    const withDupe = [1, 2, 3, 3, 4, 5, 6, 7, 8, 9, 10, 11] // 12 строк, но слота 12 нет, слот 3 дважды
+    const log = mkLog(withDupe)
+    const count = countCompletedProgramSlots(log, PROGRAM)
+    const done = isProgramFullyCompleted(log, PROGRAM)
+    push(`12 записей, но один слот пройден дважды, а один не пройден → НЕ завершено (реально 11 уникальных)`,
+      'count=11, completed=false', `count=${count}, completed=${done}, всего записей=${log.length}`,
+      count === 11 && done === false)
+  }
+
+  return rows
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Тест-кейсы матчинга названий — findSimilarExercise из fuzzyMatch.js.
 // ─────────────────────────────────────────────────────────────────────────
 const NAME_MATCH_PAIRS = [
@@ -976,7 +1026,7 @@ async function buildWorkbook(results) {
     { header: 'Статус', key: 'status', width: 10 },
   ]
   styleHeader(s5.getRow(1))
-  const testRows = [...buildTestCases(results), ...buildBandTestCases(), ...buildTemplateScaleTestCases()]
+  const testRows = [...buildTestCases(results), ...buildBandTestCases(), ...buildTemplateScaleTestCases(), ...buildProgramCompletionTestCases()]
   for (const t of testRows) s5.addRow({ name: t.name, persona: t.persona, expected: t.expected, actual: t.actual, status: t.pass ? 'PASS' : 'FAIL' })
   s5.eachRow((row, i) => { if (i > 1 && row.getCell('status').value === 'FAIL') row.eachCell(c => { c.fill = RED_FILL }) })
   s5.getColumn('status').eachCell(cell => { cell.alignment = { horizontal: 'center' } })

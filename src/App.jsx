@@ -2,11 +2,12 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import AIAssistant from './AIAssistant'
 import { supabase } from './supabase.js'
-import { FOLDERS, PROGRAMS_MAP, EXERCISES, isOneSidedExercise } from './programs.js'
+import { FOLDERS, PROGRAMS_MAP, EXERCISES, isOneSidedExercise, countCompletedProgramSlots, isProgramFullyCompleted } from './programs.js'
 import { oneRepMax, weightForReps, roundToPlate, percentTable } from './oneRepMax.js'
 // Движок прогрессии (1ПМ) — врезан в кнопку "▶ Начать тренировку" внутри
 // слота шаблонной программы (WorkoutsView), см. подробный комментарий там.
 import { buildExerciseAggregates, computeTemplateScale, parseTemplateSets, computeProgressSteps, computeBandTarget } from './workoutPrompt.js'
+import { MAX_TELEGRAM_URL } from './config.js'
 import './App.css'
 
 const PUR = '#7F77DD'
@@ -589,6 +590,21 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     setShowRepsWarning(false)
   }
 
+  // Удаление упражнения на ЖИВОЙ тренировке — ничего не пишет в Supabase и
+  // не трогает историю, просто убирает элемент из wExercises: в базу при
+  // сохранении попадёт только то, что осталось (insertWorkoutSetsRows идёт
+  // по wExercises целиком). Черновик в localStorage обновится сам — эффект
+  // сохранения черновика уже следит за wExercises в зависимостях (см. ниже).
+  // Последнее оставшееся упражнение не удаляем — кнопку для него просто не
+  // показываем (см. рендер карточки), отдельного экрана-заглушки не нужно.
+  const [removeExerciseConfirm,setRemoveExerciseConfirm]=useState(null) // {ei,name} | null
+  const confirmRemoveExercise=()=>{
+    if(!removeExerciseConfirm)return
+    const{ei}=removeExerciseConfirm
+    setWExercises(p=>p.filter((_,i)=>i!==ei))
+    setRemoveExerciseConfirm(null)
+  }
+
   // Таймер тренировки и секундомер — считаются ОТ ОТМЕТКИ ВРЕМЕНИ
   // (startedAt/swStartedAt, Date.now()), а не прибавлением +1 в setInterval.
   // КРИТИЧНО для свёрнутой тренировки: iOS душит таймеры фоновых вкладок —
@@ -743,19 +759,82 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const [showAdoptProgramModal,setShowAdoptProgramModal]=useState(false)
   const [showSwitchProgramModal,setShowSwitchProgramModal]=useState(null) // {from,to,count}
 
-  // N выполненных тренировок программы — считаем по УНИКАЛЬНЫМ номерам слота,
-  // а не по общему числу записей workouts (клиент мог пройти "тренировку 3"
-  // дважды — это не два разных пункта из 12, а один и тот же выполненный).
-  const countCompletedSlots=programName=>{
-    const prefix=`${programName} — тренировка `
-    const nums=new Set()
-    workoutsLog.forEach(w=>{
-      if(w.name&&w.name.startsWith(prefix)){
-        const rest=w.name.slice(prefix.length)
-        if(/^\d+$/.test(rest))nums.add(rest)
-      }
-    })
-    return nums.size
+  // "Круг" программы — момент последнего "Пройти заново" (см. задачу про
+  // завершение программы). Пока круг не сбрасывали ни разу — вся история
+  // считается (ключа в localStorage просто нет, since=null, фильтр не
+  // применяется). После сброса галочки/счётчик "выполнено N из 12" должны
+  // показывать прогресс ТЕКУЩЕГО круга, а не всех кругов за всё время —
+  // иначе клиент не поймёт, где он в новом прохождении. Дата хранится как
+  // ISO-строка (Date.toISOString()) — тот же формат, что у workouts.date,
+  // сравнение строк лексикографически совпадает с хронологическим.
+  const cycleStartKey=programName=>`fitpro_cycle_start_${programName}`
+  const getCycleStart=programName=>{
+    try{return localStorage.getItem(cycleStartKey(programName))}catch{return null}
+  }
+  const workoutsSinceCycleStart=programName=>{
+    const since=getCycleStart(programName)
+    return since?workoutsLog.filter(w=>w.date>=since):workoutsLog
+  }
+
+  // N выполненных тренировок программы (текущего круга) — считаем по
+  // УНИКАЛЬНЫМ номерам слота, а не по общему числу записей workouts (клиент
+  // мог пройти "тренировку 3" дважды — это не два разных пункта из 12, а
+  // один и тот же выполненный). Сама логика — в programs.js
+  // (countCompletedProgramSlots), общая с определением завершения программы
+  // ниже, отдельным от прогрессии запросом (см. задачу).
+  const countCompletedSlots=programName=>countCompletedProgramSlots(workoutsSinceCycleStart(programName),programName)
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Завершение программы (12 из 12) — модалка-поздравление. См. заголовок
+  // задачи: это ОТДЕЛЬНЫЙ от прогрессии запрос (имя ТРЕНИРОВКИ, не
+  // упражнения), не смешивать с setsHistory/buildExerciseAggregates выше.
+  // ─────────────────────────────────────────────────────────────────────
+  const [completedProgramModal,setCompletedProgramModal]=useState(null) // programName | null
+
+  // Флаг "уже показали поздравление за ЭТОТ круг" — параметризован
+  // cycleStart, чтобы после "Пройти заново" завершение НОВОГО круга снова
+  // показало модалку один раз, а не молчало навсегда.
+  const completedFlagKey=(programName,cycleStart)=>`fitpro_program_completed_${programName}_${cycleStart||'initial'}`
+
+  // Вызывается из finishWorkout СРАЗУ после подтверждённого сохранения —
+  // savedName это wName только что сохранённой тренировки, freshLog —
+  // результат await loadWorkoutsLog() (не устаревший workoutsLog из
+  // замыкания). Если сохранённая тренировка не из программы (ручной
+  // старт/лог) — savedName не матчит ни один "{X} — тренировка N", смотреть
+  // нечего.
+  const checkProgramCompletion=(savedName,freshLog)=>{
+    const programName=FOLDERS.find(f=>savedName&&savedName.startsWith(`${f} — тренировка `))
+    if(!programName)return
+    const cycleStart=getCycleStart(programName)
+    const relevant=cycleStart?freshLog.filter(w=>w.date>=cycleStart):freshLog
+    if(!isProgramFullyCompleted(relevant,programName))return
+    const flagKey=completedFlagKey(programName,cycleStart)
+    let alreadyShown=false
+    try{alreadyShown=localStorage.getItem(flagKey)==='1'}catch{}
+    if(alreadyShown)return
+    try{localStorage.setItem(flagKey,'1')}catch{}
+    setCompletedProgramModal(programName)
+  }
+
+  // "Пройти {X} заново" — новый круг: сбрасываем ТОЧКУ ОТСЧЁТА для галочек/
+  // счётчика (workoutsSinceCycleStart), саму историю подходов (workout_sets)
+  // НЕ трогаем — на ней держится прогрессия второго круга (см. задачу,
+  // тренировка 1 не должна снова стать холодным стартом). profiles.program
+  // остаётся той же программой X — тут менять нечего, она и так выбрана.
+  const startNewProgramCycle=(programName)=>{
+    const now=new Date().toISOString()
+    try{localStorage.setItem(cycleStartKey(programName),now)}catch{}
+    setCompletedProgramModal(null)
+    setOpenFolder(programName)
+  }
+
+  // "Выбрать другую программу" — просто вернуть к списку программ; смена
+  // программы дальше идёт штатным флоу (handleStartSlotClick/
+  // showSwitchProgramModal ниже) — клиент открывает другую папку и жмёт
+  // "Начать тренировку" сам.
+  const chooseOtherProgramFromCompletion=()=>{
+    setCompletedProgramModal(null)
+    setOpenFolder(null)
   }
 
   // История подходов клиента — опора движка прогрессии (buildExerciseAggregates/
@@ -788,11 +867,17 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   // тренировку"): оба места матчат name по шаблону "{Программа} — тренировка
   // {N}", им не нужны сами подходы, только сам факт и дата записи.
   const [workoutsLog,setWorkoutsLog]=useState([])
+  // Возвращает свежие данные (не только пишет в state) — finishWorkout ниже
+  // проверяет завершение программы СРАЗУ после сохранения, а состояние
+  // workoutsLog в его замыкании обновится только на следующий рендер
+  // (setState асинхронен); без этого проверка завершения смотрела бы на
+  // устаревший список без только что сохранённой тренировки.
   const loadWorkoutsLog=async()=>{
-    if(!userId)return
+    if(!userId)return[]
     const{data,error}=await supabase.from('workouts').select('id,name,date').eq('user_id',userId).order('date')
-    if(error){console.error('Ошибка загрузки списка тренировок:',error);return}
+    if(error){console.error('Ошибка загрузки списка тренировок:',error);return[]}
     setWorkoutsLog(data||[])
+    return data||[]
   }
   useEffect(()=>{loadWorkoutsLog()},[userId,historyVersion])
 
@@ -999,7 +1084,11 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         setTimeout(()=>setShowFinishToast(false),2500)
       }
       await loadSetsHistory()
-      await loadWorkoutsLog()
+      const freshWorkoutsLog=await loadWorkoutsLog()
+      // Завершение программы — отдельная от прогрессии проверка (см.
+      // checkProgramCompletion выше), по свежим данным (не по workoutsLog из
+      // замыкания — тот обновится только на следующий рендер).
+      checkProgramCompletion(wName,freshWorkoutsLog)
     }
     exitWorkout()
   }
@@ -1510,6 +1599,31 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           </div>
         )}
 
+        {/* Подтверждение удаления упражнения с живой тренировки (🗑 на
+            карточке) — см. removeExerciseConfirm выше. Ничего не пишет в
+            Supabase, просто убирает элемент из wExercises. */}
+        {removeExerciseConfirm&&(
+          <div style={{ position:'absolute', inset:0, zIndex:399, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.65)', borderRadius:14, padding:'0 18px' }}
+            onClick={()=>setRemoveExerciseConfirm(null)}>
+            <div style={{ background:'#1c1c1e', borderRadius:16, padding:'20px 20px 16px', width:320, maxWidth:'100%', boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
+              onClick={e=>e.stopPropagation()}>
+              <div style={{ fontSize:15, color:'#fff', lineHeight:1.5, marginBottom:18, textAlign:'center' }}>
+                Убрать «{removeExerciseConfirm.name}» из этой тренировки?
+              </div>
+              <div style={{ display:'flex', gap:8 }}>
+                <button onClick={()=>setRemoveExerciseConfirm(null)}
+                  style={{ flex:1, padding:'11px', borderRadius:10, border:'1px solid #374151', background:'none', color:'#9ca3af', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                  Отмена
+                </button>
+                <button onClick={confirmRemoveExercise}
+                  style={{ flex:1, padding:'11px', borderRadius:10, border:'none', background:'#ef4444', color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer' }}>
+                  Убрать
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Контент */}
         <div style={{ flex:1, overflowY:'auto', padding:'14px 18px' }}>
 
@@ -1546,9 +1660,19 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               const tonnage=exTonnage(ex)
               return (
                 <div key={ei} style={{ marginBottom:14, background:ex.done?'#0d2010':'#1f2937', borderRadius:10, padding:'12px 14px', border:ex.done?'1px solid #14532d':'none' }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
-                    <span style={{ fontSize:14, fontWeight:600, color:ex.done?'#4ade80':wColor }}>{ex.n}</span>
-                    {ex.done&&<span style={{ fontSize:11, color:'#4ade80' }}>✓ Выполнено</span>}
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, gap:8 }}>
+                    <span style={{ fontSize:14, fontWeight:600, color:ex.done?'#4ade80':wColor, flex:1, minWidth:0 }}>{ex.n}</span>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
+                      {ex.done&&<span style={{ fontSize:11, color:'#4ade80' }}>✓ Выполнено</span>}
+                      {/* Последнее оставшееся упражнение не удаляем — кнопку
+                          просто не показываем (см. комментарий у removeExerciseConfirm). */}
+                      {wExercises.length>1&&(
+                        <button onClick={()=>setRemoveExerciseConfirm({ei,name:ex.n})}
+                          style={{ width:26, height:26, borderRadius:6, border:'none', background:'#374151', color:'#9ca3af', cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                          🗑
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {/* Объяснение пересчитанного веса (см. кнопку "▶ Начать
                       тренировку" в слоте программы, где считается progressNote) —
@@ -1652,7 +1776,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                 понимал, что именно он оценивает. */}
                             {si>=ex.sets.length-2&&(
                               <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', gap:8, marginTop:6, paddingLeft:29 }}>
-                                <span style={{ fontSize:11, color:'#6b7280', flexShrink:0 }}>Тяжесть подхода</span>
+                                <span style={{ fontSize:11, color:'#6b7280', flexShrink:0 }}>Оценка нагрузки</span>
                                 <div style={{ display:'flex', gap:3 }}>
                                   {[1,2,3,4,5].map(n=>(
                                     <div key={n} style={{ display:'flex', flexDirection:'column', alignItems:'center' }}>
@@ -2110,6 +2234,51 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         </div>
       , document.body)}
 
+      {/* Программа пройдена (12 из 12, см. checkProgramCompletion выше) —
+          три варианта дальше, каждый заметная кнопка с подписью под ней. */}
+      {completedProgramModal&&createPortal(
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1400, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+          <div style={{ background:'#fff', borderRadius:16, padding:'24px 20px', maxWidth:380, width:'100%', boxSizing:'border-box' }}>
+            <div style={{ fontSize:34, textAlign:'center', marginBottom:8 }}>🎉</div>
+            <div style={{ fontSize:18, fontWeight:700, color:'#111', textAlign:'center', marginBottom:8 }}>
+              Программа «{completedProgramModal}» пройдена!
+            </div>
+            <div style={{ fontSize:13.5, color:'#6b7280', textAlign:'center', lineHeight:1.5, marginBottom:22 }}>
+              Ты прошёл все 12 тренировок. Отличная работа.
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+              <div>
+                <button onClick={()=>startNewProgramCycle(completedProgramModal)}
+                  style={{ width:'100%', padding:'13px', borderRadius:12, border:'none', background:PUR, color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer' }}>
+                  Пройти «{completedProgramModal}» заново
+                </button>
+                <div style={{ fontSize:11.5, color:'#9ca3af', textAlign:'center', lineHeight:1.4, marginTop:6 }}>
+                  Начнёшь сначала, но веса приложение подберёт от твоего текущего уровня, а не со старта.
+                </div>
+              </div>
+              <div>
+                <button onClick={chooseOtherProgramFromCompletion}
+                  style={{ width:'100%', padding:'13px', borderRadius:12, border:`1.5px solid ${PUR}`, background:'none', color:PUR, fontSize:14, fontWeight:700, cursor:'pointer' }}>
+                  Выбрать другую программу
+                </button>
+                <div style={{ fontSize:11.5, color:'#9ca3af', textAlign:'center', lineHeight:1.4, marginTop:6 }}>
+                  Твой прогресс сохранится — в новой программе веса в знакомых упражнениях останутся набранными.
+                </div>
+              </div>
+              <div>
+                <a href={MAX_TELEGRAM_URL} target="_blank" rel="noopener noreferrer" onClick={()=>setCompletedProgramModal(null)}
+                  style={{ display:'block', width:'100%', padding:'13px', borderRadius:12, border:'none', background:'#16a34a', color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', textAlign:'center', textDecoration:'none', boxSizing:'border-box' }}>
+                  Написать тренеру
+                </a>
+                <div style={{ fontSize:11.5, color:'#9ca3af', textAlign:'center', lineHeight:1.4, marginTop:6 }}>
+                  Максим посмотрит твой прогресс детально и подскажет, куда двигаться дальше. Рекомендую этот вариант.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      , document.body)}
+
       {/* ── Уровень 1: список тренировок в папке ── */}
       {openFolder&&createPortal(
         <div style={{ position:'fixed', inset:0, background:'#f3f4f6', zIndex:1000, display:'flex', flexDirection:'column' }}>
@@ -2129,11 +2298,13 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               const ec=slot.exercises.length
               const vc=slot.exercises.filter(e=>e.videoId).length
               // Отметка выполнения — по записям workouts с именем этого
-              // слота (workoutsLog, один общий запрос выше). Дата последней
-              // тренировки берётся по максимуму, счётчик показывается только
-              // при повторных прохождениях (>1).
+              // слота (workoutsSinceCycleStart — тот же список workoutsLog,
+              // но только с даты последнего "Пройти заново", если он был,
+              // см. countCompletedSlots выше). Дата последней тренировки
+              // берётся по максимуму, счётчик показывается только при
+              // повторных прохождениях (>1).
               const slotName=`${openFolder} — тренировка ${slot.slotNum}`
-              const completions=workoutsLog.filter(w=>w.name===slotName)
+              const completions=workoutsSinceCycleStart(openFolder).filter(w=>w.name===slotName)
               const lastDate=completions.length?completions.reduce((max,w)=>w.date>max?w.date:max,completions[0].date):null
               return (
                 <div key={slot.id} style={{ background:'#fff', borderRadius:13, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', marginBottom:10, display:'flex', flexDirection:'column', alignItems:'center', padding:'16px 16px 14px', cursor:'pointer', position:'relative' }}
@@ -3140,10 +3311,11 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     }
   },[diaryJumpToken,initialSection])
   // tonnage
-  const [period,setPeriod]=useState('all')
+  const [period,setPeriod]=useState('7')
   const [customFrom,setCustomFrom]=useState('')
   const [customTo,setCustomTo]=useState('')
   const [selectedTonBar,setSelectedTonBar]=useState(null)
+  const [showTonPeriodMenu,setShowTonPeriodMenu]=useState(false)
   // exercises
   const [selectedEx,setSelectedEx]=useState(null)
   const [exQuery,setExQuery]=useState('')
@@ -3217,7 +3389,12 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const fmtFull=d=>new Date(d).toLocaleDateString('ru',{day:'numeric',month:'long',year:'numeric'})
 
   // ── питание дневник
-  const [foodDiary,setFoodDiary]=useState({})
+  // Инициализация из localStorage-кэша — мгновенный показ до ответа сети
+  // (см. полную загрузку из Supabase ниже, которая перезатирает это как
+  // только придёт ответ; кэш — только для первого кадра, не источник правды).
+  const [foodDiary,setFoodDiary]=useState(()=>{
+    try{return JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}')}catch{return{}}
+  })
   const [foodDate,setFoodDate]=useState(()=>{const t=new Date();return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`})
   const [showFoodForm,setShowFoodForm]=useState(false)
   const [foodForm,setFoodForm]=useState({name:'',kcal:'',p:'',c:'',f:''})
@@ -3228,6 +3405,33 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const [showGoals,setShowGoals]=useState(false)
   const [foodGoals,setFoodGoals]=useState({kcal:2000,p:150,c:200,f:60})
   const [goalsForm,setGoalsForm]=useState(foodGoals)
+
+  // Полная загрузка дневника питания при входе — Supabase как единственный
+  // источник правды (см. задачу про logout/источник правды, тот же принцип,
+  // что и loadWorkoutHistoryFromSupabase для тренировок в App()): при КАЖДОМ
+  // входе (свежий вход, перезагрузка, повторный вход после выхода) вся
+  // история питания перечитывается из базы по user_id и ПОЛНОСТЬЮ заменяет
+  // локальное состояние — а не только текущая дата/месяц, как делают эффекты
+  // ниже. Без этого после logout (который чистит fitpro_food_diary) экран
+  // питания на новом входе долго оставался бы пустым, пока пользователь сам
+  // не подёргает даты/месяцы — хотя данные всё это время целы в Supabase.
+  useEffect(()=>{
+    if(!userId)return
+    let cancelled=false
+    supabase.from('food_diary').select('*').eq('user_id',userId).order('created_at')
+      .then(({data,error})=>{
+        if(cancelled)return
+        if(error){console.error('Ошибка полной загрузки дневника питания:',error);return}
+        const byDate={}
+        for(const r of (data||[])){
+          const entry={id:r.id,name:r.name,kcal:String(r.kcal||0),p:String(r.p||0),c:String(r.c||0),f:String(r.f||0)}
+          ;(byDate[r.date]??=[]).push(entry)
+        }
+        setFoodDiary(byDate)
+        localStorage.setItem('fitpro_food_diary',JSON.stringify(byDate))
+      })
+    return()=>{cancelled=true}
+  },[userId])
 
   // Загрузка дневника из Supabase при смене даты
   useEffect(()=>{
@@ -3363,60 +3567,68 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
 
   // ── СЕКЦИЯ: Общий тоннаж
   if(section==='tonnage'){
-    const PERIOD_DAYS={'7d':7,'30d':30,'3m':90}
+    const TON_PERIOD_OPTIONS=[{k:'7',l:'Последние 7'},{k:'30d',l:'30 дней'},{k:'all',l:'Всё время'},{k:'custom',l:'Свой период'}]
     const workoutTons=(customFrom||customTo)
       ?allWorkoutTons.filter(w=>{const t=new Date(w.date).getTime();const from=customFrom?new Date(customFrom).getTime():0;const to=customTo?new Date(customTo+'T23:59:59').getTime():Infinity;return t>=from&&t<=to})
-      :period==='all'?allWorkoutTons
-      :allWorkoutTons.filter(w=>new Date(w.date).getTime()>=Date.now()-PERIOD_DAYS[period]*86400000)
+      :period==='7'?allWorkoutTons.slice(-7)
+      :period==='30d'?allWorkoutTons.filter(w=>new Date(w.date).getTime()>=Date.now()-30*86400000)
+      :allWorkoutTons
     const totalTonnage=workoutTons.reduce((s,w)=>s+w.ton,0)
-    // Показываем на графике не больше последних 10 столбцов — иначе подписи
-    // (даты и цифры тоннажа над столбиками) наезжают друг на друга и график
-    // становится нечитаемым при длинной истории.
-    const chartTons=workoutTons.length>10?workoutTons.slice(-10):workoutTons
+    const chartTons=workoutTons
     const chartMaxTon=chartTons.length?Math.max(...chartTons.map(w=>w.ton),1):1
     const CHART_BAR_H=120
     const selW=selectedTonBar!==null?chartTons[selectedTonBar]:null
+    // При большом числе узких столбиков подпись значения над каждым и подпись
+    // даты под каждым наезжают друг на друга (см. задачу) — показываем значение
+    // только у выделенного столбика, а даты прореживаем до ~6 меток.
+    const manyBars=chartTons.length>7
+    const dateStride=manyBars?Math.ceil(chartTons.length/6):1
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
-        <BackBtn label="Общий тоннаж" />
+        <BackBtn label="Общий тоннаж" right={
+          <div style={{ position:'relative' }}>
+            <button onClick={()=>setShowTonPeriodMenu(v=>!v)}
+              style={{ width:34,height:34,borderRadius:9,border:'1px solid #e5e7eb',background:period!=='7'||customFrom||customTo?`${PUR}11`:'#f9fafb',cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:period!=='7'||customFrom||customTo?PUR:'#6b7280',minHeight:'unset' }}>📅</button>
+            {showTonPeriodMenu&&(
+              <>
+                <div onClick={()=>setShowTonPeriodMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
+                <div style={{ position:'absolute',top:40,right:0,background:'#fff',borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:160,overflow:'hidden',border:'1px solid #f0f0f0' }}>
+                  {TON_PERIOD_OPTIONS.map((p,idx)=>(
+                    <button key={p.k} onClick={()=>{setPeriod(p.k);if(p.k!=='custom'){setCustomFrom('');setCustomTo('')}setShowTonPeriodMenu(false);setSelectedTonBar(null)}}
+                      style={{ display:'block',width:'100%',padding:'10px 15px',border:'none',borderTop:idx>0?'1px solid #f3f4f6':'none',background:period===p.k?`${PUR}11`:'transparent',cursor:'pointer',textAlign:'left',color:period===p.k?PUR:'#111',fontSize:13,fontWeight:period===p.k?600:400 }}>{p.l}</button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        } />
         <div style={{ flex:1,overflowY:'auto',padding:'14px 16px 32px' }}>
+          {period==='custom'&&(
+            <div style={{ display:'flex',flexDirection:isMobile?'column':'row',alignItems:'center',gap:8,width:isMobile?'100%':'auto',marginBottom:10 }}>
+              <div style={{ display:'flex',alignItems:'center',gap:6 }}>
+                <span style={{ fontSize:11,color:'#9ca3af',flexShrink:0,width:16,textAlign:'right' }}>с</span>
+                <input type="date" value={customFrom} onChange={e=>{setCustomFrom(e.target.value);setSelectedTonBar(null)}}
+                  style={{ width:128,flexShrink:0,fontSize:13,padding:'7px 6px',borderRadius:7,border:'1.5px solid #e5e7eb',outline:'none',color:'#111',background:'#fff',colorScheme:'light',minHeight:'unset',textAlign:'center',boxSizing:'border-box' }}
+                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+              </div>
+              <div style={{ display:'flex',alignItems:'center',gap:6 }}>
+                <span style={{ fontSize:11,color:'#9ca3af',flexShrink:0,width:16,textAlign:'right' }}>по</span>
+                <input type="date" value={customTo} onChange={e=>{setCustomTo(e.target.value);setSelectedTonBar(null)}}
+                  style={{ width:128,flexShrink:0,fontSize:13,padding:'7px 6px',borderRadius:7,border:'1.5px solid #e5e7eb',outline:'none',color:'#111',background:'#fff',colorScheme:'light',minHeight:'unset',textAlign:'center',boxSizing:'border-box' }}
+                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+              </div>
+              <div style={{ width:28,display:'flex',justifyContent:'center',flexShrink:0 }}>
+                {(customFrom||customTo)&&(
+                  <button onClick={()=>{setCustomFrom('');setCustomTo('');setSelectedTonBar(null)}}
+                    style={{ fontSize:13,padding:'5px 7px',borderRadius:6,border:'none',background:'#f3f4f6',color:'#9ca3af',cursor:'pointer',minHeight:'unset' }}>✕</button>
+                )}
+              </div>
+            </div>
+          )}
           <Card style={{ marginBottom:16 }}>
             <div style={{ marginBottom:14 }}>
               <div style={{ fontSize:11,fontWeight:500,color:'#9ca3af',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4 }}>Общий тоннаж</div>
               <div style={{ fontSize:32,fontWeight:800,color:PUR,lineHeight:1 }}>{totalTonnage.toLocaleString('ru')} <span style={{ fontSize:18,fontWeight:600 }}>кг</span></div>
-            </div>
-            <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:8,marginBottom:14 }}>
-              <div style={{ display:'flex',gap:6 }}>
-                {[{k:'7d',l:'7 дней'},{k:'30d',l:'30 дней'},{k:'all',l:'Всё'}].map(p=>(
-                  <button key={p.k} onClick={()=>{setPeriod(p.k);setCustomFrom('');setCustomTo('');setSelectedTonBar(null)}}
-                    style={{ fontSize:12,padding:'7px 16px',borderRadius:8,border:'none',cursor:'pointer',minHeight:'unset',
-                      background:period===p.k&&!customFrom&&!customTo?PUR:'#f3f4f6',
-                      color:period===p.k&&!customFrom&&!customTo?'#fff':'#6b7280',
-                      fontWeight:period===p.k&&!customFrom&&!customTo?600:400 }}>
-                    {p.l}
-                  </button>
-                ))}
-              </div>
-              <div style={{ display:'flex',flexDirection:isMobile?'column':'row',alignItems:'center',gap:8,width:isMobile?'100%':'auto' }}>
-                <div style={{ display:'flex',alignItems:'center',gap:6 }}>
-                  <span style={{ fontSize:11,color:'#9ca3af',flexShrink:0,width:16,textAlign:'right' }}>с</span>
-                  <input type="date" value={customFrom} onChange={e=>{setCustomFrom(e.target.value);setSelectedTonBar(null)}}
-                    style={{ width:128,flexShrink:0,fontSize:13,padding:'7px 6px',borderRadius:7,border:'1.5px solid #e5e7eb',outline:'none',color:'#111',background:'#fff',colorScheme:'light',minHeight:'unset',textAlign:'center',boxSizing:'border-box' }}
-                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
-                </div>
-                <div style={{ display:'flex',alignItems:'center',gap:6 }}>
-                  <span style={{ fontSize:11,color:'#9ca3af',flexShrink:0,width:16,textAlign:'right' }}>по</span>
-                  <input type="date" value={customTo} onChange={e=>{setCustomTo(e.target.value);setSelectedTonBar(null)}}
-                    style={{ width:128,flexShrink:0,fontSize:13,padding:'7px 6px',borderRadius:7,border:'1.5px solid #e5e7eb',outline:'none',color:'#111',background:'#fff',colorScheme:'light',minHeight:'unset',textAlign:'center',boxSizing:'border-box' }}
-                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
-                </div>
-                <div style={{ width:28,display:'flex',justifyContent:'center',flexShrink:0 }}>
-                  {(customFrom||customTo)&&(
-                    <button onClick={()=>{setCustomFrom('');setCustomTo('');setSelectedTonBar(null)}}
-                      style={{ fontSize:13,padding:'5px 7px',borderRadius:6,border:'none',background:'#f3f4f6',color:'#9ca3af',cursor:'pointer',minHeight:'unset' }}>✕</button>
-                  )}
-                </div>
-              </div>
             </div>
             {workoutTons.length===0?(
               <div style={{ textAlign:'center',color:'#c7cad1',fontSize:13,padding:'20px 0' }}>Завершите тренировку — она появится здесь</div>
@@ -3429,7 +3641,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                     return(
                       <div key={i} onClick={()=>setSelectedTonBar(on?null:i)}
                         style={{ flex:1,display:'flex',flexDirection:'column',justifyContent:'flex-end',alignItems:'center',height:'100%',minWidth:0,cursor:'pointer' }}>
-                        <div style={{ fontSize:11,fontWeight:on?700:600,color:on?PUR:`${PUR}99`,marginBottom:4,textAlign:'center',lineHeight:1,whiteSpace:'nowrap' }}>{w.ton}</div>
+                        {(!manyBars||on)&&<div style={{ fontSize:11,fontWeight:on?700:600,color:on?PUR:`${PUR}99`,marginBottom:4,textAlign:'center',lineHeight:1,whiteSpace:'nowrap' }}>{w.ton}</div>}
                         <div style={{ width:'68%',height:bh,background:on?PUR:`${PUR}55`,borderRadius:'3px 3px 0 0',transition:'background 0.12s' }} />
                       </div>
                     )
@@ -3437,12 +3649,16 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 </div>
                 <div style={{ borderTop:'2px solid #f3f4f6' }} />
                 <div style={{ display:'flex',gap:5,paddingTop:5 }}>
-                  {chartTons.map((w,i)=>(
-                    <div key={i} style={{ flex:1,textAlign:'center',fontSize:9,color:selectedTonBar===i?PUR:'#9ca3af',lineHeight:1.2,minWidth:0,overflow:'hidden' }}>{fmtD(w.date)}</div>
-                  ))}
+                  {chartTons.map((w,i)=>{
+                    const on=selectedTonBar===i
+                    const showDate=!manyBars||on||i===0||i===chartTons.length-1||i%dateStride===0
+                    return(
+                      <div key={i} style={{ flex:1,textAlign:'center',fontSize:9,color:on?PUR:'#9ca3af',lineHeight:1.2,minWidth:0,overflow:'hidden' }}>{showDate?fmtD(w.date):''}</div>
+                    )
+                  })}
                 </div>
                 <div style={{ textAlign:'center',fontSize:11,color:'#c7cad1',marginTop:10 }}>
-                  {workoutTons.length>10?`Показаны последние 10 из ${workoutTons.length} — нажмите на столбик для подробностей`:'Нажмите на столбик, чтобы увидеть подробную сводку'}
+                  Нажмите на столбик, чтобы увидеть подробную сводку
                 </div>
               </div>
             )}
@@ -4647,7 +4863,7 @@ function LandingPage({ onEnter }) {
 }
 
 // ── SettingsView ─────────────────────────────────────────────────────────────
-function SettingsView({ user }) {
+function SettingsView({ user, performLogout }) {
   const load=(k,def)=>{try{return JSON.parse(localStorage.getItem(k)??'null')??def}catch{return def}}
   const [notifs,setNotifs]=useState(()=>load('fitpro_notifs',{workout:false,diary:false,report:false}))
   const [units,setUnits]=useState(()=>load('fitpro_units',{weight:'kg',height:'cm'}))
@@ -4718,8 +4934,7 @@ function SettingsView({ user }) {
     await supabase.from('planned_workouts').delete().eq('user_id',user.id)
     await supabase.from('constructor_sets').delete().eq('user_id',user.id)
     await supabase.from('constructor_exercises').delete().eq('user_id',user.id)
-    Object.keys(localStorage).filter(k=>k.startsWith('fitpro_')).forEach(k=>localStorage.removeItem(k))
-    await supabase.auth.signOut()
+    performLogout()
   }
 
   const Toggle=({on,onToggle})=>(
@@ -4867,7 +5082,7 @@ function SettingsView({ user }) {
       {/* Поддержка */}
       <Section title="Поддержка">
         {[
-          {label:'Написать тренеру',icon:'💬',url:'https://t.me/maxim_athlete'},
+          {label:'Написать тренеру',icon:'💬',url:MAX_TELEGRAM_URL},
           {label:'Поддержка',icon:'🛟',url:'https://t.me/fitpro_supportt'},
           {label:'Сообщить об ошибке',icon:'🐛',url:'https://t.me/fitpro_supportt'},
         ].map(item=>(
@@ -5759,6 +5974,28 @@ export default function App() {
   useEffect(()=>{localStorage.setItem('fitpro_history',JSON.stringify(workoutHistory))},[workoutHistory])
   useEffect(()=>{localStorage.setItem('fitpro_custom_ex',JSON.stringify(customExercises))},[customExercises])
 
+  // Выход — локальное действие, не должно зависеть от сети. Раньше порядок
+  // был "await signOut() -> потом чистим кэш": при сетевом сбое signOut()
+  // тихо резолвится с {error} (см. диагностику), _removeSession() внутри
+  // supabase-js не вызывается, SIGNED_OUT не приходит, user не сбрасывается —
+  // кнопка "нажимается", а пользователь остаётся залогинен. Теперь сначала
+  // синхронно сбрасываем всё локальное (state + localStorage, включая ключи
+  // самого supabase-js — их больше НЕЛЬЗЯ ждать от signOut()), это само
+  // переключает экран на LandingPage (см. `if(!user) return <LandingPage/>`
+  // ниже) — и только потом best-effort пытаемся сообщить об этом серверу.
+  // workoutHistory/customExercises тоже сбрасываем — они живут в App() и не
+  // размонтируются вместе с LandingPage, иначе при повторном входе ДРУГИМ
+  // пользователем на этом же табе мелькнули бы чужие старые данные до того,
+  // как отработает загрузка из Supabase (см. задачу про источник правды).
+  const performLogout = () => {
+    setUser(null)
+    setWorkoutHistory([])
+    setCustomExercises([])
+    Object.keys(localStorage).filter(k=>k.startsWith('sb-')).forEach(k=>localStorage.removeItem(k))
+    clearFitproData()
+    supabase.auth.signOut({ scope: 'local' }).catch(err => console.warn('signOut (best-effort, не блокирует выход):', err))
+  }
+
   // Свои упражнения — так же подтягиваются из Supabase; локальные без
   // supabaseId (старые, ещё не синхронизированные) переносятся один раз.
   useEffect(()=>{
@@ -6127,7 +6364,7 @@ export default function App() {
                     <span style={{ marginLeft:'auto', fontSize:18, color:'#d1d5db' }}>›</span>
                   </button>
                 ))}
-                <button onClick={async()=>{setShowProfileSheet(false);await supabase.auth.signOut();clearFitproData()}}
+                <button onClick={()=>{setShowProfileSheet(false);performLogout()}}
                   style={{ width:'100%', padding:'13px', borderRadius:12, border:'1.5px solid #fee2e2', background:'#fff5f5', color:'#ef4444', fontSize:14, fontWeight:600, cursor:'pointer', marginTop:4 }}>
                   ← Выйти / сменить аккаунт
                 </button>
@@ -6159,7 +6396,7 @@ export default function App() {
                 style={{ display:'flex',alignItems:'center',gap:7,fontSize:12,color:'#6b7280',background:'none',border:'none',cursor:'pointer',padding:'4px 0',marginBottom:4,width:'100%' }}>
                 <span>⚙️</span> Настройки
               </button>
-              <button onClick={async()=>{await supabase.auth.signOut();clearFitproData()}}
+              <button onClick={performLogout}
                 style={{ fontSize:11, color:'#9ca3af', background:'none', border:'none', cursor:'pointer', padding:0, marginTop:2, display:'block' }}>
                 Выйти →
               </button>
@@ -6181,7 +6418,7 @@ export default function App() {
             <span style={{fontSize:18,fontWeight:800,color:'#111',flex:1}}>Настройки</span>
           </div>
           <div style={{flex:1,overflowY:'auto'}}>
-            <SettingsView user={user} />
+            <SettingsView user={user} performLogout={performLogout} />
           </div>
         </div>
       )}
