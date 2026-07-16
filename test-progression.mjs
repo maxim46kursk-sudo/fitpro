@@ -12,10 +12,11 @@ import {
   computeProgressSteps,
   computeBandTarget,
   computeHardStreak,
+  computeTargetWeight,
   RATING_GROWTH_PCT,
   buildAssignedSessionPlan,
 } from './src/workoutPrompt.js'
-import { roundToPlate, oneRepMax } from './src/oneRepMax.js'
+import { roundToPlate, oneRepMax, plateStep } from './src/oneRepMax.js'
 import { PROGRAMS_MAP } from './src/programs.js'
 
 let pass = 0, fail = 0
@@ -42,9 +43,13 @@ function assertDeepEqual(label, actual, expected) {
 
 // Веса ряда по шаблону — ровно то же вычисление, что делает приложение
 // (buildAssignedSessionPlan): для каждого весового подхода шаблона
-// roundToPlate(templateKg * scale.scale).
+// roundToPlate(templateKg * scale.scale, plateStep(rawKg)).
 function templateWeights(templateSets, scale) {
-  return templateSets.map(ts => ts.templateKg == null ? null : roundToPlate(ts.templateKg * scale.scale))
+  return templateSets.map(ts => {
+    if (ts.templateKg == null) return null
+    const rawKg = ts.templateKg * scale.scale
+    return roundToPlate(rawKg, plateStep(rawKg))
+  })
 }
 
 console.log('── Кейсы 1-3: рост/откат по оценке (Приседания Full Body) ────────')
@@ -257,6 +262,34 @@ const bandTemplateSet = { bandLevel: 2, reps: 15 }
   assertEqual('Кейс 11в: шаги посчитаны по всей истории (не held) → 4', agg.progressSteps, 4)
   assertDeepEqual('Кейс 11в: bandTarget по agg.progressSteps → {bandLevel:2,reps:23}',
     computeBandTarget(bandTemplateSet, agg.progressSteps), { bandLevel: 2, reps: 23 })
+}
+
+console.log('\n── Кейс 12: лёгкие веса — шаг округления 1 кг вместо 2.5 ─────────────')
+
+{
+  // plateStep сам по себе: порог ровно 10 — граница ещё "тяжёлая" (2.5),
+  // модуль веса учитывается для ассист-тренажёров (отрицательный вес).
+  assertEqual('Кейс 12: plateStep(4.4) === 1', plateStep(4.4), 1)
+  assertEqual('Кейс 12: plateStep(10) === 2.5 (граница не включена в "лёгкие")', plateStep(10), 2.5)
+  assertEqual('Кейс 12: plateStep(9.99) === 1', plateStep(9.99), 1)
+  assertEqual('Кейс 12: plateStep(-4.4) === 1 (ассист-тренажёр, по модулю)', plateStep(-4.4), 1)
+}
+
+const lightTemplate = parseTemplateSets('4 кг × 20')
+
+{
+  // 12а) computeTargetWeight — одиночный подход. rawKg=4×1.10=4.4:
+  // шагом 1 → 4, шагом 2.5 (старое поведение) вышло бы 5 — скачок 25%.
+  const target = computeTargetWeight({ kg: 4, reps: 20 }, [1, 1], 20, false)
+  assertClose('Кейс 12а: rawKg ≈ 4.4', target.rawKg, 4.4)
+  assertEqual('Кейс 12а: kg округлён шагом 1 → 4 (не 5)', target.kg, 4)
+}
+{
+  // 12б) весь шаблонный ряд (computeTemplateScale + templateWeights, тот же
+  // путь, что и buildAssignedSessionPlan) — тот же результат.
+  const scale = computeTemplateScale({ kg: 4, reps: 20 }, [1, 1], lightTemplate, false)
+  assertClose('Кейс 12б: scale ≈ 1.10 (рост, оценка «легко»)', scale.scale, 1.10)
+  assertArrayEqual('Кейс 12б: вес ряда [4] (шаг 1 кг, не 5)', templateWeights(lightTemplate, scale), [4])
 }
 
 console.log(`\nИтого: ${pass}/${pass + fail}`)

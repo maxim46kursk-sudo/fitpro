@@ -21,7 +21,7 @@
 // писала его в дневник маркерами ADD_SET/SET_PROGRAM и т.п.) — этот путь
 // закрыт полностью, см. историю правок.
 import { EXERCISE_TYPE } from './programs.js'
-import { oneRepMax, weightForReps, roundToPlate } from './oneRepMax.js'
+import { oneRepMax, weightForReps, roundToPlate, plateStep } from './oneRepMax.js'
 
 const FORMAT_RULE = 'ФОРМАТ ОТВЕТА: только сплошной текст. Категорически запрещены символы в начале строк: дефис, тире, звёздочка, точка с цифрой. Любые перечисления пиши в одну строку через запятую.'
 
@@ -267,7 +267,7 @@ export function computeTargetWeight(anchorSet, ratings, targetReps, hardStreak) 
     factor = isAssisted ? (1 - appliedPct / 100) : (1 + appliedPct / 100)
   }
   const rawKg = weightForReps(anchorRM * factor, targetReps)
-  return { kg: roundToPlate(rawKg), rawKg, isDeload: !!hardStreak, appliedPct }
+  return { kg: roundToPlate(rawKg, plateStep(rawKg)), rawKg, isDeload: !!hardStreak, appliedPct }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -379,7 +379,7 @@ export function buildAssignedSessionPlan(programTemplate, sessionsDone, aggregat
       if (ts.templateKg == null) return { reps: ts.reps, kg: null, rawKg: null, hasWeight: false, coldStart: false, isDeload: false, appliedPct: null }
       if (!scale) return { reps: ts.reps, kg: ts.templateKg, rawKg: ts.templateKg, hasWeight: true, coldStart: true, isDeload: false, appliedPct: null }
       const rawKg = ts.templateKg * scale.scale
-      return { reps: ts.reps, kg: roundToPlate(rawKg), rawKg, hasWeight: true, coldStart: false, isDeload: scale.isDeload, appliedPct: scale.appliedPct }
+      return { reps: ts.reps, kg: roundToPlate(rawKg, plateStep(rawKg)), rawKg, hasWeight: true, coldStart: false, isDeload: scale.isDeload, appliedPct: scale.appliedPct }
     })
     return { name: ex.name, sets }
   })

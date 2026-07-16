@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import AIAssistant from './AIAssistant'
 import { supabase } from './supabase.js'
 import { FOLDERS, PROGRAMS_MAP, EXERCISES, isOneSidedExercise, countCompletedProgramSlots, isProgramFullyCompleted } from './programs.js'
-import { oneRepMax, weightForReps, roundToPlate, percentTable } from './oneRepMax.js'
+import { oneRepMax, weightForReps, roundToPlate, percentTable, plateStep } from './oneRepMax.js'
 // Движок прогрессии (1ПМ) — врезан в кнопку "▶ Начать тренировку" внутри
 // слота шаблонной программы (WorkoutsView), см. подробный комментарий там.
 import { buildExerciseAggregates, computeTemplateScale, parseTemplateSets, computeProgressSteps, computeBandTarget } from './workoutPrompt.js'
@@ -1342,7 +1342,8 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             :'Осторожная прибавка — прошлый раз был тяжёлым'
           progressNoteSet=true
         }
-        const kg=roundToPlate(ts.templateKg*scale.scale)
+        const rawKg=ts.templateKg*scale.scale
+        const kg=roundToPlate(rawKg,plateStep(rawKg))
         return{kg:String(kg),bandLevel:null,reps:String(ts.reps),recKg:String(kg),rating:'',fromTemplate:false}
       })
       return{n:ex.name,m:'',eq:'',sets:parsedSets,done:false,progressNote,progressStopped:progressionStopped}

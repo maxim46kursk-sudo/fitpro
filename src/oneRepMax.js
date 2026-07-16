@@ -36,6 +36,18 @@ export function roundToPlate(weight, step = 2.5) {
   return Math.round(weight / step) * step
 }
 
+// Для лёгких весов (махи гантелями, изоляция и т.п.) шаг 2.5 кг — скачок
+// 25-50% от рабочего веса. Ниже порога округляем мельче, до 1 кг.
+export const LIGHT_WEIGHT_THRESHOLD = 10
+export const PLATE_STEP_LIGHT = 1
+export const PLATE_STEP_DEFAULT = 2.5
+
+// Шаг округления рекомендованного веса прогрессии по величине веса
+// (ассист-тренажёры хранят вес отрицательным — шаг берём по модулю).
+export function plateStep(weight) {
+  return Math.abs(weight) < LIGHT_WEIGHT_THRESHOLD ? PLATE_STEP_LIGHT : PLATE_STEP_DEFAULT
+}
+
 export const PERCENT_TABLE_REPS = [1, 3, 5, 8, 10, 12]
 
 // Таблица рабочих весов на разное число повторений от заданного 1ПМ
