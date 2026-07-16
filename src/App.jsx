@@ -6001,6 +6001,16 @@ export default function App() {
   // ссылке "Восстановление пароля" из письма) — пока true, показываем
   // ResetPasswordView вместо обычного входа/приложения, см. ниже.
   const [recoveryMode,setRecoveryMode]=useState(false)
+  // Объявлены здесь (выше applySession/эффекта авторизации ниже) — applySession
+  // синхронно обнуляет их при смене пользователя устройства, ДО setUser, чтобы
+  // чужие данные не мелькнули; persist-в-localStorage эффекты остались у
+  // остального стейта истории (historyVersion и т.п.), ниже по файлу.
+  const [workoutHistory,setWorkoutHistory]=useState(()=>{
+    try{return JSON.parse(localStorage.getItem('fitpro_history')||'[]')}catch{return []}
+  })
+  const [customExercises,setCustomExercises]=useState(()=>{
+    try{return JSON.parse(localStorage.getItem('fitpro_custom_ex')||'[]')}catch{return []}
+  })
   const [userRole,setUserRole]=useState(()=>localStorage.getItem('fitpro_role')||'client')
   const [nav,setNav]=useState('dashboard')
   // История переходов верхнего уровня — чтобы "назад" из экранов вроде деталей
@@ -6101,9 +6111,31 @@ export default function App() {
     }
   }
 
+  // Локальный кэш (fitpro_*: история, дневник, замеры, профиль, клиенты) не
+  // привязан к пользователю сам по себе — если в этом браузере без явного
+  // "Выйти" входит ДРУГОЙ аккаунт (обновление сессии, общий браузер, вход
+  // после закрытия вкладки), новый пользователь на секунды увидел бы имя/
+  // аватар/данные предыдущего, пока не подгрузится база (см. mergeUserWithProfile
+  // выше — он берёт имя из fitpro_user/fitpro_profile). fitpro_owner_uid —
+  // чей именно это кэш; при смене владельца чистим ДО setUser, чтобы чужое
+  // не мелькнуло вообще. При том же владельце (обычная перезагрузка) не
+  // трогаем ничего — кэш показывается сразу, без пустого экрана.
+  const applySession=(session)=>{
+    const incomingId=session?.user?.id??null
+    const storedOwner=localStorage.getItem('fitpro_owner_uid')
+    if(incomingId&&storedOwner&&storedOwner!==incomingId){
+      clearFitproData()
+      setWorkoutHistory([])
+      setCustomExercises([])
+    }
+    // После возможной чистки выше — иначе clearFitproData() стёр бы и сам этот ключ.
+    if(incomingId)localStorage.setItem('fitpro_owner_uid',incomingId)
+    setUser(mergeUserWithProfile(session?.user??null))
+  }
+
   useEffect(()=>{
     supabase.auth.getSession().then(({data:{session}})=>{
-      setUser(mergeUserWithProfile(session?.user??null))
+      applySession(session)
       setAuthLoading(false)
     })
     const{data:{subscription}}=supabase.auth.onAuthStateChange((event,session)=>{
@@ -6111,7 +6143,7 @@ export default function App() {
       // это НЕ обычный вход, обычный setUser() увёл бы сразу в приложение
       // вместо формы смены пароля (см. ResetPasswordView).
       if(event==='PASSWORD_RECOVERY'){setRecoveryMode(true);return}
-      setUser(mergeUserWithProfile(session?.user??null))
+      applySession(session)
     })
     return()=>subscription.unsubscribe()
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -6123,9 +6155,6 @@ export default function App() {
     return()=>window.removeEventListener('resize',fn)
   },[])
 
-  const [workoutHistory,setWorkoutHistory]=useState(()=>{
-    try{return JSON.parse(localStorage.getItem('fitpro_history')||'[]')}catch{return []}
-  })
   // Счётчик версии истории тренировок — растёт на 1 при КАЖДОМ подтверждённом
   // изменении workouts/workout_sets (завершение, правка, удаление, копия),
   // независимо от того, кто инициировал изменение — WorkoutsView (сама
@@ -6138,9 +6167,6 @@ export default function App() {
   // изменения был смонтирован (например остался открытым на другом
   // устройстве/вкладке, или просто не размонтировался между действиями).
   const [historyVersion,setHistoryVersion]=useState(0)
-  const [customExercises,setCustomExercises]=useState(()=>{
-    try{return JSON.parse(localStorage.getItem('fitpro_custom_ex')||'[]')}catch{return []}
-  })
 
   useEffect(()=>{localStorage.setItem('fitpro_history',JSON.stringify(workoutHistory))},[workoutHistory])
   useEffect(()=>{localStorage.setItem('fitpro_custom_ex',JSON.stringify(customExercises))},[customExercises])
