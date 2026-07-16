@@ -331,18 +331,32 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
           }
         }
 
-        // DEL — может быть несколько записей за раз (после подтверждения массового удаления)
+        // DEL — может быть несколько записей за раз. Промпт требует спросить
+        // "да" перед массовым удалением, но это только текстовая инструкция
+        // модели — при её ошибке или инъекции в чат ничего не мешает ей сразу
+        // прислать пачку DEL. Страховка в коде: при 2+ маркерах — обязательный
+        // window.confirm, при отмене ни одна запись не удаляется. Одиночный
+        // DEL (ровно 1) — как раньше, без подтверждения, это не "массовое".
         const delMatches = [...text.matchAll(/\[DEL:(\{[^}]+\})\]/g)]
         if (delMatches.length) {
           let deleted = false
+          let delCancelled = false
+          const parsedDels = []
           for (const m of delMatches) {
-            try {
-              const del = JSON.parse(m[1])
+            try { parsedDels.push(JSON.parse(m[1])) }
+            catch (e) { console.error('Ошибка разбора DEL:', e); writeFailed = true }
+          }
+          const delConfirmed = parsedDels.length < 2
+            || window.confirm(`Удалить ${parsedDels.length} записей из дневника? Это безвозвратно.`)
+          if (delConfirmed) {
+            for (const del of parsedDels) {
               const { error } = await supabase.from('food_diary').delete()
                 .eq('id', del.id).eq('user_id', fresh.user.id).eq('date', del.date || fresh.today)
               if (error) { console.error('Ошибка удаления записи:', error); writeFailed = true }
               else deleted = true
-            } catch (e) { console.error('Ошибка разбора DEL:', e); writeFailed = true }
+            }
+          } else {
+            delCancelled = true
           }
           text = text.replace(/\[DEL:[^\]]+\]/g, '')
           if (deleted) {
@@ -350,21 +364,36 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
             const refreshed = await loadContext(mode)
             if (refreshed) setCtx(refreshed)
           }
+          if (delCancelled) text += '\n\nУдаление отменено.'
         }
 
-        // CLEAR — полная очистка дневника за дату, может быть несколько маркеров сразу
-        // (несколько дат за раз) — только после подтверждения клиентом словом "да"
+        // CLEAR — полная очистка дневника за дату, может быть несколько маркеров
+        // сразу (несколько дат за раз). Та же страховка, что и у DEL выше:
+        // промпт просит модель спросить "да" словами, но это не защита от бага
+        // модели или инъекции — в коде это безвозвратное массовое удаление,
+        // поэтому window.confirm обязателен всегда, при любом числе маркеров.
         const clearMatches = [...text.matchAll(/\[CLEAR:(\{[^}]+\})\]/g)]
         if (clearMatches.length) {
           let cleared = false
+          let clearCancelled = false
+          const parsedClears = []
           for (const m of clearMatches) {
-            try {
-              const clear = JSON.parse(m[1])
-              const { error } = await supabase.from('food_diary').delete()
-                .eq('user_id', fresh.user.id).eq('date', clear.date || fresh.today)
-              if (error) { console.error('Ошибка очистки дневника:', error); writeFailed = true }
-              else cleared = true
-            } catch (e) { console.error('Ошибка разбора CLEAR:', e); writeFailed = true }
+            try { parsedClears.push(JSON.parse(m[1])) }
+            catch (e) { console.error('Ошибка разбора CLEAR:', e); writeFailed = true }
+          }
+          if (parsedClears.length) {
+            const dates = parsedClears.map(c => c.date || fresh.today).join(', ')
+            const clearConfirmed = window.confirm(`Очистить дневник питания за ${dates}? Записи удалятся безвозвратно.`)
+            if (clearConfirmed) {
+              for (const clear of parsedClears) {
+                const { error } = await supabase.from('food_diary').delete()
+                  .eq('user_id', fresh.user.id).eq('date', clear.date || fresh.today)
+                if (error) { console.error('Ошибка очистки дневника:', error); writeFailed = true }
+                else cleared = true
+              }
+            } else {
+              clearCancelled = true
+            }
           }
           text = text.replace(/\[CLEAR:[^\]]+\]/g, '')
           if (cleared) {
@@ -372,6 +401,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
             const refreshed = await loadContext(mode)
             if (refreshed) setCtx(refreshed)
           }
+          if (clearCancelled) text += '\n\nОчистка отменена.'
         }
 
         // GOAL
