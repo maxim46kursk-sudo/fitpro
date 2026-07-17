@@ -4831,7 +4831,7 @@ function PasswordInput({ value, onChange, placeholder, onKeyDown }) {
   )
 }
 
-function LandingPage({ onEnter }) {
+function LandingPage({ onEnter, isTelegram }) {
   const [view,setView]=useState('hero')
   const [authTab,setAuthTab]=useState('login')
   const [form,setForm]=useState({name:'',email:'',password:'',confirm:''})
@@ -5114,7 +5114,7 @@ function LandingPage({ onEnter }) {
                       {authBusy ? 'Подождите...' : authTab==='login' ? 'Войти →' : 'Создать аккаунт →'}
                     </button>
 
-                    {authTab==='login' && (
+                    {authTab==='login' && !isTelegram && (
                       <button onClick={()=>{setForgotMode(true);setForgotEmail(form.email);setForgotDone(false)}}
                         style={{ background:'none',border:'none',color:`${PUR}bb`,fontSize:13,cursor:'pointer',textAlign:'center',padding:'2px 0',textDecoration:'underline',textDecorationStyle:'dotted',textUnderlineOffset:3 }}>
                         Забыли пароль?
@@ -6582,12 +6582,18 @@ export default function App() {
   // Имя/пол/фото/telegram — сразу при входе обогащаем user данными из Supabase
   // (mergeUserWithProfile до этого брал их только из localStorage, поэтому шапка
   // и аватар на новом устройстве показывали пусто, пока не откроешь "Мои данные").
+  // role — источник правды тоже здесь, а не localStorage/URL (см. ?trainer=1
+  // выше): фейковый параметр в адресной строке или устаревший кэш больше не
+  // должны давать тренерский доступ, если в базе у клиента role='client'.
   useEffect(()=>{
     if(!user?.id)return
     let cancelled=false
-    supabase.from('profiles').select('name,gender,telegram,photo_url').eq('id',user.id).single().then(({data})=>{
+    supabase.from('profiles').select('name,gender,telegram,photo_url,role').eq('id',user.id).single().then(({data})=>{
       if(cancelled||!data)return
       setUser(u=>u?{...u,name:data.name||u.name,gender:data.gender||u.gender,telegram:data.telegram||u.telegram,photoURL:data.photo_url||u.photoURL}:u)
+      const role=data.role||'client'
+      setUserRole(role)
+      localStorage.setItem('fitpro_role',role)
     })
     return()=>{cancelled=true}
   },[user?.id])
@@ -6782,7 +6788,7 @@ export default function App() {
   if(recoveryMode) return <ResetPasswordView onDone={()=>setRecoveryMode(false)} />
   if(authLoading) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#08080f',color:'#9ca3af',fontSize:14}}>Загрузка...</div>
   if(!user&&telegramAuthPending) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#08080f',color:'#9ca3af',fontSize:14}}>Входим…</div>
-  if(!user) return <LandingPage onEnter={setUser} />
+  if(!user) return <LandingPage onEnter={setUser} isTelegram={isTelegram} />
 
   // Всё, КРОМЕ Тренировок — обычная свитч-навигация, монтируется/
   // размонтируется по nav, как и раньше.
@@ -6930,10 +6936,12 @@ export default function App() {
                     <span style={{ marginLeft:'auto', fontSize:18, color:'#d1d5db' }}>›</span>
                   </button>
                 ))}
-                <button onClick={()=>{setShowProfileSheet(false);performLogout()}}
-                  style={{ width:'100%', padding:'13px', borderRadius:12, border:'1.5px solid #fee2e2', background:'#fff5f5', color:'#ef4444', fontSize:14, fontWeight:600, cursor:'pointer', marginTop:4 }}>
-                  ← Выйти / сменить аккаунт
-                </button>
+                {!isTelegram&&(
+                  <button onClick={()=>{setShowProfileSheet(false);performLogout()}}
+                    style={{ width:'100%', padding:'13px', borderRadius:12, border:'1.5px solid #fee2e2', background:'#fff5f5', color:'#ef4444', fontSize:14, fontWeight:600, cursor:'pointer', marginTop:4 }}>
+                    ← Выйти / сменить аккаунт
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -6962,10 +6970,12 @@ export default function App() {
                 style={{ display:'flex',alignItems:'center',gap:7,fontSize:12,color:'#6b7280',background:'none',border:'none',cursor:'pointer',padding:'4px 0',marginBottom:4,width:'100%' }}>
                 <span>⚙️</span> Настройки
               </button>
-              <button onClick={performLogout}
-                style={{ fontSize:11, color:'#9ca3af', background:'none', border:'none', cursor:'pointer', padding:0, marginTop:2, display:'block' }}>
-                Выйти →
-              </button>
+              {!isTelegram&&(
+                <button onClick={performLogout}
+                  style={{ fontSize:11, color:'#9ca3af', background:'none', border:'none', cursor:'pointer', padding:0, marginTop:2, display:'block' }}>
+                  Выйти →
+                </button>
+              )}
             </div>
           </div>
           <div style={{ flex:1, overflowY:'auto', padding:'20px 24px' }}>

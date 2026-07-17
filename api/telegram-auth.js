@@ -95,5 +95,18 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Не удалось выдать сессию' })
   }
 
+  // Гарантируем строку профиля — у Telegram-аккаунтов её раньше не заводилось
+  // автоматически (в отличие от email-регистрации, где это делает триггер
+  // on_auth_user_created). ignoreDuplicates: у СУЩЕСТВУЮЩЕГО пользователя
+  // (например с уже выставленной role='trainer') строку не трогаем вообще —
+  // только insert для новых, ON CONFLICT (id) DO NOTHING.
+  const telegramUserId = linkData?.user?.id
+  if (telegramUserId) {
+    const { error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .upsert({ id: telegramUserId, name: tgUser.first_name }, { onConflict: 'id', ignoreDuplicates: true })
+    if (profileError) console.error('Ошибка создания строки профиля для Telegram-пользователя:', profileError)
+  }
+
   res.status(200).json({ email, otp: linkData.properties.email_otp })
 }
