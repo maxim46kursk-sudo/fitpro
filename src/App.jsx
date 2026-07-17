@@ -2913,6 +2913,10 @@ function NutritionView({ userId }){
   const [logDone,setLogDone]=useState(false)
   const [showLogDatePicker,setShowLogDatePicker]=useState(false)
   const logCalInputRef=useRef(null)
+  // Тост ошибки записи — тот же паттерн, что showFoodSaveError в DiaryView,
+  // своя копия т.к. компонент отдельный.
+  const [showLogSaveError,setShowLogSaveError]=useState(false)
+  const flashLogSaveError=()=>{setShowLogSaveError(true);setTimeout(()=>setShowLogSaveError(false),3500)}
 
   const applyToFoodDiary=async(day,date)=>{
     const newEntries=day.meals.map((meal,i)=>({
@@ -2925,10 +2929,11 @@ function NutritionView({ userId }){
       items:meal.items||[],
     }))
     if(userId){
-      await supabase.from('food_diary').insert(newEntries.map(e=>({
+      const{error}=await supabase.from('food_diary').insert(newEntries.map(e=>({
         user_id:userId, date, name:e.name,
         kcal:+e.kcal||0, p:+e.p||0, c:+e.c||0, f:+e.f||0,
       })))
+      if(error){console.error('Ошибка записи рациона в дневник:',error);flashLogSaveError();return}
     }
     const raw=localStorage.getItem('fitpro_food_diary')
     const diary=raw?JSON.parse(raw):{}
@@ -2945,6 +2950,16 @@ function NutritionView({ userId }){
     const day=plan.days[openDay]
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1001,display:'flex',flexDirection:'column' }}>
+        {showLogSaveError&&(
+          <div style={{
+            position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
+            zIndex:1200, padding:'10px 18px', borderRadius:24, maxWidth:320, textAlign:'center',
+            background:'#dc2626', color:'#fff', fontSize:13, fontWeight:700,
+            boxShadow:'0 6px 20px rgba(220,38,38,0.35)',
+          }}>
+            Не удалось сохранить — проверь связь и повтори
+          </div>
+        )}
         <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexShrink:0 }}>
           <button onClick={()=>setOpenDay(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
           <div>
@@ -5558,7 +5573,15 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
   ]
 
   const saveProfile=async()=>{
-    localStorage.setItem('fitpro_profile',JSON.stringify(profile))
+    // Клампим вес/рост перед сохранением — гигантские/отрицательные значения
+    // ломают calcMacroGoals (aiPrompt.js) и норму КБЖУ, которую AI-ассистент
+    // считает от этих же полей.
+    const clampedProfile={
+      ...profile,
+      weight:profile.weight?String(clampNum(profile.weight,PROFILE_WEIGHT_MIN,PROFILE_WEIGHT_MAX)):profile.weight,
+      height:profile.height?String(clampNum(profile.height,PROFILE_HEIGHT_MIN,PROFILE_HEIGHT_MAX)):profile.height,
+    }
+    localStorage.setItem('fitpro_profile',JSON.stringify(clampedProfile))
     // Сохраняем также редактируемые данные пользователя
     const updatedUser={...user,...userEdit,name:userEdit.name||user.name}
     localStorage.setItem('fitpro_user',JSON.stringify(updatedUser))
@@ -5571,15 +5594,15 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
         gender:updatedUser.gender||null,
         telegram:updatedUser.telegram||null,
         photo_url:updatedUser.photoURL||null,
-        weight:profile.weight?Number(profile.weight):null,
-        height:profile.height?Number(profile.height):null,
+        weight:clampedProfile.weight?Number(clampedProfile.weight):null,
+        height:clampedProfile.height?Number(clampedProfile.height):null,
         goal:profile.goal||null,
         birthdate:profile.birthdate||null,
         occupation:profile.occupation||null,
         gym_days:profile.gymDays?Number(profile.gymDays):null,
         activity_level:profile.activityLevel||null,
       })
-      if(error)console.error('Ошибка синхронизации профиля с Supabase:',error)
+      if(error){console.error('Ошибка синхронизации профиля с Supabase:',error);flashProfileSaveError();return}
     }
     setSaved(true); setTimeout(()=>setSaved(false),2000)
   }
@@ -6595,6 +6618,26 @@ export default function App() {
         duration:merged.duration!=null?merged.duration:null, comment:merged.comment||null,
       }).eq('id',old.workoutId)
       if(updateError)console.error('Ошибка обновления тренировки в Supabase:',updateError)
+      if(old.supabaseSetIds?.length){
+        // Безопасный порядок: сначала вставляем новые подходы и только при
+        // успехе удаляем старые — по их КОНКРЕТНЫМ id (не по workout_id, тот
+        // же у только что вставленных новых строк). Обрыв связи между шагами
+        // больше не теряет данные безвозвратно — в худшем случае старые и
+        // новые подходы временно задвоятся, а не исчезнут.
+        const{ids,error:setsError}=await insertWorkoutSetsRows(merged,old.workoutId)
+        let delError=null
+        if(!setsError){
+          const{error}=await supabase.from('workout_sets').delete().in('id',old.supabaseSetIds)
+          delError=error
+          if(delError)console.error('Ошибка удаления старых подходов при обновлении тренировки:',delError)
+        }
+        const ok=!updateError&&!setsError&&!delError
+        if(ok){setWorkoutHistory(h=>h.map((w,i)=>i===histIdx?{...w,supabaseSetIds:ids}:w));setHistoryVersion(v=>v+1)}
+        return{ok}
+      }
+      // Старые подходы без сохранённых id (запись создана до появления
+      // supabaseSetIds) — точно нацелиться на них нечем, оставляем прежний
+      // порядок (удаление по workout_id, затем вставка) запасным путём.
       const{error:delError}=await supabase.from('workout_sets').delete().eq('workout_id',old.workoutId)
       if(delError)console.error('Ошибка удаления старых подходов при обновлении тренировки:',delError)
       const{ids,error:setsError}=await insertWorkoutSetsRows(merged,old.workoutId)
