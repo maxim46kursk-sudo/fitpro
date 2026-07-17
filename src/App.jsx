@@ -488,11 +488,11 @@ function ClientsView({ setSC, setNav, userId }) {
 // рендерится здесь. Полное описание, причины заморозки и как вернуть —
 // docs/CONSTRUCTOR_FROZEN.md. Таблицы constructor_exercises/constructor_sets
 // в Supabase не удалялись.
-function ClientDetail({ client, goBack }) {
+function ClientDetail({ client, goBack, trainerId }) {
   // Реальный клиент тренера (см. ClientsView) — отдельная модель данных
   // (только id/name из profiles + настоящая история тренировок), у демо-
   // клиентов ниже (client.wts и т.п.) взяться неоткуда.
-  if(client.isReal)return <RealClientDetail client={client} goBack={goBack} />
+  if(client.isReal)return <RealClientDetail client={client} goBack={goBack} trainerId={trainerId} />
   const lost=+(client.wts[0]-client.wts[client.wts.length-1]).toFixed(1)
   const maxW=Math.max(...client.wts), minW=Math.min(...client.wts), range=maxW-minW||1
   const W=400,H=120,PAD=20
@@ -536,7 +536,8 @@ function ClientDetail({ client, goBack }) {
 // чтение, история тренировок из Supabase через уже существующую
 // loadWorkoutHistoryFromSupabase (RLS разрешает тренеру читать данные
 // клиента с его coach_id). Никаких мутаций отсюда не уходит.
-function RealClientDetail({ client, goBack }) {
+function RealClientDetail({ client, goBack, trainerId }) {
+  const [tab,setTab]=useState('history')
   const [history,setHistory]=useState([])
   const [loading,setLoading]=useState(true)
   const [error,setError]=useState(false)
@@ -559,41 +560,223 @@ function RealClientDetail({ client, goBack }) {
         <Av lbl={initials} sz={50} />
         <div>
           <h2 style={{ fontSize:20, fontWeight:500, color:'#111', margin:0 }}>{client.name||'Без имени'}</h2>
-          <div style={{ fontSize:13, color:'#6b7280', marginTop:2 }}>История тренировок</div>
         </div>
       </div>
-      {loading?(
-        <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Загрузка...</div>
-      ):error?(
-        <div style={{ fontSize:13, color:'#ef4444', padding:'30px 0', textAlign:'center', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
-          Не удалось загрузить историю
-          <button onClick={load} style={{ fontSize:12, color:PUR, background:'none', border:'1px solid #e5e7eb', borderRadius:8, padding:'6px 14px', cursor:'pointer' }}>Повторить</button>
-        </div>
-      ):history.length===0?(
-        <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Тренировок пока нет</div>
+      <div style={{ display:'flex', gap:0, marginBottom:18, background:'#f3f4f6', borderRadius:10, padding:3, width:'fit-content' }}>
+        {[['history','История'],['program','Программа']].map(([id,label])=>(
+          <button key={id} onClick={()=>setTab(id)}
+            style={{ padding:'8px 18px', borderRadius:8, border:'none', background:tab===id?'#fff':'transparent', color:tab===id?'#111':'#6b7280', fontSize:13, fontWeight:600, cursor:'pointer', boxShadow:tab===id?'0 1px 3px rgba(0,0,0,0.1)':'none' }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab==='history'?(
+        loading?(
+          <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Загрузка...</div>
+        ):error?(
+          <div style={{ fontSize:13, color:'#ef4444', padding:'30px 0', textAlign:'center', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
+            Не удалось загрузить историю
+            <button onClick={load} style={{ fontSize:12, color:PUR, background:'none', border:'1px solid #e5e7eb', borderRadius:8, padding:'6px 14px', cursor:'pointer' }}>Повторить</button>
+          </div>
+        ):history.length===0?(
+          <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Тренировок пока нет</div>
+        ):(
+          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+            {history.slice().reverse().map((w,i)=>(
+              <Card key={w.workoutId??i}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, gap:10 }}>
+                  <span style={{ fontSize:14, fontWeight:600, color:'#111' }}>{w.name}</span>
+                  <span style={{ fontSize:12, color:'#9ca3af', flexShrink:0 }}>{new Date(w.date).toLocaleDateString('ru',{day:'numeric',month:'short',year:'numeric'})}</span>
+                </div>
+                {w.comment&&<div style={{ fontSize:12, color:'#6b7280', marginBottom:8 }}>💬 {w.comment}</div>}
+                <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                  {w.exercises.map((ex,ei)=>(
+                    <div key={ei} style={{ fontSize:13, color:'#374151' }}>
+                      <span style={{ fontWeight:500 }}>{ex.n}</span>
+                      {': '}
+                      {ex.sets.map((s,si)=>{
+                        const weightLabel=s.bandLevel!=null?`${s.bandLevel} рез.`:s.kg?`${s.kg} кг`:'б/в'
+                        return <span key={si} style={{ color:'#6b7280' }}>{si>0?', ':''}{weightLabel}×{s.reps||'—'}</span>
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            ))}
+          </div>
+        )
       ):(
-        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-          {history.slice().reverse().map((w,i)=>(
-            <Card key={w.workoutId??i}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, gap:10 }}>
-                <span style={{ fontSize:14, fontWeight:600, color:'#111' }}>{w.name}</span>
-                <span style={{ fontSize:12, color:'#9ca3af', flexShrink:0 }}>{new Date(w.date).toLocaleDateString('ru',{day:'numeric',month:'short',year:'numeric'})}</span>
-              </div>
-              {w.comment&&<div style={{ fontSize:12, color:'#6b7280', marginBottom:8 }}>💬 {w.comment}</div>}
-              <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
-                {w.exercises.map((ex,ei)=>(
-                  <div key={ei} style={{ fontSize:13, color:'#374151' }}>
-                    <span style={{ fontWeight:500 }}>{ex.n}</span>
-                    {': '}
-                    {ex.sets.map((s,si)=>{
-                      const weightLabel=s.bandLevel!=null?`${s.bandLevel} рез.`:s.kg?`${s.kg} кг`:'б/в'
-                      return <span key={si} style={{ color:'#6b7280' }}>{si>0?', ':''}{weightLabel}×{s.reps||'—'}</span>
-                    })}
+        <ProgramEditor client={client} trainerId={trainerId} />
+      )}
+    </div>
+  )
+}
+
+// Редактор персональной программы клиента (сторона тренера) — только
+// запись СВОЕЙ строки assigned_programs (client_id уникален, upsert
+// onConflict). Клиентская сторона (просмотр/выполнение программы) в этом
+// шаге не делается — только редактор.
+function ProgramEditor({ client, trainerId }) {
+  const [programLoading,setProgramLoading]=useState(true)
+  const [programError,setProgramError]=useState(false)
+  const [editorOpen,setEditorOpen]=useState(false)
+  const [title,setTitle]=useState('Программа')
+  const [workouts,setWorkouts]=useState([])
+  const [saving,setSaving]=useState(false)
+  const [saveMsg,setSaveMsg]=useState('') // '' | 'saved' | 'error'
+  const [pickerFor,setPickerFor]=useState(null) // индекс тренировки, для которой открыт выбор упражнения
+  const [pickerQuery,setPickerQuery]=useState('')
+
+  const loadProgram=()=>{
+    setProgramLoading(true);setProgramError(false)
+    supabase.from('assigned_programs').select('*').eq('client_id',client.id).maybeSingle().then(({data,error})=>{
+      if(error){console.error('Ошибка загрузки программы клиента:',error);setProgramError(true);setProgramLoading(false);return}
+      setTitle(data?.title||'Программа')
+      setWorkouts(Array.isArray(data?.structure)?data.structure:[])
+      setEditorOpen(!!data)
+      setProgramLoading(false)
+    })
+  }
+  useEffect(()=>{loadProgram()},[client.id])
+
+  const addWorkout=()=>{
+    setWorkouts(w=>[...w,{name:`Тренировка ${w.length+1}`,exercises:[]}])
+  }
+  const removeWorkout=(wi)=>{
+    if(!window.confirm('Удалить тренировку из программы?'))return
+    setWorkouts(w=>w.filter((_,i)=>i!==wi))
+  }
+  const renameWorkout=(wi,name)=>{
+    setWorkouts(w=>w.map((x,i)=>i===wi?{...x,name}:x))
+  }
+  const addExercise=(wi,exerciseName)=>{
+    setWorkouts(w=>w.map((x,i)=>i===wi?{...x,exercises:[...(x.exercises||[]),{name:exerciseName,sets:''}]}:x))
+    setPickerFor(null);setPickerQuery('')
+  }
+  const removeExercise=(wi,ei)=>{
+    setWorkouts(w=>w.map((x,i)=>i===wi?{...x,exercises:x.exercises.filter((_,j)=>j!==ei)}:x))
+  }
+  const setExerciseSets=(wi,ei,sets)=>{
+    setWorkouts(w=>w.map((x,i)=>i===wi?{...x,exercises:x.exercises.map((ex,j)=>j===ei?{...ex,sets}:ex)}:x))
+  }
+
+  const saveProgram=async()=>{
+    // structure — массив тренировок {name, exercises:[{name,sets}]}, тот же
+    // формат sets, что и в PROGRAMS_MAP (programs.js) — его парсит
+    // parseTemplateSets, свой формат не придумываем.
+    if(!Array.isArray(workouts)){console.error('Программа: structure не массив');setSaveMsg('error');return}
+    const structure=workouts.map(w=>({
+      name:(w.name||'Тренировка').trim()||'Тренировка',
+      exercises:(w.exercises||[]).map(ex=>({name:ex.name,sets:ex.sets||''})),
+    }))
+    setSaving(true);setSaveMsg('')
+    const{error}=await supabase.from('assigned_programs').upsert({
+      client_id:client.id,
+      trainer_id:trainerId,
+      title:title.trim()||'Программа',
+      structure,
+      updated_at:new Date().toISOString(),
+    },{onConflict:'client_id'})
+    setSaving(false)
+    if(error){console.error('Ошибка сохранения программы:',error);setSaveMsg('error');setTimeout(()=>setSaveMsg(''),3500);return}
+    setSaveMsg('saved')
+    setTimeout(()=>setSaveMsg(''),2500)
+  }
+
+  if(programLoading)return <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Загрузка...</div>
+  if(programError)return (
+    <div style={{ fontSize:13, color:'#ef4444', padding:'30px 0', textAlign:'center', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
+      Не удалось загрузить программу
+      <button onClick={loadProgram} style={{ fontSize:12, color:PUR, background:'none', border:'1px solid #e5e7eb', borderRadius:8, padding:'6px 14px', cursor:'pointer' }}>Повторить</button>
+    </div>
+  )
+  if(!editorOpen)return (
+    <div style={{ textAlign:'center', padding:'30px 0' }}>
+      <div style={{ fontSize:13, color:'#9ca3af', marginBottom:14 }}>У клиента ещё нет персональной программы</div>
+      <button onClick={()=>setEditorOpen(true)} style={{ fontSize:13, padding:'9px 18px', background:PUR, color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontWeight:600 }}>Создать программу</button>
+    </div>
+  )
+
+  return (
+    <div>
+      {saveMsg==='saved'&&(
+        <div style={{ marginBottom:12, padding:'9px 14px', borderRadius:9, background:'#E1F5EE', color:'#085041', fontSize:13, fontWeight:500 }}>✓ Программа сохранена</div>
+      )}
+      {saveMsg==='error'&&(
+        <div style={{ marginBottom:12, padding:'9px 14px', borderRadius:9, background:'#fff5f5', color:'#ef4444', fontSize:13, fontWeight:500 }}>Не удалось сохранить — проверь связь и повтори</div>
+      )}
+      <div style={{ marginBottom:14 }}>
+        <div style={{ fontSize:11, color:'#6b7280', marginBottom:4 }}>Название программы</div>
+        <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Программа"
+          style={{ width:'100%', padding:'9px 12px', fontSize:14, fontWeight:600, borderRadius:9, border:'1.5px solid #e5e7eb', boxSizing:'border-box', outline:'none', color:'#111' }}
+          onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+      </div>
+
+      <div style={{ display:'flex', flexDirection:'column', gap:12, marginBottom:14 }}>
+        {workouts.map((w,wi)=>(
+          <Card key={wi}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+              <input value={w.name} onChange={e=>renameWorkout(wi,e.target.value)} placeholder={`Тренировка ${wi+1}`}
+                style={{ flex:1, padding:'7px 10px', fontSize:13, fontWeight:600, borderRadius:8, border:'1.5px solid #e5e7eb', boxSizing:'border-box', outline:'none', color:'#111' }}
+                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+              <button onClick={()=>removeWorkout(wi)} style={{ background:'none', border:'none', color:'#d1d5db', fontSize:16, cursor:'pointer', lineHeight:1, padding:4, flexShrink:0 }}>✕</button>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              {(w.exercises||[]).map((ex,ei)=>{
+                const parsed=ex.sets?parseTemplateSets(ex.sets):[]
+                const hint=!ex.sets?'':parsed.length?`${parsed.length} подход${parsed.length===1?'':parsed.length<5?'а':'ов'} распознано`:'не распознано — проверь формат'
+                return (
+                  <div key={ei} style={{ display:'flex', flexDirection:'column', gap:4, padding:'8px 10px', background:'#f9fafb', borderRadius:8 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <span style={{ fontSize:13, fontWeight:500, color:'#111', flex:1 }}>{ex.name}</span>
+                      <button onClick={()=>removeExercise(wi,ei)} style={{ background:'none', border:'none', color:'#d1d5db', fontSize:15, cursor:'pointer', lineHeight:1, padding:2, flexShrink:0 }}>✕</button>
+                    </div>
+                    <input value={ex.sets} onChange={e=>setExerciseSets(wi,ei,e.target.value)} placeholder="20 кг × 15, 25 кг × 12, 25 кг × 12"
+                      style={{ width:'100%', padding:'7px 10px', fontSize:12, borderRadius:7, border:'1px solid #e5e7eb', boxSizing:'border-box', outline:'none', color:'#111', background:'#fff' }}
+                      onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                    {hint&&<div style={{ fontSize:10, color:parsed.length?'#9ca3af':'#ef4444' }}>{hint}</div>}
                   </div>
-                ))}
-              </div>
-            </Card>
-          ))}
+                )
+              })}
+            </div>
+            <button onClick={()=>{setPickerFor(wi);setPickerQuery('')}}
+              style={{ width:'100%', marginTop:10, padding:'8px', fontSize:12, color:PUR, background:`${PUR}10`, border:`1px dashed ${PUR}55`, borderRadius:8, cursor:'pointer', fontWeight:600 }}>
+              + Упражнение
+            </button>
+          </Card>
+        ))}
+      </div>
+
+      <div style={{ display:'flex', gap:8 }}>
+        <button onClick={addWorkout} style={{ flex:1, padding:'11px', fontSize:13, borderRadius:9, border:'1.5px dashed #d1d5db', background:'none', color:'#6b7280', cursor:'pointer', fontWeight:600 }}>+ Тренировка</button>
+        <button onClick={saveProgram} disabled={saving} style={{ flex:1, padding:'11px', fontSize:13, borderRadius:9, border:'none', background:saving?'#9ca3af':PUR, color:'#fff', cursor:saving?'default':'pointer', fontWeight:600 }}>
+          {saving?'Сохраняем...':'Сохранить программу'}
+        </button>
+      </div>
+
+      {pickerFor!=null&&(
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
+          onClick={()=>setPickerFor(null)}>
+          <div style={{ background:'#fff', borderRadius:16, padding:'20px 18px', width:'100%', maxWidth:400, maxHeight:'75vh', display:'flex', flexDirection:'column', boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+              <span style={{ fontSize:16, fontWeight:700, color:'#111' }}>Выбери упражнение</span>
+              <button onClick={()=>setPickerFor(null)} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer', color:'#9ca3af', lineHeight:1 }}>✕</button>
+            </div>
+            <input value={pickerQuery} onChange={e=>setPickerQuery(e.target.value)} placeholder="Поиск..." autoFocus
+              style={{ width:'100%', marginBottom:12, padding:'9px 12px', fontSize:13, borderRadius:9, border:'1.5px solid #e5e7eb', boxSizing:'border-box', outline:'none', color:'#111' }}
+              onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+            <div style={{ overflowY:'auto', display:'flex', flexDirection:'column', gap:2 }}>
+              {EXERCISES.filter(e=>e.n.toLowerCase().includes(pickerQuery.toLowerCase())).map(e=>(
+                <button key={e.n} onClick={()=>addExercise(pickerFor,e.n)}
+                  style={{ display:'flex', flexDirection:'column', alignItems:'flex-start', width:'100%', padding:'9px 10px', border:'none', background:'transparent', cursor:'pointer', textAlign:'left', borderRadius:8 }}
+                  onMouseEnter={ev=>ev.currentTarget.style.background='#f9fafb'} onMouseLeave={ev=>ev.currentTarget.style.background='transparent'}>
+                  <span style={{ fontSize:13, color:'#111' }}>{e.n}</span>
+                  <span style={{ fontSize:11, color:'#9ca3af' }}>{e.m}{e.eq?` · ${e.eq}`:''}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -6843,7 +7026,7 @@ export default function App() {
   // Всё, КРОМЕ Тренировок — обычная свитч-навигация, монтируется/
   // размонтируется по nav, как и раньше.
   const renderOther=()=>{
-    if(nav==='cdetail'&&sc)return <ClientDetail client={sc} goBack={goBackNav} />
+    if(nav==='cdetail'&&sc)return <ClientDetail client={sc} goBack={goBackNav} trainerId={user?.id} />
     switch(nav){
       case 'dashboard': return userRole==='trainer'
         ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} />
