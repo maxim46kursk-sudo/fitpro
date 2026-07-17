@@ -6,7 +6,7 @@ import { FOLDERS, PROGRAMS_MAP, EXERCISES, isOneSidedExercise, countCompletedPro
 import { oneRepMax, weightForReps, roundToPlate, percentTable, plateStep } from './oneRepMax.js'
 // Движок прогрессии (1ПМ) — врезан в кнопку "▶ Начать тренировку" внутри
 // слота шаблонной программы (WorkoutsView), см. подробный комментарий там.
-import { buildExerciseAggregates, computeTemplateScale, parseTemplateSets, computeProgressSteps, computeBandTarget } from './workoutPrompt.js'
+import { buildExerciseAggregates, computeTemplateScale, parseTemplateSets, computeProgressSteps, computeBandTarget, UNRATED_STOP_AFTER } from './workoutPrompt.js'
 import { MAX_TELEGRAM_URL } from './config.js'
 import './App.css'
 
@@ -464,11 +464,6 @@ const FOLDER_DESCRIPTIONS={
   'Домашние тренировки':'Тренировки дома с минимальным оборудованием (резинки и т.п.)',
 }
 const SLOT_COUNT=12
-// Сколько сессий подряд без реальной оценки нагрузки допустимо, прежде чем
-// движок останавливает рост веса по упражнению (см. runStartSlotWorkout,
-// agg.unratedStreak из buildExerciseAggregates) — дальше расти "вслепую" на
-// угаданной оценке 3 небезопасно.
-const UNRATED_STOP_AFTER=2
 const SUPERSET_COLORS={'A':PUR,'B':TEA,'C':COR,'D':BLU}
 // Тексты progressNote холодного старта (см. кнопку "▶ Начать тренировку") —
 // раньше показывались инлайн в карточке упражнения, теперь объясняются
@@ -1305,7 +1300,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       // разгоняла её быстрее рабочего подхода, а подходы с одинаковыми
       // повторениями схлопывались в один вес). Шаблон задаёт форму лестницы
       // весов, scale двигает её целиком — соотношение подходов сохраняется.
-      const scale=(agg&&agg.anchorSet)?computeTemplateScale(agg.anchorSet,agg.lastSession.effRatings,templateSets,agg.hardStreak,progressionStopped):null
+      const scale=(agg&&agg.anchorSet)?computeTemplateScale(agg.anchorSet,agg.lastSession.effRatings,templateSets,agg.hardStreak,progressionStopped,isOneSidedExercise(ex.name)):null
       // Одна строка объяснения на упражнение целиком (не на
       // подход) — все подходы упражнения используют один и тот
       // же appliedPct/hardStreak (кг-ось) или steps (ось
@@ -1323,7 +1318,11 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           // подставленной оценки 3 за пропущенные сессии.
           if(progressionStopped){
             if(!progressNoteSet){progressNote='Прогрессия нагрузки остановлена. Без твоей оценки я не могу безопасно повышать нагрузку — риск травмы. Оцени последние тренировки, и прогрессия продолжится.';progressNoteSet=true}
-            const heldSteps=computeProgressSteps(agg.sessions.slice(0,agg.sessions.length-agg.unratedStreak))
+            // Держим на уровне ПОСЛЕ UNRATED_STOP_AFTER разрешённых приростов
+            // (та же семантика, что и у кг-анкера ниже — не откатываем то, что
+            // уже выросло за первые 2 неоценённые сессии, замораживаем только
+            // сессии СВЕРХ этого порога).
+            const heldSteps=computeProgressSteps(agg.sessions.slice(0,agg.sessions.length-Math.max(0,agg.unratedStreak-UNRATED_STOP_AFTER)))
             const bandTarget=computeBandTarget(ts,heldSteps)
             return{kg:'',bandLevel:bandTarget.bandLevel,reps:String(bandTarget.reps),recKg:'',rating:'',fromTemplate:false}
           }
@@ -1608,6 +1607,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                 <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55 }}>В следующий раз приложение поставит вес само: далось легко — прибавит побольше, тяжело — прибавит чуть-чуть, было тяжело два раза подряд — снизит, чтобы ты не перегорел.</div>
                 <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55 }}>Вес можно менять руками — приложение запомнит то, что ты реально сделал, и посчитает от него.</div>
                 <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55 }}>Значок «<span style={{ color:PUR, fontWeight:700 }}>+</span>» у повторений означает, что упражнение делается на обе стороны, а повторения считаются суммарно, а не на каждую ногу отдельно.</div>
+                <div style={{ fontSize:13, color:'#fbbf24', fontWeight:700, lineHeight:1.55 }}>Веса приблизительные — подстрой под своё самочувствие.</div>
               </div>
               <label style={{ display:'flex', alignItems:'center', gap:9, marginBottom:14, cursor:'pointer' }}>
                 <input type="checkbox" checked={progressionIntroDontShow} onChange={e=>setProgressionIntroDontShow(e.target.checked)}

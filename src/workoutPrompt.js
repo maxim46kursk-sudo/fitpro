@@ -20,10 +20,17 @@
 // движок использовался и здесь (модель получала уже посчитанный вес и сама
 // писала его в дневник маркерами ADD_SET/SET_PROGRAM и т.п.) — этот путь
 // закрыт полностью, см. историю правок.
-import { EXERCISE_TYPE } from './programs.js'
+import { EXERCISE_TYPE, isOneSidedExercise } from './programs.js'
 import { oneRepMax, weightForReps, roundToPlate, plateStep } from './oneRepMax.js'
 
 const FORMAT_RULE = 'ФОРМАТ ОТВЕТА: только сплошной текст. Категорически запрещены символы в начале строк: дефис, тире, звёздочка, точка с цифрой. Любые перечисления пиши в одну строку через запятую.'
+
+// Сколько сессий подряд без реальной оценки нагрузки допустимо, прежде чем
+// движок останавливает рост (кг-ось: computeTemplateScale forceHold; резинки:
+// heldSteps в App.jsx runStartSlotWorkout и здесь в buildAssignedSessionPlan)
+// — дальше расти "вслепую" на угаданной оценке 3 небезопасно. Общая константа
+// для обоих мест, чтобы порог не мог разойтись.
+export const UNRATED_STOP_AFTER = 2
 
 // ─────────────────────────────────────────────────────────────────────────
 // Шаблон сессии программы хранит подходы человекочитаемой строкой ("20 кг ×
@@ -218,9 +225,15 @@ export function computeProgressSteps(sessions) {
 // то, что "не поместилось" в подъём уровня из-за потолка, тоже уходит в
 // повторения (overflow), чтобы прогрессия не останавливалась на потолке
 // резины.
+// Повторения тоже ограничены сверху (BAND_REPS_CAP) — без этого overflow
+// на упражнениях, годами застрявших на 5 уровне резины, уводил бы счётчик
+// повторений в нереалистичные десятки/сотни. Уровень резины при этом растёт
+// как и раньше — ограничивается только итоговое число повторений.
+export const BAND_REPS_CAP = 30
+
 export function computeBandTarget(templateSet, steps) {
   if (templateSet.bandLevel == null) {
-    return { bandLevel: null, reps: templateSet.reps + steps * 2 }
+    return { bandLevel: null, reps: Math.min(BAND_REPS_CAP, templateSet.reps + steps * 2) }
   }
   const levelUp = Math.floor(steps / 5)
   const rest = steps % 5
@@ -228,7 +241,7 @@ export function computeBandTarget(templateSet, steps) {
   const overflow = (templateSet.bandLevel + levelUp) - newLevel
   return {
     bandLevel: newLevel,
-    reps: templateSet.reps + rest * 2 + overflow * 5 * 2,
+    reps: Math.min(BAND_REPS_CAP, templateSet.reps + rest * 2 + overflow * 5 * 2),
   }
 }
 
@@ -248,12 +261,19 @@ export function computeBandTarget(templateSet, steps) {
 // а не от него — поэтому направление роста инвертируется: тот же процент
 // (из RATING_GROWTH_PCT или фиксированные 15% отката) применяется к МОДУЛЮ
 // и УМЕНЬШАЕТ его при росте, а при откате УВЕЛИЧИВАЕТ (больше помощи).
-export function computeTargetWeight(anchorSet, ratings, targetReps, hardStreak) {
+// oneSided — упражнение, где повторения в шаблоне/истории записаны СУММОЙ
+// на обе стороны (isOneSidedExercise, programs.js: выпады, болгарские,
+// "одной ногой/рукой" и т.п.). Формула Эпли/Бржицки должна получать
+// повторения НА СТОРОНУ, иначе завышает 1ПМ ровно вдвое от реальной
+// нагрузки одной ноги/руки. Вес не трогаем — корректируются только
+// повторения, идущие внутрь oneRepMax/weightForReps.
+export function computeTargetWeight(anchorSet, ratings, targetReps, hardStreak, oneSided = false) {
   if (!targetReps) return null
   if (!anchorSet || !anchorSet.kg || !anchorSet.reps) return null
   const anchorKg = Number(anchorSet.kg)
   const isAssisted = anchorKg < 0
-  const anchorRM = oneRepMax(anchorKg, Number(anchorSet.reps))
+  const effReps = r => oneSided ? Math.max(1, Math.round(r / 2)) : r
+  const anchorRM = oneRepMax(anchorKg, effReps(Number(anchorSet.reps)))
   if (!anchorRM) return null
   let appliedPct, factor
   if (hardStreak) {
@@ -301,7 +321,12 @@ export function computeTargetWeight(anchorSet, ratings, targetReps, hardStreak) 
 // масштабировать нечего (нет весового подхода в шаблоне, нет истории, анкер
 // невалиден) — тогда вызывающий код подставляет шаблон как есть (холодный
 // старт, как и раньше).
-export function computeTemplateScale(anchorSet, ratings, templateSets, hardStreak, forceHold = false) {
+// oneSided — см. комментарий у computeTargetWeight выше: повторения
+// односторонних упражнений записаны суммой на обе стороны, в 1ПМ-формулу
+// подставляем половину (на сторону), вес не трогаем.
+export function computeTemplateScale(anchorSet, ratings, templateSets, hardStreak, forceHold = false, oneSided = false) {
+  const effReps = r => oneSided ? Math.max(1, Math.round(r / 2)) : r
+
   // 1. Опорный подход ШАБЛОНА — последний весовой подход в ряду (обычно самый
   // тяжёлый рабочий подход тренера), от него меряем форму лестницы.
   let templateAnchor = null
@@ -369,12 +394,17 @@ export function buildAssignedSessionPlan(programTemplate, sessionsDone, aggregat
   const exercises = slot.map(ex => {
     const templateSets = parseTemplateSets(ex.sets)
     const agg = aggregates[ex.name]
+    // Клиент долго не ставит оценку — тот же стоп, что и в runStartSlotWorkout
+    // (App.jsx): дальше расти "вслепую" на угаданной оценке 3 небезопасно.
+    // Резинки/повторения без веса эта функция не считает вообще (своя ось,
+    // отдельная от computeTemplateScale) — стоп применяется только к кг-оси.
+    const progressionStopped = !!(agg && agg.unratedStreak >= UNRATED_STOP_AFTER)
     // Один коэффициент на упражнение (computeTemplateScale) — масштабирует
     // ВЕСЬ шаблонный ряд весов целиком, сохраняя форму лестницы тренера
     // (см. заголовок computeTemplateScale выше). null — холодный старт
     // (нет истории, либо в шаблоне нет ни одного весового подхода) —
     // подставляем шаблон как есть, тем же путём, что и раньше.
-    const scale = (agg && agg.anchorSet) ? computeTemplateScale(agg.anchorSet, agg.lastSession.effRatings, templateSets, agg.hardStreak) : null
+    const scale = (agg && agg.anchorSet) ? computeTemplateScale(agg.anchorSet, agg.lastSession.effRatings, templateSets, agg.hardStreak, progressionStopped, isOneSidedExercise(ex.name)) : null
     const sets = templateSets.map(ts => {
       if (ts.templateKg == null) return { reps: ts.reps, kg: null, rawKg: null, hasWeight: false, coldStart: false, isDeload: false, appliedPct: null }
       if (!scale) return { reps: ts.reps, kg: ts.templateKg, rawKg: ts.templateKg, hasWeight: true, coldStart: true, isDeload: false, appliedPct: null }

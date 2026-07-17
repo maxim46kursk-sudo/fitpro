@@ -14,10 +14,12 @@ import {
   computeHardStreak,
   computeTargetWeight,
   RATING_GROWTH_PCT,
+  BAND_REPS_CAP,
+  UNRATED_STOP_AFTER,
   buildAssignedSessionPlan,
 } from './src/workoutPrompt.js'
 import { roundToPlate, oneRepMax, plateStep } from './src/oneRepMax.js'
-import { PROGRAMS_MAP } from './src/programs.js'
+import { PROGRAMS_MAP, isOneSidedExercise } from './src/programs.js'
 
 let pass = 0, fail = 0
 function report(label, ok, detail) {
@@ -245,15 +247,29 @@ const bandTemplateSet = { bandLevel: 2, reps: 15 }
     computeBandTarget(bandTemplateSet, agg.progressSteps), { bandLevel: 2, reps: 17 })
 }
 {
-  // 11б) 2 сессии подряд без оценки — следующая рекомендация ДЕРЖИТ уровень/повторения
+  // 11б) 2 сессии подряд без оценки — держим на уровне ПОСЛЕ 2 разрешённых
+  // приростов (та же семантика, что и у кг-анкера в кейсе 10б), а НЕ
+  // откатываем к уровню до серии пропусков. slice(0, length - max(0,
+  // unratedStreak-UNRATED_STOP_AFTER)) при unratedStreak===2 берёт ВСЕ
+  // сессии — оба неоценённых прироста сохраняются.
   const agg = buildExerciseAggregates(fakeBandRows([null, null]))['Приседания с резиной']
   assertEqual('Кейс 11б: 2 сессии подряд без оценки → unratedStreak=2', agg.unratedStreak, 2)
   const progressionStopped = agg.unratedStreak >= 2
   assertEqual('Кейс 11б: порог достигнут → progressionStopped=true', progressionStopped, true)
-  const heldSteps = computeProgressSteps(agg.sessions.slice(0, agg.sessions.length - agg.unratedStreak))
-  assertEqual('Кейс 11б: heldSteps=0 (нет ни одной реально оценённой сессии)', heldSteps, 0)
-  assertDeepEqual('Кейс 11б: bandTarget держится на шаблоне → {bandLevel:2,reps:15}',
-    computeBandTarget(bandTemplateSet, heldSteps), { bandLevel: 2, reps: 15 })
+  const heldSteps = computeProgressSteps(agg.sessions.slice(0, agg.sessions.length - Math.max(0, agg.unratedStreak - UNRATED_STOP_AFTER)))
+  assertEqual('Кейс 11б: heldSteps=2 (оба неоценённых прироста сохранены, не откачены)', heldSteps, 2)
+  assertDeepEqual('Кейс 11б: bandTarget держится ПОСЛЕ 2 приростов → {bandLevel:2,reps:19} (не откат к 15)',
+    computeBandTarget(bandTemplateSet, heldSteps), { bandLevel: 2, reps: 19 })
+}
+{
+  // 11г) 3 сессии подряд без оценки — заморожено на уровне ПОСЛЕ 2 приростов
+  // (то же reps:19, что и в 11б), а не растёт дальше и не откатывается к 0.
+  const agg = buildExerciseAggregates(fakeBandRows([null, null, null]))['Приседания с резиной']
+  assertEqual('Кейс 11г: 3 сессии подряд без оценки → unratedStreak=3', agg.unratedStreak, 3)
+  const heldSteps = computeProgressSteps(agg.sessions.slice(0, agg.sessions.length - Math.max(0, agg.unratedStreak - UNRATED_STOP_AFTER)))
+  assertEqual('Кейс 11г: heldSteps=2 (заморожено на уровне после 2 приростов, 3-й не учтён)', heldSteps, 2)
+  assertDeepEqual('Кейс 11г: bandTarget та же, что в 11б → {bandLevel:2,reps:19} (не 21)',
+    computeBandTarget(bandTemplateSet, heldSteps), { bandLevel: 2, reps: 19 })
 }
 {
   // 11в) оценка после пропусков обнуляет счётчик, рост возвращается
@@ -290,6 +306,67 @@ const lightTemplate = parseTemplateSets('4 кг × 20')
   const scale = computeTemplateScale({ kg: 4, reps: 20 }, [1, 1], lightTemplate, false)
   assertClose('Кейс 12б: scale ≈ 1.10 (рост, оценка «легко»)', scale.scale, 1.10)
   assertArrayEqual('Кейс 12б: вес ряда [4] (шаг 1 кг, не 5)', templateWeights(lightTemplate, scale), [4])
+}
+
+console.log('\n── Кейс 13: односторонние упражнения — 1ПМ считается от reps/2 ──────')
+
+{
+  // Болгарские выпады с гантелями — реально одностороннее (isOneSidedExercise),
+  // повторения в шаблоне/истории записаны суммой на обе стороны.
+  assertEqual('Кейс 13: isOneSidedExercise("Болгарские выпады с гантелями") === true', isOneSidedExercise('Болгарские выпады с гантелями'), true)
+  assertEqual('Кейс 13: isOneSidedExercise("Приседания") === false', isOneSidedExercise('Приседания'), false)
+
+  // 13а) computeTargetWeight: 12 кг × 16 (сумма на обе ноги) → 1ПМ должен
+  // считаться от 8, не от 16. anchorSet.reps=16, targetReps=12 — разные,
+  // чтобы деление пополам реально повлияло на итог (при equal reps формула
+  // самообратима и разницы не показала бы, см. комментарий computeTargetWeight).
+  const withoutOneSided = computeTargetWeight({ kg: 12, reps: 16 }, [3, 3], 12, false, false)
+  const withOneSided = computeTargetWeight({ kg: 12, reps: 16 }, [3, 3], 12, false, true)
+  assertClose('Кейс 13а: без oneSided — rawKg ≈ 13.8 (1ПМ от 16 повторений)', withoutOneSided.rawKg, 13.8, 0.05)
+  assertClose('Кейс 13а: с oneSided — rawKg ≈ 13.3 (1ПМ от 8 повторений, не 16)', withOneSided.rawKg, 13.3, 0.05)
+
+  // 13б) то же через computeTemplateScale (шаблонный ряд) — anchorSet.reps=14
+  // (клиент реально сделал 14, не 16 из шаблона), тоже показывает разницу.
+  const lungeTemplate = parseTemplateSets('12 кг × 16, 12 кг × 16, 12 кг × 16, 12 кг × 16')
+  const scaleFlat = computeTemplateScale({ kg: 12, reps: 14 }, [1, 1], lungeTemplate, false, false, false)
+  const scaleOneSided = computeTemplateScale({ kg: 12, reps: 14 }, [1, 1], lungeTemplate, false, false, true)
+  assertClose('Кейс 13б: без oneSided — scale ≈ 1.0522', scaleFlat.scale, 1.0522, 0.001)
+  assertClose('Кейс 13б: с oneSided — scale ≈ 1.0711 (не совпадает с не-oneSided)', scaleOneSided.scale, 1.0711, 0.001)
+}
+
+console.log('\n── Кейс 14: потолок повторений резины/веса тела (BAND_REPS_CAP) ─────')
+
+{
+  assertEqual('Кейс 14: BAND_REPS_CAP === 30', BAND_REPS_CAP, 30)
+
+  // 14а) вес тела (bandLevel:null) — без потолка ушло бы в 20+20×2=60
+  const bodyweight = computeBandTarget({ bandLevel: null, reps: 20 }, 20)
+  assertDeepEqual('Кейс 14а: вес тела при больших steps → reps упирается в потолок 30', bodyweight, { bandLevel: null, reps: 30 })
+
+  // 14б) резина — без потолка ушло бы в 15+6×5×2=75, уровень при этом
+  // всё равно поднимается до максимума (5) как и раньше, ограничены только повторения.
+  const banded = computeBandTarget({ bandLevel: 1, reps: 15 }, 50)
+  assertDeepEqual('Кейс 14б: резина при больших steps → уровень 5, повторения упираются в потолок 30', banded, { bandLevel: 5, reps: 30 })
+}
+
+console.log('\n── Кейс 16: остановка кг-роста без оценки — теперь и в buildAssignedSessionPlan ──')
+
+{
+  // 16а) 1 сессия без оценки — buildAssignedSessionPlan всё ещё растит вес
+  // (progressionStopped=false, тот же scale≈1.05, что и в кейсе 10а).
+  const agg1 = buildExerciseAggregates(fakeUnratedRows([null]))
+  const plan1 = buildAssignedSessionPlan(PROGRAMS_MAP['Full Body'], 0, agg1)
+  const squat1 = plan1.exercises.find(e => e.name === 'Приседания')
+  assertArrayEqual('Кейс 16а: 1 сессия без оценки — вес всё ещё растёт [20, 27.5, 27.5, 27.5]', squat1.sets.map(s => s.kg), [20, 27.5, 27.5, 27.5])
+}
+{
+  // 16б) 2 сессии подряд без оценки — раньше buildAssignedSessionPlan вообще
+  // не применял остановку (растил бы дальше вслепую) — теперь держит на
+  // анкере, так же как runStartSlotWorkout в App.jsx (кейс 10б).
+  const agg2 = buildExerciseAggregates(fakeUnratedRows([null, null]))
+  const plan2 = buildAssignedSessionPlan(PROGRAMS_MAP['Full Body'], 0, agg2)
+  const squat2 = plan2.exercises.find(e => e.name === 'Приседания')
+  assertArrayEqual('Кейс 16б: 2 сессии подряд без оценки — вес держится на анкере [20, 25, 25, 25]', squat2.sets.map(s => s.kg), [20, 25, 25, 25])
 }
 
 console.log(`\nИтого: ${pass}/${pass + fail}`)
