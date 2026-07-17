@@ -107,7 +107,9 @@ const dateLabel = (iso, today) => {
 
 // Группирует дневник (записи за много дней) по датам, новые сверху,
 // и считает итог за каждый день + отклонение от нормы — готовыми числами.
-function groupDiaryByDate(diary, today, goalsKcal) {
+// Экспортирована — переиспользуется в App.jsx (RealClientDetail, сводка
+// питания клиента для тренера), не только здесь для системного промпта AI.
+export function groupDiaryByDate(diary, today, goalsKcal) {
   const byDate = {}
   for (const e of diary) {
     const d = e.date || today

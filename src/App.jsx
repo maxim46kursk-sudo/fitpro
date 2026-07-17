@@ -8,6 +8,10 @@ import { oneRepMax, weightForReps, roundToPlate, percentTable, plateStep } from 
 // слота шаблонной программы (WorkoutsView), см. подробный комментарий там.
 import { buildExerciseAggregates, computeTemplateScale, parseTemplateSets, computeProgressSteps, computeBandTarget, UNRATED_STOP_AFTER } from './workoutPrompt.js'
 import { MAX_TELEGRAM_URL } from './config.js'
+// groupDiaryByDate — та же группировка дневника питания по датам с итогом/
+// отклонением от нормы, что и в системном промпте AI (aiPrompt.js). Здесь
+// переиспользуется для сводки питания клиента тренеру (RealClientDetail).
+import { groupDiaryByDate } from './aiPrompt.js'
 import './App.css'
 
 const PUR = '#7F77DD'
@@ -562,15 +566,15 @@ function RealClientDetail({ client, goBack, trainerId }) {
           <h2 style={{ fontSize:20, fontWeight:500, color:'#111', margin:0 }}>{client.name||'Без имени'}</h2>
         </div>
       </div>
-      <div style={{ display:'flex', gap:0, marginBottom:18, background:'#f3f4f6', borderRadius:10, padding:3, width:'fit-content' }}>
-        {[['history','История'],['program','Программа']].map(([id,label])=>(
+      <div style={{ display:'flex', gap:0, marginBottom:18, background:'#f3f4f6', borderRadius:10, padding:3, width:'fit-content', flexWrap:'wrap' }}>
+        {[['history','История'],['tonnage','Тоннаж'],['exercises','Упражнения'],['nutrition','Питание'],['program','Программа']].map(([id,label])=>(
           <button key={id} onClick={()=>setTab(id)}
-            style={{ padding:'8px 18px', borderRadius:8, border:'none', background:tab===id?'#fff':'transparent', color:tab===id?'#111':'#6b7280', fontSize:13, fontWeight:600, cursor:'pointer', boxShadow:tab===id?'0 1px 3px rgba(0,0,0,0.1)':'none' }}>
+            style={{ padding:'8px 16px', borderRadius:8, border:'none', background:tab===id?'#fff':'transparent', color:tab===id?'#111':'#6b7280', fontSize:13, fontWeight:600, cursor:'pointer', boxShadow:tab===id?'0 1px 3px rgba(0,0,0,0.1)':'none' }}>
             {label}
           </button>
         ))}
       </div>
-      {tab==='history'?(
+      {tab==='history'&&(
         loading?(
           <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Загрузка...</div>
         ):error?(
@@ -605,9 +609,154 @@ function RealClientDetail({ client, goBack, trainerId }) {
             ))}
           </div>
         )
-      ):(
-        <ProgramEditor client={client} trainerId={trainerId} />
       )}
+      {tab==='tonnage'&&(
+        loading?(
+          <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Загрузка...</div>
+        ):error?(
+          <div style={{ fontSize:13, color:'#ef4444', padding:'30px 0', textAlign:'center', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
+            Не удалось загрузить историю
+            <button onClick={load} style={{ fontSize:12, color:PUR, background:'none', border:'1px solid #e5e7eb', borderRadius:8, padding:'6px 14px', cursor:'pointer' }}>Повторить</button>
+          </div>
+        ):(
+          <ClientTonnage history={history} />
+        )
+      )}
+      {tab==='exercises'&&(
+        loading?(
+          <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Загрузка...</div>
+        ):error?(
+          <div style={{ fontSize:13, color:'#ef4444', padding:'30px 0', textAlign:'center', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
+            Не удалось загрузить историю
+            <button onClick={load} style={{ fontSize:12, color:PUR, background:'none', border:'1px solid #e5e7eb', borderRadius:8, padding:'6px 14px', cursor:'pointer' }}>Повторить</button>
+          </div>
+        ):(
+          <ClientExerciseProgress history={history} />
+        )
+      )}
+      {tab==='nutrition'&&<ClientNutritionSummary client={client} />}
+      {tab==='program'&&<ProgramEditor client={client} trainerId={trainerId} />}
+    </div>
+  )
+}
+
+// Тоннаж клиента (сторона тренера) — та же формула, что и в DiaryView
+// (allWorkoutTons: сумма вес×повторения по подходам, подходы без веса/на
+// резине дают 0 и в тоннаж не идут сами по себе). Данные уже загружены
+// родителем (RealClientDetail) — просто считаем на них, без нового запроса.
+function ClientTonnage({ history }) {
+  if(history.length===0)return <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Тренировок пока нет</div>
+  const workoutTons=history.map((w,i)=>({
+    key:w.workoutId??i, date:w.date, name:w.name,
+    ton:(w.exercises||[]).reduce((s1,ex)=>(ex.sets||[]).reduce((s2,s)=>s2+(parseFloat(s.kg)||0)*(parseInt(s.reps)||0),s1),0),
+  }))
+  const totalTonnage=workoutTons.reduce((s,w)=>s+w.ton,0)
+  return (
+    <div>
+      <Card style={{ marginBottom:14, textAlign:'center' }}>
+        <div style={{ fontSize:11, fontWeight:500, color:'#9ca3af', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:4 }}>Общий тоннаж</div>
+        <div style={{ fontSize:28, fontWeight:800, color:PUR, lineHeight:1 }}>{Math.round(totalTonnage).toLocaleString('ru')} <span style={{ fontSize:16, fontWeight:600 }}>кг</span></div>
+      </Card>
+      <div style={{ fontSize:12, fontWeight:600, color:'#6b7280', marginBottom:8 }}>По тренировкам</div>
+      <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+        {workoutTons.slice().reverse().map(w=>(
+          <div key={w.key} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 12px', background:'#fff', borderRadius:9, boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
+            <div>
+              <span style={{ fontSize:13, color:'#111', fontWeight:500 }}>{w.name}</span>
+              <span style={{ fontSize:11, color:'#9ca3af', marginLeft:8 }}>{new Date(w.date).toLocaleDateString('ru',{day:'numeric',month:'short'})}</span>
+            </div>
+            <span style={{ fontSize:13, fontWeight:600, color:PUR }}>{Math.round(w.ton).toLocaleString('ru')} кг</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Прогресс по упражнениям клиента (сторона тренера) — группировка истории по
+// упражнению, по каждой сессии показываем последний РАБОЧИЙ подход (последний
+// в ряду шаблона, та же логика "рабочих подходов", что и у движка прогрессии
+// в остальном приложении). Данные уже загружены родителем, без нового запроса.
+function ClientExerciseProgress({ history }) {
+  const byExercise={}
+  history.forEach(w=>{
+    ;(w.exercises||[]).forEach(ex=>{
+      const lastSet=(ex.sets||[])[ex.sets.length-1]
+      if(!lastSet)return
+      ;(byExercise[ex.n]??=[]).push({date:w.date,kg:lastSet.kg,reps:lastSet.reps,bandLevel:lastSet.bandLevel})
+    })
+  })
+  const names=Object.keys(byExercise).sort()
+  if(names.length===0)return <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Тренировок пока нет</div>
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+      {names.map(name=>(
+        <Card key={name}>
+          <div style={{ fontSize:14, fontWeight:600, color:'#111', marginBottom:8 }}>{name}</div>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+            {byExercise[name].map((r,i)=>(
+              <div key={i} style={{ fontSize:12, color:'#374151', background:'#f9fafb', borderRadius:7, padding:'5px 9px' }}>
+                {new Date(r.date).toLocaleDateString('ru',{day:'numeric',month:'short'})}: {r.bandLevel!=null?`${r.bandLevel} рез.`:r.kg?`${r.kg} кг`:'б/в'}×{r.reps||'—'}
+              </div>
+            ))}
+          </div>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
+// Сводка питания клиента (сторона тренера) — только чтение food_diary/
+// food_goals клиента (RLS уже разрешает), редактирование этих данных отсюда
+// не делается вообще, кнопок записи в этом компоненте нет. Группировка по
+// датам — groupDiaryByDate (aiPrompt.js), та же, что и в системном промпте AI.
+function ClientNutritionSummary({ client }) {
+  const [diary,setDiary]=useState([])
+  const [goals,setGoals]=useState(null)
+  const [loading,setLoading]=useState(true)
+  const [error,setError]=useState(false)
+  const load=()=>{
+    setLoading(true);setError(false)
+    const since=new Date(Date.now()-30*24*60*60*1000).toISOString().slice(0,10)
+    Promise.all([
+      supabase.from('food_diary').select('*').eq('user_id',client.id).gte('date',since).order('date',{ascending:false}),
+      supabase.from('food_goals').select('*').eq('user_id',client.id).maybeSingle(),
+    ]).then(([{data:diaryRows,error:diaryError},{data:goalsRow,error:goalsError}])=>{
+      if(diaryError||goalsError){console.error('Ошибка загрузки питания клиента:',diaryError||goalsError);setError(true);setLoading(false);return}
+      setDiary(diaryRows||[])
+      setGoals(goalsRow||null)
+      setLoading(false)
+    })
+  }
+  useEffect(()=>{load()},[client.id])
+
+  if(loading)return <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Загрузка...</div>
+  if(error)return (
+    <div style={{ fontSize:13, color:'#ef4444', padding:'30px 0', textAlign:'center', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
+      Не удалось загрузить питание
+      <button onClick={load} style={{ fontSize:12, color:PUR, background:'none', border:'1px solid #e5e7eb', borderRadius:8, padding:'6px 14px', cursor:'pointer' }}>Повторить</button>
+    </div>
+  )
+
+  const days=groupDiaryByDate(diary,localTodayISO(),goals?.kcal)
+  if(days.length===0)return <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Дневник питания пока пуст</div>
+
+  return (
+    <div>
+      {goals&&(
+        <Card style={{ marginBottom:14 }}>
+          <div style={{ fontSize:11, fontWeight:500, color:'#9ca3af', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:4 }}>Норма</div>
+          <div style={{ fontSize:13, color:'#111' }}>{goals.kcal} ккал · Б:{goals.p}г У:{goals.c}г Ж:{goals.f}г</div>
+        </Card>
+      )}
+      <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+        {days.map(day=>(
+          <div key={day.date} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 12px', background:'#fff', borderRadius:9, boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
+            <span style={{ fontSize:13, color:'#111' }}>{new Date(day.date).toLocaleDateString('ru',{day:'numeric',month:'short'})}</span>
+            <span style={{ fontSize:13, color:'#374151' }}>{day.kcal} ккал<span style={{ color:'#9ca3af' }}>{day.vsGoal}</span></span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -2136,6 +2285,17 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       )}
                     </div>
                   </div>
+                  {/* Отправка видео тренеру — не загрузка/хранилище в приложении,
+                      просто открывает личный чат с тренером в Telegram, видео
+                      клиент прикрепляет и шлёт там сам. openTelegramLink — внутри
+                      Mini App (не обычный window.open, тот в Telegram-вебвью не
+                      всегда открывает внешнюю ссылку), иначе — обычная новая вкладка. */}
+                  <button onClick={()=>{
+                    if(window.Telegram?.WebApp)window.Telegram.WebApp.openTelegramLink(MAX_TELEGRAM_URL)
+                    else window.open(MAX_TELEGRAM_URL,'_blank')
+                  }} style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color:TEA, background:'none', border:`1px solid ${TEA}55`, borderRadius:8, padding:'5px 10px', cursor:'pointer', marginBottom:8, width:'fit-content' }}>
+                    📹 Отправить видео тренеру
+                  </button>
                   {/* Объяснение пересчитанного веса (см. кнопку "▶ Начать
                       тренировку" в слоте программы, где считается progressNote) —
                       одна строка на упражнение, почему вес именно такой.
