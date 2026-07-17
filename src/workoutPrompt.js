@@ -290,7 +290,7 @@ export function computeTargetWeight(anchorSet, ratings, targetReps, hardStreak, 
     appliedPct = RATING_GROWTH_PCT[roundedRating]
     factor = isAssisted ? (1 - appliedPct / 100) : (1 + appliedPct / 100)
   }
-  const rawKg = weightForReps(anchorRM * factor, targetReps)
+  const rawKg = weightForReps(anchorRM * factor, effReps(targetReps))
   return { kg: roundToPlate(rawKg, plateStep(rawKg)), rawKg, isDeload: !!hardStreak, appliedPct }
 }
 
@@ -338,13 +338,13 @@ export function computeTemplateScale(anchorSet, ratings, templateSets, hardStrea
     if (templateSets[i].templateKg != null) { templateAnchor = templateSets[i]; break }
   }
   if (!templateAnchor) return null
-  const templateRM = oneRepMax(templateAnchor.templateKg, templateAnchor.reps)
+  const templateRM = oneRepMax(templateAnchor.templateKg, effReps(templateAnchor.reps))
   if (!templateRM) return null
 
   // 3. Опорный подход ИСТОРИИ — тот же anchorSet, что и в computeTargetWeight.
   if (!anchorSet || !anchorSet.kg || !anchorSet.reps) return null
   const anchorKg = Number(anchorSet.kg)
-  const anchorRM = oneRepMax(anchorKg, Number(anchorSet.reps))
+  const anchorRM = oneRepMax(anchorKg, effReps(Number(anchorSet.reps)))
   if (!anchorRM) return null
 
   // 4-5. Тот же рост/откат, что и в computeTargetWeight — тем же исходом на
