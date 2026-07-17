@@ -126,6 +126,57 @@ function NavBtn({ icon, label, active, onClick }) {
   )
 }
 
+// Шапка "назад" (DiaryView) и Toggle/Row/Section (SettingsView) — вынесены
+// на верхний уровень модуля из тел родительских компонентов: определения
+// внутри функции-компонента пересоздаются на каждый ререндер, из-за чего
+// React считает их НОВЫМ типом компонента и перемонтирует поддерево целиком
+// (мигание, сброс фокуса в инпутах). Поведение не менялось — только
+// перемещение plus проброс того, что раньше бралось из замыкания, пропсами.
+function BackBtn({ label, right, onBack }) {
+  return (
+    <div style={{ background:'#fff', borderBottom:'1px solid #e5e7eb', padding:'14px 18px', display:'flex', alignItems:'center', gap:14, flexShrink:0, position:'sticky', top:0, zIndex:10 }}>
+      <button onClick={onBack} style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:'#6b7280', lineHeight:1, padding:0, minHeight:'unset' }}>←</button>
+      <span style={{ fontSize:17, fontWeight:700, color:'#111', flex:1 }}>{label}</span>
+      {right}
+    </div>
+  )
+}
+
+function Toggle({ on, onToggle }) {
+  return (
+    <button onClick={onToggle} style={{
+      width:44, height:24, borderRadius:12, border:'none', cursor:'pointer', padding:0,
+      background:on?PUR:'#d1d5db', transition:'background 0.2s', position:'relative', flexShrink:0, minHeight:'unset',
+    }}>
+      <span style={{
+        position:'absolute', top:2, left:on?22:2, width:20, height:20, borderRadius:'50%',
+        background:'#fff', transition:'left 0.2s', boxShadow:'0 1px 3px #0002', display:'block',
+      }}/>
+    </button>
+  )
+}
+
+function Row({ label, sub, right }) {
+  return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 0',borderBottom:'1px solid #f3f4f6'}}>
+      <div>
+        <div style={{fontSize:15,color:'#111',fontWeight:500}}>{label}</div>
+        {sub&&<div style={{fontSize:12,color:'#9ca3af',marginTop:2}}>{sub}</div>}
+      </div>
+      {right}
+    </div>
+  )
+}
+
+function Section({ title, children }) {
+  return (
+    <div style={{background:'#fff',borderRadius:14,padding:'0 16px',marginBottom:14,boxShadow:'0 1px 4px #0000000a'}}>
+      <div style={{fontSize:12,fontWeight:700,color:'#9ca3af',padding:'14px 0 6px',letterSpacing:'0.5px',textTransform:'uppercase'}}>{title}</div>
+      {children}
+    </div>
+  )
+}
+
 // ── Экраны
 function Dashboard({ setNav, setSC, isTrainer }) {
   const workoutHistory = (() => { try { return JSON.parse(localStorage.getItem('fitpro_history')||'[]') } catch { return [] } })()
@@ -3687,14 +3738,6 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     setEditingFoodId(null)
   }
 
-  const BackBtn=({label,right})=>(
-    <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexShrink:0,position:'sticky',top:0,zIndex:10 }}>
-      <button onClick={()=>setSection(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
-      <span style={{ fontSize:17,fontWeight:700,color:'#111',flex:1 }}>{label}</span>
-      {right}
-    </div>
-  )
-
   // ── СЕКЦИЯ: Общий тоннаж
   if(section==='tonnage'){
     const TON_PERIOD_OPTIONS=[{k:'7',l:'Последние 7'},{k:'30d',l:'30 дней'},{k:'all',l:'Всё время'},{k:'custom',l:'Свой период'}]
@@ -3715,7 +3758,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     const dateStride=manyBars?Math.ceil(chartTons.length/6):1
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
-        <BackBtn label="Общий тоннаж" right={
+        <BackBtn label="Общий тоннаж" onBack={()=>setSection(null)} right={
           <div style={{ position:'relative' }}>
             <button onClick={()=>setShowTonPeriodMenu(v=>!v)}
               style={{ width:34,height:34,borderRadius:9,border:'1px solid #e5e7eb',background:period!=='7'||customFrom||customTo?`${PUR}11`:'#f9fafb',cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:period!=='7'||customFrom||customTo?PUR:'#6b7280',minHeight:'unset' }}>📅</button>
@@ -3876,7 +3919,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     const PERIOD_OPTIONS=[{k:'all',l:'Всё время'},{k:'30d',l:'30 дней'},{k:'custom',l:'Свой период'}]
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
-        <BackBtn label="Прогресс по упражнениям" right={
+        <BackBtn label="Прогресс по упражнениям" onBack={()=>setSection(null)} right={
           <div style={{ position:'relative' }}>
             <button onClick={()=>setShowExPeriodMenu(v=>!v)}
               style={{ width:34,height:34,borderRadius:9,border:'1px solid #e5e7eb',background:exPeriod!=='all'?`${PUR}11`:'#f9fafb',cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:exPeriod!=='all'?PUR:'#6b7280',minHeight:'unset' }}>📅</button>
@@ -5182,6 +5225,7 @@ function SettingsView({ user, performLogout }) {
   const [clearConfirm,setClearConfirm]=useState(false)
   const [deleteConfirm,setDeleteConfirm]=useState(false)
   const [dataMsg,setDataMsg]=useState('')
+  const [deleteError,setDeleteError]=useState(false)
   const [aiStyle,setAiStyle]=useState('act')
   // Тост ошибки записи настроек — тот же паттерн, что showFoodSaveError и т.п.
   const [showSettingsSaveError,setShowSettingsSaveError]=useState(false)
@@ -5271,45 +5315,29 @@ function SettingsView({ user, performLogout }) {
   // без workout_id — их не задел бы каскад.
   const deleteAll=async()=>{
     if(!user?.id)return
-    await supabase.from('chat_messages').delete().eq('user_id',user.id)
-    await supabase.from('food_diary').delete().eq('user_id',user.id)
-    await supabase.from('food_goals').delete().eq('user_id',user.id)
-    await supabase.from('workout_sets').delete().eq('user_id',user.id)
-    await supabase.from('workouts').delete().eq('user_id',user.id)
-    await supabase.from('planned_workouts').delete().eq('user_id',user.id)
-    await supabase.from('constructor_sets').delete().eq('user_id',user.id)
-    await supabase.from('constructor_exercises').delete().eq('user_id',user.id)
+    // Каждое удаление проверяем отдельно — раньше все восемь шли вслепую, и
+    // при частичном сбое (сеть, RLS и т.п.) клиент видел безусловный логаут,
+    // как будто "всё удалено", хотя часть таблиц могла остаться нетронутой.
+    const results=[
+      await supabase.from('chat_messages').delete().eq('user_id',user.id),
+      await supabase.from('food_diary').delete().eq('user_id',user.id),
+      await supabase.from('food_goals').delete().eq('user_id',user.id),
+      await supabase.from('workout_sets').delete().eq('user_id',user.id),
+      await supabase.from('workouts').delete().eq('user_id',user.id),
+      await supabase.from('planned_workouts').delete().eq('user_id',user.id),
+      await supabase.from('constructor_sets').delete().eq('user_id',user.id),
+      await supabase.from('constructor_exercises').delete().eq('user_id',user.id),
+    ]
+    const failed=results.some(r=>r.error)
+    if(failed){
+      results.forEach(r=>{if(r.error)console.error('Ошибка при "Удалить все мои данные":',r.error)})
+      setDeleteError(true)
+      setDataMsg('Не всё удалилось — проверь связь и попробуй ещё раз')
+      setTimeout(()=>{setDataMsg('');setDeleteError(false)},4000)
+      return
+    }
     performLogout()
   }
-
-  const Toggle=({on,onToggle})=>(
-    <button onClick={onToggle} style={{
-      width:44,height:24,borderRadius:12,border:'none',cursor:'pointer',padding:0,
-      background:on?PUR:'#d1d5db',transition:'background 0.2s',position:'relative',flexShrink:0,minHeight:'unset',
-    }}>
-      <span style={{
-        position:'absolute',top:2,left:on?22:2,width:20,height:20,borderRadius:'50%',
-        background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 3px #0002',display:'block',
-      }}/>
-    </button>
-  )
-
-  const Row=({label,sub,right})=>(
-    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 0',borderBottom:'1px solid #f3f4f6'}}>
-      <div>
-        <div style={{fontSize:15,color:'#111',fontWeight:500}}>{label}</div>
-        {sub&&<div style={{fontSize:12,color:'#9ca3af',marginTop:2}}>{sub}</div>}
-      </div>
-      {right}
-    </div>
-  )
-
-  const Section=({title,children})=>(
-    <div style={{background:'#fff',borderRadius:14,padding:'0 16px',marginBottom:14,boxShadow:'0 1px 4px #0000000a'}}>
-      <div style={{fontSize:12,fontWeight:700,color:'#9ca3af',padding:'14px 0 6px',letterSpacing:'0.5px',textTransform:'uppercase'}}>{title}</div>
-      {children}
-    </div>
-  )
 
   return(
     <div style={{padding:'16px 16px 40px',display:'flex',flexDirection:'column',gap:0}}>
@@ -5398,7 +5426,7 @@ function SettingsView({ user, performLogout }) {
 
       {/* Конфиденциальность */}
       <Section title="Конфиденциальность">
-        {dataMsg&&<div style={{padding:'10px 0',fontSize:13,color:TEA,fontWeight:500}}>{dataMsg}</div>}
+        {dataMsg&&<div style={{padding:'10px 0',fontSize:13,color:deleteError?'#ef4444':TEA,fontWeight:500}}>{dataMsg}</div>}
         <div style={{paddingBottom:14,display:'flex',flexDirection:'column',gap:8}}>
           <button onClick={()=>{setDataMsg('✓ Данные будут отправлены на ваш email');setTimeout(()=>setDataMsg(''),4000)}} style={{
             width:'100%',padding:'11px',borderRadius:10,border:'1.5px solid #e5e7eb',
@@ -5618,7 +5646,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
   const addMeasurement=()=>{
     const hasAny=Object.values(newM).some(v=>v.trim())
     if(!hasAny)return
-    const entry={date:new Date().toISOString(),...newM}
+    const entry={date:localTodayISO(),...newM}
     const updated=[entry,...measurements]
     setMeasurements(updated)
     localStorage.setItem('fitpro_measurements',JSON.stringify(updated))
@@ -6674,7 +6702,7 @@ export default function App() {
   }
 
   const handleCopyWorkout=(workout)=>{
-    handleWorkoutComplete({...workout,date:new Date().toISOString(),name:workout.name+' (копия)'})
+    handleWorkoutComplete({...workout,date:localTodayISO(),name:workout.name+' (копия)'})
   }
 
   const handleWorkoutAction=(action)=>{
@@ -6694,12 +6722,12 @@ export default function App() {
     switch(nav){
       case 'dashboard': return userRole==='trainer'
         ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} />
-        : <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} />
+        : <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} />
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} userId={user?.id} />
       case 'nutrition': return <NutritionView userId={user?.id} />
       case 'library':   return <LibraryView customExercises={customExercises} />
       case 'chat':      return <ChatView />
-      case 'progress':  return <DiaryView workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} />
+      case 'progress':  return <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} />
       default:          return null
     }
   }
