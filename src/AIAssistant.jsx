@@ -2,6 +2,69 @@ import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 're
 import { supabase } from './supabase'
 import { buildSystemPrompt } from './aiPrompt'
 import { buildWorkoutSystemPrompt, extractBalancedJson } from './workoutPrompt'
+
+// Те же жёсткие пределы, что и в App.jsx (формы питания/профиля) — маленькие
+// константы, дублировать нормально (тот же принцип, что и у localTodayISO
+// выше). Модель тоже может прислать мусор в ADD/GOAL (отрицательные или
+// гигантские числа), клампим перед записью в Supabase.
+const CAL_MIN = 0, CAL_MAX = 20000
+const MACRO_MIN = 0, MACRO_MAX = 2000
+const PROFILE_WEIGHT_MIN = 0, PROFILE_WEIGHT_MAX = 500
+const PROFILE_HEIGHT_MIN = 0, PROFILE_HEIGHT_MAX = 300
+const clampNum = (v, min, max) => Math.max(min, Math.min(max, Number(v) || 0))
+
+// ADD/DEL/CLEAR/GOAL — маркеры на путях ЗАПИСИ/УДАЛЕНИЯ данных клиента, где
+// хрупкий regex недопустим: старый \{[^}]+\} ломался на вложенных объектах
+// и на '}' внутри значений, а вырезание \[TAG:[^\]]+\] обрезало маркер по
+// первой попавшейся ']' — например в названии еды "хлеб [бородинский]" это
+// рвало маркер на середине, и в чат клиенту утекал сырой хвост JSON.
+// extractBalancedJson (workoutPrompt.js, уже используется для SET_PROGRAM)
+// считает вложенность { } [ ] по-настоящему и не путает скобки внутри строк.
+// Возвращает по каждому найденному "[TAG:" маркеру { data, start, end } —
+// start/end это индексы в ИСХОДНОМ тексте (оба включительно), чтобы вырезать
+// маркер целиком по точному диапазону, а не regex'ом. Закрывающая ']' должна
+// идти сразу после сбалансированной '}' — если её нет, или JSON вообще не
+// удалось сбалансировать (например ответ оборвался на max_tokens посреди
+// объекта), маркер считается битым: data===null (не исполняется), диапазон
+// всё равно возвращается, чтобы огрызок не попал клиенту в текст. Тихо, без
+// writeFailed — это не сбой записи (ничего и не пытались записать), а
+// оборванный/некорректный маркер модели, дисклеймер про "пропала связь" тут
+// был бы неправдой.
+function extractMarkers(text, tag) {
+  const results = []
+  const re = new RegExp(`\\[${tag}:`, 'g')
+  let m
+  while ((m = re.exec(text))) {
+    const start = m.index
+    const jsonStart = m.index + m[0].length
+    const extracted = extractBalancedJson(text, jsonStart)
+    if (extracted && text[extracted.endIdx + 1] === ']') {
+      let data
+      try { data = JSON.parse(extracted.json) } catch { data = null }
+      results.push({ data, start, end: extracted.endIdx + 1 })
+      re.lastIndex = extracted.endIdx + 2
+    } else {
+      const end = extracted ? extracted.endIdx : text.length - 1
+      results.push({ data: null, start, end })
+      re.lastIndex = end + 1
+    }
+  }
+  return results
+}
+
+// Вырезает диапазоны extractMarkers из текста (start/end включительно,
+// маркеры идут по возрастанию start — так их и находит extractMarkers).
+function removeMarkerRanges(text, markers) {
+  if (!markers.length) return text
+  let result = ''
+  let cursor = 0
+  for (const mk of markers) {
+    result += text.slice(cursor, mk.start)
+    cursor = mk.end + 1
+  }
+  result += text.slice(cursor)
+  return result
+}
 import { MAX_TELEGRAM_URL } from './config.js'
 
 const PUR = '#7F77DD'
@@ -122,7 +185,16 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
       supabase.from('food_goals').select('*').eq('user_id', user.id).single(),
       supabase.from('profiles').select('*').eq('id', user.id).single(),
     ])
-    return { user, today, diary: diary || [], goals: goals || null, profile: profile || {} }
+    // Клампим вес/рост перед подачей в calcMacroGoals (aiPrompt.js, вызывается
+    // из buildSystemPrompt ниже) — гигантские/отрицательные значения, попавшие
+    // в profiles в обход App.jsx (например до этой правки), иначе ломают
+    // расчёт нормы КБЖУ.
+    const clampedProfile = profile ? {
+      ...profile,
+      weight: profile.weight != null ? clampNum(profile.weight, PROFILE_WEIGHT_MIN, PROFILE_WEIGHT_MAX) : profile.weight,
+      height: profile.height != null ? clampNum(profile.height, PROFILE_HEIGHT_MIN, PROFILE_HEIGHT_MAX) : profile.height,
+    } : {}
+    return { user, today, diary: diary || [], goals: goals || null, profile: clampedProfile }
   }
 
   // Диагностика — выводит в консоль браузера что реально приходит из Supabase.
@@ -316,21 +388,23 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
         if (contactMax) text = text.replace(/\[CONTACT_MAX\]/g, '')
       } else {
         // ADD — может быть несколько приёмов пищи за раз, каждый в своём маркере
-        const addMatches = [...text.matchAll(/\[ADD:(\{[^}]+\})\]/g)]
-        if (addMatches.length) {
-          for (const m of addMatches) {
-            try {
-              const entry = JSON.parse(m[1])
-              const { error } = await supabase.from('food_diary').insert({
-                user_id: fresh.user.id, date: entry.date || fresh.today,
-                name: entry.name, kcal: +entry.kcal || 0,
-                p: +entry.p || 0, c: +entry.c || 0, f: +entry.f || 0,
-              })
-              if (error) { console.error('Ошибка записи в дневник:', error); writeFailed = true }
-              else added = true
-            } catch (e) { console.error('Ошибка разбора ADD:', e); writeFailed = true }
+        const addMarkers = extractMarkers(text, 'ADD')
+        if (addMarkers.length) {
+          for (const mk of addMarkers) {
+            if (!mk.data) { console.warn('AI-ассистент по питанию прислал битый маркер ADD — пропущен'); continue }
+            const entry = mk.data
+            const { error } = await supabase.from('food_diary').insert({
+              user_id: fresh.user.id, date: entry.date || fresh.today,
+              name: entry.name,
+              kcal: clampNum(entry.kcal, CAL_MIN, CAL_MAX),
+              p: clampNum(entry.p, MACRO_MIN, MACRO_MAX),
+              c: clampNum(entry.c, MACRO_MIN, MACRO_MAX),
+              f: clampNum(entry.f, MACRO_MIN, MACRO_MAX),
+            })
+            if (error) { console.error('Ошибка записи в дневник:', error); writeFailed = true }
+            else added = true
           }
-          text = text.replace(/\[ADD:[^\]]+\]/g, '')
+          text = removeMarkerRanges(text, addMarkers)
           if (added) {
             window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
             flashToast()
@@ -345,15 +419,12 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
         // прислать пачку DEL. Страховка в коде: при 2+ маркерах — обязательный
         // window.confirm, при отмене ни одна запись не удаляется. Одиночный
         // DEL (ровно 1) — как раньше, без подтверждения, это не "массовое".
-        const delMatches = [...text.matchAll(/\[DEL:(\{[^}]+\})\]/g)]
-        if (delMatches.length) {
+        const delMarkers = extractMarkers(text, 'DEL')
+        if (delMarkers.length) {
           let deleted = false
           let delCancelled = false
-          const parsedDels = []
-          for (const m of delMatches) {
-            try { parsedDels.push(JSON.parse(m[1])) }
-            catch (e) { console.error('Ошибка разбора DEL:', e); writeFailed = true }
-          }
+          if (delMarkers.some(mk => !mk.data)) console.warn('AI-ассистент по питанию прислал битый маркер DEL — пропущен')
+          const parsedDels = delMarkers.filter(mk => mk.data).map(mk => mk.data)
           const delConfirmed = parsedDels.length < 2
             || window.confirm(`Удалить ${parsedDels.length} записей из дневника? Это безвозвратно.`)
           if (delConfirmed) {
@@ -366,7 +437,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
           } else {
             delCancelled = true
           }
-          text = text.replace(/\[DEL:[^\]]+\]/g, '')
+          text = removeMarkerRanges(text, delMarkers)
           if (deleted) {
             window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
             const refreshed = await loadContext(mode)
@@ -380,15 +451,12 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
         // промпт просит модель спросить "да" словами, но это не защита от бага
         // модели или инъекции — в коде это безвозвратное массовое удаление,
         // поэтому window.confirm обязателен всегда, при любом числе маркеров.
-        const clearMatches = [...text.matchAll(/\[CLEAR:(\{[^}]+\})\]/g)]
-        if (clearMatches.length) {
+        const clearMarkers = extractMarkers(text, 'CLEAR')
+        if (clearMarkers.length) {
           let cleared = false
           let clearCancelled = false
-          const parsedClears = []
-          for (const m of clearMatches) {
-            try { parsedClears.push(JSON.parse(m[1])) }
-            catch (e) { console.error('Ошибка разбора CLEAR:', e); writeFailed = true }
-          }
+          if (clearMarkers.some(mk => !mk.data)) console.warn('AI-ассистент по питанию прислал битый маркер CLEAR — пропущен')
+          const parsedClears = clearMarkers.filter(mk => mk.data).map(mk => mk.data)
           if (parsedClears.length) {
             const dates = parsedClears.map(c => c.date || fresh.today).join(', ')
             const clearConfirmed = window.confirm(`Очистить дневник питания за ${dates}? Записи удалятся безвозвратно.`)
@@ -403,7 +471,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
               clearCancelled = true
             }
           }
-          text = text.replace(/\[CLEAR:[^\]]+\]/g, '')
+          text = removeMarkerRanges(text, clearMarkers)
           if (cleared) {
             window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
             const refreshed = await loadContext(mode)
@@ -412,20 +480,28 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
           if (clearCancelled) text += '\n\nОчистка отменена.'
         }
 
-        // GOAL
-        const goalMatch = text.match(/\[GOAL:(\{[^}]+\})\]/)
-        if (goalMatch) {
-          try {
-            const goal = JSON.parse(goalMatch[1])
+        // GOAL — только первый маркер исполняется (как и раньше, text.match
+        // без /g брал только первое вхождение), но вырезаются из текста ВСЕ
+        // найденные — если модель по ошибке пришлёт два, второй не должен
+        // остаться в тексте сырым JSON.
+        const goalMarkers = extractMarkers(text, 'GOAL')
+        if (goalMarkers.length) {
+          const goal = goalMarkers[0].data
+          if (goal) {
             const { error } = await supabase.from('food_goals').upsert({
               user_id: fresh.user.id,
-              kcal: +goal.kcal || 0, p: +goal.p || 0, c: +goal.c || 0, f: +goal.f || 0,
+              kcal: clampNum(goal.kcal, CAL_MIN, CAL_MAX),
+              p: clampNum(goal.p, MACRO_MIN, MACRO_MAX),
+              c: clampNum(goal.c, MACRO_MIN, MACRO_MAX),
+              f: clampNum(goal.f, MACRO_MIN, MACRO_MAX),
               updated_at: new Date().toISOString(),
             })
             if (error) { console.error('Ошибка обновления нормы:', error); writeFailed = true }
             window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
-          } catch (e) { console.error('Ошибка разбора GOAL:', e); writeFailed = true }
-          text = text.replace(/\[GOAL:[^\]]+\]/g, '')
+          } else {
+            console.warn('AI-ассистент по питанию прислал битый маркер GOAL — пропущен')
+          }
+          text = removeMarkerRanges(text, goalMarkers)
         }
 
         // CONTACT_MAX — AI отказался автоматически ставить дефицитную норму

@@ -54,7 +54,11 @@ export const UNRATED_STOP_AFTER = 2
 // ─────────────────────────────────────────────────────────────────────────
 export function parseTemplateSets(str) {
   if (!str) return []
-  return str.split(',').map(part => {
+  // Десятичная запятая ("2,5 кг × 12") нормализуется в точку ДО split(',') —
+  // иначе split рвёт дробный вес на два мусорных подхода ("2" и "5 кг × 12").
+  // Затрагивает только запятые МЕЖДУ ЦИФРАМИ — разделители подходов (после
+  // которых пробел, не цифра) не трогает.
+  return str.replace(/(\d),(\d)/g, '$1.$2').split(',').map(part => {
     const raw = part.trim()
     const kgMatch = raw.match(/(-?\d+(?:[.,]\d+)?)\s*кг\s*[×x]\s*(\d+)/)
     if (kgMatch) return { templateKg: Number(kgMatch[1].replace(',', '.')), bandLevel: null, reps: Number(kgMatch[2]) }
