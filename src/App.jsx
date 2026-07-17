@@ -29,6 +29,17 @@ const clearFitproData = () => {
 // одного вечера расходились по дням.
 const localTodayISO = () => { const d = new Date(); const p = n => String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}` }
 
+// Жёсткие пределы числовых полей питания/профиля — без них отрицательные
+// или гигантские значения (ккал −9999 или 1e9, вес 1e9) ломают суммы дня,
+// графики и расчёт нормы КБЖУ (calcMacroGoals, aiPrompt.js). Клампим ПРИ
+// СОХРАНЕНИИ (жёстко, в коде) — HTML min/max на инпутах ниже это только
+// подсказка браузеру, её легко обойти (вставка, автозаполнение, DevTools).
+const CAL_MIN = 0, CAL_MAX = 20000
+const MACRO_MIN = 0, MACRO_MAX = 2000
+const PROFILE_WEIGHT_MIN = 0, PROFILE_WEIGHT_MAX = 500
+const PROFILE_HEIGHT_MIN = 0, PROFILE_HEIGHT_MAX = 300
+const clampNum = (v, min, max) => Math.max(min, Math.min(max, Number(v) || 0))
+
 const CLIENTS = [
   { id:1, name:'Анна Соколова',   goal:'Похудение',    program:'Кардио + Сила',     progress:78, av:'АС', cal:1800, wk:4, wts:[75,74.2,73.5,72.8,72,71.5,71] },
   { id:2, name:'Дмитрий Козлов', goal:'Набор массы',   program:'Силовые тренировки', progress:62, av:'ДК', cal:2800, wk:3, wts:[70,70.5,71,71.8,72.5,73,73.5] },
@@ -3605,11 +3616,15 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const dayTotal=dayEntries.reduce((acc,e)=>({kcal:acc.kcal+(+e.kcal||0),p:acc.p+(+e.p||0),c:acc.c+(+e.c||0),f:acc.f+(+e.f||0)}),{kcal:0,p:0,c:0,f:0})
   const addFood=async()=>{
     if(!foodForm.name.trim())return
-    let entry={id:Date.now(),...foodForm}
+    const kcal=clampNum(foodForm.kcal,CAL_MIN,CAL_MAX)
+    const p=clampNum(foodForm.p,MACRO_MIN,MACRO_MAX)
+    const c=clampNum(foodForm.c,MACRO_MIN,MACRO_MAX)
+    const f=clampNum(foodForm.f,MACRO_MIN,MACRO_MAX)
+    let entry={id:Date.now(),...foodForm,kcal,p,c,f}
     if(userId){
       const {data,error}=await supabase.from('food_diary').insert({
         user_id:userId,date:foodDate,name:foodForm.name,
-        kcal:+foodForm.kcal||0,p:+foodForm.p||0,c:+foodForm.c||0,f:+foodForm.f||0,
+        kcal,p,c,f,
       }).select().single()
       if(error){console.error('Ошибка записи в дневник питания:',error);flashFoodSaveError();return}
       entry={...entry,id:data.id}
@@ -3638,15 +3653,18 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const startEditFood=(e)=>{setEditFoodForm({name:e.name,kcal:e.kcal||'',p:e.p||'',c:e.c||'',f:e.f||'',items:e.items||[]});setEditingFoodId(e.id)}
   const saveEditFood=async()=>{
     if(!editFoodForm.name.trim())return
+    const kcal=clampNum(editFoodForm.kcal,CAL_MIN,CAL_MAX)
+    const p=clampNum(editFoodForm.p,MACRO_MIN,MACRO_MAX)
+    const c=clampNum(editFoodForm.c,MACRO_MIN,MACRO_MAX)
+    const f=clampNum(editFoodForm.f,MACRO_MIN,MACRO_MAX)
     if(userId){
       const{error}=await supabase.from('food_diary').update({
-        name:editFoodForm.name,kcal:+editFoodForm.kcal||0,
-        p:+editFoodForm.p||0,c:+editFoodForm.c||0,f:+editFoodForm.f||0,
+        name:editFoodForm.name,kcal,p,c,f,
       }).eq('id',editingFoodId)
       if(error){console.error('Ошибка сохранения правки записи дневника питания:',error);flashFoodSaveError();return}
     }
     setFoodDiary(d=>{
-      const updated={...d,[foodDate]:(d[foodDate]||[]).map(e=>e.id===editingFoodId?{...e,...editFoodForm}:e)}
+      const updated={...d,[foodDate]:(d[foodDate]||[]).map(e=>e.id===editingFoodId?{...e,...editFoodForm,kcal,p,c,f}:e)}
       const all={...JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'),[foodDate]:updated[foodDate]}
       localStorage.setItem('fitpro_food_diary',JSON.stringify(all))
       return updated
@@ -4309,19 +4327,25 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 {[['ккал','kcal',PUR],['Белки г','p',TEA],['Углев. г','c',BLU],['Жиры г','f',COR]].map(([pl,k,c])=>(
                   <div key={k}>
                     <div style={{ fontSize:9,color:'#9ca3af',marginBottom:3,textAlign:'center' }}>{pl}</div>
-                    <input type="number" value={goalsForm[k]} onChange={e=>setGoalsForm(f=>({...f,[k]:+e.target.value||0}))}
+                    <input type="number" min={k==='kcal'?CAL_MIN:MACRO_MIN} max={k==='kcal'?CAL_MAX:MACRO_MAX} value={goalsForm[k]} onChange={e=>setGoalsForm(f=>({...f,[k]:+e.target.value||0}))}
                       style={{ width:'100%',padding:'8px 4px',fontSize:14,fontWeight:700,borderRadius:8,border:`1.5px solid ${c}55`,outline:'none',boxSizing:'border-box',color:c,background:'#fff',textAlign:'center' }}
                       onFocus={e=>e.target.style.borderColor=c} onBlur={e=>e.target.style.borderColor=`${c}55`} />
                   </div>
                 ))}
               </div>
               <button onClick={async()=>{
+                const clampedGoals={
+                  kcal:clampNum(goalsForm.kcal,CAL_MIN,CAL_MAX),
+                  p:clampNum(goalsForm.p,MACRO_MIN,MACRO_MAX),
+                  c:clampNum(goalsForm.c,MACRO_MIN,MACRO_MAX),
+                  f:clampNum(goalsForm.f,MACRO_MIN,MACRO_MAX),
+                }
                 if(userId){
-                  const{error}=await supabase.from('food_goals').upsert({user_id:userId,...goalsForm,updated_at:new Date().toISOString()})
+                  const{error}=await supabase.from('food_goals').upsert({user_id:userId,...clampedGoals,updated_at:new Date().toISOString()})
                   if(error){console.error('Ошибка сохранения нормы КБЖУ:',error);flashFoodSaveError();return}
                 }
-                setFoodGoals(goalsForm);setShowGoals(false)
-                localStorage.setItem('fitpro_food_goals',JSON.stringify(goalsForm))
+                setFoodGoals(clampedGoals);setShowGoals(false)
+                localStorage.setItem('fitpro_food_goals',JSON.stringify(clampedGoals))
               }}
                 style={{ width:'100%',padding:'10px',borderRadius:9,border:'none',background:PUR,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>
                 Сохранить
@@ -4492,7 +4516,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                         )}
                         <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,marginBottom:10 }}>
                           {[['ккал','kcal',PUR],['Б','p',TEA],['У','c',BLU],['Ж','f',COR]].map(([pl,k,c])=>(
-                            <input key={k} type="number" placeholder={pl} value={editFoodForm[k]} onChange={ev=>setEditFoodForm(f=>({...f,[k]:ev.target.value}))}
+                            <input key={k} type="number" min={k==='kcal'?CAL_MIN:MACRO_MIN} max={k==='kcal'?CAL_MAX:MACRO_MAX} placeholder={pl} value={editFoodForm[k]} onChange={ev=>setEditFoodForm(f=>({...f,[k]:ev.target.value}))}
                               style={{ width:'100%',padding:'7px 6px',fontSize:12,borderRadius:7,border:`1.5px solid ${c}44`,outline:'none',boxSizing:'border-box',color:'#111',textAlign:'center' }}
                               onFocus={ev=>ev.target.style.borderColor=c} onBlur={ev=>ev.target.style.borderColor=`${c}44`} />
                           ))}
@@ -4550,7 +4574,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                   onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
                 <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:12 }}>
                   {[['ккал','kcal',PUR],['Б (г)','p',TEA],['У (г)','c',BLU],['Ж (г)','f',COR]].map(([pl,k,c])=>(
-                    <input key={k} type="number" placeholder={pl} value={foodForm[k]} onChange={e=>setFoodForm(f=>({...f,[k]:e.target.value}))}
+                    <input key={k} type="number" min={k==='kcal'?CAL_MIN:MACRO_MIN} max={k==='kcal'?CAL_MAX:MACRO_MAX} placeholder={pl} value={foodForm[k]} onChange={e=>setFoodForm(f=>({...f,[k]:e.target.value}))}
                       style={{ width:'100%',padding:'9px 8px',fontSize:13,borderRadius:8,border:`1.5px solid ${c}44`,outline:'none',boxSizing:'border-box',color:'#111',background:'#fff',textAlign:'center' }}
                       onFocus={e=>e.target.style.borderColor=c} onBlur={e=>e.target.style.borderColor=`${c}44`} />
                   ))}
@@ -5694,12 +5718,12 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
             </div>
             {/* Рост и Вес */}
             {[
-              {key:'height', label:'Рост (см)', placeholder:'175'},
-              {key:'weight', label:'Вес (кг)',  placeholder:'75'},
+              {key:'height', label:'Рост (см)', placeholder:'175', min:PROFILE_HEIGHT_MIN, max:PROFILE_HEIGHT_MAX},
+              {key:'weight', label:'Вес (кг)',  placeholder:'75',  min:PROFILE_WEIGHT_MIN, max:PROFILE_WEIGHT_MAX},
             ].map(f=>(
               <div key={f.key}>
                 <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>{f.label}</label>
-                <input value={profile[f.key]||''} type="number" placeholder={f.placeholder}
+                <input value={profile[f.key]||''} type="number" min={f.min} max={f.max} placeholder={f.placeholder}
                   onChange={e=>setProfile(p=>({...p,[f.key]:e.target.value}))}
                   style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
                   onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
