@@ -223,10 +223,18 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
       // если срез отрезал историю ровно на "assistant", убираем один лишний.
       if (sendMsgs.length && sendMsgs[0].role !== 'user') sendMsgs = sendMsgs.slice(1)
 
+      // api/chat теперь требует Supabase-токен (см. api/chat.js) — без него
+      // сервер отдаёт 401 ещё до обращения к Anthropic. Без сессии запрос
+      // отправлять бессмысленно, поэтому проверяем и падаем в тот же catch
+      // ниже (setInput/setAttachedImage восстановятся так же, как и при
+      // "Не удалось определить пользователя" выше).
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error('Не удалось подтвердить сессию')
+
       const res = await fetch('/api/chat', {
         signal: abortController.signal,
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
         body: JSON.stringify({
           model: 'claude-sonnet-4-6',
           // Тренировочный режим может выдавать SET_PROGRAM (до 6 упражнений по 4
