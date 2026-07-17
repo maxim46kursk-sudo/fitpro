@@ -226,6 +226,9 @@ function Dashboard({ setNav, setSC, isTrainer }) {
   )
 }
 
+// Локальная дата дд.мм — тот же паддинг-подход, что и у localTodayISO() выше.
+const fmtDDMM=d=>{const dt=new Date(d);const p=n=>String(n).padStart(2,'0');return `${p(dt.getDate())}.${p(dt.getMonth()+1)}`}
+
 function ClientsView({ setSC, setNav, userId }) {
   const [q,setQ]=useState('')
   const [showAdd,setShowAdd]=useState(false)
@@ -330,14 +333,28 @@ function ClientsView({ setSC, setNav, userId }) {
   const [realClients,setRealClients]=useState([])
   const [realClientsLoading,setRealClientsLoading]=useState(true)
   const [realClientsError,setRealClientsError]=useState(false)
-  const loadRealClients=()=>{
+  // Сводка активности (сколько тренировок и когда последняя) — по id клиента.
+  // Best-effort: список клиентов уже отрисован к этому моменту, ошибка этого
+  // запроса не должна ломать основной блок — только логируется.
+  const [clientActivity,setClientActivity]=useState({})
+  const loadRealClients=async()=>{
     if(!userId)return
     setRealClientsLoading(true);setRealClientsError(false)
-    supabase.from('profiles').select('id,name').eq('coach_id',userId).then(({data,error})=>{
-      if(error){console.error('Ошибка загрузки клиентов тренера:',error);setRealClientsError(true);setRealClientsLoading(false);return}
-      setRealClients(data||[])
-      setRealClientsLoading(false)
-    })
+    const{data,error}=await supabase.from('profiles').select('id,name').eq('coach_id',userId)
+    if(error){console.error('Ошибка загрузки клиентов тренера:',error);setRealClientsError(true);setRealClientsLoading(false);return}
+    const clients=data||[]
+    setRealClients(clients)
+    setRealClientsLoading(false)
+    if(!clients.length)return
+    const{data:workoutRows,error:wError}=await supabase.from('workouts').select('user_id,date').in('user_id',clients.map(c=>c.id))
+    if(wError){console.error('Ошибка загрузки активности клиентов:',wError);return}
+    const summary={}
+    for(const w of workoutRows||[]){
+      const s=(summary[w.user_id]??={count:0,lastDate:null})
+      s.count++
+      if(!s.lastDate||w.date>s.lastDate)s.lastDate=w.date
+    }
+    setClientActivity(summary)
   }
   useEffect(()=>{loadRealClients()},[userId])
 
@@ -420,11 +437,17 @@ function ClientsView({ setSC, setNav, userId }) {
             {realClients.map(c=>{
               const label=c.name?.trim()||'Без имени'
               const initials=label.split(' ').map(w=>w[0]?.toUpperCase()||'').join('').slice(0,2)||'КЛ'
+              const activity=clientActivity[c.id]
               return (
                 <Card key={c.id} style={{ cursor:'pointer' }} onClick={()=>openRealClient(c)}>
                   <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                     <Av lbl={initials} sz={36} />
-                    <div style={{ fontSize:14, fontWeight:500, color:'#111' }}>{label}</div>
+                    <div>
+                      <div style={{ fontSize:14, fontWeight:500, color:'#111' }}>{label}</div>
+                      <div style={{ fontSize:11, color:'#9ca3af', marginTop:2 }}>
+                        {activity?`Последняя: ${fmtDDMM(activity.lastDate)} · всего ${activity.count}`:'Пока нет тренировок'}
+                      </div>
+                    </div>
                   </div>
                 </Card>
               )
