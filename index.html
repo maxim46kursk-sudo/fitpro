@@ -5,6 +5,10 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>fitpro</title>
+    <!-- Официальный SDK Telegram Web App — синхронно, до React (script type="module"
+         ниже выполняется отложенно), чтобы window.Telegram.WebApp был готов
+         к моменту старта приложения. Вне Telegram просто ничего не даёт. -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
   <body>
     <div id="root"></div>

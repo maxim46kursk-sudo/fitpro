@@ -6315,6 +6315,8 @@ export default function App() {
   const [diaryJumpToken,setDiaryJumpToken]=useState(0)
   const [sc,setSC]=useState(null)
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768)
+  // Telegram Mini App — понадобится дальше (авторизацию/движок пока не трогаем).
+  const [isTelegram,setIsTelegram]=useState(false)
   const [pendingWorkoutAction,setPendingWorkoutAction]=useState(null)
   const [showProfileView,setShowProfileView]=useState(false)
   const [showProfileSheet,setShowProfileSheet]=useState(false)
@@ -6410,6 +6412,31 @@ export default function App() {
     window.addEventListener('resize',fn)
     return()=>window.removeEventListener('resize',fn)
   },[])
+
+  // Telegram Mini App — определяем, что приложение открыто внутри Telegram
+  // (SDK из index.html может подгрузиться и в обычном браузере, но initData
+  // там всегда пустой — это единственный надёжный признак реального запуска
+  // внутри клиента Telegram, а не просто наличия скрипта на странице).
+  // Авторизацию и остальную логику НЕ трогаем — email-вход как был.
+  useEffect(()=>{
+    const tg=window.Telegram?.WebApp
+    const detected=!!(tg&&tg.initData)
+    setIsTelegram(detected)
+    if(!detected)return
+    try{
+      tg.ready()
+      tg.expand()
+      // Фон из темы Telegram — чтобы не было белой рамки по краям на тёмной
+      // теме клиента. Только цвет фона, саму вёрстку пока не переверстываем.
+      if(tg.themeParams?.bg_color)document.body.style.background=tg.themeParams.bg_color
+    }catch(e){console.error('Telegram WebApp SDK:',e)}
+  },[])
+  // Класс на <body> — задел для будущей телеграм-темизации (сейчас ничего
+  // в CSS на него не завязано, вёрстку не трогаем), заодно делает isTelegram
+  // реально используемым состоянием, а не только записываемым.
+  useEffect(()=>{
+    document.body.classList.toggle('telegram-app',isTelegram)
+  },[isTelegram])
 
   // Счётчик версии истории тренировок — растёт на 1 при КАЖДОМ подтверждённом
   // изменении workouts/workout_sets (завершение, правка, удаление, копия),
