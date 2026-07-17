@@ -6317,6 +6317,11 @@ export default function App() {
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768)
   // Telegram Mini App — понадобится дальше (авторизацию/движок пока не трогаем).
   const [isTelegram,setIsTelegram]=useState(false)
+  // Авто-вход внутри Telegram (см. эффект ниже) — пока идёт попытка, вместо
+  // LandingPage показываем "Входим…"; при неудаче тихо откатываемся на
+  // обычный email-вход, а не тупик.
+  const [telegramAuthPending,setTelegramAuthPending]=useState(false)
+  const telegramAuthTriedRef=useRef(false)
   const [pendingWorkoutAction,setPendingWorkoutAction]=useState(null)
   const [showProfileView,setShowProfileView]=useState(false)
   const [showProfileSheet,setShowProfileSheet]=useState(false)
@@ -6437,6 +6442,42 @@ export default function App() {
   useEffect(()=>{
     document.body.classList.toggle('telegram-app',isTelegram)
   },[isTelegram])
+
+  // Авто-вход внутри Telegram: как только известно, что мы (а) внутри
+  // Telegram, (б) уже определили, есть ли сохранённая Supabase-сессия
+  // (authLoading===false), и (в) пользователь всё ещё не залогинен — шлём
+  // initData на сервер, меняем его на одноразовый код и логинимся им.
+  // Успех дальше подхватывает уже существующий onAuthStateChange/applySession
+  // — этот эффект сам user не устанавливает. Ровно одна попытка за сессию
+  // приложения (telegramAuthTriedRef) — не повторяем при каждом ререндере
+  // и не долбим сервер, если попытка уже провалилась. Обычный email-вход
+  // (isTelegram=false) этот эффект вообще не трогает.
+  useEffect(()=>{
+    if(authLoading||user||!isTelegram||telegramAuthTriedRef.current)return
+    const initData=window.Telegram?.WebApp?.initData
+    if(!initData)return
+    telegramAuthTriedRef.current=true
+    setTelegramAuthPending(true)
+    ;(async()=>{
+      try{
+        const res=await fetch('/api/telegram-auth',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({initData}),
+        })
+        if(!res.ok)throw new Error(`telegram-auth: ${res.status}`)
+        const{email,otp}=await res.json()
+        const{error}=await supabase.auth.verifyOtp({email,token:otp,type:'email'})
+        if(error)throw error
+      }catch(e){
+        // Не тупик — просто остаёмся без сессии, ниже покажется обычный
+        // LandingPage с email-входом.
+        console.error('Telegram авто-вход не удался:',e)
+      }finally{
+        setTelegramAuthPending(false)
+      }
+    })()
+  },[authLoading,user,isTelegram])
 
   // Счётчик версии истории тренировок — растёт на 1 при КАЖДОМ подтверждённом
   // изменении workouts/workout_sets (завершение, правка, удаление, копия),
@@ -6740,6 +6781,7 @@ export default function App() {
 
   if(recoveryMode) return <ResetPasswordView onDone={()=>setRecoveryMode(false)} />
   if(authLoading) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#08080f',color:'#9ca3af',fontSize:14}}>Загрузка...</div>
+  if(!user&&telegramAuthPending) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#08080f',color:'#9ca3af',fontSize:14}}>Входим…</div>
   if(!user) return <LandingPage onEnter={setUser} />
 
   // Всё, КРОМЕ Тренировок — обычная свитч-навигация, монтируется/
