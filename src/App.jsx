@@ -927,6 +927,23 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   },[folderSlots,slotsReady])
   const [menuOpen,setMenuOpen]=useState(false)
   const [step,setStep]=useState(null)
+  // Персональная программа от тренера (assigned_programs, Фаза B, шаг 2) —
+  // только показ. Запуск тренировки из неё через движок прогрессии — отдельный
+  // следующий шаг, здесь его нет. Нет строки для этого клиента — обычный
+  // пользователь без тренера, баннер просто не показываем (ничего не ломаем).
+  const [assignedProgram,setAssignedProgram]=useState(null)
+  const [assignedProgramLoading,setAssignedProgramLoading]=useState(true)
+  const [assignedProgramError,setAssignedProgramError]=useState(false)
+  const loadAssignedProgram=()=>{
+    if(!userId){setAssignedProgramLoading(false);return}
+    setAssignedProgramLoading(true);setAssignedProgramError(false)
+    supabase.from('assigned_programs').select('*').eq('client_id',userId).maybeSingle().then(({data,error})=>{
+      if(error){console.error('Ошибка загрузки программы от тренера:',error);setAssignedProgramError(true);setAssignedProgramLoading(false);return}
+      setAssignedProgram(data||null)
+      setAssignedProgramLoading(false)
+    })
+  }
+  useEffect(()=>{loadAssignedProgram()},[userId])
   const [wName,setWName]=useState('Новая тренировка')
   const [wColor,setWColor]=useState('#D85A30')
   const [wExercises,setWExercises]=useState([])
@@ -2781,6 +2798,41 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           </div>
         </div>
       , document.body)}
+
+      {/* Персональная программа от тренера (assigned_programs) — только
+          показ, см. loadAssignedProgram выше. Загрузка/ошибка — компактной
+          строкой, не мешают основному списку папок ниже; пусто (нет строки
+          для этого клиента) — баннер просто не рендерится вообще. */}
+      {assignedProgramLoading?(
+        <div style={{ fontSize:12, color:'#9ca3af', marginBottom:14, padding:'4px 2px' }}>Загрузка программы от тренера...</div>
+      ):assignedProgramError?(
+        <div style={{ fontSize:12, color:'#ef4444', marginBottom:14, padding:'4px 2px', display:'flex', alignItems:'center', gap:8 }}>
+          Не удалось загрузить программу от тренера
+          <button onClick={loadAssignedProgram} style={{ fontSize:11, color:PUR, background:'none', border:'1px solid #e5e7eb', borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>Повторить</button>
+        </div>
+      ):assignedProgram&&(
+        <Card style={{ marginBottom:14, border:`1.5px solid ${PUR}33`, background:'#EEEDFE' }}>
+          <div style={{ fontSize:12, fontWeight:700, color:PUR, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:8 }}>
+            📋 Программа от тренера
+          </div>
+          <div style={{ fontSize:15, fontWeight:700, color:'#111', marginBottom:10 }}>{assignedProgram.title||'Программа'}</div>
+          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+            {(Array.isArray(assignedProgram.structure)?assignedProgram.structure:[]).map((w,wi)=>(
+              <div key={wi} style={{ background:'#fff', borderRadius:10, padding:'10px 12px' }}>
+                <div style={{ fontSize:13, fontWeight:600, color:'#111', marginBottom:6 }}>{w.name||`Тренировка ${wi+1}`}</div>
+                <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+                  {(w.exercises||[]).map((ex,ei)=>(
+                    <div key={ei} style={{ fontSize:12, color:'#374151' }}>
+                      <span style={{ fontWeight:500 }}>{ex.name}</span>
+                      {ex.sets&&<span style={{ color:'#6b7280' }}>{': '}{ex.sets}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* ── Уровень 0: список папок ── */}
       {FOLDERS.map(folder=>{
