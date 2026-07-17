@@ -324,6 +324,28 @@ function ClientsView({ setSC, setNav, userId }) {
   const allClients=[...CLIENTS,...localClients]
   const fl=allClients.filter(c=>c.name.toLowerCase().includes(q.toLowerCase()))
 
+  // Реальные клиенты тренера — из profiles (coach_id=мой uid), а не демо-
+  // список ниже. RLS в базе уже разрешает тренеру читать чужие профили с
+  // его coach_id — здесь просто читаем, ничего не пишем.
+  const [realClients,setRealClients]=useState([])
+  const [realClientsLoading,setRealClientsLoading]=useState(true)
+  const [realClientsError,setRealClientsError]=useState(false)
+  const loadRealClients=()=>{
+    if(!userId)return
+    setRealClientsLoading(true);setRealClientsError(false)
+    supabase.from('profiles').select('id,name').eq('coach_id',userId).then(({data,error})=>{
+      if(error){console.error('Ошибка загрузки клиентов тренера:',error);setRealClientsError(true);setRealClientsLoading(false);return}
+      setRealClients(data||[])
+      setRealClientsLoading(false)
+    })
+  }
+  useEffect(()=>{loadRealClients()},[userId])
+
+  const openRealClient=(c)=>{
+    setSC({id:c.id,name:c.name||'Без имени',isReal:true})
+    setNav('cdetail')
+  }
+
   return (
     <div>
       {showClientSaveError&&(
@@ -382,6 +404,35 @@ function ClientsView({ setSC, setNav, userId }) {
         </div>
       )}
 
+      <div style={{ marginBottom:22 }}>
+        <h3 style={{ fontSize:15, fontWeight:600, color:'#111', margin:'0 0 10px' }}>Мои клиенты</h3>
+        {realClientsLoading?(
+          <div style={{ fontSize:13, color:'#9ca3af', padding:'8px 0' }}>Загрузка...</div>
+        ):realClientsError?(
+          <div style={{ fontSize:13, color:'#ef4444', padding:'8px 0', display:'flex', alignItems:'center', gap:10 }}>
+            Не удалось загрузить клиентов
+            <button onClick={loadRealClients} style={{ fontSize:12, color:PUR, background:'none', border:'1px solid #e5e7eb', borderRadius:8, padding:'5px 12px', cursor:'pointer' }}>Повторить</button>
+          </div>
+        ):realClients.length===0?(
+          <div style={{ fontSize:13, color:'#9ca3af', padding:'8px 0' }}>Пока нет клиентов</div>
+        ):(
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))', gap:8 }}>
+            {realClients.map(c=>{
+              const label=c.name?.trim()||'Без имени'
+              const initials=label.split(' ').map(w=>w[0]?.toUpperCase()||'').join('').slice(0,2)||'КЛ'
+              return (
+                <Card key={c.id} style={{ cursor:'pointer' }} onClick={()=>openRealClient(c)}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <Av lbl={initials} sz={36} />
+                    <div style={{ fontSize:14, fontWeight:500, color:'#111' }}>{label}</div>
+                  </div>
+                </Card>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
       <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Поиск..." style={{ width:'100%', marginBottom:14, padding:'8px 12px', fontSize:13, borderRadius:8, border:'1px solid #e5e7eb', boxSizing:'border-box' }} />
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(240px,1fr))', gap:10 }}>
         {fl.map(c=>(
@@ -415,6 +466,10 @@ function ClientsView({ setSC, setNav, userId }) {
 // docs/CONSTRUCTOR_FROZEN.md. Таблицы constructor_exercises/constructor_sets
 // в Supabase не удалялись.
 function ClientDetail({ client, goBack }) {
+  // Реальный клиент тренера (см. ClientsView) — отдельная модель данных
+  // (только id/name из profiles + настоящая история тренировок), у демо-
+  // клиентов ниже (client.wts и т.п.) взяться неоткуда.
+  if(client.isReal)return <RealClientDetail client={client} goBack={goBack} />
   const lost=+(client.wts[0]-client.wts[client.wts.length-1]).toFixed(1)
   const maxW=Math.max(...client.wts), minW=Math.min(...client.wts), range=maxW-minW||1
   const W=400,H=120,PAD=20
@@ -450,6 +505,74 @@ function ClientDetail({ client, goBack }) {
           })}
         </svg>
       </Card>
+    </div>
+  )
+}
+
+// Детальный экран РЕАЛЬНОГО клиента тренера (см. ClientsView) — только
+// чтение, история тренировок из Supabase через уже существующую
+// loadWorkoutHistoryFromSupabase (RLS разрешает тренеру читать данные
+// клиента с его coach_id). Никаких мутаций отсюда не уходит.
+function RealClientDetail({ client, goBack }) {
+  const [history,setHistory]=useState([])
+  const [loading,setLoading]=useState(true)
+  const [error,setError]=useState(false)
+  const load=()=>{
+    setLoading(true);setError(false)
+    loadWorkoutHistoryFromSupabase(client.id).then(({history,error})=>{
+      setHistory(history)
+      setError(error)
+      setLoading(false)
+    })
+  }
+  useEffect(()=>{load()},[client.id])
+
+  const initials=(client.name||'Без имени').trim().split(' ').map(w=>w[0]?.toUpperCase()||'').join('').slice(0,2)||'КЛ'
+
+  return (
+    <div>
+      <button onClick={goBack} style={{ fontSize:12, color:'#6b7280', border:'none', background:'none', cursor:'pointer', marginBottom:14, padding:0 }}>← Назад</button>
+      <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:18 }}>
+        <Av lbl={initials} sz={50} />
+        <div>
+          <h2 style={{ fontSize:20, fontWeight:500, color:'#111', margin:0 }}>{client.name||'Без имени'}</h2>
+          <div style={{ fontSize:13, color:'#6b7280', marginTop:2 }}>История тренировок</div>
+        </div>
+      </div>
+      {loading?(
+        <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Загрузка...</div>
+      ):error?(
+        <div style={{ fontSize:13, color:'#ef4444', padding:'30px 0', textAlign:'center', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
+          Не удалось загрузить историю
+          <button onClick={load} style={{ fontSize:12, color:PUR, background:'none', border:'1px solid #e5e7eb', borderRadius:8, padding:'6px 14px', cursor:'pointer' }}>Повторить</button>
+        </div>
+      ):history.length===0?(
+        <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Тренировок пока нет</div>
+      ):(
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          {history.slice().reverse().map((w,i)=>(
+            <Card key={w.workoutId??i}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, gap:10 }}>
+                <span style={{ fontSize:14, fontWeight:600, color:'#111' }}>{w.name}</span>
+                <span style={{ fontSize:12, color:'#9ca3af', flexShrink:0 }}>{new Date(w.date).toLocaleDateString('ru',{day:'numeric',month:'short',year:'numeric'})}</span>
+              </div>
+              {w.comment&&<div style={{ fontSize:12, color:'#6b7280', marginBottom:8 }}>💬 {w.comment}</div>}
+              <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                {w.exercises.map((ex,ei)=>(
+                  <div key={ei} style={{ fontSize:13, color:'#374151' }}>
+                    <span style={{ fontWeight:500 }}>{ex.n}</span>
+                    {': '}
+                    {ex.sets.map((s,si)=>{
+                      const weightLabel=s.bandLevel!=null?`${s.bandLevel} рез.`:s.kg?`${s.kg} кг`:'б/в'
+                      return <span key={si} style={{ color:'#6b7280' }}>{si>0?', ':''}{weightLabel}×{s.reps||'—'}</span>
+                    })}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
