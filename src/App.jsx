@@ -46,14 +46,6 @@ const CLIENTS = [
   { id:3, name:'Сергей Петров',   goal:'Выносливость', program:'Бег + Кардио',       progress:45, av:'СП', cal:2400, wk:2, wts:[80,80,79.5,79,79,78.5,78] },
 ]
 
-
-const CHAT_INIT = [
-  { id:1, from:'client', text:'Привет! Можно изменить программу? Болит колено 😔', t:'10:15' },
-  { id:2, from:'trainer', text:'Конечно! Заменим приседания на жим ногами лёжа.', t:'10:18' },
-  { id:3, from:'client', text:'Спасибо! А питание без углеводов вечером можно?', t:'10:22' },
-  { id:4, from:'trainer', text:'Да, всё ок. Белок и овощи — отличный выбор для цели 💪', t:'10:25' },
-]
-
 const BADGE = {
   'Сила':        { bg:'#EEEDFE', tx:'#3C3489' },
   'Кардио':      { bg:'#E1F5EE', tx:'#085041' },
@@ -182,15 +174,11 @@ function Dashboard({ setNav, setSC, isTrainer }) {
   const workoutHistory = (() => { try { return JSON.parse(localStorage.getItem('fitpro_history')||'[]') } catch { return [] } })()
   const foodDiary = (() => { try { return JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}') } catch { return {} } })()
   const foodDays = Object.keys(foodDiary).length
-  const chatMsgCount = CLIENTS.reduce((sum,c)=>{
-    try { return sum+(JSON.parse(localStorage.getItem(`fitpro_chat_${c.id}`)||'null')||[]).length } catch { return sum }
-  },0)
   const quickActions = [
     {icon:'👥',label:'Клиенты',nav:'clients'},
     {icon:'🏋️',label:'Тренировки',nav:'workouts'},
     {icon:'🥗',label:'Питание',nav:'nutrition'},
     {icon:'📚',label:'Упражнения',nav:'library'},
-    {icon:'💬',label:'Чат',nav:'chat'},
     {icon:'📓',label:'Дневник',nav:'progress'},
   ]
 
@@ -200,11 +188,10 @@ function Dashboard({ setNav, setSC, isTrainer }) {
         <h2 style={{ fontSize:20, fontWeight:500, color:'#111', margin:0 }}>Добро пожаловать 👋</h2>
         <p style={{ fontSize:13, color:'#6b7280', marginTop:4 }}>Твоя платформа для тренеров</p>
       </div>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:18 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginBottom:18 }}>
         <Metric label="Клиентов" value={CLIENTS.length} icon="👥" color={PUR} />
         <Metric label="Тренировок" value={workoutHistory.length} icon="🏋️" color={TEA} />
         <Metric label="Дней питания" value={foodDays} icon="🥗" color={BLU} />
-        <Metric label="Сообщений" value={chatMsgCount||'—'} icon="💬" color={COR} />
       </div>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
         {isTrainer&&(
@@ -3292,87 +3279,6 @@ function LibraryView({ customExercises }) {
   )
 }
 
-function ChatView() {
-  const loadMsgs = (clientId) => {
-    try {
-      const stored = JSON.parse(localStorage.getItem(`fitpro_chat_${clientId}`)||'null')
-      return stored || (clientId===CLIENTS[0].id ? CHAT_INIT : [])
-    } catch { return [] }
-  }
-  const [active,setActive]=useState(CLIENTS[0])
-  const [msgs,setMsgs]=useState(()=>loadMsgs(CLIENTS[0].id))
-  const [inp,setInp]=useState('')
-  const msgsEndRef=useRef(null)
-
-  const switchClient=(c)=>{
-    setActive(c)
-    setMsgs(loadMsgs(c.id))
-    setInp('')
-  }
-
-  useEffect(()=>{
-    msgsEndRef.current?.scrollIntoView({behavior:'smooth'})
-  },[msgs])
-
-  const send=()=>{
-    if(!inp.trim())return
-    const now=new Date()
-    const newMsg={id:Date.now(),from:'trainer',text:inp,t:`${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`}
-    const newMsgs=[...msgs,newMsg]
-    setMsgs(newMsgs)
-    localStorage.setItem(`fitpro_chat_${active.id}`,JSON.stringify(newMsgs))
-    setInp('')
-  }
-
-  return (
-    <div>
-      <h2 style={{ fontSize:20, fontWeight:500, color:'#111', margin:'0 0 14px' }}>Чат с клиентами</h2>
-      <div style={{ display:'flex', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden', height:460 }}>
-        <div style={{ width:170, borderRight:'1px solid #e5e7eb', overflowY:'auto' }}>
-          {CLIENTS.map(c=>{
-            const cMsgs=loadMsgs(c.id)
-            const last=cMsgs[cMsgs.length-1]
-            return(
-              <div key={c.id} onClick={()=>switchClient(c)} style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', cursor:'pointer', background:active.id===c.id?'#f9fafb':'transparent', borderBottom:'1px solid #f3f4f6' }}>
-                <Av lbl={c.av} sz={28} />
-                <div style={{ minWidth:0 }}>
-                  <div style={{ fontSize:12, fontWeight:500, color:'#111' }}>{c.name.split(' ')[0]}</div>
-                  <div style={{ fontSize:10, color:'#9ca3af', overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>{last?last.text.slice(0,18)+(last.text.length>18?'…':''):c.goal}</div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-        <div style={{ flex:1, display:'flex', flexDirection:'column' }}>
-          <div style={{ padding:'9px 13px', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', gap:8 }}>
-            <Av lbl={active.av} sz={26} />
-            <div>
-              <span style={{ fontSize:13, fontWeight:500, color:'#111' }}>{active.name}</span>
-              <div style={{ fontSize:10, color:'#9ca3af' }}>{active.goal}</div>
-            </div>
-          </div>
-          <div style={{ flex:1, overflowY:'auto', padding:'11px 13px', display:'flex', flexDirection:'column', gap:7 }}>
-            {msgs.length===0&&<div style={{ textAlign:'center',color:'#c7cad1',fontSize:12,marginTop:40 }}>Начните переписку</div>}
-            {msgs.map(m=>(
-              <div key={m.id} style={{ display:'flex', justifyContent:m.from==='trainer'?'flex-end':'flex-start' }}>
-                <div style={{ maxWidth:'72%', padding:'8px 11px', borderRadius:11, background:m.from==='trainer'?PUR:'#f3f4f6', color:m.from==='trainer'?'#fff':'#111', fontSize:13 }}>
-                  {m.text}
-                  <div style={{ fontSize:10, marginTop:3, opacity:.6, textAlign:'right' }}>{m.t}</div>
-                </div>
-              </div>
-            ))}
-            <div ref={msgsEndRef} />
-          </div>
-          <div style={{ padding:'9px 13px', borderTop:'1px solid #e5e7eb', display:'flex', gap:7 }}>
-            <input value={inp} onChange={e=>setInp(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} placeholder="Написать сообщение..." style={{ flex:1, padding:'7px 11px', fontSize:13, borderRadius:8, border:'1px solid #e5e7eb' }} />
-            <button onClick={send} style={{ padding:'7px 14px', background:PUR, color:'#fff', border:'none', borderRadius:8, cursor:'pointer' }}>➤</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ── Скроллер дат (тёмный, как на скрине)
 function DateScroller({ value, onChange }) {
   const ref = useRef(null)
@@ -4798,7 +4704,6 @@ const NAV=[
   {id:'workouts',icon:'🏋️',label:'Тренировки'},
   {id:'nutrition',icon:'🥗',label:'Питание'},
   {id:'library',icon:'📚',label:'Упражнения'},
-  {id:'chat',icon:'💬',label:'Чат'},
   {id:'progress',icon:'📓',label:'Дневник'},
 ]
 const NAV_MOBILE=[
@@ -4806,7 +4711,6 @@ const NAV_MOBILE=[
   {id:'nutrition',icon:'🥗',label:'Питание'},
   {id:'library',icon:'📚',label:'Упражнения'},
   {id:'progress',icon:'📓',label:'Дневник'},
-  {id:'chat',icon:'💬',label:'Чат'},
   {id:'clients',icon:'👥',label:'Клиенты'},
 ]
 
@@ -6801,7 +6705,6 @@ export default function App() {
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} userId={user?.id} />
       case 'nutrition': return <NutritionView userId={user?.id} />
       case 'library':   return <LibraryView customExercises={customExercises} />
-      case 'chat':      return <ChatView />
       case 'progress':  return <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} />
       default:          return null
     }
