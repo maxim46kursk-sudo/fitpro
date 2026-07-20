@@ -579,6 +579,7 @@ function RealClientDetail({ client, goBack, trainerId }) {
             workoutHistory={history}
             userId={client.id}
             readOnly
+            readOnlyName={client.name||''}
             historyLoading={loading}
             historyLoadError={error}
             onRetryHistory={load}
@@ -3718,7 +3719,7 @@ function DateScroller({ value, onChange }) {
 }
 
 // ── Дневник
-function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, onOpenAI, userId, initialSection, diaryJumpToken, onSectionChange, historyLoading, historyLoadError, onRetryHistory, readOnly=false }) {
+function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, onOpenAI, userId, initialSection, diaryJumpToken, onSectionChange, historyLoading, historyLoadError, onRetryHistory, readOnly=false, readOnlyName='' }) {
   const [section, setSection] = useState(()=>initialSection??null)
   // Сообщаем родителю текущий подраздел — чтобы App мог его запомнить и вернуть
   // при повторном монтировании DiaryView после вынужденного перехода на другую
@@ -3822,6 +3823,13 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   // а kg у него пустой, поэтому без этой ветки резинка выводилась как "— кг"
   // (а в разделе "Прогресс по упражнениям" — как "0 кг"). "б/в" — вес тела.
   const setWeightLabel=s=>s.bandLevel!=null?`${s.bandLevel} рез.`:s.kg?`${s.kg} кг`:'б/в'
+  // Заголовок полноэкранной секции. Секции открываются порталом в document.body,
+  // поверх всего интерфейса — тренер, провалившись в "Питание", иначе не видит,
+  // чей дневник смотрит. В readOnly подставляем имя клиента; own/shared нужны
+  // там, где притяжательный заголовок клиента ("Мои тренировки") у тренера
+  // должен звучать нейтрально ("Иван Иванов · Тренировки"). При readOnly=false
+  // (и на всякий случай при пустом имени) возвращаем ровно прежний заголовок.
+  const sectionTitle=(own,shared=own)=>readOnly&&readOnlyName?`${readOnlyName} · ${shared}`:own
 
   // ── питание дневник
   // Инициализация из localStorage-кэша — мгновенный показ до ответа сети
@@ -4053,7 +4061,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     const dateStride=manyBars?Math.ceil(chartTons.length/6):1
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
-        <BackBtn label="Общий тоннаж" onBack={()=>setSection(null)} right={
+        <BackBtn label={sectionTitle('Общий тоннаж')} onBack={()=>setSection(null)} right={
           <div style={{ position:'relative' }}>
             <button onClick={()=>setShowTonPeriodMenu(v=>!v)}
               style={{ width:34,height:34,borderRadius:9,border:'1px solid #e5e7eb',background:period!=='7'||customFrom||customTo?`${PUR}11`:'#f9fafb',cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:period!=='7'||customFrom||customTo?PUR:'#6b7280',minHeight:'unset' }}>📅</button>
@@ -4214,7 +4222,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     const PERIOD_OPTIONS=[{k:'all',l:'Всё время'},{k:'30d',l:'30 дней'},{k:'custom',l:'Свой период'}]
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
-        <BackBtn label="Прогресс по упражнениям" onBack={()=>setSection(null)} right={
+        <BackBtn label={sectionTitle('Прогресс по упражнениям')} onBack={()=>setSection(null)} right={
           <div style={{ position:'relative' }}>
             <button onClick={()=>setShowExPeriodMenu(v=>!v)}
               style={{ width:34,height:34,borderRadius:9,border:'1px solid #e5e7eb',background:exPeriod!=='all'?`${PUR}11`:'#f9fafb',cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:exPeriod!=='all'?PUR:'#6b7280',minHeight:'unset' }}>📅</button>
@@ -4466,7 +4474,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0,position:'sticky',top:0,zIndex:10 }}>
           <div style={{ display:'flex',alignItems:'center',gap:14 }}>
             <button onClick={()=>{setSection(null);setShowWorkoutMenu(false);setOpenCardMenu(null)}} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
-            <span style={{ fontSize:17,fontWeight:700,color:'#111' }}>Мои тренировки</span>
+            <span style={{ fontSize:17,fontWeight:700,color:'#111' }}>{sectionTitle('Мои тренировки','Тренировки')}</span>
           </div>
           {!readOnly&&<div style={{ position:'relative' }}>
             <button onClick={()=>{setShowWorkoutMenu(v=>!v);setOpenCardMenu(null)}}
@@ -4662,7 +4670,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         {/* Шапка */}
         <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 16px',display:'flex',alignItems:'center',gap:10,flexShrink:0 }}>
           <button onClick={()=>setSection(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
-          <span style={{ fontSize:17,fontWeight:700,color:'#111',flex:1 }}>Питание</span>
+          <span style={{ fontSize:17,fontWeight:700,color:'#111',flex:1 }}>{sectionTitle('Питание')}</span>
           {!readOnly&&<button onClick={()=>{setGoalsForm(foodGoals);setShowGoals(g=>!g)}}
             style={{ background:showGoals?PUR:'#f3f4f6',border:'none',borderRadius:9,padding:'7px 13px',fontSize:12,fontWeight:600,color:showGoals?'#fff':'#6b7280',cursor:'pointer',minHeight:'unset' }}>
             ⚙️ Норма
@@ -4976,7 +4984,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
       <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
         <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 16px',display:'flex',alignItems:'center',gap:10,flexShrink:0 }}>
           <button onClick={()=>setSection(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
-          <span style={{ fontSize:17,fontWeight:700,color:'#111',flex:1 }}>🧮 Калькулятор 1ПМ</span>
+          <span style={{ fontSize:17,fontWeight:700,color:'#111',flex:1 }}>{sectionTitle('🧮 Калькулятор 1ПМ')}</span>
         </div>
         <div style={{ flex:1,overflowY:'auto',padding:'14px 16px 32px' }}>
 
