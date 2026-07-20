@@ -340,7 +340,7 @@ function ClientsView({ setSC, setNav, userId }) {
   const loadRealClients=async()=>{
     if(!userId)return
     setRealClientsLoading(true);setRealClientsError(false)
-    const{data,error}=await supabase.from('profiles').select('id,name').eq('coach_id',userId)
+    const{data,error}=await supabase.from('profiles').select('id,name,tg_username').eq('coach_id',userId)
     if(error){console.error('Ошибка загрузки клиентов тренера:',error);setRealClientsError(true);setRealClientsLoading(false);return}
     const clients=data||[]
     setRealClients(clients)
@@ -359,7 +359,9 @@ function ClientsView({ setSC, setNav, userId }) {
   useEffect(()=>{loadRealClients()},[userId])
 
   const openRealClient=(c)=>{
-    setSC({id:c.id,name:c.name||'Без имени',isReal:true})
+    // Объект собирается вручную (не спредом), поэтому каждое новое поле надо
+    // проводить явно — иначе оно молча не доедет до RealClientDetail.
+    setSC({id:c.id,name:c.name||'Без имени',tg_username:c.tg_username||null,isReal:true})
     setNav('cdetail')
   }
 
@@ -560,6 +562,20 @@ function RealClientDetail({ client, goBack, trainerId }) {
         <Av lbl={initials} sz={50} />
         <div>
           <h2 style={{ fontSize:20, fontWeight:500, color:'#111', margin:0 }}>{client.name||'Без имени'}</h2>
+          {/* @-ник клиента (profiles.tg_username, пишется при входе через
+              Telegram — см. api/telegram-auth.js). У кого ник не задан, поля
+              нет вовсе — тогда не показываем ничего. Открытие чата — тем же
+              способом, что и кнопка "видео тренеру": внутри Mini App обычный
+              window.open не всегда открывает внешнюю ссылку. */}
+          {client.tg_username&&(
+            <div onClick={()=>{
+              const url='https://t.me/'+client.tg_username
+              if(window.Telegram?.WebApp)window.Telegram.WebApp.openTelegramLink(url)
+              else window.open(url,'_blank')
+            }} style={{ fontSize:13, color:TEA, marginTop:3, cursor:'pointer', width:'fit-content' }}>
+              @{client.tg_username}
+            </div>
+          )}
         </div>
       </div>
       <div style={{ display:'flex', gap:0, marginBottom:18, background:'#f3f4f6', borderRadius:10, padding:3, width:'fit-content', flexWrap:'wrap' }}>
