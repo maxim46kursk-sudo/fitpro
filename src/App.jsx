@@ -537,7 +537,7 @@ function ClientDetail({ client, goBack, trainerId }) {
 // loadWorkoutHistoryFromSupabase (RLS разрешает тренеру читать данные
 // клиента с его coach_id). Никаких мутаций отсюда не уходит.
 function RealClientDetail({ client, goBack, trainerId }) {
-  const [tab,setTab]=useState('history')
+  const [tab,setTab]=useState('diary')
   const [history,setHistory]=useState([])
   const [loading,setLoading]=useState(true)
   const [error,setError]=useState(false)
@@ -563,49 +563,13 @@ function RealClientDetail({ client, goBack, trainerId }) {
         </div>
       </div>
       <div style={{ display:'flex', gap:0, marginBottom:18, background:'#f3f4f6', borderRadius:10, padding:3, width:'fit-content', flexWrap:'wrap' }}>
-        {[['history','История'],['diary','Дневник'],['program','Программа']].map(([id,label])=>(
+        {[['diary','Дневник'],['program','Программа']].map(([id,label])=>(
           <button key={id} onClick={()=>setTab(id)}
             style={{ padding:'8px 16px', borderRadius:8, border:'none', background:tab===id?'#fff':'transparent', color:tab===id?'#111':'#6b7280', fontSize:13, fontWeight:600, cursor:'pointer', boxShadow:tab===id?'0 1px 3px rgba(0,0,0,0.1)':'none' }}>
             {label}
           </button>
         ))}
       </div>
-      {tab==='history'&&(
-        loading?(
-          <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Загрузка...</div>
-        ):error?(
-          <div style={{ fontSize:13, color:'#ef4444', padding:'30px 0', textAlign:'center', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
-            Не удалось загрузить историю
-            <button onClick={load} style={{ fontSize:12, color:PUR, background:'none', border:'1px solid #e5e7eb', borderRadius:8, padding:'6px 14px', cursor:'pointer' }}>Повторить</button>
-          </div>
-        ):history.length===0?(
-          <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Тренировок пока нет</div>
-        ):(
-          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-            {history.slice().reverse().map((w,i)=>(
-              <Card key={w.workoutId??i}>
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, gap:10 }}>
-                  <span style={{ fontSize:14, fontWeight:600, color:'#111' }}>{w.name}</span>
-                  <span style={{ fontSize:12, color:'#9ca3af', flexShrink:0 }}>{new Date(w.date).toLocaleDateString('ru',{day:'numeric',month:'short',year:'numeric'})}</span>
-                </div>
-                {w.comment&&<div style={{ fontSize:12, color:'#6b7280', marginBottom:8 }}>💬 {w.comment}</div>}
-                <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
-                  {w.exercises.map((ex,ei)=>(
-                    <div key={ei} style={{ fontSize:13, color:'#374151' }}>
-                      <span style={{ fontWeight:500 }}>{ex.n}</span>
-                      {': '}
-                      {ex.sets.map((s,si)=>{
-                        const weightLabel=s.bandLevel!=null?`${s.bandLevel} рез.`:s.kg?`${s.kg} кг`:'б/в'
-                        return <span key={si} style={{ color:'#6b7280' }}>{si>0?', ':''}{weightLabel}×{s.reps||'—'}</span>
-                      })}
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            ))}
-          </div>
-        )
-      )}
       {tab==='diary'&&(
         // Тот же DiaryView, что видит сам клиент (тоннаж/упражнения/питание/
         // планы — идентичная вёрстка и графики), но readOnly: тренер только
