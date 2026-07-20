@@ -8,10 +8,6 @@ import { oneRepMax, weightForReps, roundToPlate, percentTable, plateStep } from 
 // слота шаблонной программы (WorkoutsView), см. подробный комментарий там.
 import { buildExerciseAggregates, computeTemplateScale, parseTemplateSets, computeProgressSteps, computeBandTarget, UNRATED_STOP_AFTER } from './workoutPrompt.js'
 import { MAX_TELEGRAM_URL } from './config.js'
-// groupDiaryByDate — та же группировка дневника питания по датам с итогом/
-// отклонением от нормы, что и в системном промпте AI (aiPrompt.js). Здесь
-// переиспользуется для сводки питания клиента тренеру (RealClientDetail).
-import { groupDiaryByDate } from './aiPrompt.js'
 import './App.css'
 
 const PUR = '#7F77DD'
@@ -567,7 +563,7 @@ function RealClientDetail({ client, goBack, trainerId }) {
         </div>
       </div>
       <div style={{ display:'flex', gap:0, marginBottom:18, background:'#f3f4f6', borderRadius:10, padding:3, width:'fit-content', flexWrap:'wrap' }}>
-        {[['history','История'],['tonnage','Тоннаж'],['exercises','Упражнения'],['nutrition','Питание'],['program','Программа']].map(([id,label])=>(
+        {[['history','История'],['diary','Дневник'],['program','Программа']].map(([id,label])=>(
           <button key={id} onClick={()=>setTab(id)}
             style={{ padding:'8px 16px', borderRadius:8, border:'none', background:tab===id?'#fff':'transparent', color:tab===id?'#111':'#6b7280', fontSize:13, fontWeight:600, cursor:'pointer', boxShadow:tab===id?'0 1px 3px rgba(0,0,0,0.1)':'none' }}>
             {label}
@@ -610,153 +606,22 @@ function RealClientDetail({ client, goBack, trainerId }) {
           </div>
         )
       )}
-      {tab==='tonnage'&&(
-        loading?(
-          <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Загрузка...</div>
-        ):error?(
-          <div style={{ fontSize:13, color:'#ef4444', padding:'30px 0', textAlign:'center', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
-            Не удалось загрузить историю
-            <button onClick={load} style={{ fontSize:12, color:PUR, background:'none', border:'1px solid #e5e7eb', borderRadius:8, padding:'6px 14px', cursor:'pointer' }}>Повторить</button>
-          </div>
-        ):(
-          <ClientTonnage history={history} />
-        )
+      {tab==='diary'&&(
+        // Тот же DiaryView, что видит сам клиент (тоннаж/упражнения/питание/
+        // планы — идентичная вёрстка и графики), но readOnly: тренер только
+        // смотрит, ни один элемент интерфейса здесь данные клиента не пишет.
+        <div style={{ minHeight:200 }}>
+          <DiaryView
+            workoutHistory={history}
+            userId={client.id}
+            readOnly
+            historyLoading={loading}
+            historyLoadError={error}
+            onRetryHistory={load}
+          />
+        </div>
       )}
-      {tab==='exercises'&&(
-        loading?(
-          <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Загрузка...</div>
-        ):error?(
-          <div style={{ fontSize:13, color:'#ef4444', padding:'30px 0', textAlign:'center', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
-            Не удалось загрузить историю
-            <button onClick={load} style={{ fontSize:12, color:PUR, background:'none', border:'1px solid #e5e7eb', borderRadius:8, padding:'6px 14px', cursor:'pointer' }}>Повторить</button>
-          </div>
-        ):(
-          <ClientExerciseProgress history={history} />
-        )
-      )}
-      {tab==='nutrition'&&<ClientNutritionSummary client={client} />}
       {tab==='program'&&<ProgramEditor client={client} trainerId={trainerId} />}
-    </div>
-  )
-}
-
-// Тоннаж клиента (сторона тренера) — та же формула, что и в DiaryView
-// (allWorkoutTons: сумма вес×повторения по подходам, подходы без веса/на
-// резине дают 0 и в тоннаж не идут сами по себе). Данные уже загружены
-// родителем (RealClientDetail) — просто считаем на них, без нового запроса.
-function ClientTonnage({ history }) {
-  if(history.length===0)return <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Тренировок пока нет</div>
-  const workoutTons=history.map((w,i)=>({
-    key:w.workoutId??i, date:w.date, name:w.name,
-    ton:(w.exercises||[]).reduce((s1,ex)=>(ex.sets||[]).reduce((s2,s)=>s2+(parseFloat(s.kg)||0)*(parseInt(s.reps)||0),s1),0),
-  }))
-  const totalTonnage=workoutTons.reduce((s,w)=>s+w.ton,0)
-  return (
-    <div>
-      <Card style={{ marginBottom:14, textAlign:'center' }}>
-        <div style={{ fontSize:11, fontWeight:500, color:'#9ca3af', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:4 }}>Общий тоннаж</div>
-        <div style={{ fontSize:28, fontWeight:800, color:PUR, lineHeight:1 }}>{Math.round(totalTonnage).toLocaleString('ru')} <span style={{ fontSize:16, fontWeight:600 }}>кг</span></div>
-      </Card>
-      <div style={{ fontSize:12, fontWeight:600, color:'#6b7280', marginBottom:8 }}>По тренировкам</div>
-      <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-        {workoutTons.slice().reverse().map(w=>(
-          <div key={w.key} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 12px', background:'#fff', borderRadius:9, boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
-            <div>
-              <span style={{ fontSize:13, color:'#111', fontWeight:500 }}>{w.name}</span>
-              <span style={{ fontSize:11, color:'#9ca3af', marginLeft:8 }}>{new Date(w.date).toLocaleDateString('ru',{day:'numeric',month:'short'})}</span>
-            </div>
-            <span style={{ fontSize:13, fontWeight:600, color:PUR }}>{Math.round(w.ton).toLocaleString('ru')} кг</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// Прогресс по упражнениям клиента (сторона тренера) — группировка истории по
-// упражнению, по каждой сессии показываем последний РАБОЧИЙ подход (последний
-// в ряду шаблона, та же логика "рабочих подходов", что и у движка прогрессии
-// в остальном приложении). Данные уже загружены родителем, без нового запроса.
-function ClientExerciseProgress({ history }) {
-  const byExercise={}
-  history.forEach(w=>{
-    ;(w.exercises||[]).forEach(ex=>{
-      const lastSet=(ex.sets||[])[ex.sets.length-1]
-      if(!lastSet)return
-      ;(byExercise[ex.n]??=[]).push({date:w.date,kg:lastSet.kg,reps:lastSet.reps,bandLevel:lastSet.bandLevel})
-    })
-  })
-  const names=Object.keys(byExercise).sort()
-  if(names.length===0)return <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Тренировок пока нет</div>
-  return (
-    <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-      {names.map(name=>(
-        <Card key={name}>
-          <div style={{ fontSize:14, fontWeight:600, color:'#111', marginBottom:8 }}>{name}</div>
-          <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
-            {byExercise[name].map((r,i)=>(
-              <div key={i} style={{ fontSize:12, color:'#374151', background:'#f9fafb', borderRadius:7, padding:'5px 9px' }}>
-                {new Date(r.date).toLocaleDateString('ru',{day:'numeric',month:'short'})}: {r.bandLevel!=null?`${r.bandLevel} рез.`:r.kg?`${r.kg} кг`:'б/в'}×{r.reps||'—'}
-              </div>
-            ))}
-          </div>
-        </Card>
-      ))}
-    </div>
-  )
-}
-
-// Сводка питания клиента (сторона тренера) — только чтение food_diary/
-// food_goals клиента (RLS уже разрешает), редактирование этих данных отсюда
-// не делается вообще, кнопок записи в этом компоненте нет. Группировка по
-// датам — groupDiaryByDate (aiPrompt.js), та же, что и в системном промпте AI.
-function ClientNutritionSummary({ client }) {
-  const [diary,setDiary]=useState([])
-  const [goals,setGoals]=useState(null)
-  const [loading,setLoading]=useState(true)
-  const [error,setError]=useState(false)
-  const load=()=>{
-    setLoading(true);setError(false)
-    const since=new Date(Date.now()-30*24*60*60*1000).toISOString().slice(0,10)
-    Promise.all([
-      supabase.from('food_diary').select('*').eq('user_id',client.id).gte('date',since).order('date',{ascending:false}),
-      supabase.from('food_goals').select('*').eq('user_id',client.id).maybeSingle(),
-    ]).then(([{data:diaryRows,error:diaryError},{data:goalsRow,error:goalsError}])=>{
-      if(diaryError||goalsError){console.error('Ошибка загрузки питания клиента:',diaryError||goalsError);setError(true);setLoading(false);return}
-      setDiary(diaryRows||[])
-      setGoals(goalsRow||null)
-      setLoading(false)
-    })
-  }
-  useEffect(()=>{load()},[client.id])
-
-  if(loading)return <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Загрузка...</div>
-  if(error)return (
-    <div style={{ fontSize:13, color:'#ef4444', padding:'30px 0', textAlign:'center', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
-      Не удалось загрузить питание
-      <button onClick={load} style={{ fontSize:12, color:PUR, background:'none', border:'1px solid #e5e7eb', borderRadius:8, padding:'6px 14px', cursor:'pointer' }}>Повторить</button>
-    </div>
-  )
-
-  const days=groupDiaryByDate(diary,localTodayISO(),goals?.kcal)
-  if(days.length===0)return <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Дневник питания пока пуст</div>
-
-  return (
-    <div>
-      {goals&&(
-        <Card style={{ marginBottom:14 }}>
-          <div style={{ fontSize:11, fontWeight:500, color:'#9ca3af', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:4 }}>Норма</div>
-          <div style={{ fontSize:13, color:'#111' }}>{goals.kcal} ккал · Б:{goals.p}г У:{goals.c}г Ж:{goals.f}г</div>
-        </Card>
-      )}
-      <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-        {days.map(day=>(
-          <div key={day.date} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 12px', background:'#fff', borderRadius:9, boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
-            <span style={{ fontSize:13, color:'#111' }}>{new Date(day.date).toLocaleDateString('ru',{day:'numeric',month:'short'})}</span>
-            <span style={{ fontSize:13, color:'#374151' }}>{day.kcal} ккал<span style={{ color:'#9ca3af' }}>{day.vsGoal}</span></span>
-          </div>
-        ))}
-      </div>
     </div>
   )
 }
@@ -3889,7 +3754,7 @@ function DateScroller({ value, onChange }) {
 }
 
 // ── Дневник
-function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, onOpenAI, userId, initialSection, diaryJumpToken, onSectionChange, historyLoading, historyLoadError, onRetryHistory }) {
+function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, onOpenAI, userId, initialSection, diaryJumpToken, onSectionChange, historyLoading, historyLoadError, onRetryHistory, readOnly=false }) {
   const [section, setSection] = useState(()=>initialSection??null)
   // Сообщаем родителю текущий подраздел — чтобы App мог его запомнить и вернуть
   // при повторном монтировании DiaryView после вынужденного перехода на другую
@@ -3945,23 +3810,28 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     if(!userId)return
     let cancelled=false
     ;(async()=>{
-      let local
-      try{local=JSON.parse(localStorage.getItem('fitpro_planned')||'[]')}catch{local=[]}
-      const toMigrate=local.filter(p=>!p.supabaseId)
-      for(const p of toMigrate){
-        const{data,error}=await supabase.from('planned_workouts').insert({user_id:userId,name:p.name||null,date:p.date||null}).select('id').single()
-        if(error)console.error('Миграция плана тренировки: ошибка вставки:',error)
-        else if(data)p.supabaseId=data.id
+      // readOnly (просмотр клиента тренером): локальный fitpro_planned — кэш
+      // ЧУЖОГО (тренерского) устройства, миграция из него в записи клиента
+      // была бы записью данных клиента с мусорным источником — только читаем.
+      if(!readOnly){
+        let local
+        try{local=JSON.parse(localStorage.getItem('fitpro_planned')||'[]')}catch{local=[]}
+        const toMigrate=local.filter(p=>!p.supabaseId)
+        for(const p of toMigrate){
+          const{data,error}=await supabase.from('planned_workouts').insert({user_id:userId,name:p.name||null,date:p.date||null}).select('id').single()
+          if(error)console.error('Миграция плана тренировки: ошибка вставки:',error)
+          else if(data)p.supabaseId=data.id
+        }
+        if(toMigrate.length)localStorage.setItem('fitpro_planned',JSON.stringify(local))
       }
-      if(toMigrate.length)localStorage.setItem('fitpro_planned',JSON.stringify(local))
       const{data:rows,error}=await supabase.from('planned_workouts').select('*').eq('user_id',userId).order('date')
       if(cancelled||error||!rows)return
       const mapped=rows.map(r=>({id:r.id,supabaseId:r.id,name:r.name,date:r.date}))
       setPlannedWorkouts(mapped)
-      localStorage.setItem('fitpro_planned',JSON.stringify(mapped))
+      if(!readOnly)localStorage.setItem('fitpro_planned',JSON.stringify(mapped))
     })()
     return()=>{cancelled=true}
-  },[userId])
+  },[userId,readOnly])
 
   // ── общие вычисления (нужны всем секциям)
   const exerciseMap={}
@@ -4041,7 +3911,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           ;(byDate[r.date]??=[]).push(entry)
         }
         setFoodDiary(byDate)
-        localStorage.setItem('fitpro_food_diary',JSON.stringify(byDate))
+        if(!readOnly)localStorage.setItem('fitpro_food_diary',JSON.stringify(byDate))
         setFoodLoading(false)
       })
     return()=>{cancelled=true}
@@ -4058,12 +3928,14 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         const entries=(data||[]).map(r=>({id:r.id,name:r.name,kcal:String(r.kcal||0),p:String(r.p||0),c:String(r.c||0),f:String(r.f||0)}))
         setFoodDiary(d=>{
           const updated={...d,[foodDate]:entries}
-          const all={...JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'),[foodDate]:entries}
-          localStorage.setItem('fitpro_food_diary',JSON.stringify(all))
+          if(!readOnly){
+            const all={...JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'),[foodDate]:entries}
+            localStorage.setItem('fitpro_food_diary',JSON.stringify(all))
+          }
           return updated
         })
       })
-  },[foodDate,userId])
+  },[foodDate,userId,readOnly])
 
   // Загрузка дневника из Supabase за весь видимый месяц (для точек в календаре)
   useEffect(()=>{
@@ -4082,12 +3954,14 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         }
         setFoodDiary(d=>{
           const updated={...d,...byDate}
-          const all={...JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'),...byDate}
-          localStorage.setItem('fitpro_food_diary',JSON.stringify(all))
+          if(!readOnly){
+            const all={...JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'),...byDate}
+            localStorage.setItem('fitpro_food_diary',JSON.stringify(all))
+          }
           return updated
         })
       })
-  },[calPickerMonth,userId])
+  },[calPickerMonth,userId,readOnly])
 
   // Загрузка целей КБЖУ из Supabase
   useEffect(()=>{
@@ -4100,10 +3974,10 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         if(data){
           const g={kcal:data.kcal||2000,p:data.p||150,c:data.c||200,f:data.f||60}
           setFoodGoals(g);setGoalsForm(g)
-          localStorage.setItem('fitpro_food_goals',JSON.stringify(g))
+          if(!readOnly)localStorage.setItem('fitpro_food_goals',JSON.stringify(g))
         }
       })
-  },[userId])
+  },[userId,readOnly])
 
   useEffect(()=>{
     const handler=()=>{
@@ -4116,18 +3990,21 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           const entries=(data||[]).map(r=>({id:r.id,name:r.name,kcal:String(r.kcal||0),p:String(r.p||0),c:String(r.c||0),f:String(r.f||0)}))
           setFoodDiary(d=>{
             const updated={...d,[foodDate]:entries}
-            const all={...JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'),[foodDate]:entries}
-            localStorage.setItem('fitpro_food_diary',JSON.stringify(all))
+            if(!readOnly){
+              const all={...JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}'),[foodDate]:entries}
+              localStorage.setItem('fitpro_food_diary',JSON.stringify(all))
+            }
             return updated
           })
         })
     }
     window.addEventListener('fitpro:diary-update',handler)
     return()=>window.removeEventListener('fitpro:diary-update',handler)
-  },[userId,foodDate])
+  },[userId,foodDate,readOnly])
   const dayEntries=foodDiary[foodDate]||[]
   const dayTotal=dayEntries.reduce((acc,e)=>({kcal:acc.kcal+(+e.kcal||0),p:acc.p+(+e.p||0),c:acc.c+(+e.c||0),f:acc.f+(+e.f||0)}),{kcal:0,p:0,c:0,f:0})
   const addFood=async()=>{
+    if(readOnly)return
     if(!foodForm.name.trim())return
     const kcal=clampNum(foodForm.kcal,CAL_MIN,CAL_MAX)
     const p=clampNum(foodForm.p,MACRO_MIN,MACRO_MAX)
@@ -4152,6 +4029,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     setShowFoodForm(false)
   }
   const removeFood=async(id)=>{
+    if(readOnly)return
     if(userId){
       const{error}=await supabase.from('food_diary').delete().eq('id',id)
       if(error){console.error('Ошибка удаления записи дневника питания:',error);flashFoodSaveError();return}
@@ -4165,6 +4043,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   }
   const startEditFood=(e)=>{setEditFoodForm({name:e.name,kcal:e.kcal||'',p:e.p||'',c:e.c||'',f:e.f||'',items:e.items||[]});setEditingFoodId(e.id)}
   const saveEditFood=async()=>{
+    if(readOnly)return
     if(!editFoodForm.name.trim())return
     const kcal=clampNum(editFoodForm.kcal,CAL_MIN,CAL_MAX)
     const p=clampNum(editFoodForm.p,MACRO_MIN,MACRO_MAX)
@@ -4291,13 +4170,13 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                   <div style={{ fontSize:12,color:'#9ca3af',marginTop:2 }}>{selW.name}</div>
                 </div>
                 <div style={{ position:'relative' }}>
-                  <button onClick={e=>{e.stopPropagation();setOpenSelWorkoutMenu(v=>!v)}}
-                    style={{ width:30,height:30,borderRadius:8,border:'1px solid #e5e7eb',background:'#f9fafb',cursor:'pointer',fontSize:17,color:'#6b7280',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,letterSpacing:1,minHeight:'unset' }}>⋯</button>
-                  {openSelWorkoutMenu&&(
+                  {!readOnly&&<button onClick={e=>{e.stopPropagation();setOpenSelWorkoutMenu(v=>!v)}}
+                    style={{ width:30,height:30,borderRadius:8,border:'1px solid #e5e7eb',background:'#f9fafb',cursor:'pointer',fontSize:17,color:'#6b7280',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,letterSpacing:1,minHeight:'unset' }}>⋯</button>}
+                  {!readOnly&&openSelWorkoutMenu&&(
                     <>
                       <div onClick={()=>setOpenSelWorkoutMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
                       <div style={{ position:'absolute',top:34,right:0,background:'#fff',borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:180,overflow:'hidden',border:'1px solid #f0f0f0' }}>
-                        <button onClick={()=>{setOpenSelWorkoutMenu(false);onEditWorkout(workoutHistory[selW.histIdx],selW.histIdx)}}
+                        <button onClick={()=>{setOpenSelWorkoutMenu(false);if(onEditWorkout)onEditWorkout(workoutHistory[selW.histIdx],selW.histIdx)}}
                           style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:'1px solid #f3f4f6',background:'transparent',cursor:'pointer',textAlign:'left',color:'#111',fontSize:13 }}>✏️ Редактировать</button>
                         <button onClick={()=>{setOpenSelWorkoutMenu(false);if(window.confirm('Удалить тренировку?')){onDeleteWorkout(selW.histIdx);setSelIdx(null)}}}
                           style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:'#ef4444',fontSize:13 }}>🗑 Удалить</button>
@@ -4497,14 +4376,16 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                           <div style={{ fontSize:14,fontWeight:600,color:'#111' }}>{fmtFull(activeRec.date)}</div>
                           {activeRec.workoutName&&<div style={{ fontSize:12,color:'#9ca3af',marginTop:2 }}>{activeRec.workoutName}</div>}
                         </div>
+                        {!readOnly&&(
                         <div style={{ display:'flex',gap:6,flexShrink:0 }}>
-                          <button onClick={e=>{e.stopPropagation();onEditWorkout(workoutHistory[activeRec.histIdx],activeRec.histIdx)}}
+                          <button onClick={e=>{e.stopPropagation();if(onEditWorkout)onEditWorkout(workoutHistory[activeRec.histIdx],activeRec.histIdx)}}
                             title="Редактировать"
                             style={{ width:30,height:30,borderRadius:8,border:'1px solid #e5e7eb',background:'#f9fafb',cursor:'pointer',fontSize:13,color:'#6b7280',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>✏️</button>
                           <button onClick={e=>{e.stopPropagation();if(window.confirm('Удалить тренировку?')){onDeleteWorkout(activeRec.histIdx)}}}
                             title="Удалить"
                             style={{ width:30,height:30,borderRadius:8,border:'1px solid #fecaca',background:'#fef2f2',cursor:'pointer',fontSize:13,color:'#ef4444',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>🗑</button>
                         </div>
+                        )}
                       </div>
                       <div style={{ display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:12 }}>
                         {[{label:'Тоннаж',value:`${activeRec.tonnage} кг`,accent:true},{label:'Макс. вес',value:`${activeRec.maxKg} кг`,accent:false},{label:'Подходов',value:(activeRec.sets||[]).filter(s=>s.kg||s.reps).length,accent:false}].map(c=>(
@@ -4548,6 +4429,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   if(section==='workouts'){
     const sorted=[...allWorkoutTons].reverse()
     const savePlanned=(pw)=>{
+      if(readOnly)return
       const next=[...plannedWorkouts,pw];setPlannedWorkouts(next);localStorage.setItem('fitpro_planned',JSON.stringify(next))
       if(userId){
         supabase.from('planned_workouts').insert({user_id:userId,name:pw.name||null,date:pw.date||null}).select('id').single().then(({data,error})=>{
@@ -4572,6 +4454,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
       }
     }
     const deletePlanned=async(id)=>{
+      if(readOnly)return
       const target=plannedWorkouts.find(p=>p.id===id)
       if(target?.supabaseId!=null){
         const{error}=await supabase.from('planned_workouts').delete().eq('id',target.supabaseId)
@@ -4584,6 +4467,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
       })
     }
     const saveTemplate=async(workout)=>{
+      if(readOnly)return
       const tpl={id:Date.now(),name:workout.name,exercises:(workout.exercises||[]).map(ex=>({n:ex.n,m:ex.m,eq:ex.eq}))}
       if(userId){
         const{error}=await supabase.from('workout_templates').insert({user_id:userId,name:tpl.name,exercises:tpl.exercises})
@@ -4615,7 +4499,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
             <button onClick={()=>{setSection(null);setShowWorkoutMenu(false);setOpenCardMenu(null)}} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
             <span style={{ fontSize:17,fontWeight:700,color:'#111' }}>Мои тренировки</span>
           </div>
-          <div style={{ position:'relative' }}>
+          {!readOnly&&<div style={{ position:'relative' }}>
             <button onClick={()=>{setShowWorkoutMenu(v=>!v);setOpenCardMenu(null)}}
               style={{ width:36,height:36,borderRadius:10,background:PUR,border:'none',color:'#fff',fontSize:26,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,fontWeight:300 }}>+</button>
             {showWorkoutMenu&&(
@@ -4643,14 +4527,14 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 </div>
               </>
             )}
-          </div>
+          </div>}
         </div>
 
         <div style={{ flex:1,overflowY:'auto',padding:'14px 16px 32px' }}>
-          {templateMsg&&<div style={{ background:'#22c55e',color:'#fff',borderRadius:9,padding:'8px 14px',fontSize:13,marginBottom:12,textAlign:'center' }}>{templateMsg}</div>}
+          {!readOnly&&templateMsg&&<div style={{ background:'#22c55e',color:'#fff',borderRadius:9,padding:'8px 14px',fontSize:13,marginBottom:12,textAlign:'center' }}>{templateMsg}</div>}
 
           {/* Форма планирования */}
-          {showScheduleForm&&(
+          {!readOnly&&showScheduleForm&&(
             <div style={{ background:'#fff',borderRadius:12,padding:'16px',marginBottom:12,boxShadow:'0 1px 4px rgba(0,0,0,0.08)' }}>
               <div style={{ fontSize:14,fontWeight:600,color:'#111',marginBottom:10 }}>📅 Запланировать тренировку</div>
               <input value={scheduleForm.name} onChange={e=>setScheduleForm(f=>({...f,name:e.target.value}))} placeholder="Название тренировки"
@@ -4678,12 +4562,14 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 <div style={{ fontSize:13,fontWeight:500,color:'#111' }}>{pw.name}</div>
                 <div style={{ fontSize:11,color:PUR,marginTop:2 }}>📅 Запланировано · {fmtFull(pw.date)}</div>
               </div>
+              {!readOnly&&(
               <div style={{ display:'flex',gap:8,alignItems:'center' }}>
                 <button onClick={()=>{if(onWorkoutAction)onWorkoutAction('start')}}
                   style={{ fontSize:11,padding:'5px 10px',borderRadius:7,border:`1px solid ${PUR}`,background:'#EEEDFE',color:PUR,cursor:'pointer',fontWeight:500 }}>▶ Начать</button>
                 <button onClick={()=>deletePlanned(pw.id)}
                   style={{ fontSize:14,padding:'4px 9px',borderRadius:7,border:'1px solid #e5e7eb',background:'transparent',color:'#9ca3af',cursor:'pointer',lineHeight:1 }}>✕</button>
               </div>
+              )}
             </div>
           ))}
 
@@ -4708,7 +4594,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                       <div style={{ fontSize:10,color:'#9ca3af' }}>тоннаж</div>
                     </div>
                     {/* Три точки */}
-                    <div style={{ position:'relative' }}>
+                    {!readOnly&&<div style={{ position:'relative' }}>
                       <button onClick={e=>{e.stopPropagation();setOpenCardMenu(openCardMenu===i?null:i);setShowWorkoutMenu(false)}}
                         style={{ width:28,height:28,borderRadius:7,border:'1px solid #e5e7eb',background:'#f9fafb',cursor:'pointer',fontSize:17,color:'#6b7280',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,letterSpacing:1 }}>⋯</button>
                       {openCardMenu===i&&(
@@ -4721,7 +4607,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                           ].map((item,idx)=>(
                             <button key={idx} onClick={()=>{
                               setOpenCardMenu(null)
-                              if(item.label==='Редактировать тренировку'){onEditWorkout(workoutHistory[w.histIdx],w.histIdx)}
+                              if(item.label==='Редактировать тренировку'){if(onEditWorkout)onEditWorkout(workoutHistory[w.histIdx],w.histIdx)}
                               else if(item.label==='Копировать тренировку'){if(onCopyWorkout)onCopyWorkout(workoutHistory[w.histIdx])}
                               else if(item.label==='Сделать шаблон'){saveTemplate(workoutHistory[w.histIdx])}
                               else if(item.label==='Удалить тренировку'){
@@ -4733,7 +4619,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                           ))}
                         </div>
                       )}
-                    </div>
+                    </div>}
                   </div>
                 </div>
                 <div style={{ display:'flex',gap:12,marginTop:8 }}>
@@ -4805,10 +4691,10 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 16px',display:'flex',alignItems:'center',gap:10,flexShrink:0 }}>
           <button onClick={()=>setSection(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
           <span style={{ fontSize:17,fontWeight:700,color:'#111',flex:1 }}>Питание</span>
-          <button onClick={()=>{setGoalsForm(foodGoals);setShowGoals(g=>!g)}}
+          {!readOnly&&<button onClick={()=>{setGoalsForm(foodGoals);setShowGoals(g=>!g)}}
             style={{ background:showGoals?PUR:'#f3f4f6',border:'none',borderRadius:9,padding:'7px 13px',fontSize:12,fontWeight:600,color:showGoals?'#fff':'#6b7280',cursor:'pointer',minHeight:'unset' }}>
             ⚙️ Норма
-          </button>
+          </button>}
         </div>
         <div style={{ flex:1,overflowY:'auto',padding:'14px 16px 32px' }}>
 
@@ -4825,7 +4711,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           )}
 
           {/* Настройка норм */}
-          {showGoals&&(
+          {!readOnly&&showGoals&&(
             <Card style={{ marginBottom:14,border:`1.5px solid ${PUR}33` }}>
               <div style={{ fontSize:13,fontWeight:700,color:'#111',marginBottom:10 }}>Дневная норма</div>
               <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:12 }}>
@@ -4839,6 +4725,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 ))}
               </div>
               <button onClick={async()=>{
+                if(readOnly)return
                 const clampedGoals={
                   kcal:clampNum(goalsForm.kcal,CAL_MIN,CAL_MAX),
                   p:clampNum(goalsForm.p,MACRO_MIN,MACRO_MAX),
@@ -5051,7 +4938,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                               {e.f&&<span>Ж: {e.f}г</span>}
                             </div>
                           </div>
-                          <div style={{ position:'relative',flexShrink:0 }}>
+                          {!readOnly&&<div style={{ position:'relative',flexShrink:0 }}>
                             <button onClick={ev=>{ev.stopPropagation();setOpenFoodMenu(openFoodMenu===e.id?null:e.id);setEditingFoodId(null)}}
                               style={{ background:'none',border:'1px solid #e5e7eb',borderRadius:7,fontSize:15,cursor:'pointer',color:'#9ca3af',padding:'2px 7px',minHeight:'unset',lineHeight:1.4,letterSpacing:1 }}>⋯</button>
                             {openFoodMenu===e.id&&(
@@ -5063,7 +4950,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                                 </div>
                               </>
                             )}
-                          </div>
+                          </div>}
                         </div>
                       </div>
                     )}
@@ -5071,7 +4958,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 ))}
               </div>
             )}
-            {showFoodForm?(
+            {!readOnly&&(showFoodForm?(
               <Card style={{ marginBottom:12 }}>
                 <div style={{ fontSize:13,fontWeight:700,color:'#111',marginBottom:10 }}>Добавить продукт</div>
                 <input placeholder="Название *" value={foodForm.name} onChange={e=>setFoodForm(f=>({...f,name:e.target.value}))}
@@ -5094,7 +4981,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 style={{ width:'100%',padding:'13px',borderRadius:12,border:`2px dashed ${PUR}55`,background:'transparent',color:PUR,fontSize:14,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>
                 + Добавить продукт
               </button>
-            )}
+            ))}
         </div>
       </div>
     , document.body)
