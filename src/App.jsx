@@ -1733,10 +1733,6 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       })
       return{n:ex.name,m:'',eq:'',sets:parsedSets,done:false,progressNote,progressStopped:progressionStopped}
     })
-    // Холодный старт — хотя бы один подход взят из шаблона как есть
-    // (красная рамка) — показывает модалку-объяснение (showProgressionIntro
-    // выше), если клиент её не отключил галочкой "Больше не показывать".
-    const hasColdStart=builtExercises.some(ex=>ex.sets.some(s=>s.fromTemplate))
     setWExercises(builtExercises)
     setWMode('start')
     setWDate('')
@@ -1747,11 +1743,6 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     setRepsWarningShownThisWorkout(false)
     setStep('active')
     setOpenSlotId(null)
-    if(hasColdStart){
-      let hideIntro=false
-      try{hideIntro=localStorage.getItem('fitpro_hide_progression_intro')==='1'}catch{}
-      if(!hideIntro)setShowProgressionIntro(true)
-    }
   }
   // Точка входа кнопки "▶ Начать тренировку" — список программ (откуда она
   // вызывается) недостижим, пока step==='active' (см. return ниже), так что
