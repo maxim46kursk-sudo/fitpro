@@ -5938,7 +5938,14 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
   const [profile,setProfile]=useState(()=>{
     try{return JSON.parse(localStorage.getItem('fitpro_profile')||'null')||{name:user?.name||'',birthdate:'',height:'',weight:'',goal:'',steps:'',gymDays:'',occupation:'',activityLevel:''}}catch{return{name:user?.name||'',birthdate:'',height:'',weight:'',goal:'',steps:'',gymDays:'',occupation:'',activityLevel:''}}
   })
-  const [userEdit,setUserEdit]=useState({name:user?.name||'',email:user?.email||'',telegram:user?.telegram||'',gender:user?.gender||'',photoURL:user?.photoURL||''})
+  const [userEdit,setUserEdit]=useState({name:user?.name||'',email:user?.email||'',telegram:user?.telegram||'',gender:user?.gender||'',photoURL:user?.photoURL||'',tgUsername:''})
+  // Вход через Telegram даёт пользователю технический email вида
+  // tg{id}@telegram.fitpro (api/telegram-auth.js) — показывать его человеку
+  // бессмысленно. Вместо него выводим @-ник из profiles.tg_username, который
+  // сервер освежает при каждом входе. У пользователя ник может быть не задан в Telegram —
+  // тогда tgNick пустой, и падаем на ручное поле telegram, если оно заполнено.
+  const isTgUser=(user?.email||userEdit.email||'').endsWith('@telegram.fitpro')
+  const tgNick=userEdit.tgUsername?'@'+userEdit.tgUsername:(userEdit.telegram||'')
   const photoInputPVRef=useRef(null)
   const [saved,setSaved]=useState(false)
   // Тост ошибки записи — тот же паттерн, что showFoodSaveError/showClientSaveError,
@@ -5997,6 +6004,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
         gender:data.gender||u.gender,
         telegram:data.telegram||u.telegram,
         photoURL:data.photo_url||u.photoURL,
+        tgUsername:data.tg_username||u.tgUsername,
       }))
     })
     return()=>{cancelled=true}
@@ -6167,7 +6175,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
               </div>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:13,fontWeight:600,color:'#111',marginBottom:2}}>{userEdit.name||user?.name}</div>
-                <div style={{fontSize:11,color:'#9ca3af'}}>{userEdit.email||user?.email}</div>
+                <div style={{fontSize:11,color:'#9ca3af'}}>{isTgUser?tgNick:(userEdit.email||user?.email)}</div>
                 <div style={{fontSize:11,color:PUR,marginTop:2,cursor:'pointer'}} onClick={()=>photoInputPVRef.current?.click()}>Изменить фото</div>
               </div>
             </div>
@@ -6193,8 +6201,10 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                 style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
                 onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
             </div>
-            {/* Email и Telegram */}
-            {[{key:'email',label:'Email'},{key:'telegram',label:'Telegram'}].map(f=>(
+            {/* Email и Telegram — у telegram-аккаунтов поле Email не рисуем
+                вовсе: там лежит технический tg{id}@telegram.fitpro, менять
+                который пользователю нельзя и показывать незачем. */}
+            {(isTgUser?[{key:'telegram',label:'Telegram'}]:[{key:'email',label:'Email'},{key:'telegram',label:'Telegram'}]).map(f=>(
               <div key={f.key}>
                 <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>{f.label}</label>
                 <input value={userEdit[f.key]||''} type="text" placeholder={f.key==='email'?'ivan@example.com':'@username'}
