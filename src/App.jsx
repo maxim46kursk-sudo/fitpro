@@ -860,7 +860,7 @@ const makeDefaultFolderSlots=()=>{
   const o={}; FOLDERS.forEach(f=>{o[f]=makeDefaultSlots(f)}); return o
 }
 
-function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize }) {
+function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, isPremium }) {
   const [openFolder,setOpenFolder]=useState(null)
   const [infoFolder,setInfoFolder]=useState(null) // карточка-описание программы ("?")
   const [selectedProgram,setSelectedProgram]=useState(null) // выбранная программа клиента (profiles.program)
@@ -1074,15 +1074,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const [isEditMode,setIsEditMode]=useState(false)
   const [wComment,setWComment]=useState('')
   const [openSetNote,setOpenSetNote]=useState(null) // {ei,si}
-  const [setVideos,setSetVideos]=useState({}) // '${ei}_${si}' → {url,name}
   const [showSendModal,setShowSendModal]=useState(false)
   const [sendCopied,setSendCopied]=useState(false)
   const [showFinishToast,setShowFinishToast]=useState(false)
   const [showSaveError,setShowSaveError]=useState(false)
   const [showProgramSaveError,setShowProgramSaveError]=useState(false)
   const [showCustomExerciseSaveError,setShowCustomExerciseSaveError]=useState(false)
-  const setVideoInputRef=useRef(null)
-  const setVideoUploadTarget=useRef(null)
 
   // ─────────────────────────────────────────────────────────────────────
   // Черновик активной тренировки в localStorage — переживает перезагрузку
@@ -1459,7 +1456,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const exitWorkout=()=>{
     setStep(null);setStartedAt(null);setSwAccumMs(0);setSwStartedAt(null);setWExercises([]);setWMode('start');setWDate('')
     setIsEditMode(false)
-    setWComment('');setOpenSetNote(null);setSetVideos({});setShowSendModal(false)
+    setWComment('');setOpenSetNote(null);setShowSendModal(false)
     setShowExitConfirm(false);setShowDatePicker(false)
     setWIsFromProgram(false);setShowRepsWarning(false);setRepsWarningShownThisWorkout(false);setRepsWarningRevert(null)
     try{localStorage.removeItem('fitpro_active_workout')}catch{}
@@ -1537,9 +1534,8 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         const w=[]
         if(s.kg)w.push(`${s.kg} кг`)
         if(s.reps)w.push(`${s.reps} повт`)
-        const vid=setVideos[`${ei}_${si}`]?` 🎬 ${setVideos[`${ei}_${si}`].name}`:''
         const nt=s.note?`\n      📝 ${s.note}`:''
-        lines.push(`   ${si+1}. ${w.join(' × ')||'—'}${vid}${nt}`)
+        lines.push(`   ${si+1}. ${w.join(' × ')||'—'}${nt}`)
       })
     })
     if(wComment){lines.push('');lines.push(`💬 ${wComment}`)}
@@ -2131,17 +2127,6 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       )}
                     </div>
                   </div>
-                  {/* Отправка видео тренеру — не загрузка/хранилище в приложении,
-                      просто открывает личный чат с тренером в Telegram, видео
-                      клиент прикрепляет и шлёт там сам. openTelegramLink — внутри
-                      Mini App (не обычный window.open, тот в Telegram-вебвью не
-                      всегда открывает внешнюю ссылку), иначе — обычная новая вкладка. */}
-                  <button onClick={()=>{
-                    if(window.Telegram?.WebApp)window.Telegram.WebApp.openTelegramLink(MAX_TELEGRAM_URL)
-                    else window.open(MAX_TELEGRAM_URL,'_blank')
-                  }} style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color:TEA, background:'none', border:`1px solid ${TEA}55`, borderRadius:8, padding:'5px 10px', cursor:'pointer', marginBottom:8, width:'fit-content' }}>
-                    📹 Отправить видео тренеру
-                  </button>
                   {/* Объяснение пересчитанного веса (см. кнопку "▶ Начать
                       тренировку" в слоте программы, где считается progressNote) —
                       одна строка на упражнение, почему вес именно такой.
@@ -2191,7 +2176,6 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       </div>
                       {ex.sets.map((set,si)=>{
                         const noteOpen=openSetNote?.ei===ei&&openSetNote?.si===si
-                        const hasVid=!!setVideos[`${ei}_${si}`]
                         const isBandSet=set.bandLevel!=null
                         const isTemplateWeight=!!(set.fromTemplate&&set.kg)
                         const isTemplateBand=!!(set.fromTemplate&&isBandSet)
@@ -2230,8 +2214,19 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                               </div>
                               <button onClick={()=>setOpenSetNote(noteOpen?null:{ei,si})}
                                 style={{ width:26, height:26, borderRadius:6, border:'none', background:set.note?`${PUR}50`:'#374151', color:set.note?PUR:'#6b7280', cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}>📝</button>
-                              <button onClick={()=>{setVideoUploadTarget.current={ei,si};setVideoInputRef.current.click()}}
-                                style={{ width:26, height:26, borderRadius:6, border:'none', background:hasVid?`${TEA}50`:'#374151', color:hasVid?TEA:'#6b7280', cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}>🎬</button>
+                              {/* Видео тренеру — только премиум-клиенту (isPremium).
+                                  Не загрузка в приложение: открывает чат с тренером
+                                  в Telegram, клиент шлёт видео сам. openTelegramLink
+                                  сворачивает Mini App (не закрывает — close() не зовём),
+                                  тренировка в памяти переживает переход. Плейсхолдер
+                                  <span/> у не-премиума держит колонку, чтобы ✕ не съехал. */}
+                              {isPremium?(
+                                <button onClick={()=>{
+                                  if(window.Telegram?.WebApp)window.Telegram.WebApp.openTelegramLink(MAX_TELEGRAM_URL)
+                                  else window.open(MAX_TELEGRAM_URL,'_blank')
+                                }}
+                                  style={{ width:26, height:26, borderRadius:6, border:'none', background:'#374151', color:'#6b7280', cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}>🎬</button>
+                              ):<span />}
                               <button onClick={()=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.filter((_,j)=>j!==si)}:x).filter(x=>x.sets.length>0))}
                                 style={{ background:'none', border:'none', color:'#6b7280', cursor:'pointer', fontSize:14, textAlign:'center' }}>✕</button>
                             </div>
@@ -2275,13 +2270,6 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                 onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,note:e.target.value}:s)}:x))}
                                 placeholder="Заметка к подходу..."
                                 style={{ width:'100%', background:'#1f2937', border:'1px solid #374151', borderRadius:6, padding:'5px 10px', fontSize:12, color:'#e5e7eb', marginTop:3, boxSizing:'border-box', outline:'none' }} />
-                            )}
-                            {hasVid&&(
-                              <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:3, fontSize:11, color:TEA }}>
-                                🎬 {setVideos[`${ei}_${si}`].name}
-                                <button onClick={()=>{URL.revokeObjectURL(setVideos[`${ei}_${si}`].url);setSetVideos(v=>{const n={...v};delete n[`${ei}_${si}`];return n})}}
-                                  style={{ background:'none', border:'none', color:'#6b7280', cursor:'pointer', fontSize:12, padding:0 }}>✕</button>
-                              </div>
                             )}
                           </div>
                         )
@@ -2337,16 +2325,6 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             </div>
           </div>
         )}
-
-        {/* Скрытый input для видео подхода */}
-        <input ref={setVideoInputRef} type="file" accept="video/*" style={{ display:'none' }}
-          onChange={e=>{
-            const file=e.target.files[0]
-            if(!file||!setVideoUploadTarget.current)return
-            const {ei,si}=setVideoUploadTarget.current
-            setSetVideos(v=>({...v,[`${ei}_${si}`]:{url:URL.createObjectURL(file),name:file.name}}))
-            e.target.value=''
-          }} />
       </div>
     )
   }
@@ -6604,6 +6582,11 @@ export default function App() {
     try{return JSON.parse(localStorage.getItem('fitpro_custom_ex')||'[]')}catch{return []}
   })
   const [userRole,setUserRole]=useState(()=>localStorage.getItem('fitpro_role')||'client')
+  // Премиум-признак клиента = у него назначен тренер (profiles.coach_id непустой).
+  // По умолчанию false, пока профиль не загрузился — значок видео тренеру не
+  // мигнёт свободному пользователю. У самого тренера coach_id пустой, так что
+  // он тоже премиум-функцию не увидит.
+  const [hasCoach,setHasCoach]=useState(false)
   const [nav,setNav]=useState('dashboard')
   // История переходов верхнего уровня — чтобы "назад" из экранов вроде деталей
   // клиента (открываются и с Главной, и со вкладки Клиенты) вело туда, откуда
@@ -6924,12 +6907,13 @@ export default function App() {
   useEffect(()=>{
     if(!user?.id)return
     let cancelled=false
-    supabase.from('profiles').select('name,gender,telegram,photo_url,role').eq('id',user.id).single().then(({data})=>{
+    supabase.from('profiles').select('name,gender,telegram,photo_url,role,coach_id').eq('id',user.id).single().then(({data})=>{
       if(cancelled||!data)return
       setUser(u=>u?{...u,name:data.name||u.name,gender:data.gender||u.gender,telegram:data.telegram||u.telegram,photoURL:data.photo_url||u.photoURL}:u)
       const role=data.role||'client'
       setUserRole(role)
       localStorage.setItem('fitpro_role',role)
+      setHasCoach(!!data.coach_id)
     })
     return()=>{cancelled=true}
   },[user?.id])
@@ -7154,7 +7138,7 @@ export default function App() {
   const renderMain=()=>(
     <>
       <div style={{ display: nav==='workouts' ? 'block' : 'none' }}>
-        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} />
+        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} isPremium={hasCoach} />
       </div>
       {nav!=='workouts'&&renderOther()}
     </>
