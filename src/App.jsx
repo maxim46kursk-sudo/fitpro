@@ -4806,30 +4806,28 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
             <div style={{ fontSize:11,color:'#9ca3af',marginBottom:12 }}>
               {weekStart.toLocaleDateString('ru',{day:'numeric',month:'short'})} — {weekDays[6].d.toLocaleDateString('ru',{day:'numeric',month:'short',year:'numeric'})}
             </div>
-            <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:14 }}>
-              {[['🔥',weekTotal.kcal,'ккал',PUR],['🥩',weekTotal.p+'г','белки',TEA],['🍚',weekTotal.c+'г','углев.',BLU],['🥑',weekTotal.f+'г','жиры',COR]].map(([ic,v,l,c])=>(
-                <div key={l} style={{ background:'#f9fafb',borderRadius:10,padding:'8px 4px',textAlign:'center' }}>
-                  <div style={{ fontSize:12 }}>{ic}</div>
-                  <div style={{ fontSize:13,fontWeight:700,color:c }}>{v}</div>
-                  <div style={{ fontSize:9,color:'#9ca3af' }}>{l}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{ background:'#f9fafb',borderRadius:10,padding:'10px 12px' }}>
-              <div style={{ fontSize:11,color:'#9ca3af',marginBottom:4 }}>Среднее в день</div>
-              <div style={{ display:'flex',gap:10,flexWrap:'wrap',marginBottom:4 }}>
-                <span style={{ fontSize:14,fontWeight:700,color:PUR }}>{weekAvg.kcal} ккал</span>
-                <span style={{ fontSize:12,color:TEA }}>Б {weekAvg.p}г</span>
-                <span style={{ fontSize:12,color:BLU }}>У {weekAvg.c}г</span>
-                <span style={{ fontSize:12,color:COR }}>Ж {weekAvg.f}г</span>
-              </div>
-              {foodGoals.kcal>0&&(
-                <div style={{ fontSize:12,fontWeight:600 }}>
-                  {weekAvg.kcal>=foodGoals.kcal
-                    ?<span style={{ color:COR }}>+{weekAvg.kcal-foodGoals.kcal} ккал/день сверх нормы</span>
-                    :<span style={{ color:TEA }}>−{foodGoals.kcal-weekAvg.kcal} ккал/день до нормы</span>}
-                </div>
-              )}
+            {/* Факт за неделю относительно недельной нормы (foodGoals.X*7),
+                вертикальными столбиками заполнения. Перебор (pct>100) —
+                заливка полная, а число процентов показывает реальное значение,
+                так перерасход виден без отдельной плашки. Норма не задана
+                (norm7<=0) — столбик пустой, показываем только факт. */}
+            <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8 }}>
+              {[['🔥',weekTotal.kcal,foodGoals.kcal*7,'','ккал',PUR],['🥩',weekTotal.p,foodGoals.p*7,'г','белки',TEA],['🍚',weekTotal.c,foodGoals.c*7,'г','углев.',BLU],['🥑',weekTotal.f,foodGoals.f*7,'г','жиры',COR]].map(([ic,fact,norm7,unit,label,c])=>{
+                const pct=norm7>0?Math.round(fact/norm7*100):0
+                const fillH=Math.min(100,pct)
+                return (
+                  <div key={label} style={{ display:'flex',flexDirection:'column',alignItems:'center',textAlign:'center' }}>
+                    <div style={{ fontSize:14,marginBottom:2 }}>{ic}</div>
+                    <div style={{ fontSize:9,color:'#9ca3af',marginBottom:5,minHeight:11 }}>{norm7>0?`из ${norm7}${unit}`:''}</div>
+                    <div style={{ width:'100%',height:96,background:'#eef0f2',borderRadius:8,position:'relative',overflow:'hidden' }}>
+                      <div style={{ position:'absolute',bottom:0,left:0,width:'100%',height:`${fillH}%`,background:c,borderRadius:'0 0 8px 8px' }} />
+                    </div>
+                    <div style={{ fontSize:13,fontWeight:700,color:c,marginTop:5 }}>{fact}{unit}</div>
+                    <div style={{ fontSize:10,color:'#9ca3af',minHeight:12 }}>{norm7>0?`${pct}%`:''}</div>
+                    <div style={{ fontSize:9,color:'#9ca3af' }}>{label}</div>
+                  </div>
+                )
+              })}
             </div>
           </Card>
 
