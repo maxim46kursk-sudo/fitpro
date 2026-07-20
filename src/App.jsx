@@ -3847,12 +3847,17 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const exerciseNames=Object.keys(exerciseMap).sort()
   const allWorkoutTons=workoutHistory
     .map((w,histIdx)=>({
-      date:w.date,name:w.name,color:w.color||PUR,histIdx,exercises:w.exercises||[],
+      date:w.date,name:w.name,color:w.color||PUR,histIdx,exercises:w.exercises||[],comment:w.comment,
       ton:(w.exercises||[]).reduce((s1,ex)=>(ex.sets||[]).reduce((s2,set)=>s2+(parseFloat(set.kg)||0)*(parseInt(set.reps)||0),s1),0),
     }))
     .sort((a,b)=>new Date(a.date)-new Date(b.date))
   const fmtD=d=>new Date(d).toLocaleDateString('ru',{day:'numeric',month:'short'}).replace(/\./g,'')
   const fmtFull=d=>new Date(d).toLocaleDateString('ru',{day:'numeric',month:'long',year:'numeric'})
+  // Метка веса подхода — та же формула, что во вкладке "История" карточки
+  // клиента (RealClientDetail). Подход на резине хранит уровень в bandLevel,
+  // а kg у него пустой, поэтому без этой ветки резинка выводилась как "— кг"
+  // (а в разделе "Прогресс по упражнениям" — как "0 кг"). "б/в" — вес тела.
+  const setWeightLabel=s=>s.bandLevel!=null?`${s.bandLevel} рез.`:s.kg?`${s.kg} кг`:'б/в'
 
   // ── питание дневник
   // Инициализация из localStorage-кэша — мгновенный показ до ответа сети
@@ -4204,7 +4209,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                     <div style={{ display:'flex',gap:5,flexWrap:'wrap' }}>
                       {(ex.sets||[]).map((s,si)=>(s.kg||s.reps)&&(
                         <span key={si} style={{ fontSize:11,color:'#6b7280',background:'#f3f4f6',padding:'2px 8px',borderRadius:5 }}>
-                          {si+1}. {s.kg||'—'} кг × {s.reps||'—'}
+                          {si+1}. {setWeightLabel(s)} × {s.reps||'—'}
                           {s.rating&&<span style={{ color:PUR,fontWeight:600 }}> · {s.rating} · {RATING_LABELS[s.rating]}</span>}
                         </span>
                       ))}
@@ -4400,7 +4405,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                           <div key={si} style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 12px',background:'#f9fafb',borderRadius:8 }}>
                             <div style={{ display:'flex',alignItems:'center',gap:12 }}>
                               <span style={{ fontSize:11,fontWeight:600,color:'#d1d5db',width:16,textAlign:'center' }}>{si+1}</span>
-                              <span style={{ fontSize:14,fontWeight:600,color:'#111' }}>{parseFloat(s.kg)||0} кг</span>
+                              <span style={{ fontSize:14,fontWeight:600,color:'#111' }}>{setWeightLabel(s)}</span>
                               <span style={{ fontSize:13,color:'#9ca3af' }}>× {parseInt(s.reps)||0} повт.</span>
                               {/* Оценка тяжести подхода (workout_sets.rating) — без неё не видно,
                                   почему движок прогрессии изменил вес на следующий раз (см. задачу 1). */}
@@ -4629,6 +4634,9 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
               </div>
               {selIdx===i&&(
                 <Card style={{ marginTop:4,border:`1.5px solid ${PUR}22` }}>
+                  {/* Комментарий к тренировке — пишет сам клиент при сохранении.
+                      Только показ: редактирование живёт в редакторе тренировки. */}
+                  {w.comment&&<div style={{ fontSize:12,color:'#6b7280',marginBottom:8 }}>💬 {w.comment}</div>}
                   {w.exercises.map((ex,ei)=>{
                     const exTon=(ex.sets||[]).reduce((s,set)=>s+(parseFloat(set.kg)||0)*(parseInt(set.reps)||0),0)
                     return(
@@ -4640,7 +4648,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                         <div style={{ display:'flex',gap:5,flexWrap:'wrap' }}>
                           {(ex.sets||[]).map((s,si)=>(s.kg||s.reps)&&(
                             <span key={si} style={{ fontSize:11,color:'#6b7280',background:'#f3f4f6',padding:'2px 8px',borderRadius:5 }}>
-                              {si+1}. {s.kg||'—'} кг × {s.reps||'—'}
+                              {si+1}. {setWeightLabel(s)} × {s.reps||'—'}
                             </span>
                           ))}
                         </div>
