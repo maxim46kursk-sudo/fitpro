@@ -104,8 +104,21 @@ export default async function handler(req, res) {
   if (telegramUserId) {
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
-      .upsert({ id: telegramUserId, name: tgUser.first_name }, { onConflict: 'id', ignoreDuplicates: true })
+      .upsert({ id: telegramUserId, name: tgUser.first_name, tg_username: tgUser.username }, { onConflict: 'id', ignoreDuplicates: true })
     if (profileError) console.error('Ошибка создания строки профиля для Telegram-пользователя:', profileError)
+
+    // Upsert выше для существующей строки — DO NOTHING, поэтому ник при
+    // повторных входах освежаем отдельным узким апдейтом (только это поле,
+    // чтобы не задеть name/role). Пустой username не пишем: у большинства
+    // пользователей он не задан, и затирать им уже сохранённое значение
+    // нельзя. Ошибку только логируем — авторизация из-за ника не падает.
+    if (tgUser.username) {
+      const { error: usernameError } = await supabaseAdmin
+        .from('profiles')
+        .update({ tg_username: tgUser.username })
+        .eq('id', telegramUserId)
+      if (usernameError) console.error('Ошибка обновления tg_username:', usernameError)
+    }
   }
 
   res.status(200).json({ email, otp: linkData.properties.email_otp })
