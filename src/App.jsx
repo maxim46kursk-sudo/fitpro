@@ -2671,7 +2671,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             </div>
             <button onClick={async()=>{const{ok}=await selectProgram(openFolder);if(ok){setShowAdoptProgramModal(false);startSlotWorkout()}}}
               style={{ width:'100%', padding:'13px', borderRadius:12, border:'none', background:PUR, color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', marginBottom:8 }}>
-              Да, это моя программа
+              Да, буду тренироваться по этой программе
             </button>
             <button onClick={()=>setShowAdoptProgramModal(false)}
               style={{ width:'100%', padding:'11px', borderRadius:12, border:'none', background:'none', color:'#9ca3af', fontSize:13, cursor:'pointer' }}>
