@@ -1968,7 +1968,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               <div style={{ display:'flex', alignItems:'flex-end', gap:8 }}>
                 <div style={{ width:32, height:32, borderRadius:'50%', background:'linear-gradient(135deg,#7F77DD,#5b54c4)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, flexShrink:0 }}>🤖</div>
                 <div style={{ background:SURF2, border:`1px solid ${HAIR}`, borderRadius:'4px 16px 16px 16px', padding:'14px 16px', fontSize:13.5, color:'#e5e7eb', lineHeight:1.6, whiteSpace:'pre-wrap' }}>
-                  {'Привет! Смотри, как тут всё работает:\n\nВес — это подсказка для старта. Вес горит красным — значит пиши свой вес, только тот, с которым реально позанимался, и обязательно поставь оценку (1 — легко, 5 — тяжело).\n\nПо оценке я сам подберу тебе вес дальше.\nПогнали! 💪'}
+                  {'Привет! Смотри, как тут всё работает:\n\nВес — это подсказка для старта. Вес горит красным — значит пиши свой реальный вес — тот, с которым действительно тренируешься, и обязательно поставь оценку (1 — легко, 5 — тяжело).\n\nПо оценке я сам подберу тебе вес дальше.\nПогнали! 💪'}
                 </div>
               </div>
               <button onClick={dismissAiTip}
@@ -1990,8 +1990,8 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:16 }}>
                 <div style={{ fontSize:13, color:TXT3, lineHeight:1.55 }}>Красным подсвечен вес, взятый прямо из программы тренера — приложение тебя ещё не знает и не может подобрать вес лично под тебя.</div>
                 <div style={{ fontSize:13, color:TXT3, lineHeight:1.55 }}>После подхода отметь цифрой, как он дался: 1 — легко, 5 — на пределе.</div>
-                <div style={{ fontSize:13, color:TXT3, lineHeight:1.55 }}>В следующий раз приложение поставит вес само: далось легко — прибавит побольше, тяжело — прибавит чуть-чуть, было тяжело два раза подряд — снизит, чтобы ты не перегорел.</div>
-                <div style={{ fontSize:13, color:TXT3, lineHeight:1.55 }}>Вес можно менять руками — приложение запомнит то, что ты реально сделал, и посчитает от него.</div>
+                <div style={{ fontSize:13, color:TXT3, lineHeight:1.55 }}>В следующий раз приложение поставит вес само: далось легко — прибавит побольше, тяжело — прибавит чуть-чуть, было тяжело два раза подряд — снизит, чтобы не перегореть.</div>
+                <div style={{ fontSize:13, color:TXT3, lineHeight:1.55 }}>Вес можно менять руками — приложение запомнит то, что реально сделано, и посчитает от него.</div>
                 <div style={{ fontSize:13, color:TXT3, lineHeight:1.55 }}>Значок «<span style={{ color:PUR, fontWeight:700 }}>+</span>» у повторений означает, что упражнение делается на обе стороны, а повторения считаются суммарно, а не на каждую ногу отдельно.</div>
                 <div style={{ fontSize:13, color:'#fbbf24', fontWeight:700, lineHeight:1.55 }}>Веса приблизительные — подстрой под своё самочувствие.</div>
               </div>
@@ -2020,7 +2020,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               onClick={e=>e.stopPropagation()}>
               <div style={{ fontSize:16, fontWeight:700, color:'#fff', marginBottom:14, textAlign:'center' }}>Повторения из плана</div>
               <div style={{ fontSize:13, color:TXT3, lineHeight:1.55, marginBottom:18 }}>
-                Повторения подобраны тренером под текущий этап программы. Менять их не рекомендуется — от них зависит, какую нагрузку приложение подберёт дальше. Если сделал меньше или больше, чем в плане — впиши как есть, приложение учтёт реальный результат.
+                Повторения подобраны тренером под текущий этап программы. Менять их не рекомендуется — от них зависит, какую нагрузку приложение подберёт дальше. Если получилось меньше или больше, чем в плане — впиши как есть, приложение учтёт реальный результат.
               </div>
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                 <button onClick={()=>setShowRepsWarning(false)}
@@ -2692,7 +2692,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               <br />Перейти на «{showSwitchProgramModal.to}»?
             </div>
             <div style={{ fontSize:12.5, color:TXT3, textAlign:'center', lineHeight:1.5, marginBottom:20 }}>
-              Прогресс не потеряется: веса, которые ты набрал в упражнениях, сохранятся и в новой программе.
+              Прогресс не потеряется: веса, которые ты набираешь в упражнениях, сохранятся и в новой программе.
             </div>
             <button onClick={async()=>{const to=showSwitchProgramModal.to;const{ok}=await selectProgram(to);if(ok){setShowSwitchProgramModal(null);startSlotWorkout()}}}
               style={{ width:'100%', padding:'13px', borderRadius:12, border:'none', background:PUR, color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', marginBottom:8 }}>
@@ -2716,7 +2716,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               Программа «{completedProgramModal}» пройдена!
             </div>
             <div style={{ fontSize:13.5, color:TXT3, textAlign:'center', lineHeight:1.5, marginBottom:22 }}>
-              Ты прошёл все 12 тренировок. Отличная работа.
+              Все 12 тренировок пройдены. Отличная работа.
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
               <div>
@@ -3260,7 +3260,7 @@ const NUTRITION_PLANS=[
         {name:'Обед',time:'',items:['Куриное бедро без кожи (200г сыр.) + Перловка (80г сух.) + Салат (500г)'],p:48,c:70,f:30,cal:780},
         {name:'Перекус',time:'',items:['Творожный мусс: Творог (100г) + Кефир (100г) + Груша (150г)'],p:18,c:40,f:5,cal:270},
         {name:'Ужин',time:'',items:['Омлет из 3 яиц с грибами (200г) + Свёкла отварная (200г) + Льняное масло (5г)'],p:30,c:40,f:25,cal:520},
-      ],total:{p:159,c:240,f:107,cal:2630},tip:'уменьшить авокадо до 50г и убери масло в ужине, если хочешь снизить жиры.'},
+      ],total:{p:159,c:240,f:107,cal:2630},tip:'уменьшить авокадо до 50г и убрать масло в ужине, если хочешь снизить жиры.'},
       {n:7,meals:[
         {name:'Завтрак',time:'',items:['Овсянка (80г сух.) + Тёртое яблоко (200г) + Арахисовая паста (20г) + Кешью (20г)'],p:25,c:120,f:25,cal:780},
         {name:'Перекус',time:'',items:['Творожная запеканка: Творог (150г) + 1 яйцо + Ягоды (100г)'],p:25,c:20,f:10,cal:280},
@@ -5278,7 +5278,7 @@ function LandingPage({ onEnter, isTelegram }) {
                     <p style={{ margin:'0 0 10px',fontSize:13,color:'rgba(255,255,255,0.75)',lineHeight:1.5,fontWeight:600 }}>Вот что я умею:</p>
                     <div style={{ display:'flex',flexDirection:'column',gap:7 }}>
                       {[
-                        ['📋','Знаю твою программу тренировок — вижу, какой вес ты делал в прошлый раз'],
+                        ['📋','Знаю твою программу тренировок — вижу, какой вес был в прошлый раз'],
                         ['🥗','Помогу с питанием — спроси, что съесть, что заменить или как вписать любимое'],
                         ['🔄','Скорректирую план, если было слишком тяжело или слишком легко'],
                         ['💬','Отвечаю так, как ответил бы сам тренер — потому что он меня именно так обучил'],
