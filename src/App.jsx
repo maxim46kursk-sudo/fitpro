@@ -2089,7 +2089,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           {wMode==='start'&&(
             <div style={{ background:SURF, border:`1px solid ${HAIR}`, borderRadius:20, padding:'14px 18px 16px', marginBottom:16, textAlign:'center' }}>
               <div style={{ fontSize:11, color:TXT3, textTransform:'uppercase', letterSpacing:'.22em', fontWeight:700, marginBottom:8 }}>Секундомер</div>
-              <div style={{ fontSize:46, fontWeight:800, letterSpacing:'.02em', fontVariantNumeric:'tabular-nums', marginBottom:14, background:'linear-gradient(180deg,#fff,#b9b6ff)', WebkitBackgroundClip:'text', backgroundClip:'text', WebkitTextFillColor:'transparent' }}>
+              <div style={{ fontSize:46, fontWeight:800, letterSpacing:'.02em', fontVariantNumeric:'tabular-nums', marginBottom:14, color:'#EDEBFF' }}>
                 {fmt(swTime)}
               </div>
               <div style={{ display:'flex', gap:10, justifyContent:'center' }}>
@@ -2129,7 +2129,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                           просто не показываем (см. комментарий у removeExerciseConfirm). */}
                       {wExercises.length>1&&(
                         <button onClick={()=>setRemoveExerciseConfirm({ei,name:ex.n})}
-                          style={{ width:26, height:26, borderRadius:6, border:'none', background:'#374151', color:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                          style={{ width:26, height:26, borderRadius:6, border:'none', background:SURF2, color:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                           🗑
                         </button>
                       )}
@@ -2221,7 +2221,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                 )}
                               </div>
                               <button onClick={()=>setOpenSetNote(noteOpen?null:{ei,si})}
-                                style={{ width:26, height:26, borderRadius:6, border:'none', background:set.note?`${PUR}50`:'#374151', color:set.note?PUR:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}>📝</button>
+                                style={{ width:26, height:26, borderRadius:6, border:'none', background:set.note?`${PUR}50`:SURF2, color:set.note?PUR:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}>📝</button>
                               {/* Видео тренеру — только премиум-клиенту (isPremium).
                                   Не загрузка в приложение: открывает чат с тренером
                                   в Telegram, клиент шлёт видео сам. openTelegramLink
@@ -2233,7 +2233,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                   if(window.Telegram?.WebApp)window.Telegram.WebApp.openTelegramLink(MAX_TELEGRAM_URL)
                                   else window.open(MAX_TELEGRAM_URL,'_blank')
                                 }}
-                                  style={{ width:26, height:26, borderRadius:6, border:'none', background:'#374151', color:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}>🎬</button>
+                                  style={{ width:26, height:26, borderRadius:6, border:'none', background:SURF2, color:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}>🎬</button>
                               ):<span />}
                               <button onClick={()=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.filter((_,j)=>j!==si)}:x).filter(x=>x.sets.length>0))}
                                 style={{ background:'none', border:'none', color:TXT3, cursor:'pointer', fontSize:14, textAlign:'center' }}>✕</button>
@@ -7196,14 +7196,14 @@ export default function App() {
         <div style={{ display:'flex', flexDirection:'column', minHeight:'100vh', fontFamily:'system-ui,sans-serif', background:BG, color:TXT }}>
 
           {/* Мобильный хедер */}
-          <div style={{ position:'fixed', top:0, left:0, right:0, height:MOBILE_TOP_H, background:'#fff', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 16px', zIndex:901, flexShrink:0 }}>
+          <div style={{ position:'fixed', top:0, left:0, right:0, height:MOBILE_TOP_H, background:BG, borderBottom:`1px solid ${SEP}`, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 16px', zIndex:901, flexShrink:0 }}>
             <button onClick={()=>setShowProfileSheet(true)}
               style={{ width:36, height:36, borderRadius:'50%', border:'none', background:'transparent', padding:0, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset', overflow:'hidden' }}>
               <Av lbl={user.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={36} photo={user.photoURL} gender={user.gender} />
             </button>
             <div style={{ display:'flex', alignItems:'center', gap:7 }}>
               <span style={{ fontSize:20 }}>🏋️</span>
-              <span style={{ fontSize:16, fontWeight:800, color:'#111', letterSpacing:'-0.3px' }}>FitPro</span>
+              <span style={{ fontSize:16, fontWeight:800, color:TXT, letterSpacing:'-0.3px' }}>FitPro</span>
             </div>
           </div>
 
