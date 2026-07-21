@@ -612,8 +612,9 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
               zIndex: 1200, padding: '10px 18px', borderRadius: 24,
               background: '#16a34a', color: '#fff', fontSize: 13, fontWeight: 700,
               boxShadow: '0 6px 20px rgba(22,163,74,0.35)',
+              display: 'flex', alignItems: 'center', gap: 6,
             }}>
-              Записано ✓
+              <GlassIcon name="check" size={15} />Записано
             </div>
           )}
 
@@ -753,7 +754,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
                       <div style={{ paddingLeft: 36 }}>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: '#f0fdf4', border: '1.5px solid #22c55e40' }}>
                           <GlassIcon name="check" size={18} />
-                          <span style={{ fontSize: 13, fontWeight: 600, color: '#22c55e' }}>Записано в дневник ✓</span>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: '#22c55e' }}>Записано в дневник</span>
                         </div>
                       </div>
                     )}

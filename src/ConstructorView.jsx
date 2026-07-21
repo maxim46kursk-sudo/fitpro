@@ -22,6 +22,7 @@ import { createPortal } from 'react-dom'
 import { supabase } from './supabase.js'
 import { EXERCISES } from './programs.js'
 import { computeTargetWeight } from './workoutPrompt.js'
+import { GlassIcon } from './glassIcons'
 import { findSimilarExercise, normalizeExerciseName } from './fuzzyMatch.js'
 import { getUpcomingScheme, hasHardStreak, computeHardStreakTarget, buildConstructorSessions } from './constructorPhases.js'
 
@@ -331,7 +332,7 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
             <button onClick={() => setShowInfo(true)} title="Как это работает"
               style={{ width: 22, height: 22, borderRadius: '50%', border: '1.5px solid rgba(255,255,255,0.6)', background: 'rgba(255,255,255,0.15)', color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 'unset', padding: 0, flexShrink: 0 }}>!</button>
           </div>
-          <button onClick={() => setShowExitConfirm(true)} style={{ fontSize: 16, color: '#fff', background: 'rgba(0,0,0,0.25)', border: 'none', borderRadius: 6, width: 28, height: 28, cursor: 'pointer', marginTop: 4, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, minHeight: 'unset' }}>✕</button>
+          <button onClick={() => setShowExitConfirm(true)} style={{ fontSize: 16, color: '#fff', background: 'rgba(0,0,0,0.25)', border: 'none', borderRadius: 6, width: 28, height: 28, cursor: 'pointer', marginTop: 4, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, minHeight: 'unset' }}><GlassIcon name="close" size={20} /></button>
         </div>
       </div>
 
@@ -390,7 +391,7 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
                     title="Начать заново — сбросить историю этого упражнения"
                     style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: 13, cursor: 'pointer', padding: 0, marginRight: 4 }}>↺</button>
                 )}
-                <button onClick={() => removeSessionExercise(se.exerciseId)} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: 16, cursor: 'pointer', padding: 0 }}>✕</button>
+                <button onClick={() => removeSessionExercise(se.exerciseId)} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: 16, cursor: 'pointer', padding: 0 }}><GlassIcon name="close" size={20} /></button>
               </div>
             </div>
             {se.isBaseline && (
@@ -426,7 +427,7 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
                 <input type="number" inputMode="numeric" value={s.reps} onChange={e => updateSetField(se.exerciseId, si, 'reps', e.target.value)} placeholder="0"
                   style={{ width: '100%', background: '#374151', border: '1px solid #4b5563', borderRadius: 6, padding: '7px 6px', fontSize: 13, color: '#fff', textAlign: 'center', boxSizing: 'border-box' }} />
                 <button onClick={() => removeSetFromExercise(se.exerciseId, si)} disabled={se.sets.length <= 1}
-                  style={{ background: 'none', border: 'none', color: se.sets.length <= 1 ? '#374151' : '#6b7280', cursor: se.sets.length <= 1 ? 'default' : 'pointer', fontSize: 14, textAlign: 'center', padding: 0 }}>✕</button>
+                  style={{ background: 'none', border: 'none', color: se.sets.length <= 1 ? '#374151' : '#6b7280', cursor: se.sets.length <= 1 ? 'default' : 'pointer', fontSize: 14, textAlign: 'center', padding: 0 }}><GlassIcon name="close" size={20} /></button>
               </div>
             ))}
             <div style={{ marginBottom: 4 }}>
@@ -473,7 +474,7 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
           <div style={{ padding: '16px 18px 12px', borderBottom: '1px solid #2a2a2a', flexShrink: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <span style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>Мои упражнения</span>
-              <button onClick={() => { setPickOpen(false); setPickQuery('') }} style={{ background: 'none', border: 'none', color: '#9ca3af', fontSize: 20, cursor: 'pointer' }}>✕</button>
+              <button onClick={() => { setPickOpen(false); setPickQuery('') }} style={{ background: 'none', border: 'none', color: '#9ca3af', fontSize: 20, cursor: 'pointer' }}><GlassIcon name="close" size={20} /></button>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <input value={pickQuery} onChange={e => setPickQuery(e.target.value)} placeholder="Поиск упражнения..."
@@ -494,7 +495,7 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
                 <button key={`p-${ex.id}`} onClick={() => !already && addExerciseToSession(ex)} disabled={already}
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '13px 18px', background: 'none', border: 'none', borderBottom: '1px solid #1f2937', cursor: already ? 'default' : 'pointer', textAlign: 'left', opacity: already ? 0.4 : 1 }}>
                   <div style={{ fontSize: 14, fontWeight: 500, color: '#fff' }}>{ex.name}</div>
-                  <span style={{ color: sessionColor, fontSize: 18, fontWeight: 300 }}>{already ? '✓' : '+'}</span>
+                  <GlassIcon name={already ? "check" : "plus"} size={20} />
                 </button>
               )
             })}
@@ -533,7 +534,7 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
             onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <span style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>Новое упражнение</span>
-              <button onClick={() => { setShowAdd(false); setNewName('') }} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: 18, cursor: 'pointer' }}>✕</button>
+              <button onClick={() => { setShowAdd(false); setNewName('') }} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: 18, cursor: 'pointer' }}><GlassIcon name="close" size={20} /></button>
             </div>
             <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 5 }}>Название</div>
             <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Назови как удобно" autoFocus
@@ -550,7 +551,7 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
           onClick={() => setDuplicateCandidate(null)}>
           <div style={{ background: '#1c1c1e', borderRadius: 14, padding: '22px 20px', width: 300, boxShadow: '0 16px 48px rgba(0,0,0,0.6)', textAlign: 'center' }}
             onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize: 28, marginBottom: 10 }}>🤔</div>
+            <div style={{ display:'flex', justifyContent:'center', marginBottom: 10 }}><GlassIcon name="question" size={32} /></div>
             <div style={{ fontSize: 14, color: '#fff', lineHeight: 1.6, marginBottom: 20 }}>
               У тебя уже есть «{duplicateCandidate.match.name}». Это оно или новое упражнение?
             </div>
@@ -570,7 +571,7 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
             onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
               <span style={{ fontSize: 16, fontWeight: 700, color: '#111' }}>{CONSTRUCTOR_INFO_TEXT.title}</span>
-              <button onClick={() => setShowInfo(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#9ca3af', lineHeight: 1, padding: 0 }}>✕</button>
+              <button onClick={() => setShowInfo(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#9ca3af', lineHeight: 1, padding: 0 }}><GlassIcon name="close" size={20} /></button>
             </div>
             <div style={{ fontSize: 13.5, color: '#374151', lineHeight: 1.65, whiteSpace: 'pre-wrap', marginBottom: 14 }}>{CONSTRUCTOR_INFO_TEXT.body}</div>
             <button onClick={() => setInfoWhyOpen(v => !v)} style={{ background: 'none', border: 'none', color: PUR, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: 0, marginBottom: infoWhyOpen ? 8 : 14, display: 'flex', alignItems: 'center', gap: 4 }}>
