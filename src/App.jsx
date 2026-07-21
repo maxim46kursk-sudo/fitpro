@@ -93,7 +93,7 @@ function Av({ lbl, sz=36, bg=PUR, photo, gender }) {
 
 function Card({ children, style={}, onClick }) {
   return (
-    <div onClick={onClick} style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:20, padding:'14px 16px', ...style }}>
+    <div onClick={onClick} style={{ background:SURF, border:`1px solid ${HAIR}`, borderRadius:20, padding:'14px 16px', ...style }}>
       {children}
     </div>
   )
@@ -101,19 +101,19 @@ function Card({ children, style={}, onClick }) {
 
 function Metric({ label, value, icon, color=PUR }) {
   return (
-    <div style={{ background:'#f9fafb', borderRadius:10, padding:'12px 14px' }}>
+    <div style={{ background:SURF2, borderRadius:16, padding:'12px 14px' }}>
       <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
-        <span style={{ fontSize:11, color:'#6b7280' }}>{label}</span>
+        <span style={{ fontSize:11, color:TXT3 }}>{label}</span>
         <span style={{ fontSize:16, color }}>{icon}</span>
       </div>
-      <div style={{ fontSize:22, fontWeight:500, color:'#111' }}>{value}</div>
+      <div style={{ fontSize:22, fontWeight:500, color:TXT }}>{value}</div>
     </div>
   )
 }
 
 function PBar({ v, color=PUR }) {
   return (
-    <div style={{ background:'#e5e7eb', borderRadius:4, height:5, marginTop:4 }}>
+    <div style={{ background:'rgba(255,255,255,.07)', borderRadius:4, height:5, marginTop:4 }}>
       <div style={{ width:`${v}%`, background:color, borderRadius:4, height:'100%' }} />
     </div>
   )
@@ -126,7 +126,7 @@ function Badge({ lbl }) {
 
 function NavBtn({ icon, label, active, onClick }) {
   return (
-    <button onClick={onClick} style={{ width:'100%', display:'flex', alignItems:'center', gap:9, padding:'8px 10px', borderRadius:8, border:'none', background:active?PUR:'transparent', color:active?'#fff':'#6b7280', fontSize:13, textAlign:'left', marginBottom:2, cursor:'pointer' }}>
+    <button onClick={onClick} style={{ width:'100%', display:'flex', alignItems:'center', gap:9, padding:'8px 10px', borderRadius:8, border:'none', background:active?PUR:'transparent', color:active?'#fff':TXT3, fontSize:13, textAlign:'left', marginBottom:2, cursor:'pointer' }}>
       <span style={{ fontSize:16 }}>{icon}</span>{label}
     </button>
   )
@@ -140,9 +140,9 @@ function NavBtn({ icon, label, active, onClick }) {
 // перемещение plus проброс того, что раньше бралось из замыкания, пропсами.
 function BackBtn({ label, right, onBack }) {
   return (
-    <div style={{ background:'#fff', borderBottom:'1px solid #e5e7eb', padding:'14px 18px', display:'flex', alignItems:'center', gap:14, flexShrink:0, position:'sticky', top:0, zIndex:10 }}>
-      <button onClick={onBack} style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:'#6b7280', lineHeight:1, padding:0, minHeight:'unset' }}>←</button>
-      <span style={{ fontSize:17, fontWeight:700, color:'#111', flex:1 }}>{label}</span>
+    <div style={{ background:SURF, borderBottom:`1px solid ${HAIR}`, padding:'14px 18px', display:'flex', alignItems:'center', gap:14, flexShrink:0, position:'sticky', top:0, zIndex:10 }}>
+      <button onClick={onBack} style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}>←</button>
+      <span style={{ fontSize:17, fontWeight:700, color:TXT, flex:1 }}>{label}</span>
       {right}
     </div>
   )
@@ -411,7 +411,7 @@ function ClientsView({ setSC, setNav, userId }) {
                 <input value={addForm.name} onChange={e=>setAddForm(f=>({...f,name:e.target.value}))}
                   placeholder="Анна Иванова" autoFocus
                   style={{ width:'100%',padding:'10px 12px',fontSize:13,borderRadius:9,border:'1.5px solid #e5e7eb',boxSizing:'border-box',outline:'none',color:'#111' }}
-                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'}
+                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR}
                   onKeyDown={e=>e.key==='Enter'&&addClient()} />
               </div>
               <div>
@@ -426,7 +426,7 @@ function ClientsView({ setSC, setNav, userId }) {
                 <input value={addForm.program} onChange={e=>setAddForm(f=>({...f,program:e.target.value}))}
                   placeholder="Кардио + Сила"
                   style={{ width:'100%',padding:'10px 12px',fontSize:13,borderRadius:9,border:'1.5px solid #e5e7eb',boxSizing:'border-box',outline:'none',color:'#111' }}
-                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
               </div>
               <div style={{ display:'flex',gap:8,marginTop:4 }}>
                 <button onClick={()=>setShowAdd(false)} style={{ flex:1,padding:'11px',fontSize:13,borderRadius:9,border:'1px solid #e5e7eb',background:'none',color:'#6b7280',cursor:'pointer' }}>Отмена</button>
@@ -718,7 +718,7 @@ function ProgramEditor({ client, trainerId }) {
         <div style={{ fontSize:11, color:'#6b7280', marginBottom:4 }}>Название программы</div>
         <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Программа"
           style={{ width:'100%', padding:'9px 12px', fontSize:14, fontWeight:600, borderRadius:9, border:'1.5px solid #e5e7eb', boxSizing:'border-box', outline:'none', color:'#111' }}
-          onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+          onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
       </div>
 
       <div style={{ display:'flex', flexDirection:'column', gap:12, marginBottom:14 }}>
@@ -727,7 +727,7 @@ function ProgramEditor({ client, trainerId }) {
             <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
               <input value={w.name} onChange={e=>renameWorkout(wi,e.target.value)} placeholder={`Тренировка ${wi+1}`}
                 style={{ flex:1, padding:'7px 10px', fontSize:13, fontWeight:600, borderRadius:8, border:'1.5px solid #e5e7eb', boxSizing:'border-box', outline:'none', color:'#111' }}
-                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
               <button onClick={()=>removeWorkout(wi)} style={{ background:'none', border:'none', color:'#d1d5db', fontSize:16, cursor:'pointer', lineHeight:1, padding:4, flexShrink:0 }}>✕</button>
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
@@ -742,7 +742,7 @@ function ProgramEditor({ client, trainerId }) {
                     </div>
                     <input value={ex.sets} onChange={e=>setExerciseSets(wi,ei,e.target.value)} placeholder="20 кг × 15, 25 кг × 12, 25 кг × 12"
                       style={{ width:'100%', padding:'7px 10px', fontSize:12, borderRadius:7, border:'1px solid #e5e7eb', boxSizing:'border-box', outline:'none', color:'#111', background:'#fff' }}
-                      onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                      onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                     {hint&&<div style={{ fontSize:10, color:parsed.length?'#9ca3af':'#ef4444' }}>{hint}</div>}
                   </div>
                 )
@@ -774,7 +774,7 @@ function ProgramEditor({ client, trainerId }) {
             </div>
             <input value={pickerQuery} onChange={e=>setPickerQuery(e.target.value)} placeholder="Поиск..." autoFocus
               style={{ width:'100%', marginBottom:12, padding:'9px 12px', fontSize:13, borderRadius:9, border:'1.5px solid #e5e7eb', boxSizing:'border-box', outline:'none', color:'#111' }}
-              onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+              onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
             <div style={{ overflowY:'auto', display:'flex', flexDirection:'column', gap:2 }}>
               {EXERCISES.filter(e=>e.n.toLowerCase().includes(pickerQuery.toLowerCase())).map(e=>(
                 <button key={e.n} onClick={()=>addExercise(pickerFor,e.n)}
@@ -2468,7 +2468,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               onChange={e=>setEditingSlotTitle(s=>({...s,title:e.target.value}))}
               placeholder="Название тренировки"
               style={{ width:'100%', padding:'11px 13px', fontSize:14, borderRadius:10, border:`1.5px solid ${HAIR}`, outline:'none', color:TXT, fontFamily:'inherit', boxSizing:'border-box' }}
-              onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'}
+              onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR}
             />
             <div style={{ display:'flex', gap:10, marginTop:16 }}>
               <button onClick={()=>setEditingSlotTitle(null)}
@@ -2496,7 +2496,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                 onChange={e=>setEditingExercise(v=>({...v,name:e.target.value}))}
                 placeholder="Приседания"
                 style={{ width:'100%', padding:'11px 13px', fontSize:14, borderRadius:10, border:`1.5px solid ${HAIR}`, outline:'none', color:TXT, fontFamily:'inherit', boxSizing:'border-box' }}
-                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'}
+                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR}
               />
             </div>
             <div style={{ marginBottom:16 }}>
@@ -2506,7 +2506,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                 placeholder="20 кг × 15, 25 кг × 12, 25 кг × 12"
                 rows={4}
                 style={{ width:'100%', padding:'11px 13px', fontSize:13, borderRadius:10, border:`1.5px solid ${HAIR}`, outline:'none', color:TXT, resize:'vertical', lineHeight:1.65, fontFamily:'inherit', boxSizing:'border-box' }}
-                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'}
+                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR}
               />
             </div>
             <div style={{ display:'flex', gap:10 }}>
@@ -3630,7 +3630,7 @@ function LibraryView({ customExercises }) {
       <h2 style={{ fontSize:20, fontWeight:500, color:'#111', margin:'0 0 14px' }}>Библиотека упражнений</h2>
       <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Поиск упражнения..."
         style={{ width:'100%',padding:'9px 12px',fontSize:13,borderRadius:9,border:'1.5px solid #e5e7eb',boxSizing:'border-box',outline:'none',marginBottom:10,color:'#111' }}
-        onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+        onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
       <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:14 }}>
         {muscles.map(m=>(
           <button key={m} onClick={()=>setFilt(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:20, cursor:'pointer', border:`1px solid ${filt===m?PUR:'#e5e7eb'}`, background:filt===m?'#EEEDFE':'transparent', color:filt===m?'#3C3489':'#6b7280' }}>{m}</button>
@@ -4064,18 +4064,18 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     const manyBars=chartTons.length>7
     const dateStride=manyBars?Math.ceil(chartTons.length/6):1
     return createPortal(
-      <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
+      <div style={{ position:'fixed',inset:0,background:BG,zIndex:1000,display:'flex',flexDirection:'column' }}>
         <BackBtn label={sectionTitle('Общий тоннаж')} onBack={()=>setSection(null)} right={
           <div style={{ position:'relative' }}>
             <button onClick={()=>setShowTonPeriodMenu(v=>!v)}
-              style={{ width:34,height:34,borderRadius:9,border:'1px solid #e5e7eb',background:period!=='7'||customFrom||customTo?`${PUR}11`:'#f9fafb',cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:period!=='7'||customFrom||customTo?PUR:'#6b7280',minHeight:'unset' }}>📅</button>
+              style={{ width:34,height:34,borderRadius:9,border:`1px solid ${HAIR}`,background:period!=='7'||customFrom||customTo?`${PUR}11`:SURF2,cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:period!=='7'||customFrom||customTo?PUR:TXT3,minHeight:'unset' }}>📅</button>
             {showTonPeriodMenu&&(
               <>
                 <div onClick={()=>setShowTonPeriodMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
-                <div style={{ position:'absolute',top:40,right:0,background:'#fff',borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:160,overflow:'hidden',border:'1px solid #f0f0f0' }}>
+                <div style={{ position:'absolute',top:40,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:160,overflow:'hidden',border:`1px solid ${HAIR}` }}>
                   {TON_PERIOD_OPTIONS.map((p,idx)=>(
                     <button key={p.k} onClick={()=>{setPeriod(p.k);if(p.k!=='custom'){setCustomFrom('');setCustomTo('')}setShowTonPeriodMenu(false);setSelectedTonBar(null)}}
-                      style={{ display:'block',width:'100%',padding:'10px 15px',border:'none',borderTop:idx>0?'1px solid #f3f4f6':'none',background:period===p.k?`${PUR}11`:'transparent',cursor:'pointer',textAlign:'left',color:period===p.k?PUR:'#111',fontSize:13,fontWeight:period===p.k?600:400 }}>{p.l}</button>
+                      style={{ display:'block',width:'100%',padding:'10px 15px',border:'none',borderTop:idx>0?`1px solid ${HAIR}`:'none',background:period===p.k?`${PUR}11`:'transparent',cursor:'pointer',textAlign:'left',color:period===p.k?PUR:TXT,fontSize:13,fontWeight:period===p.k?600:400 }}>{p.l}</button>
                   ))}
                 </div>
               </>
@@ -4086,32 +4086,32 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           {period==='custom'&&(
             <div style={{ display:'flex',flexDirection:isMobile?'column':'row',alignItems:'center',gap:8,width:isMobile?'100%':'auto',marginBottom:10 }}>
               <div style={{ display:'flex',alignItems:'center',gap:6 }}>
-                <span style={{ fontSize:11,color:'#9ca3af',flexShrink:0,width:16,textAlign:'right' }}>с</span>
+                <span style={{ fontSize:11,color:TXT3,flexShrink:0,width:16,textAlign:'right' }}>с</span>
                 <input type="date" value={customFrom} onChange={e=>{setCustomFrom(e.target.value);setSelectedTonBar(null)}}
-                  style={{ width:128,flexShrink:0,fontSize:13,padding:'7px 6px',borderRadius:7,border:'1.5px solid #e5e7eb',outline:'none',color:'#111',background:'#fff',colorScheme:'light',minHeight:'unset',textAlign:'center',boxSizing:'border-box' }}
-                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                  style={{ width:128,flexShrink:0,fontSize:13,padding:'7px 6px',borderRadius:7,border:`1.5px solid ${HAIR}`,outline:'none',color:TXT,background:SURF,colorScheme:'light',minHeight:'unset',textAlign:'center',boxSizing:'border-box' }}
+                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
               </div>
               <div style={{ display:'flex',alignItems:'center',gap:6 }}>
-                <span style={{ fontSize:11,color:'#9ca3af',flexShrink:0,width:16,textAlign:'right' }}>по</span>
+                <span style={{ fontSize:11,color:TXT3,flexShrink:0,width:16,textAlign:'right' }}>по</span>
                 <input type="date" value={customTo} onChange={e=>{setCustomTo(e.target.value);setSelectedTonBar(null)}}
-                  style={{ width:128,flexShrink:0,fontSize:13,padding:'7px 6px',borderRadius:7,border:'1.5px solid #e5e7eb',outline:'none',color:'#111',background:'#fff',colorScheme:'light',minHeight:'unset',textAlign:'center',boxSizing:'border-box' }}
-                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                  style={{ width:128,flexShrink:0,fontSize:13,padding:'7px 6px',borderRadius:7,border:`1.5px solid ${HAIR}`,outline:'none',color:TXT,background:SURF,colorScheme:'light',minHeight:'unset',textAlign:'center',boxSizing:'border-box' }}
+                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
               </div>
               <div style={{ width:28,display:'flex',justifyContent:'center',flexShrink:0 }}>
                 {(customFrom||customTo)&&(
                   <button onClick={()=>{setCustomFrom('');setCustomTo('');setSelectedTonBar(null)}}
-                    style={{ fontSize:13,padding:'5px 7px',borderRadius:6,border:'none',background:'#f3f4f6',color:'#9ca3af',cursor:'pointer',minHeight:'unset' }}>✕</button>
+                    style={{ fontSize:13,padding:'5px 7px',borderRadius:6,border:'none',background:SURF2,color:TXT3,cursor:'pointer',minHeight:'unset' }}>✕</button>
                 )}
               </div>
             </div>
           )}
           <Card style={{ marginBottom:16 }}>
             <div style={{ marginBottom:14 }}>
-              <div style={{ fontSize:11,fontWeight:500,color:'#9ca3af',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4 }}>Общий тоннаж</div>
+              <div style={{ fontSize:11,fontWeight:500,color:TXT3,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4 }}>Общий тоннаж</div>
               <div style={{ fontSize:32,fontWeight:800,color:PUR,lineHeight:1 }}>{totalTonnage.toLocaleString('ru')} <span style={{ fontSize:18,fontWeight:600 }}>кг</span></div>
             </div>
             {workoutTons.length===0?(
-              <div style={{ textAlign:'center',color:'#c7cad1',fontSize:13,padding:'20px 0' }}>Заверши тренировку — она появится здесь</div>
+              <div style={{ textAlign:'center',color:TXT3,fontSize:13,padding:'20px 0' }}>Заверши тренировку — она появится здесь</div>
             ):(
               <div>
                 <div style={{ display:'flex',alignItems:'flex-end',gap:5,height:CHART_BAR_H }}>
@@ -4127,17 +4127,17 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                     )
                   })}
                 </div>
-                <div style={{ borderTop:'2px solid #f3f4f6' }} />
+                <div style={{ borderTop:`2px solid ${HAIR}` }} />
                 <div style={{ display:'flex',gap:5,paddingTop:5 }}>
                   {chartTons.map((w,i)=>{
                     const on=selectedTonBar===i
                     const showDate=!manyBars||on||i===0||i===chartTons.length-1||i%dateStride===0
                     return(
-                      <div key={i} style={{ flex:1,textAlign:'center',fontSize:9,color:on?PUR:'#9ca3af',lineHeight:1.2,minWidth:0,overflow:'hidden' }}>{showDate?fmtD(w.date):''}</div>
+                      <div key={i} style={{ flex:1,textAlign:'center',fontSize:9,color:on?PUR:TXT3,lineHeight:1.2,minWidth:0,overflow:'hidden' }}>{showDate?fmtD(w.date):''}</div>
                     )
                   })}
                 </div>
-                <div style={{ textAlign:'center',fontSize:11,color:'#c7cad1',marginTop:10 }}>
+                <div style={{ textAlign:'center',fontSize:11,color:TXT3,marginTop:10 }}>
                   Нажми на столбик, чтобы увидеть подробную сводку
                 </div>
               </div>
@@ -4147,18 +4147,18 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
             <Card style={{ marginBottom:16,border:`1.5px solid ${PUR}33` }}>
               <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10 }}>
                 <div>
-                  <div style={{ fontSize:14,fontWeight:600,color:'#111' }}>{fmtFull(selW.date)}</div>
-                  <div style={{ fontSize:12,color:'#9ca3af',marginTop:2 }}>{selW.name}</div>
+                  <div style={{ fontSize:14,fontWeight:600,color:TXT }}>{fmtFull(selW.date)}</div>
+                  <div style={{ fontSize:12,color:TXT3,marginTop:2 }}>{selW.name}</div>
                 </div>
                 <div style={{ position:'relative' }}>
                   {!readOnly&&<button onClick={e=>{e.stopPropagation();setOpenSelWorkoutMenu(v=>!v)}}
-                    style={{ width:30,height:30,borderRadius:8,border:'1px solid #e5e7eb',background:'#f9fafb',cursor:'pointer',fontSize:17,color:'#6b7280',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,letterSpacing:1,minHeight:'unset' }}>⋯</button>}
+                    style={{ width:30,height:30,borderRadius:8,border:`1px solid ${HAIR}`,background:SURF2,cursor:'pointer',fontSize:17,color:TXT3,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,letterSpacing:1,minHeight:'unset' }}>⋯</button>}
                   {!readOnly&&openSelWorkoutMenu&&(
                     <>
                       <div onClick={()=>setOpenSelWorkoutMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
-                      <div style={{ position:'absolute',top:34,right:0,background:'#fff',borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:180,overflow:'hidden',border:'1px solid #f0f0f0' }}>
+                      <div style={{ position:'absolute',top:34,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:180,overflow:'hidden',border:`1px solid ${HAIR}` }}>
                         <button onClick={()=>{setOpenSelWorkoutMenu(false);if(onEditWorkout)onEditWorkout(workoutHistory[selW.histIdx],selW.histIdx)}}
-                          style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:'1px solid #f3f4f6',background:'transparent',cursor:'pointer',textAlign:'left',color:'#111',fontSize:13 }}>✏️ Редактировать</button>
+                          style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:`1px solid ${HAIR}`,background:'transparent',cursor:'pointer',textAlign:'left',color:TXT,fontSize:13 }}>✏️ Редактировать</button>
                         <button onClick={()=>{setOpenSelWorkoutMenu(false);if(window.confirm('Удалить тренировку?')){onDeleteWorkout(selW.histIdx);setSelIdx(null)}}}
                           style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:'#ef4444',fontSize:13 }}>🗑 Удалить</button>
                       </div>
@@ -4168,23 +4168,23 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
               </div>
               <div style={{ display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:12 }}>
                 {[{label:'Тоннаж',value:`${selW.ton} кг`,accent:true},{label:'Упражнений',value:selW.exercises.length,accent:false},{label:'Подходов',value:selW.exercises.reduce((s,ex)=>s+(ex.sets||[]).filter(s=>s.kg||s.reps).length,0),accent:false}].map(c=>(
-                  <div key={c.label} style={{ background:'#f9fafb',borderRadius:10,padding:'10px 12px' }}>
-                    <div style={{ fontSize:10,color:'#9ca3af',marginBottom:4 }}>{c.label}</div>
-                    <div style={{ fontSize:17,fontWeight:700,color:c.accent?PUR:'#111' }}>{c.value}</div>
+                  <div key={c.label} style={{ background:SURF2,borderRadius:10,padding:'10px 12px' }}>
+                    <div style={{ fontSize:10,color:TXT3,marginBottom:4 }}>{c.label}</div>
+                    <div style={{ fontSize:17,fontWeight:700,color:c.accent?PUR:TXT }}>{c.value}</div>
                   </div>
                 ))}
               </div>
               {selW.exercises.map((ex,ei)=>{
                 const exTon=(ex.sets||[]).reduce((s,set)=>s+(parseFloat(set.kg)||0)*(parseInt(set.reps)||0),0)
                 return(
-                  <div key={ei} style={{ paddingTop:ei>0?10:0,borderTop:ei>0?'1px solid #f3f4f6':'' }}>
+                  <div key={ei} style={{ paddingTop:ei>0?10:0,borderTop:ei>0?`1px solid ${HAIR}`:'' }}>
                     <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5 }}>
-                      <span style={{ fontSize:13,fontWeight:500,color:'#111' }}>{ex.n}</span>
+                      <span style={{ fontSize:13,fontWeight:500,color:TXT }}>{ex.n}</span>
                       {exTon>0&&<span style={{ fontSize:11,color:PUR,fontWeight:600 }}>{exTon} кг</span>}
                     </div>
                     <div style={{ display:'flex',gap:5,flexWrap:'wrap' }}>
                       {(ex.sets||[]).map((s,si)=>(s.kg||s.reps)&&(
-                        <span key={si} style={{ fontSize:11,color:'#6b7280',background:'#f3f4f6',padding:'2px 8px',borderRadius:5 }}>
+                        <span key={si} style={{ fontSize:11,color:TXT3,background:SURF2,padding:'2px 8px',borderRadius:5 }}>
                           {si+1}. {setWeightLabel(s)} × {s.reps||'—'}
                           {s.rating&&<span style={{ color:PUR,fontWeight:600 }}> · {s.rating} · {RATING_LABELS[s.rating]}</span>}
                         </span>
@@ -4225,18 +4225,18 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     const sortedExerciseNames=Object.keys(filteredExerciseMap).sort((a,b)=>exTonnage(b)-exTonnage(a))
     const PERIOD_OPTIONS=[{k:'all',l:'Всё время'},{k:'30d',l:'30 дней'},{k:'custom',l:'Свой период'}]
     return createPortal(
-      <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
+      <div style={{ position:'fixed',inset:0,background:BG,zIndex:1000,display:'flex',flexDirection:'column' }}>
         <BackBtn label={sectionTitle('Прогресс по упражнениям')} onBack={()=>setSection(null)} right={
           <div style={{ position:'relative' }}>
             <button onClick={()=>setShowExPeriodMenu(v=>!v)}
-              style={{ width:34,height:34,borderRadius:9,border:'1px solid #e5e7eb',background:exPeriod!=='all'?`${PUR}11`:'#f9fafb',cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:exPeriod!=='all'?PUR:'#6b7280',minHeight:'unset' }}>📅</button>
+              style={{ width:34,height:34,borderRadius:9,border:`1px solid ${HAIR}`,background:exPeriod!=='all'?`${PUR}11`:SURF2,cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:exPeriod!=='all'?PUR:TXT3,minHeight:'unset' }}>📅</button>
             {showExPeriodMenu&&(
               <>
                 <div onClick={()=>setShowExPeriodMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
-                <div style={{ position:'absolute',top:40,right:0,background:'#fff',borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:160,overflow:'hidden',border:'1px solid #f0f0f0' }}>
+                <div style={{ position:'absolute',top:40,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:160,overflow:'hidden',border:`1px solid ${HAIR}` }}>
                   {PERIOD_OPTIONS.map((p,idx)=>(
                     <button key={p.k} onClick={()=>{setExPeriod(p.k);if(p.k!=='custom'){setExCustomFrom('');setExCustomTo('')}setShowExPeriodMenu(false);setSelectedEx(null);setActiveBar(null)}}
-                      style={{ display:'block',width:'100%',padding:'10px 15px',border:'none',borderTop:idx>0?'1px solid #f3f4f6':'none',background:exPeriod===p.k?`${PUR}11`:'transparent',cursor:'pointer',textAlign:'left',color:exPeriod===p.k?PUR:'#111',fontSize:13,fontWeight:exPeriod===p.k?600:400 }}>{p.l}</button>
+                      style={{ display:'block',width:'100%',padding:'10px 15px',border:'none',borderTop:idx>0?`1px solid ${HAIR}`:'none',background:exPeriod===p.k?`${PUR}11`:'transparent',cursor:'pointer',textAlign:'left',color:exPeriod===p.k?PUR:TXT,fontSize:13,fontWeight:exPeriod===p.k?600:400 }}>{p.l}</button>
                   ))}
                 </div>
               </>
@@ -4247,41 +4247,41 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           {exPeriod==='custom'&&(
             <div style={{ display:'flex',flexDirection:isMobile?'column':'row',alignItems:'center',gap:8,width:isMobile?'100%':'auto',marginBottom:10 }}>
               <div style={{ display:'flex',alignItems:'center',gap:6 }}>
-                <span style={{ fontSize:11,color:'#9ca3af',flexShrink:0,width:16,textAlign:'right' }}>с</span>
+                <span style={{ fontSize:11,color:TXT3,flexShrink:0,width:16,textAlign:'right' }}>с</span>
                 <input type="date" value={exCustomFrom} onChange={e=>{setExCustomFrom(e.target.value);setSelectedEx(null);setActiveBar(null)}}
-                  style={{ width:128,flexShrink:0,fontSize:13,padding:'7px 6px',borderRadius:7,border:'1.5px solid #e5e7eb',outline:'none',color:'#111',background:'#fff',colorScheme:'light',minHeight:'unset',textAlign:'center',boxSizing:'border-box' }}
-                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                  style={{ width:128,flexShrink:0,fontSize:13,padding:'7px 6px',borderRadius:7,border:`1.5px solid ${HAIR}`,outline:'none',color:TXT,background:SURF,colorScheme:'light',minHeight:'unset',textAlign:'center',boxSizing:'border-box' }}
+                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
               </div>
               <div style={{ display:'flex',alignItems:'center',gap:6 }}>
-                <span style={{ fontSize:11,color:'#9ca3af',flexShrink:0,width:16,textAlign:'right' }}>по</span>
+                <span style={{ fontSize:11,color:TXT3,flexShrink:0,width:16,textAlign:'right' }}>по</span>
                 <input type="date" value={exCustomTo} onChange={e=>{setExCustomTo(e.target.value);setSelectedEx(null);setActiveBar(null)}}
-                  style={{ width:128,flexShrink:0,fontSize:13,padding:'7px 6px',borderRadius:7,border:'1.5px solid #e5e7eb',outline:'none',color:'#111',background:'#fff',colorScheme:'light',minHeight:'unset',textAlign:'center',boxSizing:'border-box' }}
-                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                  style={{ width:128,flexShrink:0,fontSize:13,padding:'7px 6px',borderRadius:7,border:`1.5px solid ${HAIR}`,outline:'none',color:TXT,background:SURF,colorScheme:'light',minHeight:'unset',textAlign:'center',boxSizing:'border-box' }}
+                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
               </div>
               <div style={{ width:28,display:'flex',justifyContent:'center',flexShrink:0 }}>
                 {(exCustomFrom||exCustomTo)&&(
                   <button onClick={()=>{setExCustomFrom('');setExCustomTo('');setSelectedEx(null);setActiveBar(null)}}
-                    style={{ fontSize:13,padding:'5px 7px',borderRadius:6,border:'none',background:'#f3f4f6',color:'#9ca3af',cursor:'pointer',minHeight:'unset' }}>✕</button>
+                    style={{ fontSize:13,padding:'5px 7px',borderRadius:6,border:'none',background:SURF2,color:TXT3,cursor:'pointer',minHeight:'unset' }}>✕</button>
                 )}
               </div>
             </div>
           )}
           <input value={exQuery} onChange={e=>setExQuery(e.target.value)} placeholder="Поиск упражнения..."
-            style={{ width:'100%',padding:'10px 16px',fontSize:14,borderRadius:10,border:'1.5px solid #e5e7eb',boxSizing:'border-box',outline:'none',marginBottom:10,color:'#111',background:'#fff' }}
-            onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+            style={{ width:'100%',padding:'10px 16px',fontSize:14,borderRadius:10,border:`1.5px solid ${HAIR}`,boxSizing:'border-box',outline:'none',marginBottom:10,color:TXT,background:SURF }}
+            onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
           {historyLoading&&workoutHistory.length===0?(
-            <div style={{ textAlign:'center',color:'#9ca3af',fontSize:13,marginTop:40 }}>Загрузка…</div>
+            <div style={{ textAlign:'center',color:TXT3,fontSize:13,marginTop:40 }}>Загрузка…</div>
           ):historyLoadError?(
-            <div style={{ textAlign:'center',color:'#9ca3af',fontSize:13,marginTop:40 }}>
+            <div style={{ textAlign:'center',color:TXT3,fontSize:13,marginTop:40 }}>
               <div style={{ marginBottom:10 }}>Не удалось загрузить. Проверь связь.</div>
               <button onClick={onRetryHistory} style={{ fontSize:12,padding:'7px 16px',borderRadius:8,border:'none',background:PUR,color:'#fff',cursor:'pointer',fontWeight:600,minHeight:'unset' }}>Повторить</button>
             </div>
           ):exerciseNames.length===0?(
-            <div style={{ textAlign:'center',color:'#9ca3af',fontSize:13,marginTop:40 }}>Заверши тренировку с упражнениями, чтобы видеть аналитику</div>
+            <div style={{ textAlign:'center',color:TXT3,fontSize:13,marginTop:40 }}>Заверши тренировку с упражнениями, чтобы видеть аналитику</div>
           ):sortedExerciseNames.length===0?(
-            <div style={{ textAlign:'center',color:'#9ca3af',fontSize:13,marginTop:40 }}>Нет тренировок за выбранный период</div>
+            <div style={{ textAlign:'center',color:TXT3,fontSize:13,marginTop:40 }}>Нет тренировок за выбранный период</div>
           ):sortedExerciseNames.filter(n=>n.toLowerCase().includes(exQuery.toLowerCase())).length===0?(
-            <div style={{ textAlign:'center',color:'#9ca3af',fontSize:13,marginTop:40 }}>Упражнение не найдено</div>
+            <div style={{ textAlign:'center',color:TXT3,fontSize:13,marginTop:40 }}>Упражнение не найдено</div>
           ):(
             sortedExerciseNames.filter(n=>n.toLowerCase().includes(exQuery.toLowerCase())).map(name=>{
               const ex=filteredExerciseMap[name]
@@ -4305,15 +4305,15 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                         <div>
                           <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10 }}>
                             <div>
-                              <div style={{ fontSize:14,fontWeight:600,color:'#111',marginBottom:2 }}>{name}</div>
-                              <div style={{ fontSize:11,color:'#9ca3af' }}>
+                              <div style={{ fontSize:14,fontWeight:600,color:TXT,marginBottom:2 }}>{name}</div>
+                              <div style={{ fontSize:11,color:TXT3 }}>
                                 {ex.muscle?`${ex.muscle} · `:''}{records.length} {records.length===1?'тренировка':records.length<5?'тренировки':'тренировок'}
                                 {growth>0&&<span style={{ color:'#22c55e',marginLeft:4 }}>+{growth.toFixed(0)} кг</span>}
                               </div>
                             </div>
                             <div style={{ textAlign:'right',flexShrink:0 }}>
                               <div style={{ fontSize:16,fontWeight:700,color:PUR }}>{best} кг</div>
-                              <div style={{ fontSize:10,color:'#9ca3af' }}>макс. вес</div>
+                              <div style={{ fontSize:10,color:TXT3 }}>макс. вес</div>
                             </div>
                           </div>
                           {/* SVG линейный график */}
@@ -4354,14 +4354,14 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                     <Card style={{ marginTop:4,border:`1.5px solid ${PUR}33` }}>
                       <div style={{ marginBottom:10,display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8 }}>
                         <div style={{ minWidth:0 }}>
-                          <div style={{ fontSize:14,fontWeight:600,color:'#111' }}>{fmtFull(activeRec.date)}</div>
-                          {activeRec.workoutName&&<div style={{ fontSize:12,color:'#9ca3af',marginTop:2 }}>{activeRec.workoutName}</div>}
+                          <div style={{ fontSize:14,fontWeight:600,color:TXT }}>{fmtFull(activeRec.date)}</div>
+                          {activeRec.workoutName&&<div style={{ fontSize:12,color:TXT3,marginTop:2 }}>{activeRec.workoutName}</div>}
                         </div>
                         {!readOnly&&(
                         <div style={{ display:'flex',gap:6,flexShrink:0 }}>
                           <button onClick={e=>{e.stopPropagation();if(onEditWorkout)onEditWorkout(workoutHistory[activeRec.histIdx],activeRec.histIdx)}}
                             title="Редактировать"
-                            style={{ width:30,height:30,borderRadius:8,border:'1px solid #e5e7eb',background:'#f9fafb',cursor:'pointer',fontSize:13,color:'#6b7280',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>✏️</button>
+                            style={{ width:30,height:30,borderRadius:8,border:`1px solid ${HAIR}`,background:SURF2,cursor:'pointer',fontSize:13,color:TXT3,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>✏️</button>
                           <button onClick={e=>{e.stopPropagation();if(window.confirm('Удалить тренировку?')){onDeleteWorkout(activeRec.histIdx)}}}
                             title="Удалить"
                             style={{ width:30,height:30,borderRadius:8,border:'1px solid #fecaca',background:'#fef2f2',cursor:'pointer',fontSize:13,color:'#ef4444',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>🗑</button>
@@ -4370,19 +4370,19 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                       </div>
                       <div style={{ display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:12 }}>
                         {[{label:'Тоннаж',value:`${activeRec.tonnage} кг`,accent:true},{label:'Макс. вес',value:`${activeRec.maxKg} кг`,accent:false},{label:'Подходов',value:(activeRec.sets||[]).filter(s=>s.kg||s.reps).length,accent:false}].map(c=>(
-                          <div key={c.label} style={{ background:'#f9fafb',borderRadius:10,padding:'10px 12px' }}>
-                            <div style={{ fontSize:10,color:'#9ca3af',marginBottom:4 }}>{c.label}</div>
-                            <div style={{ fontSize:17,fontWeight:700,color:c.accent?PUR:'#111' }}>{c.value}</div>
+                          <div key={c.label} style={{ background:SURF2,borderRadius:10,padding:'10px 12px' }}>
+                            <div style={{ fontSize:10,color:TXT3,marginBottom:4 }}>{c.label}</div>
+                            <div style={{ fontSize:17,fontWeight:700,color:c.accent?PUR:TXT }}>{c.value}</div>
                           </div>
                         ))}
                       </div>
                       <div style={{ display:'flex',flexDirection:'column',gap:5 }}>
                         {(activeRec.sets||[]).map((s,si)=>(s.kg||s.reps)&&(
-                          <div key={si} style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 12px',background:'#f9fafb',borderRadius:8 }}>
+                          <div key={si} style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 12px',background:SURF2,borderRadius:8 }}>
                             <div style={{ display:'flex',alignItems:'center',gap:12 }}>
-                              <span style={{ fontSize:11,fontWeight:600,color:'#d1d5db',width:16,textAlign:'center' }}>{si+1}</span>
-                              <span style={{ fontSize:14,fontWeight:600,color:'#111' }}>{setWeightLabel(s)}</span>
-                              <span style={{ fontSize:13,color:'#9ca3af' }}>× {parseInt(s.reps)||0} повт.</span>
+                              <span style={{ fontSize:11,fontWeight:600,color:TXT3,width:16,textAlign:'center' }}>{si+1}</span>
+                              <span style={{ fontSize:14,fontWeight:600,color:TXT }}>{setWeightLabel(s)}</span>
+                              <span style={{ fontSize:13,color:TXT3 }}>× {parseInt(s.reps)||0} повт.</span>
                               {/* Оценка тяжести подхода (workout_sets.rating) — без неё не видно,
                                   почему движок прогрессии изменил вес на следующий раз (см. задачу 1). */}
                               {s.rating&&(
@@ -4460,7 +4460,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
       setTimeout(()=>setTemplateMsg(''),2500)
     }
     return createPortal(
-      <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
+      <div style={{ position:'fixed',inset:0,background:BG,zIndex:1000,display:'flex',flexDirection:'column' }}>
         {/* Тост ошибки записи — тот же showFoodSaveError, что и в секции
             "Питание" (общий на DiaryView), просто отрисован ещё и здесь:
             savePlanned/deletePlanned/saveTemplate тоже могут упасть в Supabase. */}
@@ -4475,10 +4475,10 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           </div>
         )}
         {/* ─ Шапка с кнопкой + */}
-        <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0,position:'sticky',top:0,zIndex:10 }}>
+        <div style={{ background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0,position:'sticky',top:0,zIndex:10 }}>
           <div style={{ display:'flex',alignItems:'center',gap:14 }}>
-            <button onClick={()=>{setSection(null);setShowWorkoutMenu(false);setOpenCardMenu(null)}} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
-            <span style={{ fontSize:17,fontWeight:700,color:'#111' }}>{sectionTitle('Мои тренировки','Тренировки')}</span>
+            <button onClick={()=>{setSection(null);setShowWorkoutMenu(false);setOpenCardMenu(null)}} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
+            <span style={{ fontSize:17,fontWeight:700,color:TXT }}>{sectionTitle('Мои тренировки','Тренировки')}</span>
           </div>
           {!readOnly&&<div style={{ position:'relative' }}>
             <button onClick={()=>{setShowWorkoutMenu(v=>!v);setOpenCardMenu(null)}}
@@ -4486,7 +4486,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
             {showWorkoutMenu&&(
               <>
                 <div onClick={()=>setShowWorkoutMenu(false)} style={{ position:'fixed',inset:0,zIndex:10 }} />
-                <div style={{ position:'absolute',top:42,right:0,background:'#fff',borderRadius:13,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:228,overflow:'hidden',border:'1px solid #f0f0f0' }}>
+                <div style={{ position:'absolute',top:42,right:0,background:SURF,borderRadius:13,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:228,overflow:'hidden',border:`1px solid ${HAIR}` }}>
                   {[
                     {icon:'📅',label:'Запланировать тренировку',sub:'Назначить дату'},
                     {icon:'▶️',label:'Начать тренировку',sub:'Запустить прямо сейчас',key:'start'},
@@ -4497,11 +4497,11 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                       setShowWorkoutMenu(false)
                       if(item.key){if(onWorkoutAction)onWorkoutAction(item.key)}
                       else{setShowScheduleForm(true)}
-                    }} style={{ display:'flex',alignItems:'center',gap:11,width:'100%',padding:'11px 15px',border:'none',borderTop:idx>0?'1px solid #f3f4f6':'none',background:'transparent',cursor:'pointer',textAlign:'left' }}>
+                    }} style={{ display:'flex',alignItems:'center',gap:11,width:'100%',padding:'11px 15px',border:'none',borderTop:idx>0?`1px solid ${HAIR}`:'none',background:'transparent',cursor:'pointer',textAlign:'left' }}>
                       <span style={{ fontSize:19,flexShrink:0 }}>{item.icon}</span>
                       <div>
-                        <div style={{ fontSize:13,fontWeight:500,color:'#111' }}>{item.label}</div>
-                        <div style={{ fontSize:11,color:'#9ca3af' }}>{item.sub}</div>
+                        <div style={{ fontSize:13,fontWeight:500,color:TXT }}>{item.label}</div>
+                        <div style={{ fontSize:11,color:TXT3 }}>{item.sub}</div>
                       </div>
                     </button>
                   ))}
@@ -4516,17 +4516,17 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
 
           {/* Форма планирования */}
           {!readOnly&&showScheduleForm&&(
-            <div style={{ background:'#fff',borderRadius:12,padding:'16px',marginBottom:12,boxShadow:'0 1px 4px rgba(0,0,0,0.08)' }}>
-              <div style={{ fontSize:14,fontWeight:600,color:'#111',marginBottom:10 }}>📅 Запланировать тренировку</div>
+            <div style={{ background:SURF,borderRadius:12,padding:'16px',marginBottom:12,boxShadow:'0 1px 4px rgba(0,0,0,0.08)' }}>
+              <div style={{ fontSize:14,fontWeight:600,color:TXT,marginBottom:10 }}>📅 Запланировать тренировку</div>
               <input value={scheduleForm.name} onChange={e=>setScheduleForm(f=>({...f,name:e.target.value}))} placeholder="Название тренировки"
-                style={{ width:'100%',padding:'9px 12px',fontSize:13,borderRadius:8,border:'1.5px solid #e5e7eb',boxSizing:'border-box',outline:'none',color:'#111',marginBottom:8 }}
-                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                style={{ width:'100%',padding:'9px 12px',fontSize:13,borderRadius:8,border:`1.5px solid ${HAIR}`,boxSizing:'border-box',outline:'none',color:TXT,marginBottom:8 }}
+                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
               <input type="date" value={scheduleForm.date} onChange={e=>setScheduleForm(f=>({...f,date:e.target.value}))}
-                style={{ width:'100%',padding:'9px 12px',fontSize:13,borderRadius:8,border:'1.5px solid #e5e7eb',boxSizing:'border-box',outline:'none',color:'#111',background:'#fff',colorScheme:'light',marginBottom:12 }}
-                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                style={{ width:'100%',padding:'9px 12px',fontSize:13,borderRadius:8,border:`1.5px solid ${HAIR}`,boxSizing:'border-box',outline:'none',color:TXT,background:SURF,colorScheme:'light',marginBottom:12 }}
+                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
               <div style={{ display:'flex',gap:8 }}>
                 <button onClick={()=>{setShowScheduleForm(false);setScheduleForm({name:'',date:''})}}
-                  style={{ flex:1,padding:'9px',borderRadius:8,border:'1px solid #e5e7eb',background:'transparent',color:'#6b7280',cursor:'pointer',fontSize:13 }}>Отмена</button>
+                  style={{ flex:1,padding:'9px',borderRadius:8,border:`1px solid ${HAIR}`,background:'transparent',color:TXT3,cursor:'pointer',fontSize:13 }}>Отмена</button>
                 <button onClick={()=>{
                   if(!scheduleForm.name.trim()||!scheduleForm.date)return
                   savePlanned({id:Date.now(),name:scheduleForm.name.trim(),date:scheduleForm.date})
@@ -4538,9 +4538,9 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
 
           {/* Запланированные */}
           {[...plannedWorkouts].sort((a,b)=>new Date(a.date)-new Date(b.date)).map(pw=>(
-            <div key={pw.id} style={{ background:'#fff',borderRadius:12,padding:'12px 14px',marginBottom:8,border:`1.5px dashed ${PUR}55`,display:'flex',justifyContent:'space-between',alignItems:'center' }}>
+            <div key={pw.id} style={{ background:SURF,borderRadius:12,padding:'12px 14px',marginBottom:8,border:`1.5px dashed ${PUR}55`,display:'flex',justifyContent:'space-between',alignItems:'center' }}>
               <div>
-                <div style={{ fontSize:13,fontWeight:500,color:'#111' }}>{pw.name}</div>
+                <div style={{ fontSize:13,fontWeight:500,color:TXT }}>{pw.name}</div>
                 <div style={{ fontSize:11,color:PUR,marginTop:2 }}>📅 Запланировано · {fmtFull(pw.date)}</div>
               </div>
               {!readOnly&&(
@@ -4548,38 +4548,38 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 <button onClick={()=>{if(onWorkoutAction)onWorkoutAction('start')}}
                   style={{ fontSize:11,padding:'5px 10px',borderRadius:7,border:`1px solid ${PUR}`,background:'#EEEDFE',color:PUR,cursor:'pointer',fontWeight:500 }}>▶ Начать</button>
                 <button onClick={()=>deletePlanned(pw.id)}
-                  style={{ fontSize:14,padding:'4px 9px',borderRadius:7,border:'1px solid #e5e7eb',background:'transparent',color:'#9ca3af',cursor:'pointer',lineHeight:1 }}>✕</button>
+                  style={{ fontSize:14,padding:'4px 9px',borderRadius:7,border:`1px solid ${HAIR}`,background:'transparent',color:TXT3,cursor:'pointer',lineHeight:1 }}>✕</button>
               </div>
               )}
             </div>
           ))}
 
           {sorted.length===0&&plannedWorkouts.length===0?(
-            <div style={{ textAlign:'center',color:'#9ca3af',fontSize:13,marginTop:60 }}>
+            <div style={{ textAlign:'center',color:TXT3,fontSize:13,marginTop:60 }}>
               <div style={{ fontSize:40,marginBottom:12 }}>🏋️</div>
               Нажми «+», чтобы добавить тренировку
             </div>
           ):sorted.map((w,i)=>(
             <div key={i} style={{ marginBottom:8,position:'relative' }}>
               {openCardMenu===i&&<div onClick={()=>setOpenCardMenu(null)} style={{ position:'fixed',inset:0,zIndex:10 }} />}
-              <div style={{ background:'#fff',borderRadius:13,boxShadow:'0 1px 4px rgba(0,0,0,0.07)',padding:'14px 16px',cursor:'pointer',border:selIdx===i?`1.5px solid ${PUR}33`:'1.5px solid transparent' }}
+              <div style={{ background:SURF,borderRadius:13,boxShadow:'0 1px 4px rgba(0,0,0,0.07)',padding:'14px 16px',cursor:'pointer',border:selIdx===i?`1.5px solid ${PUR}33`:'1.5px solid transparent' }}
                 onClick={()=>{setSelIdx(selIdx===i?null:i);setOpenCardMenu(null)}}>
                 <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start' }}>
                   <div style={{ flex:1,minWidth:0 }}>
-                    <div style={{ fontSize:14,fontWeight:600,color:'#111' }}>{w.name}</div>
-                    <div style={{ fontSize:11,color:'#9ca3af',marginTop:2 }}>{fmtFull(w.date)}</div>
+                    <div style={{ fontSize:14,fontWeight:600,color:TXT }}>{w.name}</div>
+                    <div style={{ fontSize:11,color:TXT3,marginTop:2 }}>{fmtFull(w.date)}</div>
                   </div>
                   <div style={{ display:'flex',alignItems:'flex-start',gap:8,flexShrink:0 }}>
                     <div style={{ textAlign:'right' }}>
                       <div style={{ fontSize:16,fontWeight:700,color:PUR }}>{w.ton} кг</div>
-                      <div style={{ fontSize:10,color:'#9ca3af' }}>тоннаж</div>
+                      <div style={{ fontSize:10,color:TXT3 }}>тоннаж</div>
                     </div>
                     {/* Три точки */}
                     {!readOnly&&<div style={{ position:'relative' }}>
                       <button onClick={e=>{e.stopPropagation();setOpenCardMenu(openCardMenu===i?null:i);setShowWorkoutMenu(false)}}
-                        style={{ width:28,height:28,borderRadius:7,border:'1px solid #e5e7eb',background:'#f9fafb',cursor:'pointer',fontSize:17,color:'#6b7280',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,letterSpacing:1 }}>⋯</button>
+                        style={{ width:28,height:28,borderRadius:7,border:`1px solid ${HAIR}`,background:SURF2,cursor:'pointer',fontSize:17,color:TXT3,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,letterSpacing:1 }}>⋯</button>
                       {openCardMenu===i&&(
-                        <div onClick={e=>e.stopPropagation()} style={{ position:'absolute',top:34,right:0,background:'#fff',borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:200,overflow:'hidden',border:'1px solid #f0f0f0' }}>
+                        <div onClick={e=>e.stopPropagation()} style={{ position:'absolute',top:34,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:200,overflow:'hidden',border:`1px solid ${HAIR}` }}>
                           {[
                             {icon:'✏️',label:'Редактировать тренировку'},
                             {icon:'📋',label:'Копировать тренировку'},
@@ -4594,7 +4594,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                               else if(item.label==='Удалить тренировку'){
                                 if(window.confirm(`Удалить тренировку «${w.name}»?`)){if(onDeleteWorkout)onDeleteWorkout(w.histIdx);setSelIdx(null)}
                               }
-                            }} style={{ display:'flex',alignItems:'center',gap:10,width:'100%',padding:'11px 15px',border:'none',borderTop:idx>0?'1px solid #f3f4f6':'none',background:'transparent',cursor:'pointer',textAlign:'left',color:item.danger?'#ef4444':'#111',fontSize:13 }}>
+                            }} style={{ display:'flex',alignItems:'center',gap:10,width:'100%',padding:'11px 15px',border:'none',borderTop:idx>0?`1px solid ${HAIR}`:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:item.danger?'#ef4444':TXT,fontSize:13 }}>
                               <span>{item.icon}</span>{item.label}
                             </button>
                           ))}
@@ -4604,26 +4604,26 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                   </div>
                 </div>
                 <div style={{ display:'flex',gap:12,marginTop:8 }}>
-                  <span style={{ fontSize:11,color:'#6b7280' }}>💪 {w.exercises.length} упр.</span>
-                  <span style={{ fontSize:11,color:'#6b7280' }}>📋 {w.exercises.reduce((s,ex)=>s+(ex.sets||[]).filter(s=>s.kg||s.reps).length,0)} подх.</span>
+                  <span style={{ fontSize:11,color:TXT3 }}>💪 {w.exercises.length} упр.</span>
+                  <span style={{ fontSize:11,color:TXT3 }}>📋 {w.exercises.reduce((s,ex)=>s+(ex.sets||[]).filter(s=>s.kg||s.reps).length,0)} подх.</span>
                 </div>
               </div>
               {selIdx===i&&(
                 <Card style={{ marginTop:4,border:`1.5px solid ${PUR}22` }}>
                   {/* Комментарий к тренировке — пишет сам клиент при сохранении.
                       Только показ: редактирование живёт в редакторе тренировки. */}
-                  {w.comment&&<div style={{ fontSize:12,color:'#6b7280',marginBottom:8 }}>💬 {w.comment}</div>}
+                  {w.comment&&<div style={{ fontSize:12,color:TXT3,marginBottom:8 }}>💬 {w.comment}</div>}
                   {w.exercises.map((ex,ei)=>{
                     const exTon=(ex.sets||[]).reduce((s,set)=>s+(parseFloat(set.kg)||0)*(parseInt(set.reps)||0),0)
                     return(
-                      <div key={ei} style={{ paddingTop:ei>0?10:0,borderTop:ei>0?'1px solid #f3f4f6':'' }}>
+                      <div key={ei} style={{ paddingTop:ei>0?10:0,borderTop:ei>0?`1px solid ${HAIR}`:'' }}>
                         <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4 }}>
-                          <span style={{ fontSize:13,fontWeight:500,color:'#111' }}>{ex.n}</span>
+                          <span style={{ fontSize:13,fontWeight:500,color:TXT }}>{ex.n}</span>
                           {exTon>0&&<span style={{ fontSize:11,color:PUR,fontWeight:600 }}>{exTon} кг</span>}
                         </div>
                         <div style={{ display:'flex',gap:5,flexWrap:'wrap' }}>
                           {(ex.sets||[]).map((s,si)=>(s.kg||s.reps)&&(
-                            <span key={si} style={{ fontSize:11,color:'#6b7280',background:'#f3f4f6',padding:'2px 8px',borderRadius:5 }}>
+                            <span key={si} style={{ fontSize:11,color:TXT3,background:SURF2,padding:'2px 8px',borderRadius:5 }}>
                               {si+1}. {setWeightLabel(s)} × {s.reps||'—'}
                             </span>
                           ))}
@@ -4870,7 +4870,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                     {editingFoodId===e.id?(
                       <div style={{ padding:'12px 14px' }}>
                         <input value={editFoodForm.name} onChange={ev=>setEditFoodForm(f=>({...f,name:ev.target.value}))}
-                          style={{ width:'100%',padding:'8px 10px',fontSize:14,borderRadius:8,border:`1.5px solid ${HAIR}`,outline:'none',boxSizing:'border-box',color:TXT,marginBottom:8 }}
+                          style={{ width:'100%',padding:'8px 10px',fontSize:14,borderRadius:8,border:`1.5px solid ${HAIR}`,outline:'none',boxSizing:'border-box',color:TXT,marginBottom:8,background:SURF2 }}
                           onFocus={ev=>ev.target.style.borderColor=PUR} onBlur={ev=>ev.target.style.borderColor=HAIR} />
                         {/* items list editable */}
                         {editFoodForm.items.length>0&&(
@@ -4878,7 +4878,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                             {editFoodForm.items.map((item,ii)=>(
                               <div key={ii} style={{ display:'flex',gap:6,marginBottom:4 }}>
                                 <input value={item} onChange={ev=>setEditFoodForm(f=>({...f,items:f.items.map((it,idx)=>idx===ii?ev.target.value:it)}))}
-                                  style={{ flex:1,padding:'6px 10px',fontSize:12,borderRadius:7,border:`1px solid ${HAIR}`,outline:'none',color:TXT2 }}
+                                  style={{ flex:1,padding:'6px 10px',fontSize:12,borderRadius:7,border:`1px solid ${HAIR}`,outline:'none',color:TXT2,background:SURF2 }}
                                   onFocus={ev=>ev.target.style.borderColor=PUR} onBlur={ev=>ev.target.style.borderColor=HAIR} />
                                 <button onClick={()=>setEditFoodForm(f=>({...f,items:f.items.filter((_,idx)=>idx!==ii)}))}
                                   style={{ background:'none',border:'none',fontSize:16,cursor:'pointer',color:TXT3,padding:'4px',minHeight:'unset' }}>✕</button>
@@ -4891,7 +4891,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                         <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,marginBottom:10 }}>
                           {[['ккал','kcal',PUR],['Б','p',TEA],['У','c',BLU],['Ж','f',COR]].map(([pl,k,c])=>(
                             <input key={k} type="number" min={k==='kcal'?CAL_MIN:MACRO_MIN} max={k==='kcal'?CAL_MAX:MACRO_MAX} placeholder={pl} value={editFoodForm[k]} onChange={ev=>setEditFoodForm(f=>({...f,[k]:ev.target.value}))}
-                              style={{ width:'100%',padding:'7px 6px',fontSize:12,borderRadius:7,border:`1.5px solid ${c}44`,outline:'none',boxSizing:'border-box',color:TXT,textAlign:'center' }}
+                              style={{ width:'100%',padding:'7px 6px',fontSize:12,borderRadius:7,border:`1.5px solid ${c}44`,outline:'none',boxSizing:'border-box',color:TXT,textAlign:'center',background:SURF2 }}
                               onFocus={ev=>ev.target.style.borderColor=c} onBlur={ev=>ev.target.style.borderColor=`${c}44`} />
                           ))}
                         </div>
@@ -4976,17 +4976,17 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     const table=percentTable(tableSource,'epley')
     const tabBtn=(mode,label)=>(
       <button onClick={()=>{if(mode==='table'&&!rmTableRM&&directRM)setRmTableRM(roundToPlate(directRM).toString());setRmMode(mode)}}
-        style={{ flex:1,padding:'10px 6px',borderRadius:9,border:'none',background:rmMode===mode?PUR:'#f3f4f6',color:rmMode===mode?'#fff':'#6b7280',fontSize:12.5,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>
+        style={{ flex:1,padding:'10px 6px',borderRadius:9,border:'none',background:rmMode===mode?PUR:SURF2,color:rmMode===mode?'#fff':TXT3,fontSize:12.5,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>
         {label}
       </button>
     )
-    const inputStyle={ width:'100%',padding:'11px 12px',fontSize:15,borderRadius:9,border:'1.5px solid #e5e7eb',outline:'none',boxSizing:'border-box',color:'#111',background:'#fff' }
-    const fieldLabel={ fontSize:12,color:'#6b7280',marginBottom:5,fontWeight:600 }
+    const inputStyle={ width:'100%',padding:'11px 12px',fontSize:15,borderRadius:9,border:`1.5px solid ${HAIR}`,outline:'none',boxSizing:'border-box',color:TXT,background:SURF }
+    const fieldLabel={ fontSize:12,color:TXT3,marginBottom:5,fontWeight:600 }
     return createPortal(
-      <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
-        <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 16px',display:'flex',alignItems:'center',gap:10,flexShrink:0 }}>
-          <button onClick={()=>setSection(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
-          <span style={{ fontSize:17,fontWeight:700,color:'#111',flex:1 }}>{sectionTitle('🧮 Калькулятор 1ПМ')}</span>
+      <div style={{ position:'fixed',inset:0,background:BG,zIndex:1000,display:'flex',flexDirection:'column' }}>
+        <div style={{ background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 16px',display:'flex',alignItems:'center',gap:10,flexShrink:0 }}>
+          <button onClick={()=>setSection(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
+          <span style={{ fontSize:17,fontWeight:700,color:TXT,flex:1 }}>{sectionTitle('🧮 Калькулятор 1ПМ')}</span>
         </div>
         <div style={{ flex:1,overflowY:'auto',padding:'14px 16px 32px' }}>
 
@@ -5004,17 +5004,17 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                   <div>
                     <div style={fieldLabel}>Вес, кг</div>
                     <input type="number" inputMode="decimal" placeholder="100" value={rmWeight} onChange={e=>setRmWeight(e.target.value)}
-                      style={inputStyle} onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                      style={inputStyle} onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                   </div>
                   <div>
                     <div style={fieldLabel}>Повторения</div>
                     <input type="number" inputMode="numeric" placeholder="5" value={rmReps} onChange={e=>setRmReps(e.target.value)}
-                      style={inputStyle} onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                      style={inputStyle} onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                   </div>
                 </div>
               </Card>
               <Card style={{ textAlign:'center',padding:'22px 16px' }}>
-                <div style={{ fontSize:12,color:'#9ca3af',fontWeight:600,marginBottom:6 }}>Твой 1ПМ</div>
+                <div style={{ fontSize:12,color:TXT3,fontWeight:600,marginBottom:6 }}>Твой 1ПМ</div>
                 <div style={{ fontSize:40,fontWeight:800,color:PUR,lineHeight:1 }}>
                   {directRM?`≈ ${roundToPlate(directRM)} кг`:'—'}
                 </div>
@@ -5029,17 +5029,17 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                   <div>
                     <div style={fieldLabel}>1ПМ, кг</div>
                     <input type="number" inputMode="decimal" placeholder="120" value={rmTargetRM} onChange={e=>setRmTargetRM(e.target.value)}
-                      style={inputStyle} onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                      style={inputStyle} onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                   </div>
                   <div>
                     <div style={fieldLabel}>Хочу повторений</div>
                     <input type="number" inputMode="numeric" placeholder="8" value={rmTargetReps} onChange={e=>setRmTargetReps(e.target.value)}
-                      style={inputStyle} onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                      style={inputStyle} onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                   </div>
                 </div>
               </Card>
               <Card style={{ textAlign:'center',padding:'22px 16px' }}>
-                <div style={{ fontSize:12,color:'#9ca3af',fontWeight:600,marginBottom:6 }}>Рабочий вес</div>
+                <div style={{ fontSize:12,color:TXT3,fontWeight:600,marginBottom:6 }}>Рабочий вес</div>
                 <div style={{ fontSize:40,fontWeight:800,color:PUR,lineHeight:1 }}>
                   {reverseW?`≈ ${roundToPlate(reverseW)} кг`:'—'}
                 </div>
@@ -5052,25 +5052,25 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
               <Card style={{ marginBottom:12 }}>
                 <div style={fieldLabel}>1ПМ, кг</div>
                 <input type="number" inputMode="decimal" placeholder="120" value={rmTableRM} onChange={e=>setRmTableRM(e.target.value)}
-                  style={inputStyle} onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                  style={inputStyle} onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
               </Card>
               {table.length>0?(
                 <Card style={{ padding:0,overflow:'hidden' }}>
-                  <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr 1fr',padding:'10px 14px',background:'#f9fafb',borderBottom:'1px solid #e5e7eb' }}>
-                    <div style={{ fontSize:11,color:'#9ca3af',fontWeight:700 }}>Повторы</div>
-                    <div style={{ fontSize:11,color:'#9ca3af',fontWeight:700,textAlign:'center' }}>% от 1ПМ</div>
-                    <div style={{ fontSize:11,color:'#9ca3af',fontWeight:700,textAlign:'right' }}>Вес</div>
+                  <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr 1fr',padding:'10px 14px',background:SURF2,borderBottom:`1px solid ${HAIR}` }}>
+                    <div style={{ fontSize:11,color:TXT3,fontWeight:700 }}>Повторы</div>
+                    <div style={{ fontSize:11,color:TXT3,fontWeight:700,textAlign:'center' }}>% от 1ПМ</div>
+                    <div style={{ fontSize:11,color:TXT3,fontWeight:700,textAlign:'right' }}>Вес</div>
                   </div>
                   {table.map((row,i)=>(
-                    <div key={row.reps} style={{ display:'grid',gridTemplateColumns:'1fr 1fr 1fr',padding:'11px 14px',borderBottom:i<table.length-1?'1px solid #f3f4f6':'none' }}>
-                      <div style={{ fontSize:14,fontWeight:700,color:'#111' }}>{row.reps}</div>
-                      <div style={{ fontSize:13,color:'#6b7280',textAlign:'center' }}>≈{row.percent}%</div>
+                    <div key={row.reps} style={{ display:'grid',gridTemplateColumns:'1fr 1fr 1fr',padding:'11px 14px',borderBottom:i<table.length-1?`1px solid ${HAIR}`:'none' }}>
+                      <div style={{ fontSize:14,fontWeight:700,color:TXT }}>{row.reps}</div>
+                      <div style={{ fontSize:13,color:TXT3,textAlign:'center' }}>≈{row.percent}%</div>
                       <div style={{ fontSize:14,fontWeight:700,color:PUR,textAlign:'right' }}>≈ {row.weight} кг</div>
                     </div>
                   ))}
                 </Card>
               ):(
-                <div style={{ textAlign:'center',color:'#9ca3af',fontSize:13,padding:'20px 0' }}>Введи 1ПМ, чтобы увидеть таблицу</div>
+                <div style={{ textAlign:'center',color:TXT3,fontSize:13,padding:'20px 0' }}>Введи 1ПМ, чтобы увидеть таблицу</div>
               )}
             </>
           )}
@@ -5090,18 +5090,18 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   ]
   return(
     <div>
-      <h2 style={{ fontSize:20,fontWeight:500,color:'#111',margin:'0 0 16px' }}>Дневник</h2>
+      <h2 style={{ fontSize:20,fontWeight:500,color:TXT,margin:'0 0 16px' }}>Дневник</h2>
       {FOLDERS_DIARY.map(f=>(
-        <div key={f.key} style={{ background:'#fff',borderRadius:14,boxShadow:'0 1px 5px rgba(0,0,0,0.08)',marginBottom:10,display:'flex',alignItems:'center',gap:14,padding:'16px',cursor:'pointer' }}
+        <div key={f.key} style={{ background:SURF,borderRadius:14,boxShadow:'0 1px 5px rgba(0,0,0,0.08)',marginBottom:10,display:'flex',alignItems:'center',gap:14,padding:'16px',cursor:'pointer' }}
           onClick={()=>{if(f.key==='exercises'){setExPeriod('all');setExCustomFrom('');setExCustomTo('')}setSection(f.key)}}>
           <div style={{ width:50,height:50,borderRadius:14,background:`${f.color}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0 }}>
             {f.icon}
           </div>
           <div style={{ flex:1,minWidth:0 }}>
-            <div style={{ fontSize:15,fontWeight:700,color:'#111' }}>{f.label}</div>
-            {f.sub&&<div style={{ fontSize:11,color:'#9ca3af',marginTop:3 }}>{f.sub}</div>}
+            <div style={{ fontSize:15,fontWeight:700,color:TXT }}>{f.label}</div>
+            {f.sub&&<div style={{ fontSize:11,color:TXT3,marginTop:3 }}>{f.sub}</div>}
           </div>
-          <span style={{ fontSize:22,color:'#c7cad1',flexShrink:0 }}>›</span>
+          <span style={{ fontSize:22,color:TXT3,flexShrink:0 }}>›</span>
         </div>
       ))}
     </div>
@@ -6068,7 +6068,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
               <input value={userEdit.name||''} type="text" placeholder="Иванов Иван Иванович"
                 onChange={e=>setUserEdit(u=>({...u,name:e.target.value}))}
                 style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
-                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
             </div>
             {/* Email и Telegram — у telegram-аккаунтов поле Email не рисуем
                 вовсе: там лежит технический tg{id}@telegram.fitpro, менять
@@ -6079,7 +6079,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                 <input value={userEdit[f.key]||''} type="text" placeholder={f.key==='email'?'ivan@example.com':'@username'}
                   onChange={e=>setUserEdit(u=>({...u,[f.key]:e.target.value}))}
                   style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
-                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
               </div>
             ))}
             {/* Физические данные */}
@@ -6089,7 +6089,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
               <input value={profile.birthdate||''} type="date" max={new Date().toISOString().slice(0,10)}
                 onChange={e=>setProfile(p=>({...p,birthdate:e.target.value}))}
                 style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:profile.birthdate?'#111':'#9ca3af',outline:'none',boxSizing:'border-box',background:'#fff'}}
-                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
             </div>
             {/* Рост и Вес */}
             {[
@@ -6101,7 +6101,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                 <input value={profile[f.key]||''} type="number" min={f.min} max={f.max} placeholder={f.placeholder}
                   onChange={e=>setProfile(p=>({...p,[f.key]:e.target.value}))}
                   style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
-                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
               </div>
             ))}
 
@@ -6137,7 +6137,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                     <input value={customGoal} onChange={e=>setCustomGoal(e.target.value)}
                       placeholder="Написать свой вариант..."
                       style={{flex:1,padding:'11px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:14,color:'#111',outline:'none',background:'#fafafa'}}
-                      onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'}
+                      onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR}
                       onKeyDown={e=>{if(e.key==='Enter'&&customGoal.trim()){setProfile(p=>({...p,goal:customGoal.trim()}));setCustomGoal('');setShowGoalPicker(false)}}} />
                     <button onClick={()=>{if(customGoal.trim()){setProfile(p=>({...p,goal:customGoal.trim()}));setCustomGoal('');setShowGoalPicker(false)}}}
                       style={{padding:'11px 16px',borderRadius:10,border:'none',background:PUR,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',minHeight:'unset',flexShrink:0}}>OK</button>
@@ -6193,21 +6193,21 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                   <input value={profile.steps||''} type="number" placeholder="например 8000"
                     onChange={e=>setProfile(p=>({...p,steps:e.target.value}))}
                     style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
-                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                 </div>
                 <div>
                   <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Тренировок в неделю</label>
                   <input value={profile.gymDays||''} type="number" placeholder="например 3"
                     onChange={e=>setProfile(p=>({...p,gymDays:e.target.value}))}
                     style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
-                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                 </div>
                 <div>
                   <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Род деятельности</label>
                   <input value={profile.occupation||''} type="text" placeholder="например: сидячая работа, много стою, физический труд"
                     onChange={e=>setProfile(p=>({...p,occupation:e.target.value}))}
                     style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
-                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                 </div>
                 <div>
                   <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Уровень активности</label>
@@ -6290,7 +6290,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                           <input value={newM[f.key]} type="number" placeholder="см"
                             onChange={e=>setNewM(p=>({...p,[f.key]:e.target.value}))}
                             style={{width:72,padding:'9px 10px',borderRadius:8,border:'1.5px solid #e5e7eb',fontSize:14,color:'#111',outline:'none',textAlign:'center'}}
-                            onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                            onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                           <span style={{fontSize:12,color:'#9ca3af'}}>см</span>
                         </div>
                       </div>
