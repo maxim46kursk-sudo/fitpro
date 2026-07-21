@@ -2087,18 +2087,18 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
 
           {/* Секундомер — только в режиме активной тренировки */}
           {wMode==='start'&&(
-            <div style={{ background:SURF, borderRadius:12, padding:'14px 18px 16px', marginBottom:16, textAlign:'center' }}>
-              <div style={{ fontSize:10, color:TXT3, textTransform:'uppercase', letterSpacing:2, marginBottom:8 }}>Секундомер</div>
-              <div style={{ fontSize:46, fontWeight:700, color:'#fff', fontVariantNumeric:'tabular-nums', letterSpacing:2, marginBottom:14 }}>
+            <div style={{ background:SURF, border:`1px solid ${HAIR}`, borderRadius:20, padding:'14px 18px 16px', marginBottom:16, textAlign:'center' }}>
+              <div style={{ fontSize:11, color:TXT3, textTransform:'uppercase', letterSpacing:'.22em', fontWeight:700, marginBottom:8 }}>Секундомер</div>
+              <div style={{ fontSize:46, fontWeight:800, letterSpacing:'.02em', fontVariantNumeric:'tabular-nums', marginBottom:14, background:'linear-gradient(180deg,#fff,#b9b6ff)', WebkitBackgroundClip:'text', backgroundClip:'text', WebkitTextFillColor:'transparent' }}>
                 {fmt(swTime)}
               </div>
               <div style={{ display:'flex', gap:10, justifyContent:'center' }}>
                 <button onClick={toggleStopwatch}
-                  style={{ padding:'10px 32px', borderRadius:8, border:'none', background:swRunning?'#374151':wColor, color:'#fff', fontSize:14, fontWeight:600, cursor:'pointer' }}>
+                  style={{ padding:'10px 32px', borderRadius:14, border:'none', background:swRunning?SURF2:TEA, color:swRunning?TXT2:'#04310f', fontSize:14, fontWeight:700, cursor:'pointer' }}>
                   {swRunning?'⏸ Стоп':'▶ Старт'}
                 </button>
                 <button onClick={resetStopwatch}
-                  style={{ padding:'10px 18px', borderRadius:8, border:`1px solid ${HAIR}`, background:'none', color:TXT3, fontSize:14, cursor:'pointer' }}>
+                  style={{ padding:'10px 18px', borderRadius:14, border:`1px solid ${HAIR}`, background:SURF2, color:TXT2, fontSize:14, cursor:'pointer' }}>
                   ↺
                 </button>
               </div>
@@ -2117,9 +2117,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             wExercises.map((ex,ei)=>{
               const tonnage=exTonnage(ex)
               return (
-                <div key={ei} style={{ marginBottom:14, background:ex.done?'#0d2010':SURF2, borderRadius:10, padding:'12px 14px', border:ex.done?'1px solid #14532d':'none' }}>
+                <div key={ei} style={{ marginBottom:14, background:ex.done?'#0d2010':SURF, borderRadius:20, padding:'12px 14px', border:ex.done?'1px solid #14532d':`1px solid ${HAIR}` }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, gap:8 }}>
-                    <span style={{ fontSize:14, fontWeight:600, color:ex.done?'#4ade80':wColor, flex:1, minWidth:0 }}>{ex.n}</span>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, flex:1, minWidth:0 }}>
+                      <span style={{ width:30, height:30, borderRadius:10, background:`linear-gradient(135deg, ${PUR}, #5b56c9)`, color:'#fff', fontWeight:800, fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>{ei+1}</span>
+                      <span style={{ fontSize:16, fontWeight:700, color:ex.done?'#4ade80':TXT, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ex.n}</span>
+                    </div>
                     <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
                       {ex.done&&<span style={{ fontSize:11, color:'#4ade80' }}>✓ Выполнено</span>}
                       {/* Последнее оставшееся упражнение не удаляем — кнопку
@@ -2176,7 +2179,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                     <>
                       <div style={{ display:'grid', gridTemplateColumns:'24px 1fr 1fr 26px 26px 20px', gap:5, marginBottom:5 }}>
                         {['#',ex.sets.some(s=>s.bandLevel!=null)?'РЕЗИНА':'КГ','ПОВТ','','',''].map((h,i)=>(
-                          <span key={i} style={{ fontSize:10, color:TXT3, textAlign:'center', textTransform:'uppercase' }}>{h}</span>
+                          <span key={i} style={{ fontSize:11, fontWeight:700, color:TXT2, textAlign:'center', textTransform:'uppercase', letterSpacing:'.06em' }}>{h}</span>
                         ))}
                       </div>
                       {ex.sets.map((set,si)=>{
@@ -2193,20 +2196,20 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                   onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,bandLevel:e.target.value===''?'':Number(e.target.value),fromTemplate:false}:s)}:x))}
                                   onFocus={selectOnFocus}
                                   placeholder="1"
-                                  style={{ background:isTemplateBand?'rgba(239,68,68,0.14)':'#374151', border:isTemplateBand?'1.5px solid #ef4444':`1px solid ${HAIR}`, borderRadius:6, padding:'6px 6px', fontSize:13, color:isTemplateBand?'#fca5a5':'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
+                                  style={{ background:isTemplateBand?'rgba(255,69,58,.08)':SURF2, border:isTemplateBand?'1.5px solid rgba(255,69,58,.55)':`1.5px solid ${HAIR}`, borderRadius:12, padding:'6px 6px', fontSize:17, fontWeight:700, fontVariantNumeric:'tabular-nums', color:isTemplateBand?'#ff8a82':TXT, textAlign:'center', width:'100%', boxSizing:'border-box' }} />
                               ):(
                                 <input value={set.kg} inputMode="decimal"
                                   onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,kg:e.target.value,fromTemplate:false}:s)}:x))}
                                   onFocus={selectOnFocus}
                                   placeholder="0"
-                                  style={{ background:isTemplateWeight?'rgba(239,68,68,0.14)':'#374151', border:isTemplateWeight?'1.5px solid #ef4444':`1px solid ${HAIR}`, borderRadius:6, padding:'6px 6px', fontSize:13, color:isTemplateWeight?'#fca5a5':'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
+                                  style={{ background:isTemplateWeight?'rgba(255,69,58,.08)':SURF2, border:isTemplateWeight?'1.5px solid rgba(255,69,58,.55)':`1.5px solid ${HAIR}`, borderRadius:12, padding:'6px 6px', fontSize:17, fontWeight:700, fontVariantNumeric:'tabular-nums', color:isTemplateWeight?'#ff8a82':TXT, textAlign:'center', width:'100%', boxSizing:'border-box' }} />
                               )}
                               <div style={{ position:'relative', width:'100%' }}>
                                 <input value={set.reps} inputMode="numeric"
                                   onChange={e=>handleRepsChange(ei,si,e.target.value)}
                                   onFocus={selectOnFocus}
                                   placeholder="0"
-                                  style={{ background:'#374151', border:`1px solid ${HAIR}`, borderRadius:6, padding:'6px 6px', fontSize:13, color:'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
+                                  style={{ background:SURF2, border:`1.5px solid ${HAIR}`, borderRadius:12, padding:'6px 6px', fontSize:17, fontWeight:700, fontVariantNumeric:'tabular-nums', color:TXT, textAlign:'center', width:'100%', boxSizing:'border-box' }} />
                                 {isOneSidedExercise(ex.n)&&(
                                   // Метка "выполняется на обе стороны" — НЕ кнопка (нет onClick,
                                   // isOneSidedExercise в programs.js только определяет упражнение
@@ -2256,10 +2259,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                       <button
                                         onClick={()=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,rating:s.rating===n?'':n}:s)}:x))}
                                         title={n===1?'1 — совсем легко':n===5?'5 — на пределе':String(n)}
-                                        style={{ width:44, height:44, borderRadius:10, border:'none', cursor:'pointer', padding:0,
-                                          background:set.rating===n?wColor:'#374151',
-                                          fontSize:set.rating===n?19:16, fontWeight:800, lineHeight:1,
-                                          color:set.rating===n?'#fff':TXT3, transition:'background .1s, font-size .1s' }}>
+                                        style={{ width:44, height:44, borderRadius:12, cursor:'pointer', padding:0,
+                                          background:set.rating===n?PUR:SURF2,
+                                          border:set.rating===n?`1px solid ${PUR}`:`1px solid ${HAIR}`,
+                                          boxShadow:set.rating===n?'0 6px 16px rgba(124,122,240,.4)':'none',
+                                          fontSize:15, fontWeight:800, lineHeight:1,
+                                          color:set.rating===n?'#fff':TXT2, transition:'background .1s, box-shadow .1s' }}>
                                         {n}
                                       </button>
                                       <span style={{ fontSize:11, color:TXT3, marginTop:2, minHeight:13, whiteSpace:'nowrap' }}>
@@ -2298,15 +2303,15 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         </div>
 
         {/* Поле комментария к тренировке */}
-        <div style={{ padding:'8px 14px', background:SURF2, borderTop:'1px solid #1f2937', flexShrink:0 }}>
+        <div style={{ padding:'8px 14px', background:SURF2, borderTop:`1px solid ${SEP}`, flexShrink:0 }}>
           <textarea value={wComment} onChange={e=>setWComment(e.target.value)} placeholder="💬 Комментарий к тренировке..." rows={2}
-            style={{ width:'100%', background:SURF2, border:`1px solid ${HAIR}`, borderRadius:8, padding:'7px 11px', fontSize:12, color:'#e5e7eb', resize:'none', outline:'none', fontFamily:'inherit', boxSizing:'border-box', lineHeight:1.5 }} />
+            style={{ width:'100%', background:SURF, border:`1px solid ${HAIR}`, borderRadius:16, padding:'7px 11px', fontSize:12, color:TXT, resize:'none', outline:'none', fontFamily:'inherit', boxSizing:'border-box', lineHeight:1.5 }} />
         </div>
 
         {/* Нижняя панель */}
         <div style={{ padding:'10px 18px', display:'flex', justifyContent:'space-between', alignItems:'center', background:SURF2, flexShrink:0 }}>
           <button onClick={()=>setPickOpen(true)} style={{ width:42, height:42, borderRadius:'50%', border:`2px solid ${HAIR}`, background:'none', color:TXT3, fontSize:22, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>+</button>
-          <button onClick={openDatePicker} style={{ padding:'12px 36px', borderRadius:24, border:'none', background:wColor, color:'#fff', fontSize:15, fontWeight:700, cursor:'pointer', boxShadow:`0 4px 16px ${wColor}66` }}>
+          <button onClick={openDatePicker} style={{ padding:'12px 36px', borderRadius:16, border:'none', background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', fontSize:16, fontWeight:800, cursor:'pointer', boxShadow:'0 10px 26px rgba(124,122,240,.4)' }}>
             {isEditMode?'Сохранить':'Завершить'}
           </button>
           <button onClick={()=>setShowSendModal(true)} style={{ width:42, height:42, borderRadius:'50%', border:`2px solid ${HAIR}`, background:'none', color:TXT3, fontSize:20, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>📤</button>
