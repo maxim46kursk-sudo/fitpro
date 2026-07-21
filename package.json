@@ -11,12 +11,15 @@
     "test": "node test-progression.mjs && node test-nutrition.mjs"
   },
   "dependencies": {
+    "@iconify/react": "^6.0.2",
     "@supabase/supabase-js": "^2.110.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@iconify-json/game-icons": "^1.2.4",
+    "@iconify-json/solar": "^1.2.5",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
