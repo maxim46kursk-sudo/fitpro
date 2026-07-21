@@ -72,8 +72,8 @@ const BADGE = {
 }
 
 const WORKOUT_ACTIONS = [
-  { key:'start', icon:'▶️', label:'Начать тренировку',   desc:'Запустить тренировку прямо сейчас' },
-  { key:'done',  icon:'✅', label:'Добавить выполненную', desc:'Записать уже проведённую тренировку' },
+  { key:'start', icon:'play', label:'Начать тренировку',   desc:'Запустить тренировку прямо сейчас' },
+  { key:'done',  icon:'check', label:'Добавить выполненную', desc:'Записать уже проведённую тренировку' },
 ]
 
 const WCOLORS = ['#D85A30','#7F77DD','#1D9E75','#378ADD','#E53935','#F59E0B']
@@ -191,11 +191,11 @@ function Dashboard({ setNav, setSC, isTrainer }) {
   const foodDiary = (() => { try { return JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}') } catch { return {} } })()
   const foodDays = Object.keys(foodDiary).length
   const quickActions = [
-    {icon:'👥',label:'Клиенты',nav:'clients'},
-    {icon:'🏋️',label:'Тренировки',nav:'workouts'},
-    {icon:'🥗',label:'Питание',nav:'nutrition'},
-    {icon:'📚',label:'Упражнения',nav:'library'},
-    {icon:'📓',label:'Дневник',nav:'progress'},
+    {icon:'people',label:'Клиенты',nav:'clients'},
+    {icon:'dumbbell',label:'Тренировки',nav:'workouts'},
+    {icon:'food',label:'Питание',nav:'nutrition'},
+    {icon:'book',label:'Упражнения',nav:'library'},
+    {icon:'notebook',label:'Дневник',nav:'progress'},
   ]
 
   return (
@@ -233,7 +233,7 @@ function Dashboard({ setNav, setSC, isTrainer }) {
           <div style={{ fontWeight:500, color:TXT, marginBottom:12 }}>Быстрые действия</div>
           {quickActions.map(a=>(
             <button key={a.label} onClick={()=>setNav(a.nav)} style={{ width:'100%', display:'flex', alignItems:'center', gap:9, padding:'8px 10px', marginBottom:6, background:SURF2, border:'none', borderRadius:8, cursor:'pointer', textAlign:'left' }}>
-              <span>{a.icon}</span><span style={{ fontSize:13, color:TXT }}>{a.label}</span>
+              <GlassIcon name={a.icon} size={20} /><span style={{ fontSize:13, color:TXT }}>{a.label}</span>
             </button>
           ))}
         </Card>
@@ -2410,7 +2410,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   style={{ display:'flex', alignItems:'center', gap:14, padding:'12px 14px', border:`1px solid ${HAIR}`, borderRadius:10, background:SURF, cursor:'pointer', textAlign:'left', width:'100%' }}
                   onMouseEnter={e=>e.currentTarget.style.background='#f0effe'}
                   onMouseLeave={e=>e.currentTarget.style.background='#fafafa'}>
-                  <span style={{ fontSize:22, flexShrink:0 }}>{a.icon}</span>
+                  <GlassIcon name={a.icon} size={24} />
                   <div>
                     <div style={{ fontSize:13, fontWeight:500, color:TXT }}>{a.label}</div>
                     <div style={{ fontSize:11, color:TXT3, marginTop:2 }}>{a.desc}</div>
@@ -2713,7 +2713,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       {completedProgramModal&&createPortal(
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1400, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
           <div style={{ background:SURF, borderRadius:16, padding:'24px 20px', maxWidth:380, width:'100%', boxSizing:'border-box' }}>
-            <div style={{ fontSize:34, textAlign:'center', marginBottom:8 }}>🎉</div>
+            <div style={{ display:'flex',justifyContent:'center',marginBottom:8 }}><GlassIcon name="trophy" size={38} /></div>
             <div style={{ fontSize:18, fontWeight:700, color:TXT, textAlign:'center', marginBottom:8 }}>
               Программа «{completedProgramModal}» пройдена!
             </div>
@@ -2888,7 +2888,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
 
 const NUTRITION_PLANS=[
   {
-    id:'45_50',title:'Рацион 45–50 кг',subtitle:'7 дней · ~1400 ккал/день',icon:'🥗',
+    id:'45_50',title:'Рацион 45–50 кг',subtitle:'7 дней · ~1400 ккал/день',icon:'plate',
     target:{cal:1400,p:94,c:141,f:47},
     days:[
       {n:1,meals:[
@@ -2943,7 +2943,7 @@ const NUTRITION_PLANS=[
     ]
   },
   {
-    id:'51_55',title:'Рацион 51–55 кг',subtitle:'7 дней · ~1600 ккал/день',icon:'🥗',
+    id:'51_55',title:'Рацион 51–55 кг',subtitle:'7 дней · ~1600 ккал/день',icon:'plate',
     target:{cal:1600,p:106,c:159,f:53},
     days:[
       {n:1,meals:[
@@ -2998,7 +2998,7 @@ const NUTRITION_PLANS=[
     ]
   },
   {
-    id:'56_60',title:'Рацион 56–60 кг',subtitle:'7 дней · ~1800 ккал/день',icon:'🥗',
+    id:'56_60',title:'Рацион 56–60 кг',subtitle:'7 дней · ~1800 ккал/день',icon:'plate',
     target:{cal:1800,p:116,c:174,f:58},
     days:[
       {n:1,meals:[
@@ -3053,7 +3053,7 @@ const NUTRITION_PLANS=[
     ]
   },
   {
-    id:'61_65',title:'Рацион 61–65 кг',subtitle:'7 дней · ~1900 ккал/день',icon:'🥗',
+    id:'61_65',title:'Рацион 61–65 кг',subtitle:'7 дней · ~1900 ккал/день',icon:'plate',
     target:{cal:1900,p:124,c:186,f:62},
     days:[
       {n:1,meals:[
@@ -3108,7 +3108,7 @@ const NUTRITION_PLANS=[
     ]
   },
   {
-    id:'66_70',title:'Рацион 66–70 кг',subtitle:'7 дней · ~2200 ккал/день',icon:'🥗',
+    id:'66_70',title:'Рацион 66–70 кг',subtitle:'7 дней · ~2200 ккал/день',icon:'plate',
     target:{cal:2200,p:134,c:201,f:67},
     days:[
       {n:1,meals:[
@@ -3163,7 +3163,7 @@ const NUTRITION_PLANS=[
     ]
   },
   {
-    id:'71_75',title:'Рацион 71–75 кг',subtitle:'7 дней · ~2350 ккал/день',icon:'🥗',
+    id:'71_75',title:'Рацион 71–75 кг',subtitle:'7 дней · ~2350 ккал/день',icon:'plate',
     target:{cal:2350,p:144,c:216,f:72},
     days:[
       {n:1,meals:[
@@ -3218,7 +3218,7 @@ const NUTRITION_PLANS=[
     ]
   },
   {
-    id:'76_80',title:'Рацион 76–80 кг',subtitle:'7 дней · ~2550 ккал/день',icon:'🥗',
+    id:'76_80',title:'Рацион 76–80 кг',subtitle:'7 дней · ~2550 ккал/день',icon:'plate',
     target:{cal:2550,p:154,c:231,f:77},
     days:[
       {n:1,meals:[
@@ -3273,7 +3273,7 @@ const NUTRITION_PLANS=[
     ]
   },
   {
-    id:'81_85',title:'Рацион 81–85 кг',subtitle:'7 дней · ~2900 ккал/день',icon:'🥗',
+    id:'81_85',title:'Рацион 81–85 кг',subtitle:'7 дней · ~2900 ккал/день',icon:'plate',
     target:{cal:2900,p:164,c:246,f:82},
     days:[
       {n:1,meals:[
@@ -3488,7 +3488,7 @@ function NutritionView({ userId }){
       <div style={{ position:'fixed',inset:0,background:BG,zIndex:1000,display:'flex',flexDirection:'column' }}>
         <div style={{ background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexShrink:0 }}>
           <button onClick={()=>setOpenPlan(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
-          <span style={{ fontSize:22 }}>{plan.icon}</span>
+          <GlassIcon name={plan.icon} size={26} />
           <div>
             <div style={{ fontSize:17,fontWeight:700,color:TXT }}>{plan.title}</div>
             <div style={{ fontSize:11,color:TXT3 }}>Цель: {plan.target.p}г Б / {plan.target.c}г У / {plan.target.f}г Ж / ~{plan.target.cal} ккал</div>
@@ -3527,7 +3527,7 @@ function NutritionView({ userId }){
         <Card key={plan.id} style={{ marginBottom:10,cursor:'pointer' }} onClick={()=>setOpenPlan(plan.id)}>
           <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center' }}>
             <div style={{ display:'flex',alignItems:'center',gap:12 }}>
-              <div style={{ fontSize:30 }}>{plan.icon}</div>
+              <GlassIcon name={plan.icon} size={32} />
               <div>
                 <div style={{ fontSize:15,fontWeight:600,color:TXT }}>{plan.title}</div>
                 <div style={{ fontSize:11,color:TXT3,marginTop:2 }}>{plan.subtitle}</div>
@@ -3601,7 +3601,7 @@ function LibraryView({ customExercises }) {
         {records.length===0?(
           <Card>
             <div style={{ textAlign:'center',padding:'20px 0',color:TXT3,fontSize:13 }}>
-              <div style={{ fontSize:32,marginBottom:8 }}>📊</div>
+              <div style={{ display:'flex',justifyContent:'center',marginBottom:8 }}><GlassIcon name="chart" size={34} /></div>
               Нет данных. Выполни тренировку с этим упражнением.
             </div>
           </Card>
@@ -5314,13 +5314,13 @@ function LandingPage({ onEnter, isTelegram }) {
           {/* ── Карточки функций */}
           <div style={{ display:'grid',gridTemplateColumns:mobile?'1fr':'1fr 1fr',gap:12,marginBottom:32 }}>
             {[
-              {icon:'📋',title:'Программы тренировок от maxim_athlete',desc:'Готовые программы под твои цели. Просто запусти тренировку — все упражнения, вес и подходы уже внутри'},
-              {icon:'🏋️',title:'Умный журнал тренировок',desc:'Записывай кг и повторы прямо в процессе тренировки, оставляй заметки для тренера или AI-ассистента'},
-              {icon:'🥗',title:'Умный дневник питания',desc:'Умеет не только считать КБЖУ, но и даёт рекомендации — что на что заменить'},
-              {icon:'📈',title:'Достижения',desc:'Аналитика общего тоннажа тренировок, прогресс по каждому упражнению и аналитика питания'},
+              {icon:'template',title:'Программы тренировок от maxim_athlete',desc:'Готовые программы под твои цели. Просто запусти тренировку — все упражнения, вес и подходы уже внутри'},
+              {icon:'dumbbell',title:'Умный журнал тренировок',desc:'Записывай кг и повторы прямо в процессе тренировки, оставляй заметки для тренера или AI-ассистента'},
+              {icon:'plate',title:'Умный дневник питания',desc:'Умеет не только считать КБЖУ, но и даёт рекомендации — что на что заменить'},
+              {icon:'chart',title:'Достижения',desc:'Аналитика общего тоннажа тренировок, прогресс по каждому упражнению и аналитика питания'},
             ].map((f,i)=>(
               <div key={i} style={{ background:G,border:GB,borderRadius:16,padding:'20px 18px',display:'flex',gap:14,alignItems:'flex-start' }}>
-                <span style={{ fontSize:26,flexShrink:0,marginTop:2 }}>{f.icon}</span>
+                <GlassIcon name={f.icon} size={28} style={{marginTop:2}} />
                 <div>
                   <div style={{ fontSize:14,fontWeight:700,color:'#fff',marginBottom:6,lineHeight:1.35 }}>{f.title}</div>
                   <div style={{ fontSize:12,color:'rgba(255,255,255,0.42)',lineHeight:1.65 }}>{f.desc}</div>
@@ -5778,15 +5778,15 @@ function SettingsView({ user, performLogout }) {
       {/* Поддержка */}
       <Section title="Поддержка">
         {[
-          {label:'Написать тренеру',icon:'💬',url:MAX_TELEGRAM_URL},
-          {label:'Поддержка',icon:'🛟',url:'https://t.me/fitpro_supportt'},
-          {label:'Сообщить об ошибке',icon:'🐛',url:'https://t.me/fitpro_supportt'},
+          {label:'Написать тренеру',icon:'chat',url:MAX_TELEGRAM_URL},
+          {label:'Поддержка',icon:'question',url:'https://t.me/fitpro_supportt'},
+          {label:'Сообщить об ошибке',icon:'danger',url:'https://t.me/fitpro_supportt'},
         ].map(item=>(
           <a key={item.label} href={item.url} target="_blank" rel="noopener noreferrer" style={{
             display:'flex',alignItems:'center',gap:12,padding:'13px 0',
             borderBottom:`1px solid ${HAIR}`,textDecoration:'none',color:TXT,
           }}>
-            <span style={{fontSize:18}}>{item.icon}</span>
+            <GlassIcon name={item.icon} size={20} />
             <span style={{fontSize:15,fontWeight:500,flex:1}}>{item.label}</span>
             <span style={{fontSize:16,color:TXT3}}>›</span>
           </a>
@@ -6118,14 +6118,14 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
               <div style={{overflow:'hidden',maxHeight:showGoalPicker?400:0,opacity:showGoalPicker?1:0,transition:'max-height 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease'}}>
                 <div style={{display:'flex',flexDirection:'column',gap:6,paddingTop:8}}>
                   {[
-                    {val:'Похудение',   icon:'🔥'},
-                    {val:'Набор массы', icon:'💪'},
-                    {val:'Поддержание', icon:'⚖️'},
-                    {val:'Рельеф',      icon:'✂️'},
+                    {val:'Похудение',   icon:'flame'},
+                    {val:'Набор массы', icon:'dumbbell'},
+                    {val:'Поддержание', icon:'scale'},
+                    {val:'Рельеф',      icon:'target'},
                   ].map(opt=>(
                     <button key={opt.val} onClick={()=>{setProfile(p=>({...p,goal:opt.val}));setShowGoalPicker(false)}}
                       style={{display:'flex',alignItems:'center',gap:10,padding:'11px 14px',borderRadius:10,border:`1.5px solid ${profile.goal===opt.val?PUR:HAIR}`,background:profile.goal===opt.val?'rgba(124,122,240,.14)':SURF2,cursor:'pointer',textAlign:'left',minHeight:'unset',transition:'all 0.15s'}}>
-                      <span style={{fontSize:18}}>{opt.icon}</span>
+                      <GlassIcon name={opt.icon} size={20} />
                       <span style={{fontSize:15,fontWeight:600,color:profile.goal===opt.val?PUR:TXT2}}>{opt.val}</span>
                       {profile.goal===opt.val&&<span style={{marginLeft:'auto',fontSize:15,color:PUR}}>✓</span>}
                     </button>
