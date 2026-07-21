@@ -164,10 +164,13 @@ const IC = {
 export function GlassIcon({ name, size = 24, className, style, title }) {
   const ic = IC[name]
   if (!ic) return null
+  // На мелких кеглях широкое свечение «мылит» силуэт, поэтому размытие тени
+  // масштабируется по размеру: до 26px — короткая и резкая, дальше — мягкая.
+  const glow = size < 26 ? `drop-shadow(0 2px 5px ${ic.glow})` : `drop-shadow(0 4px 11px ${ic.glow})`
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} className={className}
       role="img" aria-label={title || name}
-      style={{ filter: `drop-shadow(0 4px 11px ${ic.glow})`, flexShrink: 0, ...style }}>
+      style={{ filter: glow, flexShrink: 0, ...style }}>
       {ic.svg}
     </svg>
   )

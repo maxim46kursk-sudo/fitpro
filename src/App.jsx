@@ -129,7 +129,7 @@ function Badge({ lbl }) {
 function NavBtn({ ic, color, label, active, onClick }) {
   return (
     <button onClick={onClick} style={{ width:'100%', display:'flex', alignItems:'center', gap:9, padding:'8px 10px', borderRadius:8, border:'none', background:active?PUR:'transparent', color:active?'#fff':TXT3, fontSize:13, textAlign:'left', marginBottom:2, cursor:'pointer' }}>
-      <GlassIcon name={ic} size={22} style={{opacity:active?1:.55}} />{label}
+      <GlassIcon name={ic} size={26} style={{opacity:active?1:.55}} />{label}
     </button>
   )
 }
@@ -143,7 +143,7 @@ function NavBtn({ ic, color, label, active, onClick }) {
 function BackBtn({ label, right, onBack }) {
   return (
     <div style={{ background:SURF, borderBottom:`1px solid ${HAIR}`, padding:'14px 18px', display:'flex', alignItems:'center', gap:14, flexShrink:0, position:'sticky', top:0, zIndex:10 }}>
-      <button onClick={onBack} style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}>←</button>
+      <button onClick={onBack} style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}><GlassIcon name="back" size={20} /></button>
       <span style={{ fontSize:17, fontWeight:700, color:TXT, flex:1 }}>{label}</span>
       {right}
     </div>
@@ -233,7 +233,7 @@ function Dashboard({ setNav, setSC, isTrainer }) {
           <div style={{ fontWeight:500, color:TXT, marginBottom:12 }}>Быстрые действия</div>
           {quickActions.map(a=>(
             <button key={a.label} onClick={()=>setNav(a.nav)} style={{ width:'100%', display:'flex', alignItems:'center', gap:9, padding:'8px 10px', marginBottom:6, background:SURF2, border:'none', borderRadius:8, cursor:'pointer', textAlign:'left' }}>
-              <GlassIcon name={a.icon} size={20} /><span style={{ fontSize:13, color:TXT }}>{a.label}</span>
+              <GlassIcon name={a.icon} size={24} /><span style={{ fontSize:13, color:TXT }}>{a.label}</span>
             </button>
           ))}
         </Card>
@@ -405,7 +405,7 @@ function ClientsView({ setSC, setNav, userId }) {
             onClick={e=>e.stopPropagation()}>
             <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18 }}>
               <span style={{ fontSize:16,fontWeight:700,color:TXT }}>Новый клиент</span>
-              <button onClick={()=>setShowAdd(false)} style={{ background:'none',border:'none',fontSize:20,cursor:'pointer',color:TXT3,lineHeight:1 }}>✕</button>
+              <button onClick={()=>setShowAdd(false)} style={{ background:'none',border:'none',fontSize:20,cursor:'pointer',color:TXT3,lineHeight:1 }}><GlassIcon name="close" size={18} /></button>
             </div>
             <div style={{ display:'flex',flexDirection:'column',gap:12 }}>
               <div>
@@ -492,7 +492,7 @@ function ClientsView({ setSC, setNav, userId }) {
             </div>
             {c.isLocal&&(
               <button onClick={e=>{e.stopPropagation();if(window.confirm(`Удалить клиента ${c.name}?`))deleteLocal(c.id)}}
-                style={{ position:'absolute',top:10,right:10,background:'none',border:'none',color:TXT3,fontSize:16,cursor:'pointer',lineHeight:1,padding:4 }}>✕</button>
+                style={{ position:'absolute',top:10,right:10,background:'none',border:'none',color:TXT3,fontSize:16,cursor:'pointer',lineHeight:1,padding:4 }}><GlassIcon name="close" size={18} /></button>
             )}
           </Card>
         ))}
@@ -730,7 +730,7 @@ function ProgramEditor({ client, trainerId }) {
               <input value={w.name} onChange={e=>renameWorkout(wi,e.target.value)} placeholder={`Тренировка ${wi+1}`}
                 style={{ flex:1, padding:'7px 10px', fontSize:13, fontWeight:600, borderRadius:8, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
                 onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
-              <button onClick={()=>removeWorkout(wi)} style={{ background:'none', border:'none', color:TXT3, fontSize:16, cursor:'pointer', lineHeight:1, padding:4, flexShrink:0 }}>✕</button>
+              <button onClick={()=>removeWorkout(wi)} style={{ background:'none', border:'none', color:TXT3, fontSize:16, cursor:'pointer', lineHeight:1, padding:4, flexShrink:0 }}><GlassIcon name="close" size={18} /></button>
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
               {(w.exercises||[]).map((ex,ei)=>{
@@ -740,7 +740,7 @@ function ProgramEditor({ client, trainerId }) {
                   <div key={ei} style={{ display:'flex', flexDirection:'column', gap:4, padding:'8px 10px', background:SURF2, borderRadius:8 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                       <span style={{ fontSize:13, fontWeight:500, color:TXT, flex:1 }}>{ex.name}</span>
-                      <button onClick={()=>removeExercise(wi,ei)} style={{ background:'none', border:'none', color:TXT3, fontSize:15, cursor:'pointer', lineHeight:1, padding:2, flexShrink:0 }}>✕</button>
+                      <button onClick={()=>removeExercise(wi,ei)} style={{ background:'none', border:'none', color:TXT3, fontSize:15, cursor:'pointer', lineHeight:1, padding:2, flexShrink:0 }}><GlassIcon name="close" size={18} /></button>
                     </div>
                     <input value={ex.sets} onChange={e=>setExerciseSets(wi,ei,e.target.value)} placeholder="20 кг × 15, 25 кг × 12, 25 кг × 12"
                       style={{ width:'100%', padding:'7px 10px', fontSize:12, borderRadius:7, border:`1px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT, background:SURF }}
@@ -772,7 +772,7 @@ function ProgramEditor({ client, trainerId }) {
             onClick={e=>e.stopPropagation()}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
               <span style={{ fontSize:16, fontWeight:700, color:TXT }}>Выбери упражнение</span>
-              <button onClick={()=>setPickerFor(null)} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer', color:TXT3, lineHeight:1 }}>✕</button>
+              <button onClick={()=>setPickerFor(null)} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer', color:TXT3, lineHeight:1 }}><GlassIcon name="close" size={18} /></button>
             </div>
             <input value={pickerQuery} onChange={e=>setPickerQuery(e.target.value)} placeholder="Поиск..." autoFocus
               style={{ width:'100%', marginBottom:12, padding:'9px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
@@ -1838,7 +1838,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               onClick={e=>e.stopPropagation()}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18 }}>
                 <span style={{ fontSize:15, fontWeight:700, color:'#fff' }}>Новое упражнение</span>
-                <button onClick={()=>setCustomOpen(false)} style={{ background:'none', border:'none', color:TXT3, fontSize:18, cursor:'pointer' }}>✕</button>
+                <button onClick={()=>setCustomOpen(false)} style={{ background:'none', border:'none', color:TXT3, fontSize:18, cursor:'pointer' }}><GlassIcon name="close" size={18} /></button>
               </div>
               <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
                 <div>
@@ -1874,7 +1874,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             <div style={{ background:SURF, padding:'16px 18px 12px', borderBottom:'1px solid #2a2a2a', flexShrink:0 }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
                 <span style={{ fontSize:16, fontWeight:700, color:'#fff' }}>Упражнения</span>
-                <button onClick={()=>{setPickOpen(false);setPickQ('');setPickMuscle('Все')}} style={{ background:'none', border:'none', color:TXT3, fontSize:20, cursor:'pointer' }}>✕</button>
+                <button onClick={()=>{setPickOpen(false);setPickQ('');setPickMuscle('Все')}} style={{ background:'none', border:'none', color:TXT3, fontSize:20, cursor:'pointer' }}><GlassIcon name="close" size={18} /></button>
               </div>
               <div style={{ display:'flex', gap:8, marginBottom:10 }}>
                 <input value={pickQ} onChange={e=>setPickQ(e.target.value)} placeholder="Поиск упражнения..."
@@ -1922,7 +1922,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             </div>
             <div style={{ display:'flex', gap:8, flexShrink:0, marginTop:4 }}>
               {wIsFromProgram&&<button onClick={()=>setShowProgressionIntro(true)} style={{ fontSize:15, fontWeight:700, color:'#fff', background:'rgba(0,0,0,0.25)', border:'none', borderRadius:6, width:28, height:28, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', padding:0, minHeight:'unset' }}>?</button>}
-              <button onClick={()=>setShowExitConfirm(true)} style={{ fontSize:16, color:'#fff', background:'rgba(0,0,0,0.25)', border:'none', borderRadius:6, width:28, height:28, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', padding:0, minHeight:'unset' }}>✕</button>
+              <button onClick={()=>setShowExitConfirm(true)} style={{ fontSize:16, color:'#fff', background:'rgba(0,0,0,0.25)', border:'none', borderRadius:6, width:28, height:28, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', padding:0, minHeight:'unset' }}><GlassIcon name="close" size={18} /></button>
             </div>
           </div>
         </div>
@@ -1968,7 +1968,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             onClick={dismissAiTip}>
             <div style={{ maxWidth:320, width:'100%' }} onClick={e=>e.stopPropagation()}>
               <div style={{ display:'flex', alignItems:'flex-end', gap:8 }}>
-                <div style={{ width:32, height:32, borderRadius:'50%', background:`linear-gradient(135deg,${PUR},#5b54c4)`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><GlassIcon name="robot" size={20} /></div>
+                <div style={{ width:32, height:32, borderRadius:'50%', background:`linear-gradient(135deg,${PUR},#5b54c4)`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><GlassIcon name="robot" size={26} /></div>
                 <div style={{ background:SURF2, border:`1px solid ${HAIR}`, borderRadius:'4px 16px 16px 16px', padding:'14px 16px', fontSize:13.5, color:'#e5e7eb', lineHeight:1.6, whiteSpace:'pre-wrap' }}>
                   {'Привет! Смотри, как тут всё работает:\n\nВес — это подсказка для старта. Вес горит красным — значит пиши свой реальный вес — тот, с которым действительно тренируешься, и обязательно поставь оценку (1 — легко, 5 — тяжело).\n\nПо оценке я сам подберу тебе вес дальше.\nПогнали! 💪'}
                 </div>
@@ -2232,7 +2232,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                 )}
                               </div>
                               <button onClick={()=>setOpenSetNote(noteOpen?null:{ei,si})}
-                                style={{ width:26, height:26, borderRadius:6, border:'none', background:set.note?`${PUR}50`:SURF2, color:set.note?PUR:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}><GlassIcon name="pen" size={18} /></button>
+                                style={{ width:26, height:26, borderRadius:6, border:'none', background:set.note?`${PUR}50`:SURF2, color:set.note?PUR:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}><GlassIcon name="pen" size={26} /></button>
                               {/* Видео тренеру — только премиум-клиенту (isPremium).
                                   Не загрузка в приложение: открывает чат с тренером
                                   в Telegram, клиент шлёт видео сам. openTelegramLink
@@ -2244,10 +2244,10 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                   if(window.Telegram?.WebApp)window.Telegram.WebApp.openTelegramLink(MAX_TELEGRAM_URL)
                                   else window.open(MAX_TELEGRAM_URL,'_blank')
                                 }}
-                                  style={{ width:26, height:26, borderRadius:6, border:'none', background:SURF2, color:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}><GlassIcon name="video" size={18} /></button>
+                                  style={{ width:26, height:26, borderRadius:6, border:'none', background:SURF2, color:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}><GlassIcon name="video" size={26} /></button>
                               ):<span />}
                               <button onClick={()=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.filter((_,j)=>j!==si)}:x).filter(x=>x.sets.length>0))}
-                                style={{ background:'none', border:'none', color:TXT3, cursor:'pointer', fontSize:14, textAlign:'center' }}>✕</button>
+                                style={{ background:'none', border:'none', color:TXT3, cursor:'pointer', fontSize:14, textAlign:'center' }}><GlassIcon name="close" size={18} /></button>
                             </div>
                             {set.recKg&&(
                               <div style={{ display:'grid', gridTemplateColumns:'24px 1fr 1fr 26px 26px 20px', gap:5 }}>
@@ -2327,7 +2327,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           <button onClick={openDatePicker} style={{ padding:'12px 36px', borderRadius:16, border:'none', background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', fontSize:16, fontWeight:800, cursor:'pointer', boxShadow:'0 10px 26px rgba(124,122,240,.4)' }}>
             {isEditMode?'Сохранить':'Завершить'}
           </button>
-          <button onClick={()=>setShowSendModal(true)} style={{ width:42, height:42, borderRadius:'50%', border:`2px solid ${HAIR}`, background:'none', color:TXT3, fontSize:20, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}><GlassIcon name="share" size={22} /></button>
+          <button onClick={()=>setShowSendModal(true)} style={{ width:42, height:42, borderRadius:'50%', border:`2px solid ${HAIR}`, background:'none', color:TXT3, fontSize:20, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}><GlassIcon name="share" size={26} /></button>
         </div>
 
         {/* Модал "Отправить тренеру" */}
@@ -2337,7 +2337,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             <div onClick={e=>e.stopPropagation()} style={{ background:SURF2, borderRadius:'16px 16px 0 0', padding:'20px 18px', width:'100%', maxWidth:500, maxHeight:'75vh', display:'flex', flexDirection:'column' }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14, flexShrink:0 }}>
                 <span style={{ fontSize:16, fontWeight:700, color:'#fff' }}>📤 Отчёт тренеру</span>
-                <button onClick={()=>setShowSendModal(false)} style={{ background:'none', border:'none', color:TXT3, fontSize:22, cursor:'pointer', padding:0, lineHeight:1 }}>✕</button>
+                <button onClick={()=>setShowSendModal(false)} style={{ background:'none', border:'none', color:TXT3, fontSize:22, cursor:'pointer', padding:0, lineHeight:1 }}><GlassIcon name="close" size={18} /></button>
               </div>
               <pre style={{ background:SURF2, borderRadius:10, padding:'12px 14px', fontSize:12, color:'#e5e7eb', whiteSpace:'pre-wrap', fontFamily:'monospace', flex:1, overflowY:'auto', lineHeight:1.7, marginBottom:14 }}>
                 {formatWorkoutReport()}
@@ -2402,7 +2402,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             onClick={e=>e.stopPropagation()}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
               <h3 style={{ margin:0, fontSize:16, fontWeight:700, color:TXT }}>Новая тренировка</h3>
-              <button onClick={()=>setMenuOpen(false)} style={{ border:'none', background:'none', fontSize:18, color:TXT3, cursor:'pointer' }}>✕</button>
+              <button onClick={()=>setMenuOpen(false)} style={{ border:'none', background:'none', fontSize:18, color:TXT3, cursor:'pointer' }}><GlassIcon name="close" size={18} /></button>
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
               {WORKOUT_ACTIONS.map(a=>(
@@ -2475,7 +2475,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             onClick={e=>e.stopPropagation()}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
               <span style={{ fontSize:16, fontWeight:700, color:TXT }}>Название тренировки</span>
-              <button onClick={()=>setEditingSlotTitle(null)} style={{ background:'none', border:'none', fontSize:20, color:TXT3, cursor:'pointer', minHeight:'unset' }}>✕</button>
+              <button onClick={()=>setEditingSlotTitle(null)} style={{ background:'none', border:'none', fontSize:20, color:TXT3, cursor:'pointer', minHeight:'unset' }}><GlassIcon name="close" size={18} /></button>
             </div>
             <input value={editingSlotTitle.title}
               onChange={e=>setEditingSlotTitle(s=>({...s,title:e.target.value}))}
@@ -2501,7 +2501,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             onClick={e=>e.stopPropagation()}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
               <span style={{ fontSize:16, fontWeight:700, color:TXT }}>Редактировать упражнение</span>
-              <button onClick={()=>setEditingExercise(null)} style={{ background:'none', border:'none', fontSize:20, color:TXT3, cursor:'pointer', minHeight:'unset' }}>✕</button>
+              <button onClick={()=>setEditingExercise(null)} style={{ background:'none', border:'none', fontSize:20, color:TXT3, cursor:'pointer', minHeight:'unset' }}><GlassIcon name="close" size={18} /></button>
             </div>
             <div style={{ marginBottom:12 }}>
               <div style={{ fontSize:12, color:TXT3, marginBottom:6 }}>Название упражнения</div>
@@ -2538,7 +2538,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           onClick={()=>setPlayVideo(null)}>
           <div style={{ position:'relative', maxWidth:860, width:'95%' }} onClick={e=>e.stopPropagation()}>
             <button onClick={()=>setPlayVideo(null)}
-              style={{ position:'absolute', top:-42, right:0, background:'none', border:'none', color:'#fff', fontSize:26, cursor:'pointer', minHeight:'unset' }}>✕</button>
+              style={{ position:'absolute', top:-42, right:0, background:'none', border:'none', color:'#fff', fontSize:26, cursor:'pointer', minHeight:'unset' }}><GlassIcon name="close" size={18} /></button>
             <div style={{ fontSize:13, color:TXT3, marginBottom:8 }}>{playVideo.name}</div>
             <video src={playVideo.url} controls autoPlay style={{ width:'100%', borderRadius:12, maxHeight:'75vh' }} />
           </div>
@@ -2550,7 +2550,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         <div style={{ position:'fixed', inset:0, background:SURF2, zIndex:1001, display:'flex', flexDirection:'column' }}>
           <div style={{ background:SURF, borderBottom:`1px solid ${HAIR}`, padding:'14px 18px', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
             <button onClick={()=>setOpenSlotId(null)}
-              style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}>←</button>
+              style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}><GlassIcon name="back" size={20} /></button>
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:17, fontWeight:700, color:TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{currentSlot.title}</div>
               <div style={{ fontSize:11, color:TXT3 }}>{currentSlot.exercises.length} {plural(currentSlot.exercises.length,'упражнение','упражнения','упражнений')}</div>
@@ -2627,7 +2627,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                         <button onClick={()=>setPlayVideo({url:ex.videoUrl,name:ex.videoName})}
                           style={{ width:36, height:36, borderRadius:9, background:`${PUR}18`, border:'none', cursor:'pointer', fontSize:16, color:PUR, display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset' }}>▶</button>
                         <button onClick={()=>removeExerciseVideo(currentSlot.id,ex.id,ex.videoId)}
-                          style={{ width:36, height:36, borderRadius:9, background:'#fef2f2', border:'none', cursor:'pointer', color:'#ef4444', fontSize:16, display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset' }}>✕</button>
+                          style={{ width:36, height:36, borderRadius:9, background:'#fef2f2', border:'none', cursor:'pointer', color:'#ef4444', fontSize:16, display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset' }}><GlassIcon name="close" size={18} /></button>
                       </div>
                     ):(
                       <button onClick={()=>{uploadTargetRef.current={slotId:currentSlot.id,exId:ex.id};videoInputRef.current.click()}}
@@ -2758,7 +2758,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         <div style={{ position:'fixed', inset:0, background:SURF2, zIndex:1000, display:'flex', flexDirection:'column' }}>
           <div style={{ background:SURF, borderBottom:`1px solid ${HAIR}`, padding:'14px 18px', display:'flex', alignItems:'center', gap:14, flexShrink:0 }}>
             <button onClick={()=>setOpenFolder(null)}
-              style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}>←</button>
+              style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}><GlassIcon name="back" size={20} /></button>
             <span style={{ fontSize:22 }}>{FOLDER_ICONS[openFolder]}</span>
             <div>
               <div style={{ fontSize:17, fontWeight:700, color:TXT }}>{openFolder}</div>
@@ -2852,7 +2852,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             <span style={{ position:'absolute', top:'50%', right:16, transform:'translateY(-50%)', fontSize:20, color:TXT3 }}>›</span>
             <button onClick={e=>{e.stopPropagation();setInfoFolder(folder)}}
               style={{ position:'absolute', top:10, left:12, width:22, height:22, borderRadius:'50%', border:`1px solid ${HAIR}`, background:SURF2, color:TXT3, fontSize:12, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset', padding:0 }}>?</button>
-            {isSelected&&<span style={{ position:'absolute', top:10, right:16, fontSize:15, color:PUR }}>✓</span>}
+            {isSelected&&<span style={{ position:'absolute', top:10, right:16 }}><GlassIcon name="check" size={18} /></span>}
             <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingRight:20 }}>
               <div style={{ fontSize:28, marginBottom:6 }}>{FOLDER_ICONS[folder]}</div>
               <div style={{ fontSize:16, fontWeight:700, color:TXT, textAlign:'center' }}>{folder}</div>
@@ -3330,7 +3330,7 @@ const NUTRITION_PLANS=[
 ]
 
 const DAY_NAMES=['Пн','Вт','Ср','Чт','Пт','Сб','Вс']
-const MEAL_ICONS={'Завтрак':'🌅','Перекус':'🍎','Обед':'🍽️','Ужин':'🌙'}
+const MEAL_ICONS={'Завтрак':'sunrise','Перекус':'food','Обед':'plate','Ужин':'moon'}
 
 function NutritionView({ userId }){
   const [openPlan,setOpenPlan]=useState(null)
@@ -3387,7 +3387,7 @@ function NutritionView({ userId }){
           </div>
         )}
         <div style={{ background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexShrink:0 }}>
-          <button onClick={()=>setOpenDay(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
+          <button onClick={()=>setOpenDay(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}><GlassIcon name="back" size={20} /></button>
           <div>
             <div style={{ fontSize:17,fontWeight:700,color:TXT }}>День {day.n} — {DAY_NAMES[openDay]}</div>
             <div style={{ fontSize:11,color:TXT3 }}>{plan.title}</div>
@@ -3408,7 +3408,7 @@ function NutritionView({ userId }){
             <div key={mi} style={{ background:SURF,borderRadius:13,boxShadow:'0 1px 4px rgba(0,0,0,0.07)',marginBottom:10,overflow:'hidden' }}>
               <div style={{ background:`${TEA}12`,padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:`1px solid ${HAIR}` }}>
                 <div style={{ display:'flex',alignItems:'center',gap:7 }}>
-                  <span style={{ fontSize:16 }}>{MEAL_ICONS[meal.name]||'🍴'}</span>
+                  <GlassIcon name={MEAL_ICONS[meal.name]||'plate'} size={34} />
                   <span style={{ fontSize:14,fontWeight:700,color:TXT }}>{meal.name}</span>
                   {meal.time&&<span style={{ fontSize:11,color:TXT3 }}>({meal.time})</span>}
                 </div>
@@ -3487,8 +3487,8 @@ function NutritionView({ userId }){
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:BG,zIndex:1000,display:'flex',flexDirection:'column' }}>
         <div style={{ background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexShrink:0 }}>
-          <button onClick={()=>setOpenPlan(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
-          <GlassIcon name={plan.icon} size={26} />
+          <button onClick={()=>setOpenPlan(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}><GlassIcon name="back" size={20} /></button>
+          <GlassIcon name={plan.icon} size={34} />
           <div>
             <div style={{ fontSize:17,fontWeight:700,color:TXT }}>{plan.title}</div>
             <div style={{ fontSize:11,color:TXT3 }}>Цель: {plan.target.p}г Б / {plan.target.c}г У / {plan.target.f}г Ж / ~{plan.target.cal} ккал</div>
@@ -3527,7 +3527,7 @@ function NutritionView({ userId }){
         <Card key={plan.id} style={{ marginBottom:10,cursor:'pointer' }} onClick={()=>setOpenPlan(plan.id)}>
           <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center' }}>
             <div style={{ display:'flex',alignItems:'center',gap:12 }}>
-              <GlassIcon name={plan.icon} size={32} />
+              <GlassIcon name={plan.icon} size={40} />
               <div>
                 <div style={{ fontSize:15,fontWeight:600,color:TXT }}>{plan.title}</div>
                 <div style={{ fontSize:11,color:TXT3,marginTop:2 }}>{plan.subtitle}</div>
@@ -3538,7 +3538,7 @@ function NutritionView({ userId }){
           <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,marginTop:12 }}>
             {[['fluent-emoji-flat:fire',`~${plan.target.cal}`,KCAL,'ккал/день'],['fluent-emoji-flat:cut-of-meat',`${plan.target.p}г`,TEA,'белков'],['fluent-emoji-flat:cooked-rice',`${plan.target.c}г`,BLU,'углеводов'],['fluent-emoji-flat:avocado',`${plan.target.f}г`,COR,'жиров']].map(([ic,v,c,l])=>(
               <div key={l} style={{ background:SURF2,borderRadius:9,padding:'8px 6px',textAlign:'center' }}>
-                <div style={{ display:'flex',justifyContent:'center',marginBottom:2 }}><Ic name={ic} size={30} /></div>
+                <div style={{ display:'flex',justifyContent:'center',marginBottom:2 }}><Ic name={ic} size={36} /></div>
                 <div style={{ fontSize:13,fontWeight:700,color:c }}>{v}</div>
                 <div style={{ fontSize:9,color:TXT3 }}>{l}</div>
               </div>
@@ -3587,7 +3587,7 @@ function LibraryView({ customExercises }) {
         <button onClick={()=>setSel(null)} style={{ fontSize:13,color:TXT3,border:'none',background:'none',cursor:'pointer',padding:0,marginBottom:18,display:'flex',alignItems:'center',gap:5 }}>← Все упражнения</button>
         <div style={{ display:'flex',alignItems:'center',gap:12,marginBottom:20 }}>
           <div style={{ width:56,height:56,borderRadius:16,background:'rgba(124,122,240,.14)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
-            <GlassIcon name="dumbbell" size={34} />
+            <GlassIcon name="dumbbell" size={38} />
           </div>
           <div>
             <h2 style={{ fontSize:20,fontWeight:700,color:TXT,margin:0 }}>{sel.n}</h2>
@@ -4079,7 +4079,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         <BackBtn label={sectionTitle('Общий тоннаж')} onBack={()=>setSection(null)} right={
           <div style={{ position:'relative' }}>
             <button onClick={()=>setShowTonPeriodMenu(v=>!v)}
-              style={{ width:34,height:34,borderRadius:9,border:`1px solid ${HAIR}`,background:period!=='7'||customFrom||customTo?`${PUR}11`:SURF2,cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:period!=='7'||customFrom||customTo?PUR:TXT3,minHeight:'unset' }}><GlassIcon name="calendar" size={20} /></button>
+              style={{ width:34,height:34,borderRadius:9,border:`1px solid ${HAIR}`,background:period!=='7'||customFrom||customTo?`${PUR}11`:SURF2,cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:period!=='7'||customFrom||customTo?PUR:TXT3,minHeight:'unset' }}><GlassIcon name="calendar" size={26} /></button>
             {showTonPeriodMenu&&(
               <>
                 <div onClick={()=>setShowTonPeriodMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
@@ -4111,7 +4111,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
               <div style={{ width:28,display:'flex',justifyContent:'center',flexShrink:0 }}>
                 {(customFrom||customTo)&&(
                   <button onClick={()=>{setCustomFrom('');setCustomTo('');setSelectedTonBar(null)}}
-                    style={{ fontSize:13,padding:'5px 7px',borderRadius:6,border:'none',background:SURF2,color:TXT3,cursor:'pointer',minHeight:'unset' }}>✕</button>
+                    style={{ fontSize:13,padding:'5px 7px',borderRadius:6,border:'none',background:SURF2,color:TXT3,cursor:'pointer',minHeight:'unset' }}><GlassIcon name="close" size={18} /></button>
                 )}
               </div>
             </div>
@@ -4240,7 +4240,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         <BackBtn label={sectionTitle('Прогресс по упражнениям')} onBack={()=>setSection(null)} right={
           <div style={{ position:'relative' }}>
             <button onClick={()=>setShowExPeriodMenu(v=>!v)}
-              style={{ width:34,height:34,borderRadius:9,border:`1px solid ${HAIR}`,background:exPeriod!=='all'?`${PUR}11`:SURF2,cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:exPeriod!=='all'?PUR:TXT3,minHeight:'unset' }}><GlassIcon name="calendar" size={20} /></button>
+              style={{ width:34,height:34,borderRadius:9,border:`1px solid ${HAIR}`,background:exPeriod!=='all'?`${PUR}11`:SURF2,cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:exPeriod!=='all'?PUR:TXT3,minHeight:'unset' }}><GlassIcon name="calendar" size={26} /></button>
             {showExPeriodMenu&&(
               <>
                 <div onClick={()=>setShowExPeriodMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
@@ -4272,7 +4272,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
               <div style={{ width:28,display:'flex',justifyContent:'center',flexShrink:0 }}>
                 {(exCustomFrom||exCustomTo)&&(
                   <button onClick={()=>{setExCustomFrom('');setExCustomTo('');setSelectedEx(null);setActiveBar(null)}}
-                    style={{ fontSize:13,padding:'5px 7px',borderRadius:6,border:'none',background:SURF2,color:TXT3,cursor:'pointer',minHeight:'unset' }}>✕</button>
+                    style={{ fontSize:13,padding:'5px 7px',borderRadius:6,border:'none',background:SURF2,color:TXT3,cursor:'pointer',minHeight:'unset' }}><GlassIcon name="close" size={18} /></button>
                 )}
               </div>
             </div>
@@ -4372,10 +4372,10 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                         <div style={{ display:'flex',gap:6,flexShrink:0 }}>
                           <button onClick={e=>{e.stopPropagation();if(onEditWorkout)onEditWorkout(workoutHistory[activeRec.histIdx],activeRec.histIdx)}}
                             title="Редактировать"
-                            style={{ width:30,height:30,borderRadius:8,border:`1px solid ${HAIR}`,background:SURF2,cursor:'pointer',fontSize:13,color:TXT3,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}><GlassIcon name="pen" size={18} /></button>
+                            style={{ width:30,height:30,borderRadius:8,border:`1px solid ${HAIR}`,background:SURF2,cursor:'pointer',fontSize:13,color:TXT3,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}><GlassIcon name="pen" size={26} /></button>
                           <button onClick={e=>{e.stopPropagation();if(window.confirm('Удалить тренировку?')){onDeleteWorkout(activeRec.histIdx)}}}
                             title="Удалить"
-                            style={{ width:30,height:30,borderRadius:8,border:'1px solid #fecaca',background:'#fef2f2',cursor:'pointer',fontSize:13,color:'#ef4444',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}><GlassIcon name="trash" size={18} /></button>
+                            style={{ width:30,height:30,borderRadius:8,border:'1px solid #fecaca',background:'#fef2f2',cursor:'pointer',fontSize:13,color:'#ef4444',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}><GlassIcon name="trash" size={26} /></button>
                         </div>
                         )}
                       </div>
@@ -4488,7 +4488,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         {/* ─ Шапка с кнопкой + */}
         <div style={{ background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0,position:'sticky',top:0,zIndex:10 }}>
           <div style={{ display:'flex',alignItems:'center',gap:14 }}>
-            <button onClick={()=>{setSection(null);setShowWorkoutMenu(false);setOpenCardMenu(null)}} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
+            <button onClick={()=>{setSection(null);setShowWorkoutMenu(false);setOpenCardMenu(null)}} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}><GlassIcon name="back" size={20} /></button>
             <span style={{ fontSize:17,fontWeight:700,color:TXT }}>{sectionTitle('Мои тренировки','Тренировки')}</span>
           </div>
           {!readOnly&&<div style={{ position:'relative' }}>
@@ -4509,7 +4509,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                       if(item.key){if(onWorkoutAction)onWorkoutAction(item.key)}
                       else{setShowScheduleForm(true)}
                     }} style={{ display:'flex',alignItems:'center',gap:11,width:'100%',padding:'11px 15px',border:'none',borderTop:idx>0?`1px solid ${HAIR}`:'none',background:'transparent',cursor:'pointer',textAlign:'left' }}>
-                      <GlassIcon name={item.ic} size={22} />
+                      <GlassIcon name={item.ic} size={26} />
                       <div>
                         <div style={{ fontSize:13,fontWeight:500,color:TXT }}>{item.label}</div>
                         <div style={{ fontSize:11,color:TXT3 }}>{item.sub}</div>
@@ -4559,7 +4559,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 <button onClick={()=>{if(onWorkoutAction)onWorkoutAction('start')}}
                   style={{ fontSize:11,padding:'5px 10px',borderRadius:7,border:`1px solid ${PUR}`,background:'#EEEDFE',color:PUR,cursor:'pointer',fontWeight:500 }}>▶ Начать</button>
                 <button onClick={()=>deletePlanned(pw.id)}
-                  style={{ fontSize:14,padding:'4px 9px',borderRadius:7,border:`1px solid ${HAIR}`,background:'transparent',color:TXT3,cursor:'pointer',lineHeight:1 }}>✕</button>
+                  style={{ fontSize:14,padding:'4px 9px',borderRadius:7,border:`1px solid ${HAIR}`,background:'transparent',color:TXT3,cursor:'pointer',lineHeight:1 }}><GlassIcon name="close" size={18} /></button>
               </div>
               )}
             </div>
@@ -4606,7 +4606,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                                 if(window.confirm(`Удалить тренировку «${w.name}»?`)){if(onDeleteWorkout)onDeleteWorkout(w.histIdx);setSelIdx(null)}
                               }
                             }} style={{ display:'flex',alignItems:'center',gap:10,width:'100%',padding:'11px 15px',border:'none',borderTop:idx>0?`1px solid ${HAIR}`:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:item.danger?'#ef4444':TXT,fontSize:13 }}>
-                              <GlassIcon name={item.ic} size={20} />{item.label}
+                              <GlassIcon name={item.ic} size={26} />{item.label}
                             </button>
                           ))}
                         </div>
@@ -4684,7 +4684,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         )}
         {/* Шапка */}
         <div style={{ background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 16px',display:'flex',alignItems:'center',gap:10,flexShrink:0 }}>
-          <button onClick={()=>setSection(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
+          <button onClick={()=>setSection(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}><GlassIcon name="back" size={20} /></button>
           <span style={{ fontSize:17,fontWeight:700,color:TXT,flex:1 }}>{sectionTitle('Питание')}</span>
           {!readOnly&&<button onClick={()=>{setGoalsForm(foodGoals);setShowGoals(g=>!g)}}
             style={{ background:showGoals?PUR:SURF2,border:'none',borderRadius:9,padding:'7px 13px',fontSize:12,fontWeight:600,color:showGoals?'#fff':TXT3,cursor:'pointer',minHeight:'unset' }}>
@@ -4696,7 +4696,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           {/* Плашка AI диетолога */}
           {onOpenAI&&(
             <div onClick={()=>onOpenAI('nutrition')} style={{ display:'flex',alignItems:'center',gap:12,background:'linear-gradient(120deg,rgba(48,209,88,.14),rgba(48,209,88,.04))',border:'1px solid rgba(48,209,88,.28)',borderRadius:18,padding:'12px 16px',marginBottom:14,cursor:'pointer' }}>
-              <div style={{ width:38,height:38,borderRadius:'50%',background:`linear-gradient(135deg,${TEA},#1f8f3d)`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}><GlassIcon name="robot" size={22} /></div>
+              <div style={{ width:38,height:38,borderRadius:'50%',background:`linear-gradient(135deg,${TEA},#1f8f3d)`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}><GlassIcon name="robot" size={28} /></div>
               <div style={{ flex:1 }}>
                 <div style={{ fontSize:14,fontWeight:700,color:TXT }}>Спросить AI-ассистента</div>
                 <div style={{ fontSize:12,color:TXT2,marginTop:1 }}>Знает твой план и остаток калорий</div>
@@ -4816,7 +4816,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 const fillH=Math.min(100,pct)
                 return (
                   <div key={label} style={{ display:'flex',flexDirection:'column',alignItems:'center',textAlign:'center' }}>
-                    <div style={{ display:'flex',justifyContent:'center',marginBottom:2 }}><Ic name={ic} size={30} /></div>
+                    <div style={{ display:'flex',justifyContent:'center',marginBottom:2 }}><Ic name={ic} size={36} /></div>
                     <div style={{ fontSize:10,color:TXT3,marginBottom:5,minHeight:12 }}>{norm7>0?`из ${norm7}${unit}`:''}</div>
                     <div style={{ width:34,height:96,background:'rgba(255,255,255,.07)',borderRadius:9,position:'relative',overflow:'hidden' }}>
                       <div style={{ position:'absolute',bottom:0,left:0,width:'100%',height:`${fillH}%`,background:grad,borderRadius:'9px 9px 0 0' }} />
@@ -4892,7 +4892,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                                   style={{ flex:1,padding:'6px 10px',fontSize:12,borderRadius:7,border:`1px solid ${HAIR}`,outline:'none',color:TXT2,background:SURF2 }}
                                   onFocus={ev=>ev.target.style.borderColor=PUR} onBlur={ev=>ev.target.style.borderColor=HAIR} />
                                 <button onClick={()=>setEditFoodForm(f=>({...f,items:f.items.filter((_,idx)=>idx!==ii)}))}
-                                  style={{ background:'none',border:'none',fontSize:16,cursor:'pointer',color:TXT3,padding:'4px',minHeight:'unset' }}>✕</button>
+                                  style={{ background:'none',border:'none',fontSize:16,cursor:'pointer',color:TXT3,padding:'4px',minHeight:'unset' }}><GlassIcon name="close" size={18} /></button>
                               </div>
                             ))}
                             <button onClick={()=>setEditFoodForm(f=>({...f,items:[...f.items,'']}))}
@@ -4996,7 +4996,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:BG,zIndex:1000,display:'flex',flexDirection:'column' }}>
         <div style={{ background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 16px',display:'flex',alignItems:'center',gap:10,flexShrink:0 }}>
-          <button onClick={()=>setSection(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
+          <button onClick={()=>setSection(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}><GlassIcon name="back" size={20} /></button>
           <span style={{ fontSize:17,fontWeight:700,color:TXT,flex:1 }}>{sectionTitle('🧮 Калькулятор 1ПМ')}</span>
         </div>
         <div style={{ flex:1,overflowY:'auto',padding:'14px 16px 32px' }}>
@@ -5117,7 +5117,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         <div key={f.key} style={{ background:SURF,borderRadius:14,boxShadow:'0 1px 5px rgba(0,0,0,0.08)',marginBottom:10,display:'flex',alignItems:'center',gap:14,padding:'16px',cursor:'pointer' }}
           onClick={()=>{if(f.key==='exercises'){setExPeriod('all');setExCustomFrom('');setExCustomTo('')}setSection(f.key)}}>
           <div style={{ width:50,height:50,borderRadius:14,background:`${f.color}18`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
-            <GlassIcon name={f.ic} size={36} />
+            <GlassIcon name={f.ic} size={40} />
           </div>
           <div style={{ flex:1,minWidth:0 }}>
             <div style={{ fontSize:15,fontWeight:700,color:TXT }}>{f.label}</div>
@@ -5257,7 +5257,7 @@ function LandingPage({ onEnter, isTelegram }) {
 
             {/* Бейдж */}
             <div style={{ display:'inline-flex',alignItems:'center',gap:7,background:`linear-gradient(90deg,${PUR}35,#5b54c420)`,border:`1px solid ${PUR}70`,borderRadius:20,padding:'6px 16px',fontSize:12,color:'#d0ccff',marginBottom:22,fontWeight:700,letterSpacing:'0.5px',boxShadow:`0 0 18px ${PUR}30` }}>
-              <span style={{ fontSize:14 }}>✨</span> Первое приложение с AI-ассистентом
+              <GlassIcon name="bulb" size={18} /> Первое приложение с AI-ассистентом
             </div>
 
             <h1 style={{ fontSize:mobile?32:56,fontWeight:800,lineHeight:1.12,margin:'0 0 32px',background:'linear-gradient(150deg,#fff 45%,#9d97e8)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent' }}>
@@ -5275,7 +5275,7 @@ function LandingPage({ onEnter, isTelegram }) {
               {/* Хедер карточки */}
               <div style={{ background:`linear-gradient(90deg,${PUR}28,transparent)`,borderBottom:`1px solid ${PUR}25`,padding:'16px 20px',display:'flex',alignItems:'center',gap:14 }}>
                 <div style={{ position:'relative',flexShrink:0 }}>
-                  <div style={{ width:52,height:52,borderRadius:'50%',background:`linear-gradient(135deg,${PUR},#4d47b0)`,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:`0 4px 16px ${PUR}50` }}><GlassIcon name="robot" size={30} /></div>
+                  <div style={{ width:52,height:52,borderRadius:'50%',background:`linear-gradient(135deg,${PUR},#4d47b0)`,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:`0 4px 16px ${PUR}50` }}><GlassIcon name="robot" size={40} /></div>
                   <div style={{ position:'absolute',bottom:2,right:2,width:13,height:13,borderRadius:'50%',background:'#22c55e',border:'2.5px solid #0d0d1a' }} />
                 </div>
                 <div>
@@ -5292,13 +5292,13 @@ function LandingPage({ onEnter, isTelegram }) {
                     <p style={{ margin:'0 0 10px',fontSize:13,color:'rgba(255,255,255,0.75)',lineHeight:1.5,fontWeight:600 }}>Вот что я умею:</p>
                     <div style={{ display:'flex',flexDirection:'column',gap:7 }}>
                       {[
-                        ['📋','Знаю твою программу тренировок — вижу, какой вес был в прошлый раз'],
-                        ['🥗','Помогу с питанием — спроси, что съесть, что заменить или как вписать любимое'],
-                        ['🔄','Скорректирую план, если было слишком тяжело или слишком легко'],
-                        ['💬','Отвечаю так, как ответил бы сам тренер — потому что он меня именно так обучил'],
+                        ['template','Знаю твою программу тренировок — вижу, какой вес был в прошлый раз'],
+                        ['food','Помогу с питанием — спроси, что съесть, что заменить или как вписать любимое'],
+                        ['gear','Скорректирую план, если было слишком тяжело или слишком легко'],
+                        ['chat','Отвечаю так, как ответил бы сам тренер — потому что он меня именно так обучил'],
                       ].map(([ic,tx],i)=>(
                         <div key={i} style={{ display:'flex',gap:9,alignItems:'flex-start',background:'rgba(255,255,255,0.04)',borderRadius:9,padding:'8px 11px' }}>
-                          <span style={{ fontSize:15,flexShrink:0,marginTop:1 }}>{ic}</span>
+                          <GlassIcon name={ic} size={22} style={{marginTop:1}} />
                           <span style={{ fontSize:12,color:'rgba(255,255,255,0.6)',lineHeight:1.6 }}>{tx}</span>
                         </div>
                       ))}
@@ -5320,7 +5320,7 @@ function LandingPage({ onEnter, isTelegram }) {
               {icon:'chart',title:'Достижения',desc:'Аналитика общего тоннажа тренировок, прогресс по каждому упражнению и аналитика питания'},
             ].map((f,i)=>(
               <div key={i} style={{ background:G,border:GB,borderRadius:16,padding:'20px 18px',display:'flex',gap:14,alignItems:'flex-start' }}>
-                <GlassIcon name={f.icon} size={28} style={{marginTop:2}} />
+                <GlassIcon name={f.icon} size={34} style={{marginTop:2}} />
                 <div>
                   <div style={{ fontSize:14,fontWeight:700,color:'#fff',marginBottom:6,lineHeight:1.35 }}>{f.title}</div>
                   <div style={{ fontSize:12,color:'rgba(255,255,255,0.42)',lineHeight:1.65 }}>{f.desc}</div>
@@ -5786,7 +5786,7 @@ function SettingsView({ user, performLogout }) {
             display:'flex',alignItems:'center',gap:12,padding:'13px 0',
             borderBottom:`1px solid ${HAIR}`,textDecoration:'none',color:TXT,
           }}>
-            <GlassIcon name={item.icon} size={20} />
+            <GlassIcon name={item.icon} size={26} />
             <span style={{fontSize:15,fontWeight:500,flex:1}}>{item.label}</span>
             <span style={{fontSize:16,color:TXT3}}>›</span>
           </a>
@@ -6014,7 +6014,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
       )}
       {/* Хедер */}
       <div style={{background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
-        <button onClick={onClose} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset'}}>←</button>
+        <button onClick={onClose} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset'}}><GlassIcon name="back" size={20} /></button>
         <span style={{fontSize:18,fontWeight:800,color:TXT,flex:1}}>Мои данные</span>
       </div>
 
@@ -6038,7 +6038,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
             <div style={{display:'flex',alignItems:'center',gap:14}}>
               <div onClick={()=>photoInputPVRef.current?.click()} style={{position:'relative',cursor:'pointer',flexShrink:0}}>
                 <Av lbl={(userEdit.name||user?.name||'').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={64} photo={userEdit.photoURL} gender={userEdit.gender} />
-                <div style={{position:'absolute',bottom:0,right:0,width:22,height:22,borderRadius:'50%',background:PUR,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,border:'2px solid #fff'}}><GlassIcon name="plus" size={14} /></div>
+                <div style={{position:'absolute',bottom:0,right:0,width:22,height:22,borderRadius:'50%',background:PUR,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,border:'2px solid #fff'}}><GlassIcon name="plus" size={18} /></div>
               </div>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:13,fontWeight:600,color:TXT,marginBottom:2}}>{userEdit.name||user?.name}</div>
@@ -6125,9 +6125,9 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                   ].map(opt=>(
                     <button key={opt.val} onClick={()=>{setProfile(p=>({...p,goal:opt.val}));setShowGoalPicker(false)}}
                       style={{display:'flex',alignItems:'center',gap:10,padding:'11px 14px',borderRadius:10,border:`1.5px solid ${profile.goal===opt.val?PUR:HAIR}`,background:profile.goal===opt.val?'rgba(124,122,240,.14)':SURF2,cursor:'pointer',textAlign:'left',minHeight:'unset',transition:'all 0.15s'}}>
-                      <GlassIcon name={opt.icon} size={20} />
+                      <GlassIcon name={opt.icon} size={26} />
                       <span style={{fontSize:15,fontWeight:600,color:profile.goal===opt.val?PUR:TXT2}}>{opt.val}</span>
-                      {profile.goal===opt.val&&<span style={{marginLeft:'auto',fontSize:15,color:PUR}}>✓</span>}
+                      {profile.goal===opt.val&&<span style={{marginLeft:'auto'}}><GlassIcon name="check" size={18} /></span>}
                     </button>
                   ))}
                   {/* Свой вариант */}
@@ -6232,7 +6232,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
           <div>
             {/* Подсказка о замерах */}
             <div style={{display:'flex',gap:10,background:'rgba(255,159,10,.10)',border:'1px solid rgba(255,159,10,.30)',borderRadius:12,padding:'12px 14px',marginBottom:18,alignItems:'flex-start'}}>
-              <span style={{fontSize:16,flexShrink:0}}>❗</span>
+              <GlassIcon name="danger" size={20} style={{flexShrink:0}} />
               <div style={{fontSize:13,color:TXT,lineHeight:1.6}}>
                 <b style={{color:'#FF9F0A'}}>Важно:</b> все замеры делаются в самых выпуклых (наибольших) точках тела. Мышцы расслаблены, лента расположена горизонтально, без натяжения.
               </div>
@@ -6245,7 +6245,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
             {/* История замеров */}
             {measurements.length===0?(
               <div style={{textAlign:'center',color:TXT3,fontSize:14,marginTop:32}}>
-                <div style={{fontSize:40,marginBottom:12}}>📏</div>
+                <div style={{display:'flex',justifyContent:'center',marginBottom:12}}><GlassIcon name="ruler" size={44} /></div>
                 Пока нет замеров. Добавь первые — и сможешь отслеживать прогресс.
               </div>
             ):(
@@ -7248,7 +7248,7 @@ export default function App() {
                   position:'relative', minHeight:'unset',
                 }}>
                   <div style={{ position:'absolute', top:0, left:'50%', transform:'translateX(-50%)', width:active?28:0, height:2.5, borderRadius:'0 0 3px 3px', background:ACCENT2, transition:'width 0.18s' }} />
-                  <GlassIcon name={item.ic} size={30} style={{opacity:active?1:.45}} />
+                  <GlassIcon name={item.ic} size={34} style={{opacity:active?1:.45}} />
                   <span style={{ fontSize:11, fontWeight:active?700:400, color:active?ACCENT2:TXT3 }}>{item.label}</span>
                 </button>
               )
@@ -7279,7 +7279,7 @@ export default function App() {
                   { ic:'gear', label:'Настройки',   sub:'Уведомления, единицы, данные',  action:()=>{ setShowProfileSheet(false); setShowSettingsView(true) } },
                 ].map((item,i)=>(
                   <button key={i} onClick={item.action} style={{ width:'100%', display:'flex', alignItems:'center', gap:14, padding:'14px 16px', borderRadius:14, border:`1px solid ${HAIR}`, background:SURF2, cursor:'pointer', marginBottom:10, textAlign:'left' }}>
-                    <GlassIcon name={item.ic} size={28} />
+                    <GlassIcon name={item.ic} size={32} />
                     <div>
                       <div style={{ fontSize:15, fontWeight:700, color:TXT }}>{item.label}</div>
                       <div style={{ fontSize:12, color:TXT3, marginTop:1 }}>{item.sub}</div>
@@ -7341,7 +7341,7 @@ export default function App() {
       {showSettingsView&&(
         <div style={{position:'fixed',inset:0,background:BG,zIndex:1060,display:'flex',flexDirection:'column',fontFamily:'system-ui,sans-serif'}}>
           <div style={{background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
-            <button onClick={()=>setShowSettingsView(false)} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset'}}>←</button>
+            <button onClick={()=>setShowSettingsView(false)} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset'}}><GlassIcon name="back" size={20} /></button>
             <span style={{fontSize:18,fontWeight:800,color:TXT,flex:1}}>Настройки</span>
           </div>
           <div style={{flex:1,overflowY:'auto'}}>

@@ -66,6 +66,7 @@ function removeMarkerRanges(text, markers) {
   return result
 }
 import { MAX_TELEGRAM_URL } from './config.js'
+import { GlassIcon } from './glassIcons'
 
 // Палитра тёмной темы — те же значения, что в App.jsx (продублированы, т.к.
 // этот компонент их не импортирует).
@@ -594,7 +595,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           animation: 'ai-pulse 2.5s ease-in-out infinite',
           minHeight: 'unset',
-        }}>🤖</button>
+        }}><GlassIcon name="robot" size={30} /></button>
       )}
 
       {/* Чат */}
@@ -625,8 +626,8 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
             <button onClick={() => setIsOpen(false)} style={{
               background: 'none', border: 'none', fontSize: 22, cursor: 'pointer',
               color: TXT3, padding: 0, lineHeight: 1, minHeight: 'unset',
-            }}>←</button>
-            <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,#7C7AF0,#5b54c4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🤖</div>
+            }}><GlassIcon name="back" size={20} /></button>
+            <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,#7C7AF0,#5b54c4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><GlassIcon name="robot" size={26} /></div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: TXT, lineHeight: 1.2 }}>AI-ассистент</div>
               <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 500 }}>● онлайн</div>
@@ -647,7 +648,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
                   width: 34, height: 34, borderRadius: 10, border: `1px solid ${HAIR}`, background: SURF2,
                   fontSize: 15, cursor: messages.length ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center',
                   flexShrink: 0, minHeight: 'unset', opacity: messages.length ? 1 : 0.4,
-                }}>🗑</button>
+                }}><GlassIcon name="trash" size={20} /></button>
               {showClearConfirm && (
                 <>
                   <div onClick={() => setShowClearConfirm(false)} style={{ position: 'fixed', inset: 0, zIndex: 1400 }} />
@@ -678,7 +679,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
 
           {/* Переключатель режима */}
           <div style={{ padding: '10px 16px', borderBottom: `1px solid ${HAIR}`, display: 'flex', gap: 8, flexShrink: 0, background: SURF2 }}>
-            {[{ id: 'workout', label: '🏋️ Тренировки' }, { id: 'nutrition', label: '🥗 Питание' }].map(m => (
+            {[{ id: 'workout', ic: 'dumbbell', label: 'Тренировки' }, { id: 'nutrition', ic: 'food', label: 'Питание' }].map(m => (
               <button key={m.id} onClick={() => setMode(m.id)}
                 style={{
                   padding: '7px 18px', borderRadius: 20, border: 'none', cursor: 'pointer',
@@ -688,7 +689,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
                   boxShadow: mode === m.id ? `0 2px 10px ${PUR}44` : 'none',
                   transition: 'all 0.15s', minHeight: 'unset',
                 }}>
-                {m.label}
+                <><GlassIcon name={m.ic} size={26} style={{marginRight:6,verticalAlign:"-6px"}} />{m.label}</>
               </button>
             ))}
           </div>
@@ -700,7 +701,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
                 {/* Заглушка если нет сообщений */}
                 {messages.length === 0 && (
                   <div style={{ textAlign: 'center', marginTop: 24 }}>
-                    <div style={{ fontSize: 42, marginBottom: 12 }}>{mode === 'workout' ? '🏋️' : '🥗'}</div>
+                    <div style={{ display:'flex', justifyContent:'center', marginBottom: 12 }}><GlassIcon name={mode === 'workout' ? 'dumbbell' : 'food'} size={48} /></div>
                     <div style={{ fontSize: 15, fontWeight: 700, color: TXT, marginBottom: 6 }}>
                       {mode === 'workout'
                         ? (ctx?.profile?.name ? `Привет, ${ctx.profile.name.split(' ')[0]}! 🏋️` : 'AI-ассистент')
@@ -731,7 +732,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
                   <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start', gap: 6 }}>
                     <div style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: 8, width: '100%' }}>
                       {m.role === 'assistant' && (
-                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#7C7AF0,#5b54c4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}>🤖</div>
+                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#7C7AF0,#5b54c4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><GlassIcon name="robot" size={20} /></div>
                       )}
                       <div style={{
                         maxWidth: '75%', padding: '10px 14px',
@@ -751,7 +752,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
                     {m.role === 'assistant' && m.added && (
                       <div style={{ paddingLeft: 36 }}>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: '#f0fdf4', border: '1.5px solid #22c55e40' }}>
-                          <span style={{ fontSize: 14, color: '#22c55e' }}>✓</span>
+                          <GlassIcon name="check" size={18} />
                           <span style={{ fontSize: 13, fontWeight: 600, color: '#22c55e' }}>Записано в дневник ✓</span>
                         </div>
                       </div>
@@ -771,7 +772,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
                 {/* Индикатор загрузки */}
                 {loading && (
                   <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#7C7AF0,#5b54c4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}>🤖</div>
+                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#7C7AF0,#5b54c4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><GlassIcon name="robot" size={20} /></div>
                     <div style={{ background: SURF2, borderRadius: '16px 16px 16px 4px', padding: '12px 16px', display: 'flex', gap: 5, alignItems: 'center' }}>
                       {[0, 1, 2].map(i => (
                         <div key={i} style={{
@@ -791,7 +792,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
                   <div style={{ position: 'relative', flexShrink: 0 }}>
                     <img src={attachedImage.dataUrl} alt="Превью" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 10, border: `1px solid ${HAIR}`, display: 'block' }} />
                     <button onClick={() => setAttachedImage(null)}
-                      style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', border: 'none', background: '#ef4444', color: '#fff', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, minHeight: 'unset', padding: 0 }}>✕</button>
+                      style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', border: 'none', background: '#ef4444', color: '#fff', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, minHeight: 'unset', padding: 0 }}><GlassIcon name="close" size={14} /></button>
                   </div>
                   <span style={{ fontSize: 12, color: TXT3, lineHeight: 1.4 }}>Фото прикреплено — считаю цифры со скриншота</span>
                 </div>
@@ -815,7 +816,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
                         background: attachedImage ? `${PUR}18` : SURF2, color: attachedImage ? PUR : TXT2,
                         fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
                         minHeight: 'unset',
-                      }}>📎</button>
+                      }}><GlassIcon name="plus" size={20} /></button>
                   </>
                 )}
                 <input
