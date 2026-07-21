@@ -733,7 +733,7 @@ function ProgramEditor({ client, trainerId }) {
             <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
               {(w.exercises||[]).map((ex,ei)=>{
                 const parsed=ex.sets?parseTemplateSets(ex.sets):[]
-                const hint=!ex.sets?'':parsed.length?`${parsed.length} подход${parsed.length===1?'':parsed.length<5?'а':'ов'} распознано`:'не распознано — проверь формат'
+                const hint=!ex.sets?'':parsed.length?`${parsed.length} ${plural(parsed.length,'подход','подхода','подходов')} распознано`:'не распознано — проверь формат'
                 return (
                   <div key={ei} style={{ display:'flex', flexDirection:'column', gap:4, padding:'8px 10px', background:SURF2, borderRadius:8 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -855,6 +855,8 @@ const pluralizeTimes=n=>{
   if(mod10>=2&&mod10<=4&&(mod100<10||mod100>=20))return'раза'
   return'раз'
 }
+// Русское склонение по числу: plural(5,'подход','подхода','подходов') → 'подходов'.
+const plural=(n,one,few,many)=>{const m=Math.abs(n)%100,d=m%10;if(m>10&&m<20)return many;if(d>1&&d<5)return few;if(d===1)return one;return many;}
 // Расшифровка оценки тяжести подхода (1-5, workout_sets.rating) — общая для
 // шкалы в активной тренировке (WorkoutsView) и истории в Дневнике (DiaryView):
 // без этой оценки невозможно понять, почему движок прогрессии изменил вес.
@@ -2549,7 +2551,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}>←</button>
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:17, fontWeight:700, color:TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{currentSlot.title}</div>
-              <div style={{ fontSize:11, color:TXT3 }}>{currentSlot.exercises.length} упражнений</div>
+              <div style={{ fontSize:11, color:TXT3 }}>{currentSlot.exercises.length} {plural(currentSlot.exercises.length,'упражнение','упражнения','упражнений')}</div>
             </div>
             <div style={{ position:'relative' }}>
               <button onClick={e=>{e.stopPropagation();setOpenSlotHeaderMenu(v=>!v)}}
@@ -2893,49 +2895,49 @@ const NUTRITION_PLANS=[
         {name:'Обед',time:'14:00',items:['Куриная грудка запеч. (100г сыр.), Гречка (50г сух.)','Салат (огурец, помидор 150г), Оливковое масло (5г)'],p:35,c:40,f:10,cal:450},
         {name:'Перекус',time:'17:00',items:['Кефир 1% (150мл)','Черника (70г)'],p:6,c:10,f:3,cal:90},
         {name:'Ужин',time:'19:30',items:['Треска на пару (90г)','Брокколи туш. (200г)','1/4 авокадо (30г)'],p:22,c:15,f:10,cal:250},
-      ],total:{p:93,c:140,f:38,cal:1290},tip:'Добавь 1 ч.л. орехов (5г) или 1 фрукт для добора жиров/углеводов.'},
+      ],total:{p:93,c:140,f:38,cal:1290},tip:'добавить 1 ч.л. орехов (5г) или 1 фрукт для добора жиров/углеводов.'},
       {n:2,meals:[
         {name:'Завтрак',time:'',items:['Гречка (45г сух.)','Омлет из 2 яиц','Огурец (100г)'],p:20,c:35,f:15,cal:380},
         {name:'Перекус',time:'',items:['Йогурт натуральный (150г)','Груша (100г)'],p:5,c:20,f:3,cal:130},
         {name:'Обед',time:'',items:['Индейка тушеная (100г сыр.)','Бурый рис (45г сух.)','Кабачок гриль (150г)'],p:30,c:40,f:8,cal:400},
         {name:'Перекус',time:'',items:['Творог 5% (80г)','1/2 грейпфрута'],p:14,c:10,f:4,cal:130},
         {name:'Ужин',time:'',items:['Салат «Греческий»: Помидор (100г), Огурец (100г), Фета (50г), Маслины (5 шт), Масло (3г)'],p:15,c:15,f:18,cal:250},
-      ],total:{p:84,c:120,f:48,cal:1290},tip:'Добавь 30г риса или 1 хлебец к обеду.'},
+      ],total:{p:84,c:120,f:48,cal:1290},tip:'добавить 30г риса или 1 хлебец к обеду.'},
       {n:3,meals:[
         {name:'Завтрак',time:'',items:['Творожная запеканка: Творог 120г + 1 яйцо + Яблоко 50г'],p:22,c:20,f:10,cal:290},
         {name:'Перекус',time:'',items:['Хлебец цельнозерновой (10г)','Сыр (20г)','Помидор (100г)'],p:5,c:8,f:5,cal:90},
         {name:'Обед',time:'',items:['Суп куриный: Курица (70г), Картофель (80г), Овощи (150г)','Хлеб (20г)'],p:20,c:40,f:8,cal:340},
         {name:'Перекус',time:'',items:['Яблоко (120г)','Фисташки (10г)'],p:2,c:15,f:5,cal:120},
         {name:'Ужин',time:'',items:['Говядина отварная (80г)','Свекла варёная (100г)','Чернослив (15г)','Сметана 10% (15г)'],p:20,c:25,f:10,cal:280},
-      ],total:{p:69,c:108,f:38,cal:1120},tip:'Увеличь порцию говядины до 100г и добавь 30г гречки.'},
+      ],total:{p:69,c:108,f:38,cal:1120},tip:'увеличить порцию говядины до 100г и добавить 30г гречки.'},
       {n:4,meals:[
         {name:'Завтрак',time:'',items:['Омлет из 2 яиц с помидорами (100г)','1/2 тоста (15г)','Авокадо (20г)'],p:15,c:15,f:18,cal:270},
         {name:'Перекус',time:'',items:['Творог 5% (100г)','Киви (80г)'],p:18,c:15,f:5,cal:190},
         {name:'Обед',time:'',items:['Хек запеченный (100г)','Картофель отварной (120г)','Капуста тушеная (150г)'],p:25,c:35,f:8,cal:350},
         {name:'Перекус',time:'',items:['Кефир 1% (150мл)','Курага (20г)'],p:6,c:15,f:3,cal:120},
         {name:'Ужин',time:'',items:['Куриная грудка (70г)','Чечевица (40г сух.)','Руккола (50г)'],p:30,c:30,f:5,cal:320},
-      ],total:{p:94,c:110,f:39,cal:1250},tip:'Добавь 1 ч.л. масла (5г) в гарнир или фрукт на перекус.'},
+      ],total:{p:94,c:110,f:39,cal:1250},tip:'добавить 1 ч.л. масла (5г) в гарнир или фрукт на перекус.'},
       {n:5,meals:[
         {name:'Завтрак',time:'',items:['Пшённая каша (40г сух.)','Яйцо вареное (1 шт)','Тыквенные семечки (10г)'],p:15,c:35,f:12,cal:320},
         {name:'Перекус',time:'',items:['Йогурт греческий (150г)','Апельсин (100г)'],p:5,c:20,f:3,cal:130},
         {name:'Обед',time:'',items:['Фрикадельки из индейки (100г фарша)','Макароны (40г сух.)','Стручковая фасоль (120г)'],p:25,c:40,f:10,cal:400},
         {name:'Перекус',time:'',items:['Творог 5% (80г)','Клубника (70г)'],p:14,c:10,f:4,cal:140},
         {name:'Ужин',time:'',items:['Рагу овощное с фасолью: Фасоль конс. (40г), Овощи (200г)','Тофу (60г)'],p:15,c:25,f:8,cal:250},
-      ],total:{p:74,c:130,f:37,cal:1240},tip:'Увеличь макароны до 50г и добавь 10г орехов.'},
+      ],total:{p:74,c:130,f:37,cal:1240},tip:'увеличить макароны до 50г и добавить 10г орехов.'},
       {n:6,meals:[
         {name:'Завтрак',time:'',items:['Творог 5% (120г), Сметана 10% (20г), Изюм (15г), Миндаль (5г)'],p:20,c:20,f:10,cal:270},
         {name:'Перекус',time:'',items:['Хлебец (10г), Авокадо (20г), Огурец (100г)'],p:3,c:8,f:7,cal:110},
         {name:'Обед',time:'',items:['Куриная голень без кожи (100г сыр.), Перловка (40г сух.)','Салат (150г)'],p:25,c:35,f:15,cal:420},
         {name:'Перекус',time:'',items:['Яблоко печеное (120г)','Кешью (10г)'],p:2,c:20,f:5,cal:150},
         {name:'Ужин',time:'',items:['Омлет из 2 яиц с шампиньонами (50г)','Свекла вареная (100г)'],p:20,c:15,f:15,cal:310},
-      ],total:{p:70,c:103,f:52,cal:1260},tip:'Добавь 30г творога и 30г риса.'},
+      ],total:{p:70,c:103,f:52,cal:1260},tip:'добавить 30г творога и 30г риса.'},
       {n:7,meals:[
         {name:'Завтрак',time:'',items:['Овсянка (45г сух.)','Яблоко зеленое (100г)','Арахисовая паста (5г)'],p:10,c:50,f:7,cal:300},
         {name:'Перекус',time:'',items:['Кефир 1% (150г)','Банан (70г)'],p:6,c:25,f:3,cal:150},
         {name:'Обед',time:'',items:['Говядина тушеная (90г сыр.)','Гречка (45г сух.)','Морковь тушеная (150г)'],p:30,c:45,f:15,cal:480},
         {name:'Перекус',time:'',items:['Творог 5% (100г)','Мандарин (100г)'],p:18,c:15,f:5,cal:180},
         {name:'Ужин',time:'',items:['Котлеты рыбные (90г филе)','Цветная капуста (250г)','Лимонный сок'],p:20,c:15,f:8,cal:240},
-      ],total:{p:84,c:150,f:38,cal:1350},tip:'Добавь 1 ст.л. оливкового масла (10г) в салат или гарнир.'},
+      ],total:{p:84,c:150,f:38,cal:1350},tip:'добавить 1 ст.л. оливкового масла (10г) в салат или гарнир.'},
     ]
   },
   {
@@ -3223,49 +3225,49 @@ const NUTRITION_PLANS=[
         {name:'Обед',time:'',items:['Куриная грудка (180г сыр.) + Гречка (90г сух.) + Овощной салат (400г) + Оливк. масло (5г)'],p:55,c:75,f:18,cal:760},
         {name:'Перекус',time:'',items:['Кефир 1% (300мл) + Малина (150г)'],p:11,c:25,f:6,cal:220},
         {name:'Ужин',time:'',items:['Лосось на гриле (160г) + Брокколи на пару (300г) + Авокадо (50г)'],p:35,c:20,f:30,cal:520},
-      ],total:{p:163,c:275,f:92,cal:2580},tip:'Уменьши орехи до 25г, если нужно снизить жиры.'},
+      ],total:{p:163,c:275,f:92,cal:2580},tip:'уменьшить орехи до 25г, если нужно снизить жиры.'},
       {n:2,meals:[
         {name:'Завтрак',time:'',items:['Гречка (80г сух.) + Омлет из 3 яиц + Сыр (40г, 10–17%) + Помидор (200г)'],p:42,c:65,f:30,cal:740},
         {name:'Перекус',time:'',items:['Греческий йогурт (300г) + Груша (200г) + Отруби (20г)'],p:15,c:60,f:8,cal:360},
         {name:'Обед',time:'',items:['Индейка (180г сыр.) + Бурый рис (80г сух.) + Тушёные овощи (300г)'],p:47,c:75,f:14,cal:670},
         {name:'Перекус',time:'',items:['Творог 5% (220г) + Киви (180г)'],p:38,c:35,f:10,cal:330},
         {name:'Ужин',time:'',items:['Салат с тунцом: Тунец в с/с (150г) + Яйцо (2 шт) + Авокадо (60г) + Овощи (300г) + Лимонный сок'],p:45,c:20,f:25,cal:510},
-      ],total:{p:187,c:255,f:87,cal:2610},tip:'Замени одно яйцо в ужине на огурцы, чтобы снизить белок и жиры.'},
+      ],total:{p:187,c:255,f:87,cal:2610},tip:'заменить одно яйцо в ужине на огурцы, чтобы снизить белок и жиры.'},
       {n:3,meals:[
         {name:'Завтрак',time:'',items:['Творожная запеканка (Творог 5% 250г + 2 яйца + Яблоко 100г) + Грецкие орехи (25г)'],p:50,c:50,f:25,cal:680},
         {name:'Перекус',time:'',items:['Тосты цельнозерн. (70г) + Сыр (50г) + Огурец (200г)'],p:20,c:50,f:18,cal:450},
         {name:'Обед',time:'',items:['Чечевичный суп (Чечевица 80г сух. + Говядина 100г + Овощи 200г) + Хлеб (40г)'],p:50,c:90,f:12,cal:720},
         {name:'Перекус',time:'',items:['Запечённое яблоко (250г) + Фисташки (35г)'],p:8,c:40,f:15,cal:340},
         {name:'Ужин',time:'',items:['Телятина запеч. (150г) + Киноа (75г сух.) + Салат (350г)'],p:45,c:70,f:18,cal:670},
-      ],total:{p:173,c:300,f:88,cal:2860},tip:'Уменьши хлеб в обеде до 30г и киноа до 65г, если хочешь снизить углеводы.'},
+      ],total:{p:173,c:300,f:88,cal:2860},tip:'уменьшить хлеб в обеде до 30г и киноа до 65г, если хочешь снизить углеводы.'},
       {n:4,meals:[
         {name:'Завтрак',time:'',items:['Омлет из 3 яиц с брокколи (250г) + Авокадо (60г) + Тост (40г)'],p:30,c:50,f:35,cal:650},
         {name:'Перекус',time:'',items:['Творог 5% (220г) + Апельсин (200г)'],p:38,c:35,f:10,cal:330},
         {name:'Обед',time:'',items:['Треска запеч. (180г) + Картофель (300г) + Капустный салат (400г)'],p:40,c:95,f:18,cal:780},
         {name:'Перекус',time:'',items:['Ряженка (300мл) + Чернослив (50г)'],p:10,c:50,f:8,cal:310},
         {name:'Ужин',time:'',items:['Курица-гриль (140г) + Булгур (80г сух.) + Овощи (300г)'],p:42,c:70,f:12,cal:610},
-      ],total:{p:160,c:300,f:83,cal:2680},tip:'Сократи картофель до 250г и чернослив до 35г, если хочешь снизить углеводы.'},
+      ],total:{p:160,c:300,f:83,cal:2680},tip:'сократить картофель до 250г и чернослив до 35г, если хочешь снизить углеводы.'},
       {n:5,meals:[
         {name:'Завтрак',time:'',items:['Пшённая каша (80г сух.) + 2 яйца + Семена подсолнечника (30г) + Малина (100г)'],p:28,c:110,f:28,cal:780},
         {name:'Перекус',time:'',items:['Смузи: Йогурт (300г) + Персик (200г) + Шпинат (50г)'],p:10,c:40,f:6,cal:260},
         {name:'Обед',time:'',items:['Котлеты из говядины (180г фарша) + Макароны (80г сух.) + Зелёная фасоль (350г)'],p:48,c:80,f:18,cal:740},
         {name:'Перекус',time:'',items:['Творог 5% (220г) + Голубика (150г)'],p:38,c:25,f:10,cal:320},
         {name:'Ужин',time:'',items:['Тофу запеч. (150г) + Чечевица (70г сух.) + Рагу из овощей (400г)'],p:45,c:80,f:20,cal:700},
-      ],total:{p:169,c:335,f:82,cal:2800},tip:'Уменьши макароны до 70г и чечевицу до 60г, если хочешь снизить углеводы.'},
+      ],total:{p:169,c:335,f:82,cal:2800},tip:'уменьшить макароны до 70г и чечевицу до 60г, если хочешь снизить углеводы.'},
       {n:6,meals:[
         {name:'Завтрак',time:'',items:['Творог 5% (250г) + Сметана 10% (40г) + Изюм (40г) + Тыквенные семечки (25г)'],p:45,c:60,f:22,cal:640},
         {name:'Перекус',time:'',items:['Хлебец (40г) + Авокадо (80г) + Слайсы индейки (60г)'],p:18,c:30,f:25,cal:420},
         {name:'Обед',time:'',items:['Куриное бедро без кожи (200г сыр.) + Перловка (80г сух.) + Салат (500г)'],p:48,c:70,f:30,cal:780},
         {name:'Перекус',time:'',items:['Творожный мусс: Творог (100г) + Кефир (100г) + Груша (150г)'],p:18,c:40,f:5,cal:270},
         {name:'Ужин',time:'',items:['Омлет из 3 яиц с грибами (200г) + Свёкла отварная (200г) + Льняное масло (5г)'],p:30,c:40,f:25,cal:520},
-      ],total:{p:159,c:240,f:107,cal:2630},tip:'Уменьши авокадо до 50г и убери масло в ужине, если хочешь снизить жиры.'},
+      ],total:{p:159,c:240,f:107,cal:2630},tip:'уменьшить авокадо до 50г и убери масло в ужине, если хочешь снизить жиры.'},
       {n:7,meals:[
         {name:'Завтрак',time:'',items:['Овсянка (80г сух.) + Тёртое яблоко (200г) + Арахисовая паста (20г) + Кешью (20г)'],p:25,c:120,f:25,cal:780},
         {name:'Перекус',time:'',items:['Творожная запеканка: Творог (150г) + 1 яйцо + Ягоды (100г)'],p:25,c:20,f:10,cal:280},
         {name:'Обед',time:'',items:['Говядина тушеная (160г сыр.) + Гречка (70г сух.) + Овощи (500г)'],p:48,c:70,f:22,cal:720},
         {name:'Перекус',time:'',items:['Кефир (300мл) + Мандарины (300г)'],p:11,c:45,f:8,cal:290},
         {name:'Ужин',time:'',items:['Креветки (220г очищ.) + Цукини-гриль (500г) + Урбеч (15г)'],p:45,c:40,f:15,cal:500},
-      ],total:{p:154,c:295,f:80,cal:2570},tip:'Замени урбеч на лимонный сок, если нужно снизить жиры.'},
+      ],total:{p:154,c:295,f:80,cal:2570},tip:'заменить урбеч на лимонный сок, если нужно снизить жиры.'},
     ]
   },
   {
@@ -3501,7 +3503,7 @@ function NutritionView({ userId }){
               <div style={{ flex:1,minWidth:0 }}>
                 <div style={{ fontSize:15,fontWeight:600,color:TXT }}>День {day.n}</div>
                 <div style={{ fontSize:11,color:TXT3,marginTop:2 }}>
-                  {day.meals.length} приёма · Итого: Б{day.total.p}г У{day.total.c}г Ж{day.total.f}г
+                  {day.meals.length} {plural(day.meals.length,'приём','приёма','приёмов')} · Итого: Б{day.total.p}г У{day.total.c}г Ж{day.total.f}г
                 </div>
               </div>
               <div style={{ textAlign:'right',flexShrink:0 }}>
@@ -5091,8 +5093,8 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   // ── ГЛАВНАЯ: папки
   const totalTon=allWorkoutTons.reduce((s,w)=>s+w.ton,0)
   const FOLDERS_DIARY=[
-    {key:'tonnage',icon:'⚖️',label:'Общий тоннаж',color:PUR,sub:`${totalTon.toLocaleString('ru')} кг · ${allWorkoutTons.length} тренировок`},
-    {key:'exercises',icon:'📈',label:'Прогресс по упражнениям',color:TEA,sub:`${exerciseNames.length} упражнений отслеживается`},
+    {key:'tonnage',icon:'⚖️',label:'Общий тоннаж',color:PUR,sub:`${totalTon.toLocaleString('ru')} кг · ${allWorkoutTons.length} ${plural(allWorkoutTons.length,'тренировка','тренировки','тренировок')}`},
+    {key:'exercises',icon:'📈',label:'Прогресс по упражнениям',color:TEA,sub:`${exerciseNames.length} ${plural(exerciseNames.length,'упражнение','упражнения','упражнений')} отслеживается`},
     {key:'workouts',icon:'🏋️',label:'Мои тренировки',color:COR,sub:allWorkoutTons.length>0?`Последняя: ${fmtFull(allWorkoutTons[allWorkoutTons.length-1].date)}`:'Нет записей'},
     {key:'food',icon:'🥗',label:'Питание',color:BLU,sub:'Дневник питания · макросы'},
     {key:'onerm',icon:'🧮',label:'Калькулятор 1ПМ',color:'#F59E0B',sub:''},
@@ -5543,7 +5545,6 @@ function SettingsView({ user, performLogout }) {
   const load=(k,def)=>{try{return JSON.parse(localStorage.getItem(k)??'null')??def}catch{return def}}
   const [notifs,setNotifs]=useState(()=>load('fitpro_notifs',{workout:false,diary:false,report:false}))
   const [units,setUnits]=useState(()=>load('fitpro_units',{weight:'kg',height:'cm'}))
-  const [lang,setLang]=useState(()=>load('fitpro_lang','ru'))
   const [chatCount,setChatCount]=useState(null)
   const [clearConfirm,setClearConfirm]=useState(false)
   const [deleteConfirm,setDeleteConfirm]=useState(false)
@@ -5558,15 +5559,14 @@ function SettingsView({ user, performLogout }) {
     if(!user?.id)return
     supabase.from('chat_messages').select('*',{count:'exact',head:true}).eq('user_id',user.id)
       .then(({count})=>setChatCount(count??0))
-    // notifs/units/lang читаются из profiles, а не только из localStorage — иначе
+    // notifs/units читаются из profiles, а не только из localStorage — иначе
     // настройки, сохранённые на одном устройстве, не видны на другом.
-    supabase.from('profiles').select('ai_style,notifs,units,lang').eq('id',user.id).single()
+    supabase.from('profiles').select('ai_style,notifs,units').eq('id',user.id).single()
       .then(({data})=>{
         if(!data)return
         if(data.ai_style)setAiStyle(data.ai_style)
         if(data.notifs)setNotifs(data.notifs)
         if(data.units)setUnits(data.units)
-        if(data.lang)setLang(data.lang)
       })
   },[user?.id])
 
@@ -6840,7 +6840,7 @@ export default function App() {
       w.workoutId == null && !w.fromSupabaseFallback && !(w.name === 'Тренировка' && !w.comment && w.duration == null)
     ).length
     if (unsavedCount > 0) {
-      const ok = window.confirm(`У тебя есть ${unsavedCount} несохранённых тренировок — они ещё не попали в базу (возможно, не было интернета). Если выйти сейчас, они потеряются. Выйти всё равно?`)
+      const ok = window.confirm(`У тебя ${unsavedCount} ${plural(unsavedCount,'несохранённая тренировка','несохранённые тренировки','несохранённых тренировок')} — они ещё не попали в базу (возможно, не было интернета). Если выйти сейчас, они потеряются. Выйти всё равно?`)
       if (!ok) return
     }
     setUser(null)
