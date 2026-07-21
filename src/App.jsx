@@ -4658,7 +4658,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     const over=(k)=>Math.max(0,dayTotal[k]-foodGoals[k])
     const pct=(k)=>foodGoals[k]?Math.min(100,Math.round((dayTotal[k]/foodGoals[k])*100)):0
     return createPortal(
-      <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
+      <div style={{ position:'fixed',inset:0,background:BG,zIndex:1000,display:'flex',flexDirection:'column' }}>
         {/* Тост ошибки записи в дневник/нормы — addFood/removeFood/saveEditFood/
             сохранение нормы КБЖУ упали в Supabase, локально ничего не менялось. */}
         {showFoodSaveError&&(
@@ -4672,11 +4672,11 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           </div>
         )}
         {/* Шапка */}
-        <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 16px',display:'flex',alignItems:'center',gap:10,flexShrink:0 }}>
-          <button onClick={()=>setSection(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
-          <span style={{ fontSize:17,fontWeight:700,color:'#111',flex:1 }}>{sectionTitle('Питание')}</span>
+        <div style={{ background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 16px',display:'flex',alignItems:'center',gap:10,flexShrink:0 }}>
+          <button onClick={()=>setSection(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
+          <span style={{ fontSize:17,fontWeight:700,color:TXT,flex:1 }}>{sectionTitle('Питание')}</span>
           {!readOnly&&<button onClick={()=>{setGoalsForm(foodGoals);setShowGoals(g=>!g)}}
-            style={{ background:showGoals?PUR:'#f3f4f6',border:'none',borderRadius:9,padding:'7px 13px',fontSize:12,fontWeight:600,color:showGoals?'#fff':'#6b7280',cursor:'pointer',minHeight:'unset' }}>
+            style={{ background:showGoals?PUR:SURF2,border:'none',borderRadius:9,padding:'7px 13px',fontSize:12,fontWeight:600,color:showGoals?'#fff':TXT3,cursor:'pointer',minHeight:'unset' }}>
             ⚙️ Норма
           </button>}
         </div>
@@ -4684,26 +4684,26 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
 
           {/* Плашка AI диетолога */}
           {onOpenAI&&(
-            <div onClick={()=>onOpenAI('nutrition')} style={{ display:'flex',alignItems:'center',gap:12,background:'linear-gradient(135deg,#1D9E7518,#1D9E7508)',border:'1.5px solid #1D9E7544',borderRadius:14,padding:'12px 16px',marginBottom:14,cursor:'pointer' }}>
-              <div style={{ width:38,height:38,borderRadius:'50%',background:'linear-gradient(135deg,#1D9E75,#157a5b)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0 }}>🤖</div>
+            <div onClick={()=>onOpenAI('nutrition')} style={{ display:'flex',alignItems:'center',gap:12,background:'linear-gradient(120deg,rgba(48,209,88,.14),rgba(48,209,88,.04))',border:'1px solid rgba(48,209,88,.28)',borderRadius:18,padding:'12px 16px',marginBottom:14,cursor:'pointer' }}>
+              <div style={{ width:38,height:38,borderRadius:'50%',background:`linear-gradient(135deg,${TEA},#1f8f3d)`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0 }}>🤖</div>
               <div style={{ flex:1 }}>
-                <div style={{ fontSize:13,fontWeight:700,color:'#1D9E75' }}>Спросить AI-ассистента</div>
-                <div style={{ fontSize:11,color:'#9ca3af',marginTop:1 }}>Знает твой план и остаток калорий</div>
+                <div style={{ fontSize:14,fontWeight:700,color:TXT }}>Спросить AI-ассистента</div>
+                <div style={{ fontSize:12,color:TXT2,marginTop:1 }}>Знает твой план и остаток калорий</div>
               </div>
-              <span style={{ fontSize:18,color:'#1D9E75' }}>›</span>
+              <span style={{ fontSize:18,color:TEA }}>›</span>
             </div>
           )}
 
           {/* Настройка норм */}
           {!readOnly&&showGoals&&(
-            <Card style={{ marginBottom:14,border:`1.5px solid ${PUR}33` }}>
-              <div style={{ fontSize:13,fontWeight:700,color:'#111',marginBottom:10 }}>Дневная норма</div>
+            <Card style={{ marginBottom:14,background:SURF,border:`1.5px solid ${PUR}33` }}>
+              <div style={{ fontSize:13,fontWeight:700,color:TXT,marginBottom:10 }}>Дневная норма</div>
               <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:12 }}>
-                {[['ккал','kcal',PUR],['Белки г','p',TEA],['Углев. г','c',BLU],['Жиры г','f',COR]].map(([pl,k,c])=>(
+                {[['ккал','kcal',KCAL],['Белки г','p',TEA],['Углев. г','c',BLU],['Жиры г','f',COR]].map(([pl,k,c])=>(
                   <div key={k}>
-                    <div style={{ fontSize:9,color:'#9ca3af',marginBottom:3,textAlign:'center' }}>{pl}</div>
+                    <div style={{ fontSize:9,color:TXT3,marginBottom:3,textAlign:'center' }}>{pl}</div>
                     <input type="number" min={k==='kcal'?CAL_MIN:MACRO_MIN} max={k==='kcal'?CAL_MAX:MACRO_MAX} value={goalsForm[k]} onChange={e=>setGoalsForm(f=>({...f,[k]:+e.target.value||0}))}
-                      style={{ width:'100%',padding:'8px 4px',fontSize:14,fontWeight:700,borderRadius:8,border:`1.5px solid ${c}55`,outline:'none',boxSizing:'border-box',color:c,background:'#fff',textAlign:'center' }}
+                      style={{ width:'100%',padding:'8px 4px',fontSize:14,fontWeight:700,borderRadius:16,border:`1.5px solid ${c}55`,outline:'none',boxSizing:'border-box',color:c,background:SURF2,textAlign:'center' }}
                       onFocus={e=>e.target.style.borderColor=c} onBlur={e=>e.target.style.borderColor=`${c}55`} />
                   </div>
                 ))}
@@ -4723,7 +4723,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 setFoodGoals(clampedGoals);setShowGoals(false)
                 localStorage.setItem('fitpro_food_goals',JSON.stringify(clampedGoals))
               }}
-                style={{ width:'100%',padding:'10px',borderRadius:9,border:'none',background:PUR,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>
+                style={{ width:'100%',padding:'12px',borderRadius:16,border:'none',background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontSize:14,fontWeight:800,cursor:'pointer',minHeight:'unset',boxShadow:'0 10px 26px rgba(124,122,240,.4)' }}>
                 Сохранить
               </button>
             </Card>
@@ -4744,19 +4744,19 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
             for(let d=1;d<=daysInMonth;d++)cells.push(d)
             while(cells.length%7!==0)cells.push(null)
             return(
-              <div style={{ background:'#fff',borderRadius:16,boxShadow:'0 4px 24px rgba(0,0,0,0.10)',border:'1px solid #e5e7eb',padding:'16px',marginBottom:14 }}>
+              <div style={{ background:SURF,borderRadius:20,boxShadow:'0 4px 24px rgba(0,0,0,0.35)',border:`1px solid ${HAIR}`,padding:'16px',marginBottom:14 }}>
                 {/* Навигация месяца */}
                 <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14 }}>
                   <button onClick={()=>setCalPickerMonth(({y,m})=>m===0?{y:y-1,m:11}:{y,m:m-1})}
-                    style={{ background:'none',border:'none',fontSize:20,cursor:'pointer',color:'#6b7280',minHeight:'unset',padding:'0 6px' }}>‹</button>
-                  <span style={{ fontSize:15,fontWeight:700,color:'#111' }}>{MONTH_RU[m]} {y}</span>
+                    style={{ background:'none',border:'none',fontSize:20,cursor:'pointer',color:TXT3,minHeight:'unset',padding:'0 6px' }}>‹</button>
+                  <span style={{ fontSize:15,fontWeight:700,color:TXT }}>{MONTH_RU[m]} {y}</span>
                   <button onClick={()=>setCalPickerMonth(({y,m})=>m===11?{y:y+1,m:0}:{y,m:m+1})}
-                    style={{ background:'none',border:'none',fontSize:20,cursor:'pointer',color:'#6b7280',minHeight:'unset',padding:'0 6px' }}>›</button>
+                    style={{ background:'none',border:'none',fontSize:20,cursor:'pointer',color:TXT3,minHeight:'unset',padding:'0 6px' }}>›</button>
                 </div>
                 {/* Заголовки дней */}
                 <div style={{ display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2,marginBottom:4 }}>
                   {DAY_HEADS.map(h=>(
-                    <div key={h} style={{ textAlign:'center',fontSize:10,fontWeight:600,color:'#b0b7c3',padding:'2px 0' }}>{h}</div>
+                    <div key={h} style={{ textAlign:'center',fontSize:10,fontWeight:600,color:TXT3,padding:'2px 0' }}>{h}</div>
                   ))}
                 </div>
                 {/* Сетка дней */}
@@ -4771,12 +4771,12 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                     const isToday=iso===todayISO
                     return(
                       <div key={ci} onClick={()=>setFoodDate(iso)}
-                        style={{ display:'flex',flexDirection:'column',alignItems:'center',cursor:'pointer',borderRadius:10,padding:'5px 2px',
-                          background:isSel?PUR:isToday?`${PUR}10`:'transparent',
+                        style={{ display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',cursor:'pointer',borderRadius:12,padding:'5px 2px',minHeight:44,
+                          background:isSel?PUR:hasData?SURF2:isToday?`${PUR}18`:'transparent',
                           border:isToday&&!isSel?`1px solid ${PUR}40`:'1px solid transparent' }}>
-                        <span style={{ fontSize:13,fontWeight:isSel||isToday?700:400,color:isSel?'#fff':isToday?PUR:'#111',lineHeight:1.4 }}>{d}</span>
+                        <span style={{ fontSize:13,fontWeight:isSel||isToday?700:400,color:isSel?'#fff':isToday?PUR:TXT2,lineHeight:1.4 }}>{d}</span>
                         {hasData&&(
-                          <span style={{ fontSize:9,fontWeight:600,color:isSel?'rgba(255,255,255,0.85)':PUR,lineHeight:1.2,marginTop:1,textAlign:'center' }}>
+                          <span style={{ fontSize:8,fontWeight:600,color:isSel?'rgba(255,255,255,0.85)':TXT3,lineHeight:1.2,marginTop:1,textAlign:'center' }}>
                             {kcal}
                           </span>
                         )}
@@ -4789,9 +4789,9 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           })()}
 
           {/* Сводка за неделю */}
-          <Card style={{ marginBottom:14 }}>
-            <div style={{ fontSize:13,fontWeight:700,color:'#111',marginBottom:4 }}>Сводка за неделю</div>
-            <div style={{ fontSize:11,color:'#9ca3af',marginBottom:12 }}>
+          <Card style={{ marginBottom:14,background:SURF,border:`1px solid ${HAIR}` }}>
+            <div style={{ fontSize:13,fontWeight:700,color:TXT,marginBottom:4 }}>Сводка за неделю</div>
+            <div style={{ fontSize:11,color:TXT3,marginBottom:12 }}>
               {weekStart.toLocaleDateString('ru',{day:'numeric',month:'short'})} — {weekDays[6].d.toLocaleDateString('ru',{day:'numeric',month:'short',year:'numeric'})}
             </div>
             {/* Факт за неделю относительно недельной нормы (foodGoals.X*7),
@@ -4800,19 +4800,19 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 так перерасход виден без отдельной плашки. Норма не задана
                 (norm7<=0) — столбик пустой, показываем только факт. */}
             <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8 }}>
-              {[['🔥',weekTotal.kcal,foodGoals.kcal*7,'','ккал',PUR],['🥩',weekTotal.p,foodGoals.p*7,'г','белки',TEA],['🍚',weekTotal.c,foodGoals.c*7,'г','углев.',BLU],['🥑',weekTotal.f,foodGoals.f*7,'г','жиры',COR]].map(([ic,fact,norm7,unit,label,c])=>{
+              {[['🔥',weekTotal.kcal,foodGoals.kcal*7,'','ккал','linear-gradient(180deg,#d07bff,#BF5AF2)','#d79bff'],['🥩',weekTotal.p,foodGoals.p*7,'г','белки','linear-gradient(180deg,#4ce07a,#30D158)','#5be389'],['🍚',weekTotal.c,foodGoals.c*7,'г','углев.','linear-gradient(180deg,#3f9bff,#0A84FF)','#5aa8ff'],['🥑',weekTotal.f,foodGoals.f*7,'г','жиры','linear-gradient(180deg,#ffb54a,#FF9F0A)','#ffbf5a']].map(([ic,fact,norm7,unit,label,grad,factColor])=>{
                 const pct=norm7>0?Math.round(fact/norm7*100):0
                 const fillH=Math.min(100,pct)
                 return (
                   <div key={label} style={{ display:'flex',flexDirection:'column',alignItems:'center',textAlign:'center' }}>
                     <div style={{ fontSize:14,marginBottom:2 }}>{ic}</div>
-                    <div style={{ fontSize:9,color:'#9ca3af',marginBottom:5,minHeight:11 }}>{norm7>0?`из ${norm7}${unit}`:''}</div>
-                    <div style={{ width:'100%',height:96,background:'#eef0f2',borderRadius:8,position:'relative',overflow:'hidden' }}>
-                      <div style={{ position:'absolute',bottom:0,left:0,width:'100%',height:`${fillH}%`,background:c,borderRadius:'0 0 8px 8px' }} />
+                    <div style={{ fontSize:10,color:TXT3,marginBottom:5,minHeight:12 }}>{norm7>0?`из ${norm7}${unit}`:''}</div>
+                    <div style={{ width:34,height:96,background:'rgba(255,255,255,.07)',borderRadius:9,position:'relative',overflow:'hidden' }}>
+                      <div style={{ position:'absolute',bottom:0,left:0,width:'100%',height:`${fillH}%`,background:grad,borderRadius:'9px 9px 0 0' }} />
                     </div>
-                    <div style={{ fontSize:13,fontWeight:700,color:c,marginTop:5 }}>{fact}{unit}</div>
-                    <div style={{ fontSize:10,color:'#9ca3af',minHeight:12 }}>{norm7>0?`${pct}%`:''}</div>
-                    <div style={{ fontSize:9,color:'#9ca3af' }}>{label}</div>
+                    <div style={{ fontSize:15,fontWeight:800,color:factColor,marginTop:5 }}>{fact}{unit}</div>
+                    <div style={{ fontSize:10,color:TXT3,minHeight:12 }}>{norm7>0?`${pct}%`:''}</div>
+                    <div style={{ fontSize:10,color:TXT3 }}>{label}</div>
                   </div>
                 )
               })}
@@ -4820,43 +4820,43 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           </Card>
 
           {/* Сводка за сегодня */}
-          <Card style={{ marginBottom:14 }}>
+          <Card style={{ marginBottom:14,background:'linear-gradient(150deg,#241f3a,#151519)',border:`1px solid ${HAIR}`,borderRadius:22 }}>
               <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10 }}>
-                <span style={{ fontSize:13,fontWeight:700,color:'#111' }}>Итого за день</span>
-                <span style={{ fontSize:11,color:'#9ca3af' }}>{selDate.toLocaleDateString('ru',{day:'numeric',month:'short'})}</span>
+                <span style={{ fontSize:13,fontWeight:700,color:TXT }}>Итого за день</span>
+                <span style={{ fontSize:11,color:TXT3 }}>{selDate.toLocaleDateString('ru',{day:'numeric',month:'short'})}</span>
               </div>
               <div style={{ display:'flex',alignItems:'flex-end',gap:6,marginBottom:10 }}>
-                <div style={{ fontSize:36,fontWeight:800,color:PUR,lineHeight:1 }}>{dayTotal.kcal}</div>
-                <div style={{ fontSize:14,color:'#9ca3af',paddingBottom:4 }}>/ {foodGoals.kcal} ккал</div>
+                <div style={{ fontSize:44,fontWeight:800,color:TXT,lineHeight:1,fontVariantNumeric:'tabular-nums' }}>{dayTotal.kcal}</div>
+                <div style={{ fontSize:18,fontWeight:700,color:TXT3,paddingBottom:4 }}>/ {foodGoals.kcal} ккал</div>
                 {over('kcal')>0&&<div style={{ fontSize:11,color:COR,fontWeight:600,paddingBottom:4 }}>+{over('kcal')} перебор</div>}
                 {foodLoading&&dayEntries.length===0?(
-                  <div style={{ fontSize:11,color:'#9ca3af',paddingBottom:4 }}>загрузка…</div>
+                  <div style={{ fontSize:11,color:TXT3,paddingBottom:4 }}>загрузка…</div>
                 ):foodLoadError?(
                   <div style={{ fontSize:11,color:COR,paddingBottom:4,display:'flex',alignItems:'center',gap:6 }}>
                     не удалось загрузить
                     <button onClick={()=>setFoodReloadToken(t=>t+1)} style={{ fontSize:10,padding:'2px 8px',borderRadius:6,border:'none',background:COR,color:'#fff',cursor:'pointer',fontWeight:600,minHeight:'unset' }}>Повторить</button>
                   </div>
                 ):dayTotal.kcal===0&&(
-                  <div style={{ fontSize:11,color:'#9ca3af',paddingBottom:4 }}>добавь продукты</div>
+                  <div style={{ fontSize:11,color:TXT3,paddingBottom:4 }}>добавь продукты</div>
                 )}
               </div>
-              <div style={{ height:10,background:'#f3f4f6',borderRadius:5,overflow:'hidden',marginBottom:14 }}>
-                <div style={{ height:'100%',width:`${pct('kcal')}%`,background:over('kcal')>0?COR:PUR,borderRadius:5,transition:'width 0.3s' }} />
+              <div style={{ height:10,background:'rgba(255,255,255,.10)',borderRadius:6,overflow:'hidden',marginBottom:14 }}>
+                <div style={{ height:'100%',width:`${pct('kcal')}%`,background:`linear-gradient(90deg, ${KCAL}, #e07bff)`,borderRadius:6,transition:'width 0.3s' }} />
               </div>
               {[['Белки','p',TEA],['Углеводы','c',BLU],['Жиры','f',COR]].map(([l,k,c])=>{
                 const p2=pct(k),r=rem(k),ov=over(k)
                 return(
                   <div key={k} style={{ marginBottom:10 }}>
                     <div style={{ display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:4,gap:4,flexWrap:'wrap' }}>
-                      <span style={{ color:'#6b7280',fontWeight:600 }}>{l}</span>
+                      <span style={{ color:TXT2,fontWeight:600 }}>{l}</span>
                       <span style={{ fontWeight:700,color:c }}>{dayTotal[k]} г</span>
                       <span style={{ flex:1 }} />
                       {ov>0
                         ?<span style={{ fontSize:11,color:COR }}>+{ov} г перебор</span>
-                        :<span style={{ fontSize:11,color:'#9ca3af' }}>осталось {r} г</span>}
-                      <span style={{ fontSize:11,color:'#c7cad1' }}>/ {foodGoals[k]} г</span>
+                        :<span style={{ fontSize:11,color:TXT3 }}>осталось {r} г</span>}
+                      <span style={{ fontSize:11,color:TXT3 }}>/ {foodGoals[k]} г</span>
                     </div>
-                    <div style={{ height:7,background:'#f3f4f6',borderRadius:4,overflow:'hidden' }}>
+                    <div style={{ height:7,background:'rgba(255,255,255,.10)',borderRadius:4,overflow:'hidden' }}>
                       <div style={{ height:'100%',width:`${p2}%`,background:ov>0?COR:c,borderRadius:4,transition:'width 0.3s' }} />
                     </div>
                   </div>
@@ -4866,22 +4866,22 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
             {dayEntries.length>0&&(
               <div style={{ marginBottom:12 }}>
                 {dayEntries.map(e=>(
-                  <div key={e.id} style={{ background:'#fff',borderRadius:11,boxShadow:'0 1px 4px rgba(0,0,0,0.06)',marginBottom:8,position:'relative',zIndex:openFoodMenu===e.id?50:'auto' }}>
+                  <div key={e.id} style={{ background:SURF,borderRadius:11,boxShadow:'0 1px 4px rgba(0,0,0,0.06)',marginBottom:8,position:'relative',zIndex:openFoodMenu===e.id?50:'auto' }}>
                     {editingFoodId===e.id?(
                       <div style={{ padding:'12px 14px' }}>
                         <input value={editFoodForm.name} onChange={ev=>setEditFoodForm(f=>({...f,name:ev.target.value}))}
-                          style={{ width:'100%',padding:'8px 10px',fontSize:14,borderRadius:8,border:'1.5px solid #e5e7eb',outline:'none',boxSizing:'border-box',color:'#111',marginBottom:8 }}
-                          onFocus={ev=>ev.target.style.borderColor=PUR} onBlur={ev=>ev.target.style.borderColor='#e5e7eb'} />
+                          style={{ width:'100%',padding:'8px 10px',fontSize:14,borderRadius:8,border:`1.5px solid ${HAIR}`,outline:'none',boxSizing:'border-box',color:TXT,marginBottom:8 }}
+                          onFocus={ev=>ev.target.style.borderColor=PUR} onBlur={ev=>ev.target.style.borderColor=HAIR} />
                         {/* items list editable */}
                         {editFoodForm.items.length>0&&(
                           <div style={{ marginBottom:8 }}>
                             {editFoodForm.items.map((item,ii)=>(
                               <div key={ii} style={{ display:'flex',gap:6,marginBottom:4 }}>
                                 <input value={item} onChange={ev=>setEditFoodForm(f=>({...f,items:f.items.map((it,idx)=>idx===ii?ev.target.value:it)}))}
-                                  style={{ flex:1,padding:'6px 10px',fontSize:12,borderRadius:7,border:'1px solid #e5e7eb',outline:'none',color:'#374151' }}
-                                  onFocus={ev=>ev.target.style.borderColor=PUR} onBlur={ev=>ev.target.style.borderColor='#e5e7eb'} />
+                                  style={{ flex:1,padding:'6px 10px',fontSize:12,borderRadius:7,border:`1px solid ${HAIR}`,outline:'none',color:TXT2 }}
+                                  onFocus={ev=>ev.target.style.borderColor=PUR} onBlur={ev=>ev.target.style.borderColor=HAIR} />
                                 <button onClick={()=>setEditFoodForm(f=>({...f,items:f.items.filter((_,idx)=>idx!==ii)}))}
-                                  style={{ background:'none',border:'none',fontSize:16,cursor:'pointer',color:'#d1d5db',padding:'4px',minHeight:'unset' }}>✕</button>
+                                  style={{ background:'none',border:'none',fontSize:16,cursor:'pointer',color:TXT3,padding:'4px',minHeight:'unset' }}>✕</button>
                               </div>
                             ))}
                             <button onClick={()=>setEditFoodForm(f=>({...f,items:[...f.items,'']}))}
@@ -4891,13 +4891,13 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                         <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,marginBottom:10 }}>
                           {[['ккал','kcal',PUR],['Б','p',TEA],['У','c',BLU],['Ж','f',COR]].map(([pl,k,c])=>(
                             <input key={k} type="number" min={k==='kcal'?CAL_MIN:MACRO_MIN} max={k==='kcal'?CAL_MAX:MACRO_MAX} placeholder={pl} value={editFoodForm[k]} onChange={ev=>setEditFoodForm(f=>({...f,[k]:ev.target.value}))}
-                              style={{ width:'100%',padding:'7px 6px',fontSize:12,borderRadius:7,border:`1.5px solid ${c}44`,outline:'none',boxSizing:'border-box',color:'#111',textAlign:'center' }}
+                              style={{ width:'100%',padding:'7px 6px',fontSize:12,borderRadius:7,border:`1.5px solid ${c}44`,outline:'none',boxSizing:'border-box',color:TXT,textAlign:'center' }}
                               onFocus={ev=>ev.target.style.borderColor=c} onBlur={ev=>ev.target.style.borderColor=`${c}44`} />
                           ))}
                         </div>
                         <div style={{ display:'flex',gap:8 }}>
                           <button onClick={saveEditFood} style={{ flex:1,padding:'9px',borderRadius:8,border:'none',background:PUR,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>Сохранить</button>
-                          <button onClick={()=>setEditingFoodId(null)} style={{ padding:'9px 14px',borderRadius:8,border:'none',background:'#f3f4f6',color:'#6b7280',fontSize:13,cursor:'pointer',minHeight:'unset' }}>Отмена</button>
+                          <button onClick={()=>setEditingFoodId(null)} style={{ padding:'9px 14px',borderRadius:8,border:'none',background:SURF2,color:TXT3,fontSize:13,cursor:'pointer',minHeight:'unset' }}>Отмена</button>
                           <button onClick={()=>{removeFood(e.id);setEditingFoodId(null)}} style={{ padding:'9px 14px',borderRadius:8,border:'none',background:'#fff5f5',color:'#ef4444',fontSize:13,cursor:'pointer',minHeight:'unset' }}>Удалить</button>
                         </div>
                       </div>
@@ -4905,15 +4905,15 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                       <div style={{ padding:'12px 14px' }}>
                         <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start' }}>
                           <div style={{ flex:1,minWidth:0 }}>
-                            <div style={{ fontSize:14,fontWeight:600,color:'#111',marginBottom:2 }}>{e.name}</div>
+                            <div style={{ fontSize:14,fontWeight:600,color:TXT,marginBottom:2 }}>{e.name}</div>
                             {e.items&&e.items.length>0&&(
                               <div style={{ marginBottom:6 }}>
                                 {e.items.map((item,ii)=>(
-                                  <div key={ii} style={{ fontSize:12,color:'#374151',lineHeight:1.5,paddingLeft:8,borderLeft:'2px solid #f3f4f6',marginBottom:1 }}>• {item}</div>
+                                  <div key={ii} style={{ fontSize:12,color:TXT2,lineHeight:1.5,paddingLeft:8,borderLeft:`2px solid ${HAIR}`,marginBottom:1 }}>• {item}</div>
                                 ))}
                               </div>
                             )}
-                            <div style={{ fontSize:11,color:'#9ca3af',display:'flex',gap:8,flexWrap:'wrap' }}>
+                            <div style={{ fontSize:11,color:TXT3,display:'flex',gap:8,flexWrap:'wrap' }}>
                               {e.kcal&&<span style={{ color:PUR,fontWeight:600 }}>{e.kcal} ккал</span>}
                               {e.p&&<span>Б: {e.p}г</span>}
                               {e.c&&<span>У: {e.c}г</span>}
@@ -4922,12 +4922,12 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                           </div>
                           {!readOnly&&<div style={{ position:'relative',flexShrink:0 }}>
                             <button onClick={ev=>{ev.stopPropagation();setOpenFoodMenu(openFoodMenu===e.id?null:e.id);setEditingFoodId(null)}}
-                              style={{ background:'none',border:'1px solid #e5e7eb',borderRadius:7,fontSize:15,cursor:'pointer',color:'#9ca3af',padding:'2px 7px',minHeight:'unset',lineHeight:1.4,letterSpacing:1 }}>⋯</button>
+                              style={{ background:'none',border:`1px solid ${HAIR}`,borderRadius:7,fontSize:15,cursor:'pointer',color:TXT3,padding:'2px 7px',minHeight:'unset',lineHeight:1.4,letterSpacing:1 }}>⋯</button>
                             {openFoodMenu===e.id&&(
                               <>
                                 <div onClick={()=>setOpenFoodMenu(null)} style={{ position:'fixed',inset:0,zIndex:49 }} />
-                                <div onClick={ev=>ev.stopPropagation()} style={{ position:'absolute',top:30,right:0,background:'#fff',borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:51,minWidth:160,overflow:'hidden',border:'1px solid #f0f0f0' }}>
-                                  <button onClick={()=>{setOpenFoodMenu(null);startEditFood(e)}} style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:'1px solid #f3f4f6',background:'transparent',cursor:'pointer',textAlign:'left',color:'#111',fontSize:13 }}>✏️ Редактировать</button>
+                                <div onClick={ev=>ev.stopPropagation()} style={{ position:'absolute',top:30,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:51,minWidth:160,overflow:'hidden',border:`1px solid ${HAIR}` }}>
+                                  <button onClick={()=>{setOpenFoodMenu(null);startEditFood(e)}} style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:`1px solid ${HAIR}`,background:'transparent',cursor:'pointer',textAlign:'left',color:TXT,fontSize:13 }}>✏️ Редактировать</button>
                                   <button onClick={()=>{setOpenFoodMenu(null);removeFood(e.id)}} style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:'#ef4444',fontSize:13 }}>🗑 Удалить</button>
                                 </div>
                               </>
@@ -4941,21 +4941,21 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
               </div>
             )}
             {!readOnly&&(showFoodForm?(
-              <Card style={{ marginBottom:12 }}>
-                <div style={{ fontSize:13,fontWeight:700,color:'#111',marginBottom:10 }}>Добавить продукт</div>
+              <Card style={{ marginBottom:12,background:SURF,border:`1px solid ${HAIR}` }}>
+                <div style={{ fontSize:13,fontWeight:700,color:TXT,marginBottom:10 }}>Добавить продукт</div>
                 <input placeholder="Название *" value={foodForm.name} onChange={e=>setFoodForm(f=>({...f,name:e.target.value}))}
-                  style={{ width:'100%',padding:'9px 12px',fontSize:13,borderRadius:8,border:'1.5px solid #e5e7eb',outline:'none',boxSizing:'border-box',marginBottom:8,color:'#111',background:'#fff' }}
-                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'} />
+                  style={{ width:'100%',padding:'9px 12px',fontSize:13,borderRadius:8,border:`1.5px solid ${HAIR}`,outline:'none',boxSizing:'border-box',marginBottom:8,color:TXT,background:SURF2 }}
+                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                 <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:12 }}>
                   {[['ккал','kcal',PUR],['Б (г)','p',TEA],['У (г)','c',BLU],['Ж (г)','f',COR]].map(([pl,k,c])=>(
                     <input key={k} type="number" min={k==='kcal'?CAL_MIN:MACRO_MIN} max={k==='kcal'?CAL_MAX:MACRO_MAX} placeholder={pl} value={foodForm[k]} onChange={e=>setFoodForm(f=>({...f,[k]:e.target.value}))}
-                      style={{ width:'100%',padding:'9px 8px',fontSize:13,borderRadius:8,border:`1.5px solid ${c}44`,outline:'none',boxSizing:'border-box',color:'#111',background:'#fff',textAlign:'center' }}
+                      style={{ width:'100%',padding:'9px 8px',fontSize:13,borderRadius:8,border:`1.5px solid ${c}44`,outline:'none',boxSizing:'border-box',color:TXT,background:SURF2,textAlign:'center' }}
                       onFocus={e=>e.target.style.borderColor=c} onBlur={e=>e.target.style.borderColor=`${c}44`} />
                   ))}
                 </div>
                 <div style={{ display:'flex',gap:8 }}>
                   <button onClick={addFood} style={{ flex:1,padding:'10px',borderRadius:9,border:'none',background:PUR,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>Добавить</button>
-                  <button onClick={()=>setShowFoodForm(false)} style={{ padding:'10px 16px',borderRadius:9,border:'none',background:'#f3f4f6',color:'#6b7280',fontSize:13,cursor:'pointer',minHeight:'unset' }}>Отмена</button>
+                  <button onClick={()=>setShowFoodForm(false)} style={{ padding:'10px 16px',borderRadius:9,border:'none',background:SURF2,color:TXT3,fontSize:13,cursor:'pointer',minHeight:'unset' }}>Отмена</button>
                 </div>
               </Card>
             ):(
