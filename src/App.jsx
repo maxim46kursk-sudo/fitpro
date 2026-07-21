@@ -2231,7 +2231,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                 )}
                               </div>
                               <button onClick={()=>setOpenSetNote(noteOpen?null:{ei,si})}
-                                style={{ width:26, height:26, borderRadius:6, border:'none', background:set.note?`${PUR}50`:SURF2, color:set.note?PUR:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}>📝</button>
+                                style={{ width:26, height:26, borderRadius:6, border:'none', background:set.note?`${PUR}50`:SURF2, color:set.note?PUR:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}><Ic name="solar:notes-bold" size={15} /></button>
                               {/* Видео тренеру — только премиум-клиенту (isPremium).
                                   Не загрузка в приложение: открывает чат с тренером
                                   в Telegram, клиент шлёт видео сам. openTelegramLink
@@ -2243,7 +2243,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                   if(window.Telegram?.WebApp)window.Telegram.WebApp.openTelegramLink(MAX_TELEGRAM_URL)
                                   else window.open(MAX_TELEGRAM_URL,'_blank')
                                 }}
-                                  style={{ width:26, height:26, borderRadius:6, border:'none', background:SURF2, color:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}>🎬</button>
+                                  style={{ width:26, height:26, borderRadius:6, border:'none', background:SURF2, color:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}><Ic name="solar:video-frame-bold" size={15} /></button>
                               ):<span />}
                               <button onClick={()=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.filter((_,j)=>j!==si)}:x).filter(x=>x.sets.length>0))}
                                 style={{ background:'none', border:'none', color:TXT3, cursor:'pointer', fontSize:14, textAlign:'center' }}>✕</button>
@@ -2326,7 +2326,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           <button onClick={openDatePicker} style={{ padding:'12px 36px', borderRadius:16, border:'none', background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', fontSize:16, fontWeight:800, cursor:'pointer', boxShadow:'0 10px 26px rgba(124,122,240,.4)' }}>
             {isEditMode?'Сохранить':'Завершить'}
           </button>
-          <button onClick={()=>setShowSendModal(true)} style={{ width:42, height:42, borderRadius:'50%', border:`2px solid ${HAIR}`, background:'none', color:TXT3, fontSize:20, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>📤</button>
+          <button onClick={()=>setShowSendModal(true)} style={{ width:42, height:42, borderRadius:'50%', border:`2px solid ${HAIR}`, background:'none', color:TXT3, fontSize:20, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}><Ic name="solar:share-bold" size={20} /></button>
         </div>
 
         {/* Модал "Отправить тренеру" */}
@@ -4103,7 +4103,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         <BackBtn label={sectionTitle('Общий тоннаж')} onBack={()=>setSection(null)} right={
           <div style={{ position:'relative' }}>
             <button onClick={()=>setShowTonPeriodMenu(v=>!v)}
-              style={{ width:34,height:34,borderRadius:9,border:`1px solid ${HAIR}`,background:period!=='7'||customFrom||customTo?`${PUR}11`:SURF2,cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:period!=='7'||customFrom||customTo?PUR:TXT3,minHeight:'unset' }}>📅</button>
+              style={{ width:34,height:34,borderRadius:9,border:`1px solid ${HAIR}`,background:period!=='7'||customFrom||customTo?`${PUR}11`:SURF2,cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:period!=='7'||customFrom||customTo?PUR:TXT3,minHeight:'unset' }}><Ic name="solar:calendar-bold" size={18} /></button>
             {showTonPeriodMenu&&(
               <>
                 <div onClick={()=>setShowTonPeriodMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
@@ -4264,7 +4264,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         <BackBtn label={sectionTitle('Прогресс по упражнениям')} onBack={()=>setSection(null)} right={
           <div style={{ position:'relative' }}>
             <button onClick={()=>setShowExPeriodMenu(v=>!v)}
-              style={{ width:34,height:34,borderRadius:9,border:`1px solid ${HAIR}`,background:exPeriod!=='all'?`${PUR}11`:SURF2,cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:exPeriod!=='all'?PUR:TXT3,minHeight:'unset' }}>📅</button>
+              style={{ width:34,height:34,borderRadius:9,border:`1px solid ${HAIR}`,background:exPeriod!=='all'?`${PUR}11`:SURF2,cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:exPeriod!=='all'?PUR:TXT3,minHeight:'unset' }}><Ic name="solar:calendar-bold" size={18} /></button>
             {showExPeriodMenu&&(
               <>
                 <div onClick={()=>setShowExPeriodMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
@@ -4396,10 +4396,10 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                         <div style={{ display:'flex',gap:6,flexShrink:0 }}>
                           <button onClick={e=>{e.stopPropagation();if(onEditWorkout)onEditWorkout(workoutHistory[activeRec.histIdx],activeRec.histIdx)}}
                             title="Редактировать"
-                            style={{ width:30,height:30,borderRadius:8,border:`1px solid ${HAIR}`,background:SURF2,cursor:'pointer',fontSize:13,color:TXT3,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>✏️</button>
+                            style={{ width:30,height:30,borderRadius:8,border:`1px solid ${HAIR}`,background:SURF2,cursor:'pointer',fontSize:13,color:TXT3,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}><Ic name="solar:pen-bold" size={16} /></button>
                           <button onClick={e=>{e.stopPropagation();if(window.confirm('Удалить тренировку?')){onDeleteWorkout(activeRec.histIdx)}}}
                             title="Удалить"
-                            style={{ width:30,height:30,borderRadius:8,border:'1px solid #fecaca',background:'#fef2f2',cursor:'pointer',fontSize:13,color:'#ef4444',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>🗑</button>
+                            style={{ width:30,height:30,borderRadius:8,border:'1px solid #fecaca',background:'#fef2f2',cursor:'pointer',fontSize:13,color:'#ef4444',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}><Ic name="solar:trash-bin-minimalistic-bold" size={16} /></button>
                         </div>
                         )}
                       </div>
@@ -6062,7 +6062,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
             <div style={{display:'flex',alignItems:'center',gap:14}}>
               <div onClick={()=>photoInputPVRef.current?.click()} style={{position:'relative',cursor:'pointer',flexShrink:0}}>
                 <Av lbl={(userEdit.name||user?.name||'').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={64} photo={userEdit.photoURL} gender={userEdit.gender} />
-                <div style={{position:'absolute',bottom:0,right:0,width:22,height:22,borderRadius:'50%',background:PUR,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,border:'2px solid #fff'}}>📷</div>
+                <div style={{position:'absolute',bottom:0,right:0,width:22,height:22,borderRadius:'50%',background:PUR,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,border:'2px solid #fff'}}><Ic name="solar:camera-bold" size={13} color="#fff" /></div>
               </div>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:13,fontWeight:600,color:TXT,marginBottom:2}}>{userEdit.name||user?.name}</div>
