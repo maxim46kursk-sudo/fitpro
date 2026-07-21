@@ -8,6 +8,7 @@ import { oneRepMax, weightForReps, roundToPlate, percentTable, plateStep } from 
 // слота шаблонной программы (WorkoutsView), см. подробный комментарий там.
 import { buildExerciseAggregates, computeTemplateScale, parseTemplateSets, computeProgressSteps, computeBandTarget, UNRATED_STOP_AFTER } from './workoutPrompt.js'
 import { MAX_TELEGRAM_URL } from './config.js'
+import { Ic } from './icons.jsx'
 import './App.css'
 
 // ── Тёмная тема (единая палитра, шаг 1: каркас + экран «Тренировки»).
@@ -5138,12 +5139,13 @@ const NAV=[
   {id:'library',icon:'📚',label:'Упражнения'},
   {id:'progress',icon:'📓',label:'Дневник'},
 ]
+// Нижнее меню — иконки Solar (bold-duotone), вшиты офлайн (см. src/icons.jsx).
 const NAV_MOBILE=[
-  {id:'workouts',icon:'🏋️',label:'Тренировки'},
-  {id:'nutrition',icon:'🥗',label:'Питание'},
-  {id:'library',icon:'📚',label:'Упражнения'},
-  {id:'progress',icon:'📓',label:'Дневник'},
-  {id:'clients',icon:'👥',label:'Клиенты'},
+  {id:'workouts',ic:'solar:dumbbell-bold-duotone',label:'Тренировки'},
+  {id:'nutrition',ic:'solar:chef-hat-bold-duotone',label:'Питание'},
+  {id:'library',ic:'solar:book-bold-duotone',label:'Упражнения'},
+  {id:'progress',ic:'solar:notebook-bookmark-bold-duotone',label:'Дневник'},
+  {id:'clients',ic:'solar:users-group-rounded-bold-duotone',label:'Клиенты'},
 ]
 
 // Поле пароля с кнопкой-глазиком (показать/скрыть) — переиспользуется на
@@ -7243,7 +7245,7 @@ export default function App() {
                   position:'relative', minHeight:'unset',
                 }}>
                   <div style={{ position:'absolute', top:0, left:'50%', transform:'translateX(-50%)', width:active?28:0, height:2.5, borderRadius:'0 0 3px 3px', background:ACCENT2, transition:'width 0.18s' }} />
-                  <span style={{ fontSize:22, lineHeight:1 }}>{item.icon}</span>
+                  <Ic name={item.ic} size={22} color={active?ACCENT2:TXT3} />
                   <span style={{ fontSize:11, fontWeight:active?700:400, color:active?ACCENT2:TXT3 }}>{item.label}</span>
                 </button>
               )
