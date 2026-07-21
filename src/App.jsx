@@ -5683,7 +5683,7 @@ function SettingsView({ user, performLogout }) {
             {['kg'].map(v=>(
               <button key={v} onClick={()=>saveUnits({...units,weight:v})} style={{
                 padding:'5px 12px',borderRadius:8,border:`1.5px solid ${units.weight===v?PUR:'#e5e7eb'}`,
-                background:units.weight===v?`${PUR}15`:'#fff',color:units.weight===v?PUR:'#6b7280',
+                background:units.weight===v?`${PUR}15`:SURF,color:units.weight===v?PUR:TXT3,
                 fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset',
               }}>{v}</button>
             ))}
@@ -5694,7 +5694,7 @@ function SettingsView({ user, performLogout }) {
             {['cm','in'].map(v=>(
               <button key={v} onClick={()=>saveUnits({...units,height:v})} style={{
                 padding:'5px 12px',borderRadius:8,border:`1.5px solid ${units.height===v?PUR:'#e5e7eb'}`,
-                background:units.height===v?`${PUR}15`:'#fff',color:units.height===v?PUR:'#6b7280',
+                background:units.height===v?`${PUR}15`:SURF,color:units.height===v?PUR:TXT3,
                 fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset',
               }}>{v}</button>
             ))}
@@ -5709,7 +5709,7 @@ function SettingsView({ user, performLogout }) {
             {[['ask','Спрашивай меня'],['act','Действуй сам']].map(([v,lbl])=>(
               <button key={v} onClick={()=>saveAiStyle(v)} style={{
                 padding:'5px 10px',borderRadius:8,border:`1.5px solid ${aiStyle===v?PUR:'#e5e7eb'}`,
-                background:aiStyle===v?`${PUR}15`:'#fff',color:aiStyle===v?PUR:'#6b7280',
+                background:aiStyle===v?`${PUR}15`:SURF,color:aiStyle===v?PUR:TXT3,
                 fontSize:12,fontWeight:600,cursor:'pointer',minHeight:'unset',whiteSpace:'nowrap',
               }}>{lbl}</button>
             ))}
@@ -5723,7 +5723,7 @@ function SettingsView({ user, performLogout }) {
           <span style={{fontSize:15,fontWeight:700,color:PUR}}>{chatCount===null?'...' :chatCount}</span>
         }/>
         <div style={{padding:'6px 0 14px'}}>
-          <div style={{fontSize:12,color:'#9ca3af',marginBottom:10}}>История автоматически очищается раз в 30 дней. Перед очисткой ты получишь письмо с архивом на твой email.</div>
+          <div style={{fontSize:12,color:TXT3,marginBottom:10}}>История автоматически очищается раз в 30 дней. Перед очисткой ты получишь письмо с архивом на твой email.</div>
           {!clearConfirm?(
             <button onClick={()=>setClearConfirm(true)} style={{
               width:'100%',padding:'11px',borderRadius:10,border:'1.5px solid #fee2e2',
@@ -5732,7 +5732,7 @@ function SettingsView({ user, performLogout }) {
           ):(
             <div style={{display:'flex',gap:8}}>
               <button onClick={clearChat} style={{flex:1,padding:'11px',borderRadius:10,border:'none',background:'#ef4444',color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset'}}>Удалить</button>
-              <button onClick={()=>setClearConfirm(false)} style={{flex:1,padding:'11px',borderRadius:10,border:'1.5px solid #e5e7eb',background:'#fff',color:'#6b7280',fontSize:14,cursor:'pointer',minHeight:'unset'}}>Отмена</button>
+              <button onClick={()=>setClearConfirm(false)} style={{flex:1,padding:'11px',borderRadius:10,border:`1.5px solid ${HAIR}`,background:SURF,color:TXT3,fontSize:14,cursor:'pointer',minHeight:'unset'}}>Отмена</button>
             </div>
           )}
         </div>
@@ -5743,8 +5743,8 @@ function SettingsView({ user, performLogout }) {
         {dataMsg&&<div style={{padding:'10px 0',fontSize:13,color:deleteError?'#ef4444':TEA,fontWeight:500}}>{dataMsg}</div>}
         <div style={{paddingBottom:14,display:'flex',flexDirection:'column',gap:8}}>
           <button onClick={()=>{setDataMsg('✓ Данные будут отправлены на твой email');setTimeout(()=>setDataMsg(''),4000)}} style={{
-            width:'100%',padding:'11px',borderRadius:10,border:'1.5px solid #e5e7eb',
-            background:'#fff',color:'#111',fontSize:14,fontWeight:500,cursor:'pointer',minHeight:'unset',textAlign:'left',
+            width:'100%',padding:'11px',borderRadius:10,border:`1.5px solid ${HAIR}`,
+            background:SURF,color:TXT,fontSize:14,fontWeight:500,cursor:'pointer',minHeight:'unset',textAlign:'left',
           }}>📤 Скачать мои данные</button>
           {!deleteConfirm?(
             <button onClick={()=>setDeleteConfirm(true)} style={{
@@ -5754,10 +5754,10 @@ function SettingsView({ user, performLogout }) {
           ):(
             <div style={{background:'#fff5f5',borderRadius:12,padding:'14px',border:'1.5px solid #fecaca'}}>
               <div style={{fontSize:14,fontWeight:600,color:'#ef4444',marginBottom:10}}>Удалить все данные?</div>
-              <div style={{fontSize:13,color:'#6b7280',marginBottom:12}}>Это действие необратимо. Все тренировки, питание и история чата будут удалены.</div>
+              <div style={{fontSize:13,color:TXT3,marginBottom:12}}>Это действие необратимо. Все тренировки, питание и история чата будут удалены.</div>
               <div style={{display:'flex',gap:8}}>
                 <button onClick={deleteAll} style={{flex:1,padding:'11px',borderRadius:10,border:'none',background:'#ef4444',color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset'}}>Удалить всё</button>
-                <button onClick={()=>setDeleteConfirm(false)} style={{flex:1,padding:'11px',borderRadius:10,border:'1.5px solid #e5e7eb',background:'#fff',color:'#6b7280',fontSize:14,cursor:'pointer',minHeight:'unset'}}>Отмена</button>
+                <button onClick={()=>setDeleteConfirm(false)} style={{flex:1,padding:'11px',borderRadius:10,border:`1.5px solid ${HAIR}`,background:SURF,color:TXT3,fontSize:14,cursor:'pointer',minHeight:'unset'}}>Отмена</button>
               </div>
             </div>
           )}
@@ -5771,7 +5771,7 @@ function SettingsView({ user, performLogout }) {
             {[['ru','Русский'],['en','English']].map(([v,lbl])=>(
               <button key={v} onClick={()=>saveLang(v)} style={{
                 padding:'5px 12px',borderRadius:8,border:`1.5px solid ${lang===v?PUR:'#e5e7eb'}`,
-                background:lang===v?`${PUR}15`:'#fff',color:lang===v?PUR:'#6b7280',
+                background:lang===v?`${PUR}15`:SURF,color:lang===v?PUR:TXT3,
                 fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset',
               }}>{lbl}</button>
             ))}
@@ -5788,11 +5788,11 @@ function SettingsView({ user, performLogout }) {
         ].map(item=>(
           <a key={item.label} href={item.url} target="_blank" rel="noopener noreferrer" style={{
             display:'flex',alignItems:'center',gap:12,padding:'13px 0',
-            borderBottom:'1px solid #f3f4f6',textDecoration:'none',color:'#111',
+            borderBottom:`1px solid ${HAIR}`,textDecoration:'none',color:TXT,
           }}>
             <span style={{fontSize:18}}>{item.icon}</span>
             <span style={{fontSize:15,fontWeight:500,flex:1}}>{item.label}</span>
-            <span style={{fontSize:16,color:'#9ca3af'}}>›</span>
+            <span style={{fontSize:16,color:TXT3}}>›</span>
           </a>
         ))}
       </Section>
@@ -6003,7 +6003,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
   const fmtDate=d=>new Date(d).toLocaleDateString('ru',{day:'numeric',month:'long',year:'numeric'})
 
   return(
-    <div style={{position:'fixed',inset:0,background:'#f9fafb',zIndex:1050,display:'flex',flexDirection:'column',fontFamily:'system-ui,sans-serif'}}>
+    <div style={{position:'fixed',inset:0,background:BG,zIndex:1050,display:'flex',flexDirection:'column',fontFamily:'system-ui,sans-serif'}}>
       {showProfileSaveError&&(
         <div style={{
           position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
@@ -6015,17 +6015,17 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
         </div>
       )}
       {/* Хедер */}
-      <div style={{background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
-        <button onClick={onClose} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset'}}>←</button>
-        <span style={{fontSize:18,fontWeight:800,color:'#111',flex:1}}>Мои данные</span>
+      <div style={{background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
+        <button onClick={onClose} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset'}}>←</button>
+        <span style={{fontSize:18,fontWeight:800,color:TXT,flex:1}}>Мои данные</span>
       </div>
 
       {/* Табы */}
-      <div style={{display:'flex',gap:0,borderBottom:'1px solid #e5e7eb',background:'#fff',flexShrink:0}}>
+      <div style={{display:'flex',gap:0,borderBottom:`1px solid ${HAIR}`,background:SURF,flexShrink:0}}>
         {[{id:'profile',label:'Профиль'},{id:'measurements',label:'Замеры'}].map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)} style={{
             flex:1,padding:'13px 0',border:'none',borderBottom:tab===t.id?`2.5px solid ${PUR}`:'2.5px solid transparent',
-            background:'none',fontSize:15,fontWeight:tab===t.id?700:500,color:tab===t.id?PUR:'#9ca3af',cursor:'pointer',minHeight:'unset'
+            background:'none',fontSize:15,fontWeight:tab===t.id?700:500,color:tab===t.id?PUR:TXT3,cursor:'pointer',minHeight:'unset'
           }}>{t.label}</button>
         ))}
       </div>
@@ -6043,19 +6043,19 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                 <div style={{position:'absolute',bottom:0,right:0,width:22,height:22,borderRadius:'50%',background:PUR,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,border:'2px solid #fff'}}>📷</div>
               </div>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:13,fontWeight:600,color:'#111',marginBottom:2}}>{userEdit.name||user?.name}</div>
-                <div style={{fontSize:11,color:'#9ca3af'}}>{isTgUser?tgNick:(userEdit.email||user?.email)}</div>
+                <div style={{fontSize:13,fontWeight:600,color:TXT,marginBottom:2}}>{userEdit.name||user?.name}</div>
+                <div style={{fontSize:11,color:TXT3}}>{isTgUser?tgNick:(userEdit.email||user?.email)}</div>
                 <div style={{fontSize:11,color:PUR,marginTop:2,cursor:'pointer'}} onClick={()=>photoInputPVRef.current?.click()}>Изменить фото</div>
               </div>
             </div>
 
             {/* Пол */}
             <div>
-              <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Пол</label>
+              <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>Пол</label>
               <div style={{display:'flex',gap:8}}>
                 {[['male','👨 Мужчина'],['female','👩 Женщина']].map(([val,lbl])=>(
                   <button key={val} onClick={()=>setUserEdit(u=>({...u,gender:val}))} type="button"
-                    style={{flex:1,padding:'10px',borderRadius:10,border:`1.5px solid ${userEdit.gender===val?PUR:'#e5e7eb'}`,background:userEdit.gender===val?`${PUR}12`:'#fff',color:userEdit.gender===val?PUR:'#6b7280',fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset'}}>
+                    style={{flex:1,padding:'10px',borderRadius:10,border:`1.5px solid ${userEdit.gender===val?PUR:'#e5e7eb'}`,background:userEdit.gender===val?`${PUR}12`:SURF,color:userEdit.gender===val?PUR:TXT3,fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset'}}>
                     {lbl}
                   </button>
                 ))}
@@ -6064,10 +6064,10 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
 
             {/* ФИО */}
             <div>
-              <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>ФИО</label>
+              <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>ФИО</label>
               <input value={userEdit.name||''} type="text" placeholder="Иванов Иван Иванович"
                 onChange={e=>setUserEdit(u=>({...u,name:e.target.value}))}
-                style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
+                style={{width:'100%',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,fontSize:15,color:TXT,outline:'none',boxSizing:'border-box',background:SURF}}
                 onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
             </div>
             {/* Email и Telegram — у telegram-аккаунтов поле Email не рисуем
@@ -6075,20 +6075,20 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                 который пользователю нельзя и показывать незачем. */}
             {(isTgUser?[{key:'telegram',label:'Telegram'}]:[{key:'email',label:'Email'},{key:'telegram',label:'Telegram'}]).map(f=>(
               <div key={f.key}>
-                <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>{f.label}</label>
+                <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>{f.label}</label>
                 <input value={userEdit[f.key]||''} type="text" placeholder={f.key==='email'?'ivan@example.com':'@username'}
                   onChange={e=>setUserEdit(u=>({...u,[f.key]:e.target.value}))}
-                  style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
+                  style={{width:'100%',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,fontSize:15,color:TXT,outline:'none',boxSizing:'border-box',background:SURF}}
                   onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
               </div>
             ))}
             {/* Физические данные */}
             {/* Дата рождения — нативный календарь, хранится в ISO (YYYY-MM-DD) */}
             <div>
-              <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Дата рождения</label>
+              <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>Дата рождения</label>
               <input value={profile.birthdate||''} type="date" max={new Date().toISOString().slice(0,10)}
                 onChange={e=>setProfile(p=>({...p,birthdate:e.target.value}))}
-                style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:profile.birthdate?'#111':'#9ca3af',outline:'none',boxSizing:'border-box',background:'#fff'}}
+                style={{width:'100%',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,fontSize:15,color:profile.birthdate?TXT:TXT3,outline:'none',boxSizing:'border-box',background:SURF}}
                 onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
             </div>
             {/* Рост и Вес */}
@@ -6097,24 +6097,24 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
               {key:'weight', label:'Вес (кг)',  placeholder:'75',  min:PROFILE_WEIGHT_MIN, max:PROFILE_WEIGHT_MAX},
             ].map(f=>(
               <div key={f.key}>
-                <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>{f.label}</label>
+                <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>{f.label}</label>
                 <input value={profile[f.key]||''} type="number" min={f.min} max={f.max} placeholder={f.placeholder}
                   onChange={e=>setProfile(p=>({...p,[f.key]:e.target.value}))}
-                  style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
+                  style={{width:'100%',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,fontSize:15,color:TXT,outline:'none',boxSizing:'border-box',background:SURF}}
                   onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
               </div>
             ))}
 
             {/* Цель */}
             <div>
-              <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Цель</label>
+              <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>Цель</label>
               {/* Строка-триггер */}
               <button onClick={()=>setShowGoalPicker(v=>!v)}
-                style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${profile.goal?PUR:'#e5e7eb'}`,background:profile.goal?'#EEEDFE':'#fff',cursor:'pointer',textAlign:'left',minHeight:'unset',transition:'all 0.2s'}}>
-                <span style={{fontSize:15,fontWeight:600,color:profile.goal?PUR:'#9ca3af'}}>
+                style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${profile.goal?PUR:'#e5e7eb'}`,background:profile.goal?'#EEEDFE':SURF,cursor:'pointer',textAlign:'left',minHeight:'unset',transition:'all 0.2s'}}>
+                <span style={{fontSize:15,fontWeight:600,color:profile.goal?PUR:TXT3}}>
                   {profile.goal||'Выбрать цель...'}
                 </span>
-                <span style={{fontSize:13,color:'#9ca3af',transition:'transform 0.2s',display:'inline-block',transform:showGoalPicker?'rotate(180deg)':'rotate(0deg)'}}>▼</span>
+                <span style={{fontSize:13,color:TXT3,transition:'transform 0.2s',display:'inline-block',transform:showGoalPicker?'rotate(180deg)':'rotate(0deg)'}}>▼</span>
               </button>
               {/* Раскрывающийся список */}
               <div style={{overflow:'hidden',maxHeight:showGoalPicker?400:0,opacity:showGoalPicker?1:0,transition:'max-height 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease'}}>
@@ -6126,9 +6126,9 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                     {val:'Рельеф',      icon:'✂️'},
                   ].map(opt=>(
                     <button key={opt.val} onClick={()=>{setProfile(p=>({...p,goal:opt.val}));setShowGoalPicker(false)}}
-                      style={{display:'flex',alignItems:'center',gap:10,padding:'11px 14px',borderRadius:10,border:`1.5px solid ${profile.goal===opt.val?PUR:'#e5e7eb'}`,background:profile.goal===opt.val?'#EEEDFE':'#fafafa',cursor:'pointer',textAlign:'left',minHeight:'unset',transition:'all 0.15s'}}>
+                      style={{display:'flex',alignItems:'center',gap:10,padding:'11px 14px',borderRadius:10,border:`1.5px solid ${profile.goal===opt.val?PUR:'#e5e7eb'}`,background:profile.goal===opt.val?'#EEEDFE':SURF,cursor:'pointer',textAlign:'left',minHeight:'unset',transition:'all 0.15s'}}>
                       <span style={{fontSize:18}}>{opt.icon}</span>
-                      <span style={{fontSize:15,fontWeight:600,color:profile.goal===opt.val?PUR:'#374151'}}>{opt.val}</span>
+                      <span style={{fontSize:15,fontWeight:600,color:profile.goal===opt.val?PUR:TXT2}}>{opt.val}</span>
                       {profile.goal===opt.val&&<span style={{marginLeft:'auto',fontSize:15,color:PUR}}>✓</span>}
                     </button>
                   ))}
@@ -6136,7 +6136,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                   <div style={{display:'flex',gap:8,paddingTop:2}}>
                     <input value={customGoal} onChange={e=>setCustomGoal(e.target.value)}
                       placeholder="Написать свой вариант..."
-                      style={{flex:1,padding:'11px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:14,color:'#111',outline:'none',background:'#fafafa'}}
+                      style={{flex:1,padding:'11px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,fontSize:14,color:TXT,outline:'none',background:SURF}}
                       onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR}
                       onKeyDown={e=>{if(e.key==='Enter'&&customGoal.trim()){setProfile(p=>({...p,goal:customGoal.trim()}));setCustomGoal('');setShowGoalPicker(false)}}} />
                     <button onClick={()=>{if(customGoal.trim()){setProfile(p=>({...p,goal:customGoal.trim()}));setCustomGoal('');setShowGoalPicker(false)}}}
@@ -6189,32 +6189,32 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
               <div style={{fontSize:14,fontWeight:700,color:PUR,marginBottom:12}}>Активность</div>
               <div style={{display:'flex',flexDirection:'column',gap:12}}>
                 <div>
-                  <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Шагов в день (среднее)</label>
+                  <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>Шагов в день (среднее)</label>
                   <input value={profile.steps||''} type="number" placeholder="например 8000"
                     onChange={e=>setProfile(p=>({...p,steps:e.target.value}))}
-                    style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
+                    style={{width:'100%',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,fontSize:15,color:TXT,outline:'none',boxSizing:'border-box',background:SURF}}
                     onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                 </div>
                 <div>
-                  <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Тренировок в неделю</label>
+                  <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>Тренировок в неделю</label>
                   <input value={profile.gymDays||''} type="number" placeholder="например 3"
                     onChange={e=>setProfile(p=>({...p,gymDays:e.target.value}))}
-                    style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
+                    style={{width:'100%',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,fontSize:15,color:TXT,outline:'none',boxSizing:'border-box',background:SURF}}
                     onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                 </div>
                 <div>
-                  <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Род деятельности</label>
+                  <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>Род деятельности</label>
                   <input value={profile.occupation||''} type="text" placeholder="например: сидячая работа, много стою, физический труд"
                     onChange={e=>setProfile(p=>({...p,occupation:e.target.value}))}
-                    style={{width:'100%',padding:'12px 14px',borderRadius:10,border:'1.5px solid #e5e7eb',fontSize:15,color:'#111',outline:'none',boxSizing:'border-box',background:'#fff'}}
+                    style={{width:'100%',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,fontSize:15,color:TXT,outline:'none',boxSizing:'border-box',background:SURF}}
                     onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                 </div>
                 <div>
-                  <label style={{fontSize:13,fontWeight:600,color:'#6b7280',display:'block',marginBottom:6}}>Уровень активности</label>
+                  <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>Уровень активности</label>
                   <div style={{display:'flex',gap:8}}>
                     {[['sedentary','Малоподвижный'],['moderate','Умеренный'],['high','Высокий']].map(([val,lbl])=>(
                       <button key={val} type="button" onClick={()=>setProfile(p=>({...p,activityLevel:val}))}
-                        style={{flex:1,padding:'10px 6px',borderRadius:10,border:`1.5px solid ${profile.activityLevel===val?PUR:'#e5e7eb'}`,background:profile.activityLevel===val?`${PUR}12`:'#fff',color:profile.activityLevel===val?PUR:'#6b7280',fontSize:12,fontWeight:600,cursor:'pointer',minHeight:'unset'}}>
+                        style={{flex:1,padding:'10px 6px',borderRadius:10,border:`1.5px solid ${profile.activityLevel===val?PUR:'#e5e7eb'}`,background:profile.activityLevel===val?`${PUR}12`:SURF,color:profile.activityLevel===val?PUR:TXT3,fontSize:12,fontWeight:600,cursor:'pointer',minHeight:'unset'}}>
                         {lbl}
                       </button>
                     ))}
@@ -6223,7 +6223,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
               </div>
             </div>
 
-            <button onClick={saveProfile} style={{padding:'14px',borderRadius:12,border:'none',background:saved?TEA:PUR,color:'#fff',fontSize:16,fontWeight:700,cursor:'pointer',transition:'background 0.2s'}}>
+            <button onClick={saveProfile} style={{padding:'14px',borderRadius:14,border:'none',background:saved?TEA:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontSize:16,fontWeight:800,cursor:'pointer',transition:'background 0.2s',boxShadow:'0 8px 22px rgba(124,122,240,.4)'}}>
               {saved?'✓ Сохранено':'Сохранить'}
             </button>
           </div>
@@ -6246,20 +6246,20 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
 
             {/* История замеров */}
             {measurements.length===0?(
-              <div style={{textAlign:'center',color:'#9ca3af',fontSize:14,marginTop:32}}>
+              <div style={{textAlign:'center',color:TXT3,fontSize:14,marginTop:32}}>
                 <div style={{fontSize:40,marginBottom:12}}>📏</div>
                 Пока нет замеров. Добавь первые — и сможешь отслеживать прогресс.
               </div>
             ):(
               <div style={{display:'flex',flexDirection:'column',gap:12}}>
                 {measurements.map((m,i)=>(
-                  <div key={i} style={{background:'#fff',borderRadius:14,padding:'16px',border:'1px solid #e5e7eb'}}>
-                    <div style={{fontSize:14,fontWeight:700,color:'#111',marginBottom:12}}>📅 {fmtDate(m.date)}</div>
+                  <div key={i} style={{background:SURF,borderRadius:14,padding:'16px',border:`1px solid ${HAIR}`}}>
+                    <div style={{fontSize:14,fontWeight:700,color:TXT,marginBottom:12}}>📅 {fmtDate(m.date)}</div>
                     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
                       {M_FIELDS.map(f=>m[f.key]?(
-                        <div key={f.key} style={{background:'#f9fafb',borderRadius:8,padding:'8px 10px'}}>
-                          <div style={{fontSize:11,color:'#9ca3af',marginBottom:2}}>{f.label}</div>
-                          <div style={{fontSize:16,fontWeight:700,color:PUR}}>{m[f.key]} <span style={{fontSize:11,fontWeight:400,color:'#9ca3af'}}>см</span></div>
+                        <div key={f.key} style={{background:SURF2,borderRadius:8,padding:'8px 10px'}}>
+                          <div style={{fontSize:11,color:TXT3,marginBottom:2}}>{f.label}</div>
+                          <div style={{fontSize:16,fontWeight:700,color:PUR}}>{m[f.key]} <span style={{fontSize:11,fontWeight:400,color:TXT3}}>см</span></div>
                           {/* разница с предыдущей записью */}
                           {measurements[i+1]&&measurements[i+1][f.key]&&(()=>{
                             const diff=(parseFloat(m[f.key])-parseFloat(measurements[i+1][f.key])).toFixed(1)
@@ -6278,25 +6278,25 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
             {showAddM&&(
               <>
                 <div onClick={()=>setShowAddM(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:10}}/>
-                <div style={{position:'fixed',bottom:0,left:0,right:0,background:'#fff',borderRadius:'18px 18px 0 0',zIndex:11,padding:'20px 18px 36px',maxHeight:'85vh',overflowY:'auto'}}>
-                  <div style={{width:36,height:4,borderRadius:2,background:'#e5e7eb',margin:'0 auto 18px'}}/>
-                  <div style={{fontSize:16,fontWeight:700,color:'#111',marginBottom:6}}>Новые замеры</div>
-                  <div style={{fontSize:12,color:'#9ca3af',marginBottom:16}}>Все поля необязательны — заполни те, что есть</div>
+                <div style={{position:'fixed',bottom:0,left:0,right:0,background:SURF,borderRadius:'18px 18px 0 0',zIndex:11,padding:'20px 18px 36px',maxHeight:'85vh',overflowY:'auto'}}>
+                  <div style={{width:36,height:4,borderRadius:2,background:SURF2,margin:'0 auto 18px'}}/>
+                  <div style={{fontSize:16,fontWeight:700,color:TXT,marginBottom:6}}>Новые замеры</div>
+                  <div style={{fontSize:12,color:TXT3,marginBottom:16}}>Все поля необязательны — заполни те, что есть</div>
                   <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:18}}>
                     {M_FIELDS.map(f=>(
                       <div key={f.key} style={{display:'flex',alignItems:'center',gap:10}}>
-                        <label style={{fontSize:13,color:'#374151',flex:1}}>{f.label}</label>
+                        <label style={{fontSize:13,color:TXT2,flex:1}}>{f.label}</label>
                         <div style={{display:'flex',alignItems:'center',gap:6}}>
                           <input value={newM[f.key]} type="number" placeholder="см"
                             onChange={e=>setNewM(p=>({...p,[f.key]:e.target.value}))}
-                            style={{width:72,padding:'9px 10px',borderRadius:8,border:'1.5px solid #e5e7eb',fontSize:14,color:'#111',outline:'none',textAlign:'center'}}
+                            style={{width:72,padding:'9px 10px',borderRadius:8,border:`1.5px solid ${HAIR}`,fontSize:14,color:TXT,outline:'none',textAlign:'center'}}
                             onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
-                          <span style={{fontSize:12,color:'#9ca3af'}}>см</span>
+                          <span style={{fontSize:12,color:TXT3}}>см</span>
                         </div>
                       </div>
                     ))}
                   </div>
-                  <button onClick={addMeasurement} style={{width:'100%',padding:'14px',borderRadius:12,border:'none',background:PUR,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer'}}>
+                  <button onClick={addMeasurement} style={{width:'100%',padding:'14px',borderRadius:14,border:'none',background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontSize:15,fontWeight:800,cursor:'pointer',boxShadow:'0 8px 22px rgba(124,122,240,.4)'}}>
                     Сохранить замеры
                   </button>
                 </div>
@@ -6520,8 +6520,8 @@ function PullToRefreshIndicator({ pull, refreshing }) {
     }}>
       <div style={{
         marginTop: Math.min(pull, 90) - 34, width: 30, height: 30, borderRadius: '50%',
-        border: '3px solid #e5e7eb', borderTopColor: PUR, boxSizing: 'border-box',
-        background: '#fff', transition: refreshing ? 'none' : 'margin-top .1s',
+        border: `3px solid ${HAIR}`, borderTopColor: PUR, boxSizing: 'border-box',
+        background: SURF, transition: refreshing ? 'none' : 'margin-top .1s',
         animation: refreshing ? 'ptr-spin .7s linear infinite' : 'none',
         transform: refreshing ? 'none' : `rotate(${pull * 3}deg)`,
       }} />
@@ -7237,17 +7237,17 @@ export default function App() {
           {showProfileSheet&&(
             <>
               <div onClick={()=>setShowProfileSheet(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:1100 }} />
-              <div style={{ position:'fixed', bottom:0, left:0, right:0, background:'#fff', borderRadius:'18px 18px 0 0', zIndex:1101, padding:'20px 20px 36px' }}>
-                <div style={{ width:36, height:4, borderRadius:2, background:'#e5e7eb', margin:'0 auto 16px' }} />
+              <div style={{ position:'fixed', bottom:0, left:0, right:0, background:SURF, borderRadius:'18px 18px 0 0', zIndex:1101, padding:'20px 20px 36px' }}>
+                <div style={{ width:36, height:4, borderRadius:2, background:SURF2, margin:'0 auto 16px' }} />
                 {/* Аватар + имя */}
                 <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20, padding:'0 2px' }}>
                   <Av lbl={user.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={48} photo={user.photoURL} gender={user.gender} />
                   <div>
                     <div style={{ display:'flex', alignItems:'center', gap:7 }}>
-                      <span style={{ fontSize:17, fontWeight:700, color:'#111' }}>{user.name}</span>
+                      <span style={{ fontSize:17, fontWeight:700, color:TXT }}>{user.name}</span>
                       {userRole==='trainer'&&<span style={{ fontSize:11, fontWeight:700, color:PUR, background:`${PUR}18`, borderRadius:6, padding:'2px 7px' }}>Тренер</span>}
                     </div>
-                    <div style={{ fontSize:12, color:'#9ca3af', marginTop:2 }}>{user.email}</div>
+                    <div style={{ fontSize:12, color:TXT3, marginTop:2 }}>{user.email}</div>
                   </div>
                 </div>
                 {/* Меню */}
@@ -7256,13 +7256,13 @@ export default function App() {
                   { icon:'📊', label:'Мой прогресс', sub:'Тоннаж, тренировки, питание', action:()=>{ setShowProfileSheet(false); handleNav('progress') } },
                   { icon:'⚙️', label:'Настройки',   sub:'Уведомления, единицы, данные',  action:()=>{ setShowProfileSheet(false); setShowSettingsView(true) } },
                 ].map((item,i)=>(
-                  <button key={i} onClick={item.action} style={{ width:'100%', display:'flex', alignItems:'center', gap:14, padding:'14px 16px', borderRadius:14, border:'1px solid #f3f4f6', background:'#fafafa', cursor:'pointer', marginBottom:10, textAlign:'left' }}>
+                  <button key={i} onClick={item.action} style={{ width:'100%', display:'flex', alignItems:'center', gap:14, padding:'14px 16px', borderRadius:14, border:`1px solid ${HAIR}`, background:SURF2, cursor:'pointer', marginBottom:10, textAlign:'left' }}>
                     <span style={{ fontSize:24 }}>{item.icon}</span>
                     <div>
-                      <div style={{ fontSize:15, fontWeight:700, color:'#111' }}>{item.label}</div>
-                      <div style={{ fontSize:12, color:'#9ca3af', marginTop:1 }}>{item.sub}</div>
+                      <div style={{ fontSize:15, fontWeight:700, color:TXT }}>{item.label}</div>
+                      <div style={{ fontSize:12, color:TXT3, marginTop:1 }}>{item.sub}</div>
                     </div>
-                    <span style={{ marginLeft:'auto', fontSize:18, color:'#d1d5db' }}>›</span>
+                    <span style={{ marginLeft:'auto', fontSize:18, color:TXT3 }}>›</span>
                   </button>
                 ))}
                 {!isTelegram&&(
@@ -7317,10 +7317,10 @@ export default function App() {
 
       {/* Экран "Настройки" (mobile + desktop) */}
       {showSettingsView&&(
-        <div style={{position:'fixed',inset:0,background:'#f9fafb',zIndex:1060,display:'flex',flexDirection:'column',fontFamily:'system-ui,sans-serif'}}>
-          <div style={{background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
-            <button onClick={()=>setShowSettingsView(false)} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset'}}>←</button>
-            <span style={{fontSize:18,fontWeight:800,color:'#111',flex:1}}>Настройки</span>
+        <div style={{position:'fixed',inset:0,background:BG,zIndex:1060,display:'flex',flexDirection:'column',fontFamily:'system-ui,sans-serif'}}>
+          <div style={{background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
+            <button onClick={()=>setShowSettingsView(false)} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset'}}>←</button>
+            <span style={{fontSize:18,fontWeight:800,color:TXT,flex:1}}>Настройки</span>
           </div>
           <div style={{flex:1,overflowY:'auto'}}>
             <SettingsView user={user} performLogout={performLogout} />
