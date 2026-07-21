@@ -5871,7 +5871,9 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
         ...u,
         name:data.name||u.name,
         gender:data.gender||u.gender,
-        telegram:data.telegram||u.telegram,
+        // Ручной telegram в приоритете; если его нет — подставляем @-ник из
+        // tg_username, чтобы поле не было пустым у Telegram-клиента.
+        telegram:data.telegram||u.telegram||(data.tg_username?'@'+data.tg_username:''),
         photoURL:data.photo_url||u.photoURL,
         tgUsername:data.tg_username||u.tgUsername,
       }))
@@ -6917,9 +6919,9 @@ export default function App() {
   useEffect(()=>{
     if(!user?.id)return
     let cancelled=false
-    supabase.from('profiles').select('name,gender,telegram,photo_url,role,coach_id').eq('id',user.id).single().then(({data})=>{
+    supabase.from('profiles').select('name,gender,telegram,photo_url,role,coach_id,tg_username').eq('id',user.id).single().then(({data})=>{
       if(cancelled||!data)return
-      setUser(u=>u?{...u,name:data.name||u.name,gender:data.gender||u.gender,telegram:data.telegram||u.telegram,photoURL:data.photo_url||u.photoURL}:u)
+      setUser(u=>u?{...u,name:data.name||u.name,gender:data.gender||u.gender,telegram:data.telegram||u.telegram,photoURL:data.photo_url||u.photoURL,tgUsername:data.tg_username}:u)
       const role=data.role||'client'
       setUserRole(role)
       localStorage.setItem('fitpro_role',role)
@@ -6927,6 +6929,22 @@ export default function App() {
     })
     return()=>{cancelled=true}
   },[user?.id])
+
+  // Клиентский захват @-ника из Telegram при открытии Mini App: если у
+  // текущего клиента в WebApp есть username и он отличается от сохранённого,
+  // пишем его в свою строку profiles (RLS разрешает свою строку) и сразу
+  // обновляем локально, чтобы UI подхватил без перелогина. Серверная запись
+  // при входе (api/telegram-auth.js) остаётся — это её дополняет на случай,
+  // когда клиент уже залогинен и просто открыл приложение снова.
+  useEffect(()=>{
+    if(!user?.id||!isTelegram)return
+    const username=window.Telegram?.WebApp?.initDataUnsafe?.user?.username
+    if(!username||username===user.tgUsername)return
+    supabase.from('profiles').update({ tg_username:username }).eq('id',user.id).then(({error})=>{
+      if(error)console.error('Ошибка записи tg_username:',error)
+    })
+    setUser(u=>u?{...u,tgUsername:username}:u)
+  },[user?.id,user?.tgUsername,isTelegram])
 
   const [editTarget,setEditTarget]=useState(null)
 
@@ -7247,7 +7265,7 @@ export default function App() {
                       <span style={{ fontSize:17, fontWeight:700, color:TXT }}>{user.name}</span>
                       {userRole==='trainer'&&<span style={{ fontSize:11, fontWeight:700, color:PUR, background:`${PUR}18`, borderRadius:6, padding:'2px 7px' }}>Тренер</span>}
                     </div>
-                    <div style={{ fontSize:12, color:TXT3, marginTop:2 }}>{user.email}</div>
+                    <div style={{ fontSize:12, color:TXT3, marginTop:2 }}>{(user?.email||'').endsWith('@telegram.fitpro')?(user.tgUsername?'@'+user.tgUsername:(user.telegram||'')):user.email}</div>
                   </div>
                 </div>
                 {/* Меню */}
