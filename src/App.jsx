@@ -392,45 +392,45 @@ function ClientsView({ setSC, setNav, userId }) {
         </div>
       )}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
-        <h2 style={{ fontSize:20, fontWeight:500, color:'#111', margin:0 }}>Клиенты</h2>
+        <h2 style={{ fontSize:20, fontWeight:500, color:TXT, margin:0 }}>Клиенты</h2>
         <button onClick={()=>setShowAdd(true)} style={{ fontSize:13, padding:'7px 14px', background:PUR, color:'#fff', border:'none', borderRadius:8, cursor:'pointer' }}>+ Добавить</button>
       </div>
 
       {showAdd&&(
         <div style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:2000,display:'flex',alignItems:'center',justifyContent:'center',padding:16 }}
           onClick={()=>setShowAdd(false)}>
-          <div style={{ background:'#fff',borderRadius:16,padding:'24px 22px',width:'100%',maxWidth:380,boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}
+          <div style={{ background:SURF,borderRadius:16,padding:'24px 22px',width:'100%',maxWidth:380,boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}
             onClick={e=>e.stopPropagation()}>
             <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18 }}>
-              <span style={{ fontSize:16,fontWeight:700,color:'#111' }}>Новый клиент</span>
-              <button onClick={()=>setShowAdd(false)} style={{ background:'none',border:'none',fontSize:20,cursor:'pointer',color:'#9ca3af',lineHeight:1 }}>✕</button>
+              <span style={{ fontSize:16,fontWeight:700,color:TXT }}>Новый клиент</span>
+              <button onClick={()=>setShowAdd(false)} style={{ background:'none',border:'none',fontSize:20,cursor:'pointer',color:TXT3,lineHeight:1 }}>✕</button>
             </div>
             <div style={{ display:'flex',flexDirection:'column',gap:12 }}>
               <div>
-                <div style={{ fontSize:11,color:'#6b7280',marginBottom:4 }}>Имя и фамилия *</div>
+                <div style={{ fontSize:11,color:TXT3,marginBottom:4 }}>Имя и фамилия *</div>
                 <input value={addForm.name} onChange={e=>setAddForm(f=>({...f,name:e.target.value}))}
                   placeholder="Анна Иванова" autoFocus
-                  style={{ width:'100%',padding:'10px 12px',fontSize:13,borderRadius:9,border:'1.5px solid #e5e7eb',boxSizing:'border-box',outline:'none',color:'#111' }}
+                  style={{ width:'100%',padding:'10px 12px',fontSize:13,borderRadius:9,border:`1.5px solid ${HAIR}`,boxSizing:'border-box',outline:'none',color:TXT }}
                   onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR}
                   onKeyDown={e=>e.key==='Enter'&&addClient()} />
               </div>
               <div>
-                <div style={{ fontSize:11,color:'#6b7280',marginBottom:4 }}>Цель</div>
+                <div style={{ fontSize:11,color:TXT3,marginBottom:4 }}>Цель</div>
                 <select value={addForm.goal} onChange={e=>setAddForm(f=>({...f,goal:e.target.value}))}
-                  style={{ width:'100%',padding:'10px 12px',fontSize:13,borderRadius:9,border:'1.5px solid #e5e7eb',boxSizing:'border-box',outline:'none',color:'#111',background:'#fff' }}>
+                  style={{ width:'100%',padding:'10px 12px',fontSize:13,borderRadius:9,border:`1.5px solid ${HAIR}`,boxSizing:'border-box',outline:'none',color:TXT,background:SURF }}>
                   {['Похудение','Набор массы','Выносливость','Тонус','Реабилитация'].map(g=><option key={g}>{g}</option>)}
                 </select>
               </div>
               <div>
-                <div style={{ fontSize:11,color:'#6b7280',marginBottom:4 }}>Программа</div>
+                <div style={{ fontSize:11,color:TXT3,marginBottom:4 }}>Программа</div>
                 <input value={addForm.program} onChange={e=>setAddForm(f=>({...f,program:e.target.value}))}
                   placeholder="Кардио + Сила"
-                  style={{ width:'100%',padding:'10px 12px',fontSize:13,borderRadius:9,border:'1.5px solid #e5e7eb',boxSizing:'border-box',outline:'none',color:'#111' }}
+                  style={{ width:'100%',padding:'10px 12px',fontSize:13,borderRadius:9,border:`1.5px solid ${HAIR}`,boxSizing:'border-box',outline:'none',color:TXT }}
                   onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
               </div>
               <div style={{ display:'flex',gap:8,marginTop:4 }}>
-                <button onClick={()=>setShowAdd(false)} style={{ flex:1,padding:'11px',fontSize:13,borderRadius:9,border:'1px solid #e5e7eb',background:'none',color:'#6b7280',cursor:'pointer' }}>Отмена</button>
-                <button onClick={addClient} style={{ flex:1,padding:'11px',fontSize:13,borderRadius:9,border:'none',background:PUR,color:'#fff',fontWeight:600,cursor:'pointer' }}>Добавить</button>
+                <button onClick={()=>setShowAdd(false)} style={{ flex:1,padding:'11px',fontSize:13,borderRadius:9,border:`1px solid ${HAIR}`,background:'none',color:TXT3,cursor:'pointer' }}>Отмена</button>
+                <button onClick={addClient} style={{ flex:1,padding:'12px',fontSize:14,borderRadius:14,border:'none',background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontWeight:800,cursor:'pointer',boxShadow:'0 8px 22px rgba(124,122,240,.4)' }}>Добавить</button>
               </div>
             </div>
           </div>
@@ -438,16 +438,16 @@ function ClientsView({ setSC, setNav, userId }) {
       )}
 
       <div style={{ marginBottom:22 }}>
-        <h3 style={{ fontSize:15, fontWeight:600, color:'#111', margin:'0 0 10px' }}>Мои клиенты</h3>
+        <h3 style={{ fontSize:15, fontWeight:600, color:TXT, margin:'0 0 10px' }}>Мои клиенты</h3>
         {realClientsLoading?(
-          <div style={{ fontSize:13, color:'#9ca3af', padding:'8px 0' }}>Загрузка...</div>
+          <div style={{ fontSize:13, color:TXT3, padding:'8px 0' }}>Загрузка...</div>
         ):realClientsError?(
           <div style={{ fontSize:13, color:'#ef4444', padding:'8px 0', display:'flex', alignItems:'center', gap:10 }}>
             Не удалось загрузить клиентов
-            <button onClick={loadRealClients} style={{ fontSize:12, color:PUR, background:'none', border:'1px solid #e5e7eb', borderRadius:8, padding:'5px 12px', cursor:'pointer' }}>Повторить</button>
+            <button onClick={loadRealClients} style={{ fontSize:12, color:PUR, background:'none', border:`1px solid ${HAIR}`, borderRadius:8, padding:'5px 12px', cursor:'pointer' }}>Повторить</button>
           </div>
         ):realClients.length===0?(
-          <div style={{ fontSize:13, color:'#9ca3af', padding:'8px 0' }}>Пока нет клиентов</div>
+          <div style={{ fontSize:13, color:TXT3, padding:'8px 0' }}>Пока нет клиентов</div>
         ):(
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))', gap:8 }}>
             {realClients.map(c=>{
@@ -459,8 +459,8 @@ function ClientsView({ setSC, setNav, userId }) {
                   <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                     <Av lbl={initials} sz={36} />
                     <div>
-                      <div style={{ fontSize:14, fontWeight:500, color:'#111' }}>{label}</div>
-                      <div style={{ fontSize:11, color:'#9ca3af', marginTop:2 }}>
+                      <div style={{ fontSize:14, fontWeight:500, color:TXT }}>{label}</div>
+                      <div style={{ fontSize:11, color:TXT3, marginTop:2 }}>
                         {activity?`Последняя: ${fmtDDMM(activity.lastDate)} · всего ${activity.count}`:'Пока нет тренировок'}
                       </div>
                     </div>
@@ -472,25 +472,25 @@ function ClientsView({ setSC, setNav, userId }) {
         )}
       </div>
 
-      <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Поиск..." style={{ width:'100%', marginBottom:14, padding:'8px 12px', fontSize:13, borderRadius:8, border:'1px solid #e5e7eb', boxSizing:'border-box' }} />
+      <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Поиск..." style={{ width:'100%', marginBottom:14, padding:'8px 12px', fontSize:13, borderRadius:8, border:`1px solid ${HAIR}`, boxSizing:'border-box' }} />
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(240px,1fr))', gap:10 }}>
         {fl.map(c=>(
           <Card key={c.id} style={{ cursor:'pointer', position:'relative' }}>
             <div onClick={()=>{setSC(c);setNav('cdetail')}} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
               <Av lbl={c.av} sz={40} />
-              <div><div style={{ fontSize:14, fontWeight:500, color:'#111' }}>{c.name}</div><Badge lbl={c.goal} /></div>
+              <div><div style={{ fontSize:14, fontWeight:500, color:TXT }}>{c.name}</div><Badge lbl={c.goal} /></div>
             </div>
             <div onClick={()=>{setSC(c);setNav('cdetail')}}>
-              <div style={{ fontSize:12, color:'#6b7280', marginBottom:7 }}>🏋️ {c.program}</div>
+              <div style={{ fontSize:12, color:TXT3, marginBottom:7 }}>🏋️ {c.program}</div>
               <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
-                <span style={{ fontSize:12, color:'#6b7280' }}>Прогресс</span>
+                <span style={{ fontSize:12, color:TXT3 }}>Прогресс</span>
                 <span style={{ fontSize:12, fontWeight:500, color:c.progress>70?TEA:PUR }}>{c.progress}%</span>
               </div>
               <PBar v={c.progress} color={c.progress>70?TEA:PUR} />
             </div>
             {c.isLocal&&(
               <button onClick={e=>{e.stopPropagation();if(window.confirm(`Удалить клиента ${c.name}?`))deleteLocal(c.id)}}
-                style={{ position:'absolute',top:10,right:10,background:'none',border:'none',color:'#d1d5db',fontSize:16,cursor:'pointer',lineHeight:1,padding:4 }}>✕</button>
+                style={{ position:'absolute',top:10,right:10,background:'none',border:'none',color:TXT3,fontSize:16,cursor:'pointer',lineHeight:1,padding:4 }}>✕</button>
             )}
           </Card>
         ))}
@@ -519,12 +519,12 @@ function ClientDetail({ client, goBack, trainerId }) {
   }).join(' ')
   return (
     <div>
-      <button onClick={goBack} style={{ fontSize:12, color:'#6b7280', border:'none', background:'none', cursor:'pointer', marginBottom:14, padding:0 }}>← Назад</button>
+      <button onClick={goBack} style={{ fontSize:12, color:TXT3, border:'none', background:'none', cursor:'pointer', marginBottom:14, padding:0 }}>← Назад</button>
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:18 }}>
         <Av lbl={client.av} sz={50} />
         <div>
-          <h2 style={{ fontSize:20, fontWeight:500, color:'#111', margin:0 }}>{client.name}</h2>
-          <div style={{ fontSize:13, color:'#6b7280', marginTop:2 }}>{client.goal} · {client.program}</div>
+          <h2 style={{ fontSize:20, fontWeight:500, color:TXT, margin:0 }}>{client.name}</h2>
+          <div style={{ fontSize:13, color:TXT3, marginTop:2 }}>{client.goal} · {client.program}</div>
         </div>
       </div>
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:16 }}>
@@ -534,7 +534,7 @@ function ClientDetail({ client, goBack, trainerId }) {
         <Metric label="Результат" value={`−${Math.abs(lost)} кг`} icon="🎯" color={COR} />
       </div>
       <Card>
-        <div style={{ fontWeight:500, color:'#111', marginBottom:10 }}>Динамика веса</div>
+        <div style={{ fontWeight:500, color:TXT, marginBottom:10 }}>Динамика веса</div>
         <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:H }}>
           <polyline points={pts} fill="none" stroke={PUR} strokeWidth="2.5" strokeLinejoin="round" />
           {client.wts.map((kg,i)=>{
@@ -571,11 +571,11 @@ function RealClientDetail({ client, goBack, trainerId }) {
 
   return (
     <div>
-      <button onClick={goBack} style={{ fontSize:12, color:'#6b7280', border:'none', background:'none', cursor:'pointer', marginBottom:14, padding:0 }}>← Назад</button>
+      <button onClick={goBack} style={{ fontSize:12, color:TXT3, border:'none', background:'none', cursor:'pointer', marginBottom:14, padding:0 }}>← Назад</button>
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:18 }}>
         <Av lbl={initials} sz={50} />
         <div>
-          <h2 style={{ fontSize:20, fontWeight:500, color:'#111', margin:0 }}>{client.name||'Без имени'}</h2>
+          <h2 style={{ fontSize:20, fontWeight:500, color:TXT, margin:0 }}>{client.name||'Без имени'}</h2>
           {/* @-ник клиента (profiles.tg_username, пишется при входе через
               Telegram — см. api/telegram-auth.js). У кого ник не задан, поля
               нет вовсе — тогда не показываем ничего. Открытие чата — тем же
@@ -592,10 +592,10 @@ function RealClientDetail({ client, goBack, trainerId }) {
           )}
         </div>
       </div>
-      <div style={{ display:'flex', gap:0, marginBottom:18, background:'#f3f4f6', borderRadius:10, padding:3, width:'fit-content', flexWrap:'wrap' }}>
+      <div style={{ display:'flex', gap:0, marginBottom:18, background:SURF2, borderRadius:10, padding:3, width:'fit-content', flexWrap:'wrap' }}>
         {[['diary','Дневник'],['program','Программа']].map(([id,label])=>(
           <button key={id} onClick={()=>setTab(id)}
-            style={{ padding:'8px 16px', borderRadius:8, border:'none', background:tab===id?'#fff':'transparent', color:tab===id?'#111':'#6b7280', fontSize:13, fontWeight:600, cursor:'pointer', boxShadow:tab===id?'0 1px 3px rgba(0,0,0,0.1)':'none' }}>
+            style={{ padding:'8px 16px', borderRadius:8, border:'none', background:tab===id?SURF:'transparent', color:tab===id?TXT:TXT3, fontSize:13, fontWeight:600, cursor:'pointer', boxShadow:tab===id?'0 1px 3px rgba(0,0,0,0.1)':'none' }}>
             {label}
           </button>
         ))}
@@ -692,16 +692,16 @@ function ProgramEditor({ client, trainerId }) {
     setTimeout(()=>setSaveMsg(''),2500)
   }
 
-  if(programLoading)return <div style={{ fontSize:13, color:'#9ca3af', padding:'30px 0', textAlign:'center' }}>Загрузка...</div>
+  if(programLoading)return <div style={{ fontSize:13, color:TXT3, padding:'30px 0', textAlign:'center' }}>Загрузка...</div>
   if(programError)return (
     <div style={{ fontSize:13, color:'#ef4444', padding:'30px 0', textAlign:'center', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
       Не удалось загрузить программу
-      <button onClick={loadProgram} style={{ fontSize:12, color:PUR, background:'none', border:'1px solid #e5e7eb', borderRadius:8, padding:'6px 14px', cursor:'pointer' }}>Повторить</button>
+      <button onClick={loadProgram} style={{ fontSize:12, color:PUR, background:'none', border:`1px solid ${HAIR}`, borderRadius:8, padding:'6px 14px', cursor:'pointer' }}>Повторить</button>
     </div>
   )
   if(!editorOpen)return (
     <div style={{ textAlign:'center', padding:'30px 0' }}>
-      <div style={{ fontSize:13, color:'#9ca3af', marginBottom:14 }}>У клиента ещё нет персональной программы</div>
+      <div style={{ fontSize:13, color:TXT3, marginBottom:14 }}>У клиента ещё нет персональной программы</div>
       <button onClick={()=>setEditorOpen(true)} style={{ fontSize:13, padding:'9px 18px', background:PUR, color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontWeight:600 }}>Создать программу</button>
     </div>
   )
@@ -715,9 +715,9 @@ function ProgramEditor({ client, trainerId }) {
         <div style={{ marginBottom:12, padding:'9px 14px', borderRadius:9, background:'#fff5f5', color:'#ef4444', fontSize:13, fontWeight:500 }}>Не удалось сохранить — проверь связь и повтори</div>
       )}
       <div style={{ marginBottom:14 }}>
-        <div style={{ fontSize:11, color:'#6b7280', marginBottom:4 }}>Название программы</div>
+        <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Название программы</div>
         <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Программа"
-          style={{ width:'100%', padding:'9px 12px', fontSize:14, fontWeight:600, borderRadius:9, border:'1.5px solid #e5e7eb', boxSizing:'border-box', outline:'none', color:'#111' }}
+          style={{ width:'100%', padding:'9px 12px', fontSize:14, fontWeight:600, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
           onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
       </div>
 
@@ -726,24 +726,24 @@ function ProgramEditor({ client, trainerId }) {
           <Card key={wi}>
             <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
               <input value={w.name} onChange={e=>renameWorkout(wi,e.target.value)} placeholder={`Тренировка ${wi+1}`}
-                style={{ flex:1, padding:'7px 10px', fontSize:13, fontWeight:600, borderRadius:8, border:'1.5px solid #e5e7eb', boxSizing:'border-box', outline:'none', color:'#111' }}
+                style={{ flex:1, padding:'7px 10px', fontSize:13, fontWeight:600, borderRadius:8, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
                 onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
-              <button onClick={()=>removeWorkout(wi)} style={{ background:'none', border:'none', color:'#d1d5db', fontSize:16, cursor:'pointer', lineHeight:1, padding:4, flexShrink:0 }}>✕</button>
+              <button onClick={()=>removeWorkout(wi)} style={{ background:'none', border:'none', color:TXT3, fontSize:16, cursor:'pointer', lineHeight:1, padding:4, flexShrink:0 }}>✕</button>
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
               {(w.exercises||[]).map((ex,ei)=>{
                 const parsed=ex.sets?parseTemplateSets(ex.sets):[]
                 const hint=!ex.sets?'':parsed.length?`${parsed.length} подход${parsed.length===1?'':parsed.length<5?'а':'ов'} распознано`:'не распознано — проверь формат'
                 return (
-                  <div key={ei} style={{ display:'flex', flexDirection:'column', gap:4, padding:'8px 10px', background:'#f9fafb', borderRadius:8 }}>
+                  <div key={ei} style={{ display:'flex', flexDirection:'column', gap:4, padding:'8px 10px', background:SURF2, borderRadius:8 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                      <span style={{ fontSize:13, fontWeight:500, color:'#111', flex:1 }}>{ex.name}</span>
-                      <button onClick={()=>removeExercise(wi,ei)} style={{ background:'none', border:'none', color:'#d1d5db', fontSize:15, cursor:'pointer', lineHeight:1, padding:2, flexShrink:0 }}>✕</button>
+                      <span style={{ fontSize:13, fontWeight:500, color:TXT, flex:1 }}>{ex.name}</span>
+                      <button onClick={()=>removeExercise(wi,ei)} style={{ background:'none', border:'none', color:TXT3, fontSize:15, cursor:'pointer', lineHeight:1, padding:2, flexShrink:0 }}>✕</button>
                     </div>
                     <input value={ex.sets} onChange={e=>setExerciseSets(wi,ei,e.target.value)} placeholder="20 кг × 15, 25 кг × 12, 25 кг × 12"
-                      style={{ width:'100%', padding:'7px 10px', fontSize:12, borderRadius:7, border:'1px solid #e5e7eb', boxSizing:'border-box', outline:'none', color:'#111', background:'#fff' }}
+                      style={{ width:'100%', padding:'7px 10px', fontSize:12, borderRadius:7, border:`1px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT, background:SURF }}
                       onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
-                    {hint&&<div style={{ fontSize:10, color:parsed.length?'#9ca3af':'#ef4444' }}>{hint}</div>}
+                    {hint&&<div style={{ fontSize:10, color:parsed.length?TXT3:'#ef4444' }}>{hint}</div>}
                   </div>
                 )
               })}
@@ -757,8 +757,8 @@ function ProgramEditor({ client, trainerId }) {
       </div>
 
       <div style={{ display:'flex', gap:8 }}>
-        <button onClick={addWorkout} style={{ flex:1, padding:'11px', fontSize:13, borderRadius:9, border:'1.5px dashed #d1d5db', background:'none', color:'#6b7280', cursor:'pointer', fontWeight:600 }}>+ Тренировка</button>
-        <button onClick={saveProgram} disabled={saving} style={{ flex:1, padding:'11px', fontSize:13, borderRadius:9, border:'none', background:saving?'#9ca3af':PUR, color:'#fff', cursor:saving?'default':'pointer', fontWeight:600 }}>
+        <button onClick={addWorkout} style={{ flex:1, padding:'11px', fontSize:13, borderRadius:9, border:'1.5px dashed #d1d5db', background:'none', color:TXT3, cursor:'pointer', fontWeight:600 }}>+ Тренировка</button>
+        <button onClick={saveProgram} disabled={saving} style={{ flex:1, padding:'12px', fontSize:14, borderRadius:14, border:'none', background:saving?SURF2:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', cursor:saving?'default':'pointer', fontWeight:800, boxShadow:'0 8px 22px rgba(124,122,240,.4)' }}>
           {saving?'Сохраняем...':'Сохранить программу'}
         </button>
       </div>
@@ -766,22 +766,22 @@ function ProgramEditor({ client, trainerId }) {
       {pickerFor!=null&&(
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
           onClick={()=>setPickerFor(null)}>
-          <div style={{ background:'#fff', borderRadius:16, padding:'20px 18px', width:'100%', maxWidth:400, maxHeight:'75vh', display:'flex', flexDirection:'column', boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}
+          <div style={{ background:SURF, borderRadius:16, padding:'20px 18px', width:'100%', maxWidth:400, maxHeight:'75vh', display:'flex', flexDirection:'column', boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}
             onClick={e=>e.stopPropagation()}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
-              <span style={{ fontSize:16, fontWeight:700, color:'#111' }}>Выбери упражнение</span>
-              <button onClick={()=>setPickerFor(null)} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer', color:'#9ca3af', lineHeight:1 }}>✕</button>
+              <span style={{ fontSize:16, fontWeight:700, color:TXT }}>Выбери упражнение</span>
+              <button onClick={()=>setPickerFor(null)} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer', color:TXT3, lineHeight:1 }}>✕</button>
             </div>
             <input value={pickerQuery} onChange={e=>setPickerQuery(e.target.value)} placeholder="Поиск..." autoFocus
-              style={{ width:'100%', marginBottom:12, padding:'9px 12px', fontSize:13, borderRadius:9, border:'1.5px solid #e5e7eb', boxSizing:'border-box', outline:'none', color:'#111' }}
+              style={{ width:'100%', marginBottom:12, padding:'9px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
               onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
             <div style={{ overflowY:'auto', display:'flex', flexDirection:'column', gap:2 }}>
               {EXERCISES.filter(e=>e.n.toLowerCase().includes(pickerQuery.toLowerCase())).map(e=>(
                 <button key={e.n} onClick={()=>addExercise(pickerFor,e.n)}
                   style={{ display:'flex', flexDirection:'column', alignItems:'flex-start', width:'100%', padding:'9px 10px', border:'none', background:'transparent', cursor:'pointer', textAlign:'left', borderRadius:8 }}
                   onMouseEnter={ev=>ev.currentTarget.style.background='#f9fafb'} onMouseLeave={ev=>ev.currentTarget.style.background='transparent'}>
-                  <span style={{ fontSize:13, color:'#111' }}>{e.n}</span>
-                  <span style={{ fontSize:11, color:'#9ca3af' }}>{e.m}{e.eq?` · ${e.eq}`:''}</span>
+                  <span style={{ fontSize:13, color:TXT }}>{e.n}</span>
+                  <span style={{ fontSize:11, color:TXT3 }}>{e.m}{e.eq?` · ${e.eq}`:''}</span>
                 </button>
               ))}
             </div>
