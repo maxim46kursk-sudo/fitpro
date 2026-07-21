@@ -27,11 +27,11 @@ import { getUpcomingScheme, hasHardStreak, computeHardStreakTarget, buildConstru
 
 const PUR = '#7F77DD'
 
-const RATING_HINT = 'Оцените, насколько было тяжело — без этого ассистент не сможет подобрать следующий вес.'
+const RATING_HINT = 'Оцени, насколько было тяжело — без этого ассистент не сможет подобрать следующий вес.'
 const CONSTRUCTOR_INFO_TEXT = {
   title: 'Как это работает',
-  body: 'Добавьте упражнения, которые вам нравятся — с любым названием. После каждого отметьте вес, повторы и оценку усилия. В следующий раз ассистент подскажет рабочий вес и число повторений для прогресса.\n\nПервая тренировка каждого упражнения — стартовый замер: веса задаёте вы. Дальше рекомендации считает ассистент.\n\nСовет: первыми лучше ставить базовые упражнения.',
-  why: 'Мышцы растут от постепенного увеличения нагрузки и работы близко к отказу. Ассистент рассчитывает прогрессию по вашим оценкам усилия — вес и повторы подбираются автоматически от тренировки к тренировке.',
+  body: 'Добавь упражнения, которые тебе нравятся — с любым названием. После каждого отметь вес, повторы и оценку усилия. В следующий раз ассистент подскажет рабочий вес и число повторений для прогресса.\n\nПервая тренировка каждого упражнения — стартовый замер: веса задаёшь ты. Дальше рекомендации считает ассистент.\n\nСовет: первыми лучше ставить базовые упражнения.',
+  why: 'Мышцы растут от постепенного увеличения нагрузки и работы близко к отказу. Ассистент рассчитывает прогрессию по твоим оценкам усилия — вес и повторы подбираются автоматически от тренировки к тренировке.',
   mandatory: 'Оценка усилия обязательна — без неё ассистент не сможет подобрать следующий вес.',
 }
 
@@ -377,8 +377,8 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
         {/* Упражнения сессии */}
         {sessionExercises.length === 0 ? (
           <div style={{ textAlign: 'center', marginTop: 40 }}>
-            <div style={{ fontSize: 18, fontWeight: 600, color: '#fff', marginBottom: 8 }}>Добавьте упражнение</div>
-            <div style={{ fontSize: 14, color: '#9ca3af', lineHeight: 1.7 }}>Нажмите «+», чтобы выбрать упражнение из своего списка.</div>
+            <div style={{ fontSize: 18, fontWeight: 600, color: '#fff', marginBottom: 8 }}>Добавь упражнение</div>
+            <div style={{ fontSize: 14, color: '#9ca3af', lineHeight: 1.7 }}>Нажми «+», чтобы выбрать упражнение из своего списка.</div>
           </div>
         ) : sessionExercises.map(se => (
           <div key={se.exerciseId} style={{ marginBottom: 14, background: '#1f2937', borderRadius: 10, padding: '12px 14px' }}>
@@ -395,14 +395,14 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
             </div>
             {se.isBaseline && (
               <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 10 }}>
-                Первый замер — впишите вес и повторы сами
+                Первый замер — впиши вес и повторы сам
               </div>
             )}
 
             {resetConfirmId === se.exerciseId && (
               <div style={{ background: '#111', borderRadius: 8, padding: '10px 12px', marginBottom: 10 }}>
                 <div style={{ fontSize: 12, color: '#f3f4f6', marginBottom: 8, lineHeight: 1.5 }}>
-                  Сбросить историю «{se.name}»? Упражнение снова станет первым замером — впишете вес и повторы сами.
+                  Сбросить историю «{se.name}»? Упражнение снова станет первым замером — впишешь вес и повторы сам.
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={async () => { await resetExerciseHistory(se); setResetConfirmId(null) }}
@@ -536,7 +536,7 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
               <button onClick={() => { setShowAdd(false); setNewName('') }} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: 18, cursor: 'pointer' }}>✕</button>
             </div>
             <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 5 }}>Название</div>
-            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Назовите как удобно" autoFocus
+            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Назови как удобно" autoFocus
               style={{ width: '100%', padding: '10px 12px', fontSize: 13, borderRadius: 8, border: '1px solid #374151', background: '#2a2a2e', color: '#fff', boxSizing: 'border-box', outline: 'none' }}
               onKeyDown={e => e.key === 'Enter' && handleAddSubmit()} />
             <button onClick={handleAddSubmit} style={{ width: '100%', marginTop: 16, padding: '12px', borderRadius: 9, border: 'none', background: sessionColor, color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Добавить</button>
@@ -552,7 +552,7 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
             onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 28, marginBottom: 10 }}>🤔</div>
             <div style={{ fontSize: 14, color: '#fff', lineHeight: 1.6, marginBottom: 20 }}>
-              У вас уже есть «{duplicateCandidate.match.name}». Это оно или новое упражнение?
+              У тебя уже есть «{duplicateCandidate.match.name}». Это оно или новое упражнение?
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <button onClick={() => useExisting(duplicateCandidate.match)} style={{ padding: '12px', borderRadius: 9, border: 'none', background: sessionColor, color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Это оно</button>

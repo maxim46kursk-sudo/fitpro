@@ -78,14 +78,14 @@ const HINTS_WORKOUT = ['Правда, что от приседаний ноги 
 const getFriendlyErrorMessage = (err, status, rawMessage) => {
   console.error('Ошибка AI-чата:', err || rawMessage, status != null ? `(status ${status})` : '')
   if (err?.name === 'AbortError' || err instanceof TypeError) {
-    return 'Не удалось связаться с сервером. Проверь интернет и попробуй снова.'
+    return 'Не удалось связаться с сервером. Проверь связь и повтори.'
   }
   const text = `${rawMessage || ''} ${err?.message || ''}`.toLowerCase()
   if (status === 529 || text.includes('overloaded')) {
     return 'Сервис сейчас загружен, попробуй ещё раз через минуту 🙏'
   }
   if (text.includes('network') || text.includes('failed to fetch') || text.includes('timeout')) {
-    return 'Не удалось связаться с сервером. Проверь интернет и попробуй снова.'
+    return 'Не удалось связаться с сервером. Проверь связь и повтори.'
   }
   return 'Что-то пошло не так, попробуй ещё раз.'
 }
@@ -525,7 +525,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
       // Дописываем СНИЗУ, не стирая текст модели — иначе клиент останется с
       // ложным "записал"/"удалил"/"норма установлена", хотя данные не долетели.
       if (writeFailed) {
-        text += '\n\n⚠️ Не удалось сохранить это в дневник — похоже, пропала связь. Проверь интернет и повтори, пожалуйста.'
+        text += '\n\n⚠️ Не удалось сохранить это в дневник — похоже, пропало соединение. Проверь связь и повтори.'
       }
 
       setMessages(prev => [...prev, { role: 'assistant', content: text, added, contactMax }])
