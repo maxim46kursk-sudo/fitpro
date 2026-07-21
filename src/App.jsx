@@ -2147,7 +2147,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:8 }}>
                         {ex.sets.map((s,si)=>(s.kg||s.bandLevel||s.reps)&&(
                           <span key={si} style={{ fontSize:11, color:'#9ca3af' }}>
-                            {si+1}. {s.bandLevel!=null?`${s.bandLevel} рез.`:`${s.kg||'—'}кг`} × {s.reps||'—'}
+                            {si+1}. {s.bandLevel!=null?`${s.bandLevel} рез.`:`${s.kg||'—'} кг`} × {s.reps||'—'}
                             {isOneSidedExercise(ex.n)&&<span title="Повторения считаются суммарно на обе стороны">+</span>}
                           </span>
                         ))}
@@ -2224,7 +2224,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                             {set.recKg&&(
                               <div style={{ display:'grid', gridTemplateColumns:'24px 1fr 1fr 26px 26px 20px', gap:5 }}>
                                 <span />
-                                <span style={{ fontSize:11, color:PUR, textAlign:'center', marginTop:2 }}>реком. {set.recKg}кг</span>
+                                <span style={{ fontSize:11, color:PUR, textAlign:'center', marginTop:2 }}>реком. {set.recKg} кг</span>
                               </div>
                             )}
                             {/* Оценка нагрузки 1-5 — только под рабочими подходами (последние
@@ -4538,7 +4538,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           {sorted.length===0&&plannedWorkouts.length===0?(
             <div style={{ textAlign:'center',color:'#9ca3af',fontSize:13,marginTop:60 }}>
               <div style={{ fontSize:40,marginBottom:12 }}>🏋️</div>
-              Нажмите «+» чтобы добавить тренировку
+              Нажмите «+», чтобы добавить тренировку
             </div>
           ):sorted.map((w,i)=>(
             <div key={i} style={{ marginBottom:8,position:'relative' }}>
@@ -5248,9 +5248,9 @@ function LandingPage({ onEnter, isTelegram }) {
                     <p style={{ margin:'0 0 10px',fontSize:13,color:'rgba(255,255,255,0.75)',lineHeight:1.5,fontWeight:600 }}>Вот что я умею:</p>
                     <div style={{ display:'flex',flexDirection:'column',gap:7 }}>
                       {[
-                        ['📋','Знаю твою программу тренировок — вижу какой вес ты делал в прошлый раз'],
-                        ['🥗','Помогу с питанием — спроси что съесть, что заменить или как вписать любимое'],
-                        ['🔄','Скорректирую план если было слишком тяжело или слишком легко'],
+                        ['📋','Знаю твою программу тренировок — вижу, какой вес ты делал в прошлый раз'],
+                        ['🥗','Помогу с питанием — спроси, что съесть, что заменить или как вписать любимое'],
+                        ['🔄','Скорректирую план, если было слишком тяжело или слишком легко'],
                         ['💬','Отвечаю так, как ответил бы сам тренер — потому что он меня именно так обучил'],
                       ].map(([ic,tx],i)=>(
                         <div key={i} style={{ display:'flex',gap:9,alignItems:'flex-start',background:'rgba(255,255,255,0.04)',borderRadius:9,padding:'8px 11px' }}>
@@ -6217,7 +6217,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
             <div style={{display:'flex',gap:10,background:'#fff8e6',border:'1px solid #fcd34d',borderRadius:12,padding:'12px 14px',marginBottom:18,alignItems:'flex-start'}}>
               <span style={{fontSize:16,flexShrink:0}}>❗</span>
               <div style={{fontSize:13,color:'#92400e',lineHeight:1.6}}>
-                <b>Важно:</b> все замеры делаются в самых выпуклых (наибольших) точках тела. Мышцы расслаблены, лента горизонтально без натяжения.
+                <b>Важно:</b> все замеры делаются в самых выпуклых (наибольших) точках тела. Мышцы расслаблены, лента расположена горизонтально, без натяжения.
               </div>
             </div>
 
@@ -6262,7 +6262,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                 <div style={{position:'fixed',bottom:0,left:0,right:0,background:'#fff',borderRadius:'18px 18px 0 0',zIndex:11,padding:'20px 18px 36px',maxHeight:'85vh',overflowY:'auto'}}>
                   <div style={{width:36,height:4,borderRadius:2,background:'#e5e7eb',margin:'0 auto 18px'}}/>
                   <div style={{fontSize:16,fontWeight:700,color:'#111',marginBottom:6}}>Новые замеры</div>
-                  <div style={{fontSize:12,color:'#9ca3af',marginBottom:16}}>Все поля необязательны — заполни те что есть</div>
+                  <div style={{fontSize:12,color:'#9ca3af',marginBottom:16}}>Все поля необязательны — заполни те, что есть</div>
                   <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:18}}>
                     {M_FIELDS.map(f=>(
                       <div key={f.key} style={{display:'flex',alignItems:'center',gap:10}}>
