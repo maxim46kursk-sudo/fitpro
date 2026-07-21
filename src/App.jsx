@@ -10,10 +10,24 @@ import { buildExerciseAggregates, computeTemplateScale, parseTemplateSets, compu
 import { MAX_TELEGRAM_URL } from './config.js'
 import './App.css'
 
-const PUR = '#7F77DD'
-const TEA = '#1D9E75'
-const COR = '#D85A30'
-const BLU = '#378ADD'
+// ── Тёмная тема (единая палитра, шаг 1: каркас + экран «Тренировки»).
+// Акцентные имена (PUR/TEA/BLU/COR) сохранены — переопределены на новые
+// значения, чтобы новый цвет подхватился везде, где они уже используются.
+const BG = '#0b0b0d'                    // фон страницы
+const SURF = '#1c1c1e'                  // карточки/поверхности
+const SURF2 = '#2c2c2e'                 // вложенное/инпуты
+const SEP = 'rgba(255,255,255,0.09)'    // разделители
+const HAIR = 'rgba(255,255,255,0.12)'   // тонкие границы
+const TXT = '#ffffff'                   // основной текст
+const TXT2 = 'rgba(235,235,245,0.62)'   // вторичный текст
+const TXT3 = 'rgba(235,235,245,0.30)'   // приглушённый текст
+const PUR = '#7C7AF0'                    // акцент
+const ACCENT2 = '#9D96FF'               // акцент (ярче, активные состояния)
+const TEA = '#30D158'                    // зелёный / белок
+const BLU = '#0A84FF'                    // синий / углеводы
+const COR = '#FF9F0A'                    // оранжевый / жиры
+const KCAL = '#BF5AF2'                   // калории
+const DANGER = '#FF453A'                 // ошибки / удаление
 
 const clearFitproData = () => {
   Object.keys(localStorage)
@@ -79,7 +93,7 @@ function Av({ lbl, sz=36, bg=PUR, photo, gender }) {
 
 function Card({ children, style={}, onClick }) {
   return (
-    <div onClick={onClick} style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, padding:'14px 16px', ...style }}>
+    <div onClick={onClick} style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:20, padding:'14px 16px', ...style }}>
       {children}
     </div>
   )
@@ -1777,7 +1791,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   // ── Активная тренировка
   if(step==='active'){
     return (
-      <div style={{ display:'flex', flexDirection:'column', height:'calc(100vh - 40px)', background:'#111', borderRadius:14, overflow:'hidden', color:'#fff', position:'relative' }}>
+      <div style={{ display:'flex', flexDirection:'column', height:'calc(100vh - 40px)', background:BG, borderRadius:14, overflow:'hidden', color:'#fff', position:'relative' }}>
 
         {/* Тост ошибки сохранения — тренировка НЕ записалась в Supabase,
             остаёмся на экране (см. finishWorkout), клиент ничего не теряет
@@ -1812,33 +1826,33 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         {customOpen&&(
           <div style={{ position:'absolute', inset:0, zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.6)', borderRadius:14 }}
             onClick={()=>setCustomOpen(false)}>
-            <div style={{ background:'#1c1c1e', borderRadius:14, padding:'22px 20px 18px', width:300, boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
+            <div style={{ background:SURF, borderRadius:14, padding:'22px 20px 18px', width:300, boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
               onClick={e=>e.stopPropagation()}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18 }}>
                 <span style={{ fontSize:15, fontWeight:700, color:'#fff' }}>Новое упражнение</span>
-                <button onClick={()=>setCustomOpen(false)} style={{ background:'none', border:'none', color:'#6b7280', fontSize:18, cursor:'pointer' }}>✕</button>
+                <button onClick={()=>setCustomOpen(false)} style={{ background:'none', border:'none', color:TXT3, fontSize:18, cursor:'pointer' }}>✕</button>
               </div>
               <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
                 <div>
-                  <div style={{ fontSize:11, color:'#6b7280', marginBottom:5 }}>Название *</div>
+                  <div style={{ fontSize:11, color:TXT3, marginBottom:5 }}>Название *</div>
                   <input value={customForm.n} onChange={e=>setCustomForm(f=>({...f,n:e.target.value}))}
                     placeholder="Например: Жим гантелей лёжа" autoFocus
-                    style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:8, border:'1px solid #374151', background:'#2a2a2e', color:'#fff', boxSizing:'border-box', outline:'none' }} />
+                    style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:8, border:`1px solid ${HAIR}`, background:SURF2, color:'#fff', boxSizing:'border-box', outline:'none' }} />
                 </div>
                 <div>
-                  <div style={{ fontSize:11, color:'#6b7280', marginBottom:5 }}>Группа мышц</div>
+                  <div style={{ fontSize:11, color:TXT3, marginBottom:5 }}>Группа мышц</div>
                   <input value={customForm.m} onChange={e=>setCustomForm(f=>({...f,m:e.target.value}))}
                     placeholder="Например: Грудь, Ноги, Спина..."
-                    style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:8, border:'1px solid #374151', background:'#2a2a2e', color:'#fff', boxSizing:'border-box', outline:'none' }} />
+                    style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:8, border:`1px solid ${HAIR}`, background:SURF2, color:'#fff', boxSizing:'border-box', outline:'none' }} />
                 </div>
                 <div>
-                  <div style={{ fontSize:11, color:'#6b7280', marginBottom:5 }}>Оборудование</div>
+                  <div style={{ fontSize:11, color:TXT3, marginBottom:5 }}>Оборудование</div>
                   <input value={customForm.eq} onChange={e=>setCustomForm(f=>({...f,eq:e.target.value}))}
                     placeholder="Например: Гантели, Штанга..."
-                    style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:8, border:'1px solid #374151', background:'#2a2a2e', color:'#fff', boxSizing:'border-box', outline:'none' }} />
+                    style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:8, border:`1px solid ${HAIR}`, background:SURF2, color:'#fff', boxSizing:'border-box', outline:'none' }} />
                 </div>
                 <div style={{ display:'flex', gap:8, marginTop:4 }}>
-                  <button onClick={()=>setCustomOpen(false)} style={{ flex:1, padding:'10px', fontSize:13, borderRadius:8, border:'1px solid #374151', background:'none', color:'#9ca3af', cursor:'pointer' }}>Отмена</button>
+                  <button onClick={()=>setCustomOpen(false)} style={{ flex:1, padding:'10px', fontSize:13, borderRadius:8, border:`1px solid ${HAIR}`, background:'none', color:TXT3, cursor:'pointer' }}>Отмена</button>
                   <button onClick={saveCustomExercise} style={{ flex:1, padding:'10px', fontSize:13, borderRadius:8, border:'none', background:wColor, color:'#fff', fontWeight:600, cursor:'pointer' }}>Добавить</button>
                 </div>
               </div>
@@ -1849,14 +1863,14 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         {/* Пикер упражнений */}
         {pickOpen&&(
           <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.8)', zIndex:200, display:'flex', flexDirection:'column', borderRadius:14, overflow:'hidden' }}>
-            <div style={{ background:'#1c1c1e', padding:'16px 18px 12px', borderBottom:'1px solid #2a2a2a', flexShrink:0 }}>
+            <div style={{ background:SURF, padding:'16px 18px 12px', borderBottom:'1px solid #2a2a2a', flexShrink:0 }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
                 <span style={{ fontSize:16, fontWeight:700, color:'#fff' }}>Упражнения</span>
-                <button onClick={()=>{setPickOpen(false);setPickQ('');setPickMuscle('Все')}} style={{ background:'none', border:'none', color:'#9ca3af', fontSize:20, cursor:'pointer' }}>✕</button>
+                <button onClick={()=>{setPickOpen(false);setPickQ('');setPickMuscle('Все')}} style={{ background:'none', border:'none', color:TXT3, fontSize:20, cursor:'pointer' }}>✕</button>
               </div>
               <div style={{ display:'flex', gap:8, marginBottom:10 }}>
                 <input value={pickQ} onChange={e=>setPickQ(e.target.value)} placeholder="Поиск упражнения..."
-                  style={{ flex:1, padding:'9px 12px', fontSize:13, borderRadius:8, border:'1px solid #374151', background:'#2a2a2e', color:'#fff', boxSizing:'border-box' }} />
+                  style={{ flex:1, padding:'9px 12px', fontSize:13, borderRadius:8, border:`1px solid ${HAIR}`, background:SURF2, color:'#fff', boxSizing:'border-box' }} />
                 <button onClick={()=>{setCustomOpen(true);setCustomForm({n:'',m:'',eq:''})}}
                   style={{ padding:'9px 13px', fontSize:12, fontWeight:600, borderRadius:8, border:'none', background:wColor, color:'#fff', cursor:'pointer', whiteSpace:'nowrap' }}>
                   Добавить упражнение +
@@ -1864,12 +1878,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               </div>
               <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
                 {muscles.map(m=>(
-                  <button key={m} onClick={()=>setPickMuscle(m)} style={{ fontSize:11, padding:'4px 10px', borderRadius:20, cursor:'pointer', border:'none', background:pickMuscle===m?wColor:'#2a2a2e', color:pickMuscle===m?'#fff':'#9ca3af', fontWeight:pickMuscle===m?600:400 }}>{m}</button>
+                  <button key={m} onClick={()=>setPickMuscle(m)} style={{ fontSize:11, padding:'4px 10px', borderRadius:20, cursor:'pointer', border:'none', background:pickMuscle===m?wColor:SURF2, color:pickMuscle===m?'#fff':TXT3, fontWeight:pickMuscle===m?600:400 }}>{m}</button>
                 ))}
               </div>
             </div>
             <div style={{ flex:1, overflowY:'auto' }}>
-              {filteredEx.length===0&&<div style={{ textAlign:'center', color:'#6b7280', marginTop:40, fontSize:13 }}>Ничего не найдено</div>}
+              {filteredEx.length===0&&<div style={{ textAlign:'center', color:TXT3, marginTop:40, fontSize:13 }}>Ничего не найдено</div>}
               {filteredEx.map((ex,i)=>(
                 <button key={i} onClick={()=>pickExercise(ex)}
                   style={{ display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%', padding:'13px 18px', background:'none', border:'none', borderBottom:'1px solid #1f2937', cursor:'pointer', textAlign:'left' }}
@@ -1880,7 +1894,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       <span style={{ fontSize:14, fontWeight:500, color:'#fff' }}>{ex.n}</span>
                       {ex.custom&&<span style={{ fontSize:10, padding:'2px 6px', borderRadius:6, background:wColor+'33', color:wColor }}>моё</span>}
                     </div>
-                    <div style={{ fontSize:11, color:'#6b7280', marginTop:2 }}>{ex.m}{ex.eq?` · ${ex.eq}`:''}</div>
+                    <div style={{ fontSize:11, color:TXT3, marginTop:2 }}>{ex.m}{ex.eq?` · ${ex.eq}`:''}</div>
                   </div>
                   <span style={{ color:wColor, fontSize:18, fontWeight:300 }}>+</span>
                 </button>
@@ -1909,14 +1923,14 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         {showExitConfirm&&(
           <div style={{ position:'absolute', inset:0, zIndex:350, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.6)', borderRadius:14 }}
             onClick={()=>setShowExitConfirm(false)}>
-            <div style={{ background:'#1c1c1e', borderRadius:14, padding:'22px 20px', width:300, boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
+            <div style={{ background:SURF, borderRadius:14, padding:'22px 20px', width:300, boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
               onClick={e=>e.stopPropagation()}>
               <div style={{ fontSize:15, fontWeight:700, color:'#fff', marginBottom:6, textAlign:'center' }}>Выйти из тренировки?</div>
-              <div style={{ fontSize:12, color:'#9ca3af', marginBottom:18, textAlign:'center', lineHeight:1.5 }}>Можно свернуть — тренировка продолжится в фоне, ничего не потеряется.</div>
+              <div style={{ fontSize:12, color:TXT3, marginBottom:18, textAlign:'center', lineHeight:1.5 }}>Можно свернуть — тренировка продолжится в фоне, ничего не потеряется.</div>
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                 <button onClick={minimizeWorkout} style={{ padding:'11px', borderRadius:10, border:'none', background:wColor, color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer' }}>Свернуть</button>
-                <button onClick={exitWorkout} style={{ padding:'11px', borderRadius:10, border:'1px solid #374151', background:'none', color:'#ef4444', fontSize:14, fontWeight:600, cursor:'pointer' }}>Выйти без сохранения</button>
-                <button onClick={()=>setShowExitConfirm(false)} style={{ padding:'9px', borderRadius:10, border:'none', background:'none', color:'#6b7280', fontSize:13, cursor:'pointer' }}>Отмена</button>
+                <button onClick={exitWorkout} style={{ padding:'11px', borderRadius:10, border:`1px solid ${HAIR}`, background:'none', color:'#ef4444', fontSize:14, fontWeight:600, cursor:'pointer' }}>Выйти без сохранения</button>
+                <button onClick={()=>setShowExitConfirm(false)} style={{ padding:'9px', borderRadius:10, border:'none', background:'none', color:TXT3, fontSize:13, cursor:'pointer' }}>Отмена</button>
               </div>
             </div>
           </div>
@@ -1927,13 +1941,13 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         {showDatePicker&&(
           <div style={{ position:'absolute', inset:0, zIndex:360, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.6)', borderRadius:14 }}
             onClick={()=>setShowDatePicker(false)}>
-            <div style={{ background:'#1c1c1e', borderRadius:14, padding:'22px 20px', width:300, boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
+            <div style={{ background:SURF, borderRadius:14, padding:'22px 20px', width:300, boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
               onClick={e=>e.stopPropagation()}>
               <div style={{ fontSize:15, fontWeight:700, color:'#fff', marginBottom:16, textAlign:'center' }}>На какую дату сохранить?</div>
               <input type="date" value={wDate} onChange={e=>setWDate(e.target.value)} autoFocus
-                style={{ width:'100%', padding:'11px', borderRadius:10, border:'1px solid #374151', background:'#2a2a2e', color:'#fff', fontSize:15, colorScheme:'dark', cursor:'pointer', outline:'none', boxSizing:'border-box', marginBottom:16, textAlign:'center' }} />
+                style={{ width:'100%', padding:'11px', borderRadius:10, border:`1px solid ${HAIR}`, background:SURF2, color:'#fff', fontSize:15, colorScheme:'dark', cursor:'pointer', outline:'none', boxSizing:'border-box', marginBottom:16, textAlign:'center' }} />
               <div style={{ display:'flex', gap:8 }}>
-                <button onClick={()=>setShowDatePicker(false)} style={{ flex:1, padding:'10px', borderRadius:10, border:'1px solid #374151', background:'none', color:'#9ca3af', fontSize:13, cursor:'pointer' }}>Отмена</button>
+                <button onClick={()=>setShowDatePicker(false)} style={{ flex:1, padding:'10px', borderRadius:10, border:`1px solid ${HAIR}`, background:'none', color:TXT3, fontSize:13, cursor:'pointer' }}>Отмена</button>
                 <button onClick={confirmSaveWithDate} style={{ flex:1, padding:'10px', borderRadius:10, border:'none', background:wColor, color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer' }}>Сохранить</button>
               </div>
             </div>
@@ -1947,7 +1961,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             <div style={{ maxWidth:320, width:'100%' }} onClick={e=>e.stopPropagation()}>
               <div style={{ display:'flex', alignItems:'flex-end', gap:8 }}>
                 <div style={{ width:32, height:32, borderRadius:'50%', background:'linear-gradient(135deg,#7F77DD,#5b54c4)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, flexShrink:0 }}>🤖</div>
-                <div style={{ background:'#1f2937', border:'1px solid #374151', borderRadius:'4px 16px 16px 16px', padding:'14px 16px', fontSize:13.5, color:'#e5e7eb', lineHeight:1.6, whiteSpace:'pre-wrap' }}>
+                <div style={{ background:SURF2, border:`1px solid ${HAIR}`, borderRadius:'4px 16px 16px 16px', padding:'14px 16px', fontSize:13.5, color:'#e5e7eb', lineHeight:1.6, whiteSpace:'pre-wrap' }}>
                   {'Привет! Смотри, как тут всё работает:\n\nВес — это подсказка для старта. Вес горит красным — значит пиши свой вес, только тот, с которым реально позанимался, и обязательно поставь оценку (1 — легко, 5 — тяжело).\n\nПо оценке я сам подберу тебе вес дальше.\nПогнали! 💪'}
                 </div>
               </div>
@@ -1964,21 +1978,21 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         {showProgressionIntro&&wIsFromProgram&&(
           <div style={{ position:'absolute', inset:0, zIndex:390, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.65)', borderRadius:14, padding:'0 18px' }}
             onClick={dismissProgressionIntro}>
-            <div style={{ background:'#1c1c1e', borderRadius:16, padding:'20px 20px 16px', width:340, maxWidth:'100%', boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
+            <div style={{ background:SURF, borderRadius:16, padding:'20px 20px 16px', width:340, maxWidth:'100%', boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
               onClick={e=>e.stopPropagation()}>
               <div style={{ fontSize:16, fontWeight:700, color:'#fff', marginBottom:14, textAlign:'center' }}>Откуда взялся этот вес</div>
               <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:16 }}>
-                <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55 }}>Красным подсвечен вес, взятый прямо из программы тренера — приложение тебя ещё не знает и не может подобрать вес лично под тебя.</div>
-                <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55 }}>После подхода отметь цифрой, как он дался: 1 — легко, 5 — на пределе.</div>
-                <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55 }}>В следующий раз приложение поставит вес само: далось легко — прибавит побольше, тяжело — прибавит чуть-чуть, было тяжело два раза подряд — снизит, чтобы ты не перегорел.</div>
-                <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55 }}>Вес можно менять руками — приложение запомнит то, что ты реально сделал, и посчитает от него.</div>
-                <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55 }}>Значок «<span style={{ color:PUR, fontWeight:700 }}>+</span>» у повторений означает, что упражнение делается на обе стороны, а повторения считаются суммарно, а не на каждую ногу отдельно.</div>
+                <div style={{ fontSize:13, color:TXT3, lineHeight:1.55 }}>Красным подсвечен вес, взятый прямо из программы тренера — приложение тебя ещё не знает и не может подобрать вес лично под тебя.</div>
+                <div style={{ fontSize:13, color:TXT3, lineHeight:1.55 }}>После подхода отметь цифрой, как он дался: 1 — легко, 5 — на пределе.</div>
+                <div style={{ fontSize:13, color:TXT3, lineHeight:1.55 }}>В следующий раз приложение поставит вес само: далось легко — прибавит побольше, тяжело — прибавит чуть-чуть, было тяжело два раза подряд — снизит, чтобы ты не перегорел.</div>
+                <div style={{ fontSize:13, color:TXT3, lineHeight:1.55 }}>Вес можно менять руками — приложение запомнит то, что ты реально сделал, и посчитает от него.</div>
+                <div style={{ fontSize:13, color:TXT3, lineHeight:1.55 }}>Значок «<span style={{ color:PUR, fontWeight:700 }}>+</span>» у повторений означает, что упражнение делается на обе стороны, а повторения считаются суммарно, а не на каждую ногу отдельно.</div>
                 <div style={{ fontSize:13, color:'#fbbf24', fontWeight:700, lineHeight:1.55 }}>Веса приблизительные — подстрой под своё самочувствие.</div>
               </div>
               <label style={{ display:'flex', alignItems:'center', gap:9, marginBottom:14, cursor:'pointer' }}>
                 <input type="checkbox" checked={progressionIntroDontShow} onChange={e=>setProgressionIntroDontShow(e.target.checked)}
                   style={{ width:18, height:18, cursor:'pointer', accentColor:wColor, flexShrink:0 }} />
-                <span style={{ fontSize:12.5, color:'#9ca3af' }}>Больше не показывать</span>
+                <span style={{ fontSize:12.5, color:TXT3 }}>Больше не показывать</span>
               </label>
               <button onClick={dismissProgressionIntro}
                 style={{ width:'100%', padding:'12px', borderRadius:10, border:'none', background:wColor, color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer' }}>
@@ -1996,10 +2010,10 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         {showRepsWarning&&(
           <div style={{ position:'absolute', inset:0, zIndex:395, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.65)', borderRadius:14, padding:'0 18px' }}
             onClick={()=>setShowRepsWarning(false)}>
-            <div style={{ background:'#1c1c1e', borderRadius:16, padding:'20px 20px 16px', width:340, maxWidth:'100%', boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
+            <div style={{ background:SURF, borderRadius:16, padding:'20px 20px 16px', width:340, maxWidth:'100%', boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
               onClick={e=>e.stopPropagation()}>
               <div style={{ fontSize:16, fontWeight:700, color:'#fff', marginBottom:14, textAlign:'center' }}>Повторения из плана</div>
-              <div style={{ fontSize:13, color:'#d1d5db', lineHeight:1.55, marginBottom:18 }}>
+              <div style={{ fontSize:13, color:TXT3, lineHeight:1.55, marginBottom:18 }}>
                 Повторения подобраны тренером под текущий этап программы. Менять их не рекомендуется — от них зависит, какую нагрузку приложение подберёт дальше. Если сделал меньше или больше, чем в плане — впиши как есть, приложение учтёт реальный результат.
               </div>
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
@@ -2008,7 +2022,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   Понятно
                 </button>
                 <button onClick={revertRepsWarning}
-                  style={{ padding:'11px', borderRadius:10, border:'1px solid #374151', background:'none', color:'#9ca3af', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                  style={{ padding:'11px', borderRadius:10, border:`1px solid ${HAIR}`, background:'none', color:TXT3, fontSize:13, fontWeight:600, cursor:'pointer' }}>
                   Вернуть как было
                 </button>
               </div>
@@ -2024,9 +2038,9 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         {pendingConflictStart&&(
           <div style={{ position:'absolute', inset:0, zIndex:398, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.65)', borderRadius:14, padding:'0 18px' }}
             onClick={cancelStartOverActive}>
-            <div style={{ background:'#1c1c1e', borderRadius:16, padding:'20px 20px 16px', width:340, maxWidth:'100%', boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
+            <div style={{ background:SURF, borderRadius:16, padding:'20px 20px 16px', width:340, maxWidth:'100%', boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
               onClick={e=>e.stopPropagation()}>
-              <div style={{ fontSize:15, color:'#d1d5db', lineHeight:1.55, marginBottom:18, textAlign:'center' }}>
+              <div style={{ fontSize:15, color:TXT3, lineHeight:1.55, marginBottom:18, textAlign:'center' }}>
                 У тебя есть незавершённая тренировка «{wName}». Начать новую? Незавершённая будет удалена.
               </div>
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
@@ -2035,7 +2049,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   Начать новую
                 </button>
                 <button onClick={cancelStartOverActive}
-                  style={{ padding:'11px', borderRadius:10, border:'1px solid #374151', background:'none', color:'#9ca3af', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                  style={{ padding:'11px', borderRadius:10, border:`1px solid ${HAIR}`, background:'none', color:TXT3, fontSize:13, fontWeight:600, cursor:'pointer' }}>
                   Вернуться к незавершённой
                 </button>
               </div>
@@ -2049,14 +2063,14 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         {removeExerciseConfirm&&(
           <div style={{ position:'absolute', inset:0, zIndex:399, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.65)', borderRadius:14, padding:'0 18px' }}
             onClick={()=>setRemoveExerciseConfirm(null)}>
-            <div style={{ background:'#1c1c1e', borderRadius:16, padding:'20px 20px 16px', width:320, maxWidth:'100%', boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
+            <div style={{ background:SURF, borderRadius:16, padding:'20px 20px 16px', width:320, maxWidth:'100%', boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
               onClick={e=>e.stopPropagation()}>
               <div style={{ fontSize:15, color:'#fff', lineHeight:1.5, marginBottom:18, textAlign:'center' }}>
                 Убрать «{removeExerciseConfirm.name}» из этой тренировки?
               </div>
               <div style={{ display:'flex', gap:8 }}>
                 <button onClick={()=>setRemoveExerciseConfirm(null)}
-                  style={{ flex:1, padding:'11px', borderRadius:10, border:'1px solid #374151', background:'none', color:'#9ca3af', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                  style={{ flex:1, padding:'11px', borderRadius:10, border:`1px solid ${HAIR}`, background:'none', color:TXT3, fontSize:13, fontWeight:600, cursor:'pointer' }}>
                   Отмена
                 </button>
                 <button onClick={confirmRemoveExercise}
@@ -2073,8 +2087,8 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
 
           {/* Секундомер — только в режиме активной тренировки */}
           {wMode==='start'&&(
-            <div style={{ background:'#1c1c1e', borderRadius:12, padding:'14px 18px 16px', marginBottom:16, textAlign:'center' }}>
-              <div style={{ fontSize:10, color:'#6b7280', textTransform:'uppercase', letterSpacing:2, marginBottom:8 }}>Секундомер</div>
+            <div style={{ background:SURF, borderRadius:12, padding:'14px 18px 16px', marginBottom:16, textAlign:'center' }}>
+              <div style={{ fontSize:10, color:TXT3, textTransform:'uppercase', letterSpacing:2, marginBottom:8 }}>Секундомер</div>
               <div style={{ fontSize:46, fontWeight:700, color:'#fff', fontVariantNumeric:'tabular-nums', letterSpacing:2, marginBottom:14 }}>
                 {fmt(swTime)}
               </div>
@@ -2084,7 +2098,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   {swRunning?'⏸ Стоп':'▶ Старт'}
                 </button>
                 <button onClick={resetStopwatch}
-                  style={{ padding:'10px 18px', borderRadius:8, border:'1px solid #374151', background:'none', color:'#9ca3af', fontSize:14, cursor:'pointer' }}>
+                  style={{ padding:'10px 18px', borderRadius:8, border:`1px solid ${HAIR}`, background:'none', color:TXT3, fontSize:14, cursor:'pointer' }}>
                   ↺
                 </button>
               </div>
@@ -2097,13 +2111,13 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               <div style={{ fontSize:18, fontWeight:600, color:'#fff', marginBottom:8 }}>
                 {wMode==='log'?'Добавь упражнения':'Тренировка началась'}
               </div>
-              <div style={{ fontSize:14, color:'#9ca3af', lineHeight:1.7 }}>Нажми «+», чтобы добавить упражнения.</div>
+              <div style={{ fontSize:14, color:TXT3, lineHeight:1.7 }}>Нажми «+», чтобы добавить упражнения.</div>
             </div>
           ):(
             wExercises.map((ex,ei)=>{
               const tonnage=exTonnage(ex)
               return (
-                <div key={ei} style={{ marginBottom:14, background:ex.done?'#0d2010':'#1f2937', borderRadius:10, padding:'12px 14px', border:ex.done?'1px solid #14532d':'none' }}>
+                <div key={ei} style={{ marginBottom:14, background:ex.done?'#0d2010':SURF2, borderRadius:10, padding:'12px 14px', border:ex.done?'1px solid #14532d':'none' }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, gap:8 }}>
                     <span style={{ fontSize:14, fontWeight:600, color:ex.done?'#4ade80':wColor, flex:1, minWidth:0 }}>{ex.n}</span>
                     <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
@@ -2112,7 +2126,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                           просто не показываем (см. комментарий у removeExerciseConfirm). */}
                       {wExercises.length>1&&(
                         <button onClick={()=>setRemoveExerciseConfirm({ei,name:ex.n})}
-                          style={{ width:26, height:26, borderRadius:6, border:'none', background:'#374151', color:'#9ca3af', cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                          style={{ width:26, height:26, borderRadius:6, border:'none', background:'#374151', color:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                           🗑
                         </button>
                       )}
@@ -2130,14 +2144,14 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                     <div style={{
                       fontSize:ex.progressStopped?13.5:12.5,
                       fontWeight:ex.progressStopped?700:400,
-                      color:ex.progressStopped?'#ef4444':(ex.progressNote.startsWith('Разгрузка')||ex.progressNote.startsWith('Снизили нагрузку'))?PUR:'#9ca3af',
+                      color:ex.progressStopped?'#ef4444':(ex.progressNote.startsWith('Разгрузка')||ex.progressNote.startsWith('Снизили нагрузку'))?PUR:TXT3,
                       marginTop:-4, marginBottom:8,
                     }}>
                       {ex.progressNote}
                     </div>
                   )}
                   {isOneSidedExercise(ex.n)&&(
-                    <div style={{ fontSize:10, color:'#6b7280', marginTop:-4, marginBottom:8 }}>
+                    <div style={{ fontSize:10, color:TXT3, marginTop:-4, marginBottom:8 }}>
                       Повторения считаются суммарно на обе стороны
                     </div>
                   )}
@@ -2146,7 +2160,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                     <div>
                       <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:8 }}>
                         {ex.sets.map((s,si)=>(s.kg||s.bandLevel||s.reps)&&(
-                          <span key={si} style={{ fontSize:11, color:'#9ca3af' }}>
+                          <span key={si} style={{ fontSize:11, color:TXT3 }}>
                             {si+1}. {s.bandLevel!=null?`${s.bandLevel} рез.`:`${s.kg||'—'} кг`} × {s.reps||'—'}
                             {isOneSidedExercise(ex.n)&&<span title="Повторения считаются суммарно на обе стороны">+</span>}
                           </span>
@@ -2154,7 +2168,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       </div>
                       <div style={{ fontSize:16, fontWeight:700, color:'#4ade80' }}>Тоннаж: {tonnage} кг</div>
                       <button onClick={()=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,done:false}:x))}
-                        style={{ marginTop:6, fontSize:11, color:'#6b7280', background:'none', border:'none', cursor:'pointer', padding:0 }}>
+                        style={{ marginTop:6, fontSize:11, color:TXT3, background:'none', border:'none', cursor:'pointer', padding:0 }}>
                         ↩ Редактировать
                       </button>
                     </div>
@@ -2162,7 +2176,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                     <>
                       <div style={{ display:'grid', gridTemplateColumns:'24px 1fr 1fr 26px 26px 20px', gap:5, marginBottom:5 }}>
                         {['#',ex.sets.some(s=>s.bandLevel!=null)?'РЕЗИНА':'КГ','ПОВТ','','',''].map((h,i)=>(
-                          <span key={i} style={{ fontSize:10, color:'#6b7280', textAlign:'center', textTransform:'uppercase' }}>{h}</span>
+                          <span key={i} style={{ fontSize:10, color:TXT3, textAlign:'center', textTransform:'uppercase' }}>{h}</span>
                         ))}
                       </div>
                       {ex.sets.map((set,si)=>{
@@ -2173,26 +2187,26 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                         return(
                           <div key={si} style={{ marginBottom:noteOpen?3:5 }}>
                             <div style={{ display:'grid', gridTemplateColumns:'24px 1fr 1fr 26px 26px 20px', gap:5, alignItems:'center' }}>
-                              <span style={{ fontSize:12, color:'#6b7280', textAlign:'center', fontWeight:700 }}>{si+1}</span>
+                              <span style={{ fontSize:12, color:TXT3, textAlign:'center', fontWeight:700 }}>{si+1}</span>
                               {isBandSet?(
                                 <input value={set.bandLevel} type="number" min={1} max={5}
                                   onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,bandLevel:e.target.value===''?'':Number(e.target.value),fromTemplate:false}:s)}:x))}
                                   onFocus={selectOnFocus}
                                   placeholder="1"
-                                  style={{ background:isTemplateBand?'rgba(239,68,68,0.14)':'#374151', border:isTemplateBand?'1.5px solid #ef4444':'1px solid #4b5563', borderRadius:6, padding:'6px 6px', fontSize:13, color:isTemplateBand?'#fca5a5':'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
+                                  style={{ background:isTemplateBand?'rgba(239,68,68,0.14)':'#374151', border:isTemplateBand?'1.5px solid #ef4444':`1px solid ${HAIR}`, borderRadius:6, padding:'6px 6px', fontSize:13, color:isTemplateBand?'#fca5a5':'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
                               ):(
                                 <input value={set.kg} inputMode="decimal"
                                   onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,kg:e.target.value,fromTemplate:false}:s)}:x))}
                                   onFocus={selectOnFocus}
                                   placeholder="0"
-                                  style={{ background:isTemplateWeight?'rgba(239,68,68,0.14)':'#374151', border:isTemplateWeight?'1.5px solid #ef4444':'1px solid #4b5563', borderRadius:6, padding:'6px 6px', fontSize:13, color:isTemplateWeight?'#fca5a5':'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
+                                  style={{ background:isTemplateWeight?'rgba(239,68,68,0.14)':'#374151', border:isTemplateWeight?'1.5px solid #ef4444':`1px solid ${HAIR}`, borderRadius:6, padding:'6px 6px', fontSize:13, color:isTemplateWeight?'#fca5a5':'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
                               )}
                               <div style={{ position:'relative', width:'100%' }}>
                                 <input value={set.reps} inputMode="numeric"
                                   onChange={e=>handleRepsChange(ei,si,e.target.value)}
                                   onFocus={selectOnFocus}
                                   placeholder="0"
-                                  style={{ background:'#374151', border:'1px solid #4b5563', borderRadius:6, padding:'6px 6px', fontSize:13, color:'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
+                                  style={{ background:'#374151', border:`1px solid ${HAIR}`, borderRadius:6, padding:'6px 6px', fontSize:13, color:'#fff', textAlign:'center', width:'100%', boxSizing:'border-box' }} />
                                 {isOneSidedExercise(ex.n)&&(
                                   // Метка "выполняется на обе стороны" — НЕ кнопка (нет onClick,
                                   // isOneSidedExercise в programs.js только определяет упражнение
@@ -2204,7 +2218,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                 )}
                               </div>
                               <button onClick={()=>setOpenSetNote(noteOpen?null:{ei,si})}
-                                style={{ width:26, height:26, borderRadius:6, border:'none', background:set.note?`${PUR}50`:'#374151', color:set.note?PUR:'#6b7280', cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}>📝</button>
+                                style={{ width:26, height:26, borderRadius:6, border:'none', background:set.note?`${PUR}50`:'#374151', color:set.note?PUR:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}>📝</button>
                               {/* Видео тренеру — только премиум-клиенту (isPremium).
                                   Не загрузка в приложение: открывает чат с тренером
                                   в Telegram, клиент шлёт видео сам. openTelegramLink
@@ -2216,10 +2230,10 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                   if(window.Telegram?.WebApp)window.Telegram.WebApp.openTelegramLink(MAX_TELEGRAM_URL)
                                   else window.open(MAX_TELEGRAM_URL,'_blank')
                                 }}
-                                  style={{ width:26, height:26, borderRadius:6, border:'none', background:'#374151', color:'#6b7280', cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}>🎬</button>
+                                  style={{ width:26, height:26, borderRadius:6, border:'none', background:'#374151', color:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}>🎬</button>
                               ):<span />}
                               <button onClick={()=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.filter((_,j)=>j!==si)}:x).filter(x=>x.sets.length>0))}
-                                style={{ background:'none', border:'none', color:'#6b7280', cursor:'pointer', fontSize:14, textAlign:'center' }}>✕</button>
+                                style={{ background:'none', border:'none', color:TXT3, cursor:'pointer', fontSize:14, textAlign:'center' }}>✕</button>
                             </div>
                             {set.recKg&&(
                               <div style={{ display:'grid', gridTemplateColumns:'24px 1fr 1fr 26px 26px 20px', gap:5 }}>
@@ -2235,7 +2249,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                 понимал, что именно он оценивает. */}
                             {wIsFromProgram&&si>=ex.sets.length-2&&(
                               <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', gap:8, marginTop:6, paddingLeft:29 }}>
-                                <span style={{ fontSize:11, color:'#6b7280', flexShrink:0 }}>Оценка нагрузки</span>
+                                <span style={{ fontSize:11, color:TXT3, flexShrink:0 }}>Оценка нагрузки</span>
                                 <div style={{ display:'flex', gap:3 }}>
                                   {[1,2,3,4,5].map(n=>(
                                     <div key={n} style={{ display:'flex', flexDirection:'column', alignItems:'center' }}>
@@ -2245,10 +2259,10 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                         style={{ width:44, height:44, borderRadius:10, border:'none', cursor:'pointer', padding:0,
                                           background:set.rating===n?wColor:'#374151',
                                           fontSize:set.rating===n?19:16, fontWeight:800, lineHeight:1,
-                                          color:set.rating===n?'#fff':'#9ca3af', transition:'background .1s, font-size .1s' }}>
+                                          color:set.rating===n?'#fff':TXT3, transition:'background .1s, font-size .1s' }}>
                                         {n}
                                       </button>
-                                      <span style={{ fontSize:11, color:'#6b7280', marginTop:2, minHeight:13, whiteSpace:'nowrap' }}>
+                                      <span style={{ fontSize:11, color:TXT3, marginTop:2, minHeight:13, whiteSpace:'nowrap' }}>
                                         {n===1?'легко':n===5?'на пределе':''}
                                       </span>
                                     </div>
@@ -2260,7 +2274,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                               <input value={set.note||''} autoFocus
                                 onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,note:e.target.value}:s)}:x))}
                                 placeholder="Заметка к подходу..."
-                                style={{ width:'100%', background:'#1f2937', border:'1px solid #374151', borderRadius:6, padding:'5px 10px', fontSize:12, color:'#e5e7eb', marginTop:3, boxSizing:'border-box', outline:'none' }} />
+                                style={{ width:'100%', background:SURF2, border:`1px solid ${HAIR}`, borderRadius:6, padding:'5px 10px', fontSize:12, color:'#e5e7eb', marginTop:3, boxSizing:'border-box', outline:'none' }} />
                             )}
                           </div>
                         )
@@ -2284,30 +2298,30 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         </div>
 
         {/* Поле комментария к тренировке */}
-        <div style={{ padding:'8px 14px', background:'#111', borderTop:'1px solid #1f2937', flexShrink:0 }}>
+        <div style={{ padding:'8px 14px', background:SURF2, borderTop:'1px solid #1f2937', flexShrink:0 }}>
           <textarea value={wComment} onChange={e=>setWComment(e.target.value)} placeholder="💬 Комментарий к тренировке..." rows={2}
-            style={{ width:'100%', background:'#1f2937', border:'1px solid #374151', borderRadius:8, padding:'7px 11px', fontSize:12, color:'#e5e7eb', resize:'none', outline:'none', fontFamily:'inherit', boxSizing:'border-box', lineHeight:1.5 }} />
+            style={{ width:'100%', background:SURF2, border:`1px solid ${HAIR}`, borderRadius:8, padding:'7px 11px', fontSize:12, color:'#e5e7eb', resize:'none', outline:'none', fontFamily:'inherit', boxSizing:'border-box', lineHeight:1.5 }} />
         </div>
 
         {/* Нижняя панель */}
-        <div style={{ padding:'10px 18px', display:'flex', justifyContent:'space-between', alignItems:'center', background:'#111', flexShrink:0 }}>
-          <button onClick={()=>setPickOpen(true)} style={{ width:42, height:42, borderRadius:'50%', border:'2px solid #374151', background:'none', color:'#9ca3af', fontSize:22, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>+</button>
+        <div style={{ padding:'10px 18px', display:'flex', justifyContent:'space-between', alignItems:'center', background:SURF2, flexShrink:0 }}>
+          <button onClick={()=>setPickOpen(true)} style={{ width:42, height:42, borderRadius:'50%', border:`2px solid ${HAIR}`, background:'none', color:TXT3, fontSize:22, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>+</button>
           <button onClick={openDatePicker} style={{ padding:'12px 36px', borderRadius:24, border:'none', background:wColor, color:'#fff', fontSize:15, fontWeight:700, cursor:'pointer', boxShadow:`0 4px 16px ${wColor}66` }}>
             {isEditMode?'Сохранить':'Завершить'}
           </button>
-          <button onClick={()=>setShowSendModal(true)} style={{ width:42, height:42, borderRadius:'50%', border:'2px solid #374151', background:'none', color:'#9ca3af', fontSize:20, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>📤</button>
+          <button onClick={()=>setShowSendModal(true)} style={{ width:42, height:42, borderRadius:'50%', border:`2px solid ${HAIR}`, background:'none', color:TXT3, fontSize:20, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>📤</button>
         </div>
 
         {/* Модал "Отправить тренеру" */}
         {showSendModal&&(
           <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', zIndex:1200, display:'flex', alignItems:'flex-end', justifyContent:'center' }}
             onClick={()=>setShowSendModal(false)}>
-            <div onClick={e=>e.stopPropagation()} style={{ background:'#1f2937', borderRadius:'16px 16px 0 0', padding:'20px 18px', width:'100%', maxWidth:500, maxHeight:'75vh', display:'flex', flexDirection:'column' }}>
+            <div onClick={e=>e.stopPropagation()} style={{ background:SURF2, borderRadius:'16px 16px 0 0', padding:'20px 18px', width:'100%', maxWidth:500, maxHeight:'75vh', display:'flex', flexDirection:'column' }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14, flexShrink:0 }}>
                 <span style={{ fontSize:16, fontWeight:700, color:'#fff' }}>📤 Отчёт тренеру</span>
-                <button onClick={()=>setShowSendModal(false)} style={{ background:'none', border:'none', color:'#9ca3af', fontSize:22, cursor:'pointer', padding:0, lineHeight:1 }}>✕</button>
+                <button onClick={()=>setShowSendModal(false)} style={{ background:'none', border:'none', color:TXT3, fontSize:22, cursor:'pointer', padding:0, lineHeight:1 }}>✕</button>
               </div>
-              <pre style={{ background:'#111', borderRadius:10, padding:'12px 14px', fontSize:12, color:'#e5e7eb', whiteSpace:'pre-wrap', fontFamily:'monospace', flex:1, overflowY:'auto', lineHeight:1.7, marginBottom:14 }}>
+              <pre style={{ background:SURF2, borderRadius:10, padding:'12px 14px', fontSize:12, color:'#e5e7eb', whiteSpace:'pre-wrap', fontFamily:'monospace', flex:1, overflowY:'auto', lineHeight:1.7, marginBottom:14 }}>
                 {formatWorkoutReport()}
               </pre>
               <button onClick={copyReport} style={{ width:'100%', padding:'13px', borderRadius:10, border:'none', background:sendCopied?TEA:PUR, color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', transition:'background 0.2s', flexShrink:0 }}>
@@ -2329,14 +2343,14 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           "Тренировки" — модалка всё равно должна быть видна сразу. */}
       {staleDraft&&createPortal(
         <div style={{ position:'fixed', inset:0, zIndex:1450, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.6)', padding:'0 18px' }}>
-          <div style={{ background:'#1c1c1e', borderRadius:16, padding:'22px 20px', width:340, maxWidth:'100%', boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}>
+          <div style={{ background:SURF, borderRadius:16, padding:'22px 20px', width:340, maxWidth:'100%', boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}>
             <div style={{ fontSize:15, fontWeight:700, color:'#fff', marginBottom:8, textAlign:'center' }}>Незавершённая тренировка</div>
-            <div style={{ fontSize:13, color:'#d1d5db', marginBottom:18, textAlign:'center', lineHeight:1.5 }}>
+            <div style={{ fontSize:13, color:TXT3, marginBottom:18, textAlign:'center', lineHeight:1.5 }}>
               Осталась незавершённая тренировка от {new Date(staleDraft.startedAt).toLocaleDateString('ru',{day:'numeric',month:'long'})}. Продолжить или удалить?
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
               <button onClick={confirmStaleDraft} style={{ padding:'11px', borderRadius:10, border:'none', background:PUR, color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer' }}>Продолжить</button>
-              <button onClick={discardStaleDraft} style={{ padding:'11px', borderRadius:10, border:'1px solid #374151', background:'none', color:'#ef4444', fontSize:14, fontWeight:600, cursor:'pointer' }}>Удалить</button>
+              <button onClick={discardStaleDraft} style={{ padding:'11px', borderRadius:10, border:`1px solid ${HAIR}`, background:'none', color:'#ef4444', fontSize:14, fontWeight:600, cursor:'pointer' }}>Удалить</button>
             </div>
           </div>
         </div>
@@ -2366,22 +2380,22 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       {menuOpen&&(
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center' }}
           onClick={()=>setMenuOpen(false)}>
-          <div style={{ background:'#fff', borderRadius:16, padding:'22px 22px 18px', width:370, boxShadow:'0 12px 40px rgba(0,0,0,0.18)' }}
+          <div style={{ background:SURF, borderRadius:16, padding:'22px 22px 18px', width:370, boxShadow:'0 12px 40px rgba(0,0,0,0.18)' }}
             onClick={e=>e.stopPropagation()}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-              <h3 style={{ margin:0, fontSize:16, fontWeight:700, color:'#111' }}>Новая тренировка</h3>
-              <button onClick={()=>setMenuOpen(false)} style={{ border:'none', background:'none', fontSize:18, color:'#9ca3af', cursor:'pointer' }}>✕</button>
+              <h3 style={{ margin:0, fontSize:16, fontWeight:700, color:TXT }}>Новая тренировка</h3>
+              <button onClick={()=>setMenuOpen(false)} style={{ border:'none', background:'none', fontSize:18, color:TXT3, cursor:'pointer' }}>✕</button>
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
               {WORKOUT_ACTIONS.map(a=>(
                 <button key={a.key} onClick={()=>handleAction(a.key)}
-                  style={{ display:'flex', alignItems:'center', gap:14, padding:'12px 14px', border:'1px solid #e5e7eb', borderRadius:10, background:'#fafafa', cursor:'pointer', textAlign:'left', width:'100%' }}
+                  style={{ display:'flex', alignItems:'center', gap:14, padding:'12px 14px', border:`1px solid ${HAIR}`, borderRadius:10, background:SURF, cursor:'pointer', textAlign:'left', width:'100%' }}
                   onMouseEnter={e=>e.currentTarget.style.background='#f0effe'}
                   onMouseLeave={e=>e.currentTarget.style.background='#fafafa'}>
                   <span style={{ fontSize:22, flexShrink:0 }}>{a.icon}</span>
                   <div>
-                    <div style={{ fontSize:13, fontWeight:500, color:'#111' }}>{a.label}</div>
-                    <div style={{ fontSize:11, color:'#9ca3af', marginTop:2 }}>{a.desc}</div>
+                    <div style={{ fontSize:13, fontWeight:500, color:TXT }}>{a.label}</div>
+                    <div style={{ fontSize:11, color:TXT3, marginTop:2 }}>{a.desc}</div>
                   </div>
                 </button>
               ))}
@@ -2393,7 +2407,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       {step==='naming'&&(
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center' }}
           onClick={()=>setStep(null)}>
-          <div style={{ background:'#1c1c1e', borderRadius:16, padding:'22px 22px 18px', width:340, boxShadow:'0 16px 48px rgba(0,0,0,0.5)' }}
+          <div style={{ background:SURF, borderRadius:16, padding:'22px 22px 18px', width:340, boxShadow:'0 16px 48px rgba(0,0,0,0.5)' }}
             onClick={e=>e.stopPropagation()}>
             <h3 style={{ margin:'0 0 18px', fontSize:16, fontWeight:700, color:'#fff', textAlign:'center' }}>
               {wMode==='log'?'Добавить тренировку':'Новая тренировка'}
@@ -2401,13 +2415,13 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             <div style={{ borderBottom:'1px solid #2c2c2e', paddingBottom:14, marginBottom:14, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
               <span style={{ fontSize:15, color:'#fff' }}>Название</span>
               <input value={wName} onChange={e=>setWName(e.target.value)} onFocus={e=>e.target.select()}
-                style={{ background:'none', border:'none', outline:'none', fontSize:15, color:'#9ca3af', textAlign:'right', width:170 }} />
+                style={{ background:'none', border:'none', outline:'none', fontSize:15, color:TXT3, textAlign:'right', width:170 }} />
             </div>
             {wMode==='log'&&(
               <div style={{ borderBottom:'1px solid #2c2c2e', paddingBottom:14, marginBottom:14, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                 <span style={{ fontSize:15, color:'#fff' }}>Дата</span>
                 <input type="date" value={wDate} onChange={e=>setWDate(e.target.value)}
-                  style={{ background:'none', border:'none', outline:'none', fontSize:15, color:'#9ca3af', textAlign:'right', colorScheme:'dark', cursor:'pointer' }} />
+                  style={{ background:'none', border:'none', outline:'none', fontSize:15, color:TXT3, textAlign:'right', colorScheme:'dark', cursor:'pointer' }} />
               </div>
             )}
             <div style={{ borderBottom:'1px solid #2c2c2e', paddingBottom:14, marginBottom:18 }}>
@@ -2439,21 +2453,21 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       {editingSlotTitle&&(
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1200, display:'flex', alignItems:'center', justifyContent:'center' }}
           onClick={()=>setEditingSlotTitle(null)}>
-          <div style={{ background:'#fff', borderRadius:16, padding:'22px', width:380, maxWidth:'94vw', boxShadow:'0 20px 60px rgba(0,0,0,0.25)' }}
+          <div style={{ background:SURF, borderRadius:16, padding:'22px', width:380, maxWidth:'94vw', boxShadow:'0 20px 60px rgba(0,0,0,0.25)' }}
             onClick={e=>e.stopPropagation()}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-              <span style={{ fontSize:16, fontWeight:700, color:'#111' }}>Название тренировки</span>
-              <button onClick={()=>setEditingSlotTitle(null)} style={{ background:'none', border:'none', fontSize:20, color:'#9ca3af', cursor:'pointer', minHeight:'unset' }}>✕</button>
+              <span style={{ fontSize:16, fontWeight:700, color:TXT }}>Название тренировки</span>
+              <button onClick={()=>setEditingSlotTitle(null)} style={{ background:'none', border:'none', fontSize:20, color:TXT3, cursor:'pointer', minHeight:'unset' }}>✕</button>
             </div>
             <input value={editingSlotTitle.title}
               onChange={e=>setEditingSlotTitle(s=>({...s,title:e.target.value}))}
               placeholder="Название тренировки"
-              style={{ width:'100%', padding:'11px 13px', fontSize:14, borderRadius:10, border:'1.5px solid #e5e7eb', outline:'none', color:'#111', fontFamily:'inherit', boxSizing:'border-box' }}
+              style={{ width:'100%', padding:'11px 13px', fontSize:14, borderRadius:10, border:`1.5px solid ${HAIR}`, outline:'none', color:TXT, fontFamily:'inherit', boxSizing:'border-box' }}
               onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'}
             />
             <div style={{ display:'flex', gap:10, marginTop:16 }}>
               <button onClick={()=>setEditingSlotTitle(null)}
-                style={{ flex:1, padding:'12px', fontSize:14, borderRadius:10, border:'1.5px solid #e5e7eb', background:'none', color:'#6b7280', cursor:'pointer' }}>Отмена</button>
+                style={{ flex:1, padding:'12px', fontSize:14, borderRadius:10, border:`1.5px solid ${HAIR}`, background:'none', color:TXT3, cursor:'pointer' }}>Отмена</button>
               <button onClick={saveSlotTitle}
                 style={{ flex:2, padding:'12px', fontSize:14, borderRadius:10, border:'none', background:PUR, color:'#fff', fontWeight:700, cursor:'pointer' }}>Сохранить</button>
             </div>
@@ -2465,34 +2479,34 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       {editingExercise&&(
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1200, display:'flex', alignItems:'center', justifyContent:'center' }}
           onClick={()=>setEditingExercise(null)}>
-          <div style={{ background:'#fff', borderRadius:16, padding:'22px', width:440, maxWidth:'94vw', boxShadow:'0 20px 60px rgba(0,0,0,0.25)' }}
+          <div style={{ background:SURF, borderRadius:16, padding:'22px', width:440, maxWidth:'94vw', boxShadow:'0 20px 60px rgba(0,0,0,0.25)' }}
             onClick={e=>e.stopPropagation()}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-              <span style={{ fontSize:16, fontWeight:700, color:'#111' }}>Редактировать упражнение</span>
-              <button onClick={()=>setEditingExercise(null)} style={{ background:'none', border:'none', fontSize:20, color:'#9ca3af', cursor:'pointer', minHeight:'unset' }}>✕</button>
+              <span style={{ fontSize:16, fontWeight:700, color:TXT }}>Редактировать упражнение</span>
+              <button onClick={()=>setEditingExercise(null)} style={{ background:'none', border:'none', fontSize:20, color:TXT3, cursor:'pointer', minHeight:'unset' }}>✕</button>
             </div>
             <div style={{ marginBottom:12 }}>
-              <div style={{ fontSize:12, color:'#6b7280', marginBottom:6 }}>Название упражнения</div>
+              <div style={{ fontSize:12, color:TXT3, marginBottom:6 }}>Название упражнения</div>
               <input value={editingExercise.name}
                 onChange={e=>setEditingExercise(v=>({...v,name:e.target.value}))}
                 placeholder="Приседания"
-                style={{ width:'100%', padding:'11px 13px', fontSize:14, borderRadius:10, border:'1.5px solid #e5e7eb', outline:'none', color:'#111', fontFamily:'inherit', boxSizing:'border-box' }}
+                style={{ width:'100%', padding:'11px 13px', fontSize:14, borderRadius:10, border:`1.5px solid ${HAIR}`, outline:'none', color:TXT, fontFamily:'inherit', boxSizing:'border-box' }}
                 onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'}
               />
             </div>
             <div style={{ marginBottom:16 }}>
-              <div style={{ fontSize:12, color:'#6b7280', marginBottom:6 }}>Подходы / вес / повторения</div>
+              <div style={{ fontSize:12, color:TXT3, marginBottom:6 }}>Подходы / вес / повторения</div>
               <textarea value={editingExercise.sets}
                 onChange={e=>setEditingExercise(v=>({...v,sets:e.target.value}))}
                 placeholder="20 кг × 15, 25 кг × 12, 25 кг × 12"
                 rows={4}
-                style={{ width:'100%', padding:'11px 13px', fontSize:13, borderRadius:10, border:'1.5px solid #e5e7eb', outline:'none', color:'#111', resize:'vertical', lineHeight:1.65, fontFamily:'inherit', boxSizing:'border-box' }}
+                style={{ width:'100%', padding:'11px 13px', fontSize:13, borderRadius:10, border:`1.5px solid ${HAIR}`, outline:'none', color:TXT, resize:'vertical', lineHeight:1.65, fontFamily:'inherit', boxSizing:'border-box' }}
                 onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor='#e5e7eb'}
               />
             </div>
             <div style={{ display:'flex', gap:10 }}>
               <button onClick={()=>setEditingExercise(null)}
-                style={{ flex:1, padding:'12px', fontSize:14, borderRadius:10, border:'1.5px solid #e5e7eb', background:'none', color:'#6b7280', cursor:'pointer' }}>Отмена</button>
+                style={{ flex:1, padding:'12px', fontSize:14, borderRadius:10, border:`1.5px solid ${HAIR}`, background:'none', color:TXT3, cursor:'pointer' }}>Отмена</button>
               <button onClick={saveExercise}
                 style={{ flex:2, padding:'12px', fontSize:14, borderRadius:10, border:'none', background:PUR, color:'#fff', fontWeight:700, cursor:'pointer' }}>Сохранить</button>
             </div>
@@ -2507,7 +2521,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           <div style={{ position:'relative', maxWidth:860, width:'95%' }} onClick={e=>e.stopPropagation()}>
             <button onClick={()=>setPlayVideo(null)}
               style={{ position:'absolute', top:-42, right:0, background:'none', border:'none', color:'#fff', fontSize:26, cursor:'pointer', minHeight:'unset' }}>✕</button>
-            <div style={{ fontSize:13, color:'#9ca3af', marginBottom:8 }}>{playVideo.name}</div>
+            <div style={{ fontSize:13, color:TXT3, marginBottom:8 }}>{playVideo.name}</div>
             <video src={playVideo.url} controls autoPlay style={{ width:'100%', borderRadius:12, maxHeight:'75vh' }} />
           </div>
         </div>
@@ -2515,23 +2529,23 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
 
       {/* ── Уровень 2: упражнения тренировки ── */}
       {currentSlot&&createPortal(
-        <div style={{ position:'fixed', inset:0, background:'#f3f4f6', zIndex:1001, display:'flex', flexDirection:'column' }}>
-          <div style={{ background:'#fff', borderBottom:'1px solid #e5e7eb', padding:'14px 18px', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
+        <div style={{ position:'fixed', inset:0, background:SURF2, zIndex:1001, display:'flex', flexDirection:'column' }}>
+          <div style={{ background:SURF, borderBottom:`1px solid ${HAIR}`, padding:'14px 18px', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
             <button onClick={()=>setOpenSlotId(null)}
-              style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:'#6b7280', lineHeight:1, padding:0, minHeight:'unset' }}>←</button>
+              style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}>←</button>
             <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:17, fontWeight:700, color:'#111', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{currentSlot.title}</div>
-              <div style={{ fontSize:11, color:'#9ca3af' }}>{currentSlot.exercises.length} упражнений</div>
+              <div style={{ fontSize:17, fontWeight:700, color:TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{currentSlot.title}</div>
+              <div style={{ fontSize:11, color:TXT3 }}>{currentSlot.exercises.length} упражнений</div>
             </div>
             <div style={{ position:'relative' }}>
               <button onClick={e=>{e.stopPropagation();setOpenSlotHeaderMenu(v=>!v)}}
-                style={{ background:'none',border:'1px solid #e5e7eb',borderRadius:7,fontSize:16,cursor:'pointer',color:'#9ca3af',padding:'2px 8px',minHeight:'unset',lineHeight:1.4,letterSpacing:1 }}>⋯</button>
+                style={{ background:'none',border:`1px solid ${HAIR}`,borderRadius:7,fontSize:16,cursor:'pointer',color:TXT3,padding:'2px 8px',minHeight:'unset',lineHeight:1.4,letterSpacing:1 }}>⋯</button>
               {openSlotHeaderMenu&&(
                 <>
                   <div onClick={()=>setOpenSlotHeaderMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
-                  <div style={{ position:'absolute',top:34,right:0,background:'#fff',borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:180,overflow:'hidden',border:'1px solid #f0f0f0' }}>
+                  <div style={{ position:'absolute',top:34,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:180,overflow:'hidden',border:`1px solid ${HAIR}` }}>
                     <button onClick={()=>{setOpenSlotHeaderMenu(false);setEditingSlotTitle({id:currentSlot.id,title:currentSlot.title})}}
-                      style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:'1px solid #f3f4f6',background:'transparent',cursor:'pointer',textAlign:'left',color:'#111',fontSize:13 }}>✏️ Редактировать</button>
+                      style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:`1px solid ${HAIR}`,background:'transparent',cursor:'pointer',textAlign:'left',color:TXT,fontSize:13 }}>✏️ Редактировать</button>
                     <button onClick={()=>{setOpenSlotHeaderMenu(false);if(window.confirm(`Удалить тренировку «${currentSlot.title}»?`))deleteSlot(currentSlot.id)}}
                       style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:'#ef4444',fontSize:13 }}>🗑 Удалить</button>
                   </div>
@@ -2547,7 +2561,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               </button>
             )}
             {currentSlot.exercises.length===0&&(
-              <div style={{ textAlign:'center', color:'#c7cad1', fontSize:13, marginTop:40 }}>Нажми «+ Добавить упражнение»</div>
+              <div style={{ textAlign:'center', color:TXT3, fontSize:13, marginTop:40 }}>Нажми «+ Добавить упражнение»</div>
             )}
             {(()=>{
               const exArr=currentSlot.exercises
@@ -2568,18 +2582,18 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   <div style={{ display:'flex', alignItems:'flex-start', gap:12 }}>
                     <div style={{ flexShrink:0, width:36, height:36, borderRadius:'50%', background:PUR, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:700, color:'#fff' }}>{ex.num}</div>
                     <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:14, fontWeight:700, color:'#111', marginBottom:3 }}>{ex.name||'Упражнение'}</div>
-                      {ex.sets&&<div style={{ fontSize:12, color:'#6b7280', lineHeight:1.7 }}>{ex.sets}</div>}
+                      <div style={{ fontSize:14, fontWeight:700, color:TXT, marginBottom:3 }}>{ex.name||'Упражнение'}</div>
+                      {ex.sets&&<div style={{ fontSize:12, color:TXT3, lineHeight:1.7 }}>{ex.sets}</div>}
                     </div>
                     <div style={{ position:'relative',flexShrink:0 }}>
                       <button onClick={e=>{e.stopPropagation();setOpenExMenu(openExMenu===ex.id?null:ex.id)}}
-                        style={{ width:36,height:36,borderRadius:9,background:'#f3f4f6',border:'none',cursor:'pointer',fontSize:17,color:'#6b7280',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,letterSpacing:1,minHeight:'unset' }}>⋯</button>
+                        style={{ width:36,height:36,borderRadius:9,background:SURF2,border:'none',cursor:'pointer',fontSize:17,color:TXT3,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,letterSpacing:1,minHeight:'unset' }}>⋯</button>
                       {openExMenu===ex.id&&(
                         <>
                           <div onClick={()=>setOpenExMenu(null)} style={{ position:'fixed',inset:0,zIndex:19 }} />
-                          <div style={{ position:'absolute',top:40,right:0,background:'#fff',borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:180,overflow:'hidden',border:'1px solid #f0f0f0' }}>
+                          <div style={{ position:'absolute',top:40,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:180,overflow:'hidden',border:`1px solid ${HAIR}` }}>
                             <button onClick={()=>{setOpenExMenu(null);setEditingExercise({slotId:currentSlot.id,exId:ex.id,name:ex.name,sets:ex.sets})}}
-                              style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:'1px solid #f3f4f6',background:'transparent',cursor:'pointer',textAlign:'left',color:'#111',fontSize:13 }}>✏️ Редактировать</button>
+                              style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:`1px solid ${HAIR}`,background:'transparent',cursor:'pointer',textAlign:'left',color:TXT,fontSize:13 }}>✏️ Редактировать</button>
                             <button onClick={()=>{setOpenExMenu(null);deleteExercise(currentSlot.id,ex.id)}}
                               style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:'#ef4444',fontSize:13 }}>🗑 Удалить</button>
                           </div>
@@ -2587,11 +2601,11 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       )}
                     </div>
                   </div>
-                  <div style={{ marginTop:10, paddingTop:10, borderTop:'1px solid #f3f4f6' }}>
+                  <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${HAIR}` }}>
                     {ex.videoId?(
                       <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                         <span style={{ fontSize:18 }}>📹</span>
-                        <div style={{ flex:1, minWidth:0, fontSize:11, color:'#6b7280', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ex.videoName}</div>
+                        <div style={{ flex:1, minWidth:0, fontSize:11, color:TXT3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ex.videoName}</div>
                         <button onClick={()=>setPlayVideo({url:ex.videoUrl,name:ex.videoName})}
                           style={{ width:36, height:36, borderRadius:9, background:`${PUR}18`, border:'none', cursor:'pointer', fontSize:16, color:PUR, display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset' }}>▶</button>
                         <button onClick={()=>removeExerciseVideo(currentSlot.id,ex.id,ex.videoId)}
@@ -2599,7 +2613,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       </div>
                     ):(
                       <button onClick={()=>{uploadTargetRef.current={slotId:currentSlot.id,exId:ex.id};videoInputRef.current.click()}}
-                        style={{ fontSize:12, color:PUR, background:'#EEEDFE', border:'none', borderRadius:8, padding:'7px 14px', cursor:'pointer', fontWeight:600, minHeight:'unset' }}>
+                        style={{ fontSize:12, color:PUR, background:'rgba(124,122,240,0.14)', border:'none', borderRadius:8, padding:'7px 14px', cursor:'pointer', fontWeight:600, minHeight:'unset' }}>
                         📹 Добавить видео
                       </button>
                     )}
@@ -2607,22 +2621,22 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                 </div>
               )
               return groups.map((g,gi2)=>g.kind==='ss'?(
-                <div key={g.items[0].id} style={{ borderRadius:13, overflow:'hidden', marginBottom:10, border:`1.5px solid ${g.color}40`, boxShadow:`0 1px 4px ${g.color}18` }}>
+                <div key={g.items[0].id} style={{ borderRadius:20, overflow:'hidden', marginBottom:10, border:`1.5px solid ${g.color}40`, boxShadow:`0 1px 4px ${g.color}18` }}>
                   <div style={{ background:g.color, padding:'6px 14px', display:'flex', alignItems:'center', gap:6 }}>
                     <span style={{ fontSize:11, fontWeight:700, color:'#fff', letterSpacing:'0.3px' }}>⚡ СУПЕРСЕТ — без отдыха между упражнениями</span>
                   </div>
-                  <div style={{ background:'#fff' }}>
+                  <div style={{ background:SURF }}>
                     {g.items.map((ex,ii)=>renderExBody(ex,ii>0))}
                   </div>
                 </div>
               ):(
-                <div key={g.items[0].id} style={{ background:'#fff', borderRadius:13, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', marginBottom:10 }}>
+                <div key={g.items[0].id} style={{ background:SURF, borderRadius:20, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', marginBottom:10 }}>
                   {renderExBody(g.items[0],false)}
                 </div>
               ))
             })()}
             <button onClick={()=>addExercise(currentSlot.id)}
-              style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, width:'100%', padding:'14px', marginTop:4, borderRadius:12, border:`1.5px dashed ${PUR}`, background:'#EEEDFE', color:PUR, fontSize:14, fontWeight:700, cursor:'pointer', boxSizing:'border-box', minHeight:'unset' }}>
+              style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, width:'100%', padding:'14px', marginTop:4, borderRadius:12, border:`1.5px dashed ${PUR}`, background:'rgba(124,122,240,0.14)', color:PUR, fontSize:14, fontWeight:700, cursor:'pointer', boxSizing:'border-box', minHeight:'unset' }}>
               ＋ Добавить упражнение
             </button>
 
@@ -2634,8 +2648,8 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           по клику "▶ Начать тренировку" (второй путь выбора программы). */}
       {showAdoptProgramModal&&createPortal(
         <div onClick={()=>setShowAdoptProgramModal(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1400, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
-          <div onClick={e=>e.stopPropagation()} style={{ background:'#fff', borderRadius:16, padding:'22px 20px', maxWidth:340, width:'100%', boxSizing:'border-box' }}>
-            <div style={{ fontSize:16, fontWeight:700, color:'#111', textAlign:'center', marginBottom:20, lineHeight:1.4 }}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:SURF, borderRadius:16, padding:'22px 20px', maxWidth:340, width:'100%', boxSizing:'border-box' }}>
+            <div style={{ fontSize:16, fontWeight:700, color:TXT, textAlign:'center', marginBottom:20, lineHeight:1.4 }}>
               Начать тренироваться по программе «{openFolder}»?
             </div>
             <button onClick={async()=>{const{ok}=await selectProgram(openFolder);if(ok){setShowAdoptProgramModal(false);startSlotWorkout()}}}
@@ -2643,7 +2657,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               Да, буду тренироваться по этой программе
             </button>
             <button onClick={()=>setShowAdoptProgramModal(false)}
-              style={{ width:'100%', padding:'11px', borderRadius:12, border:'none', background:'none', color:'#9ca3af', fontSize:13, cursor:'pointer' }}>
+              style={{ width:'100%', padding:'11px', borderRadius:12, border:'none', background:'none', color:TXT3, fontSize:13, cursor:'pointer' }}>
               Отмена
             </button>
           </div>
@@ -2656,12 +2670,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           программе, см. buildExerciseAggregates в workoutPrompt.js). */}
       {showSwitchProgramModal&&createPortal(
         <div onClick={()=>setShowSwitchProgramModal(null)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1400, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
-          <div onClick={e=>e.stopPropagation()} style={{ background:'#fff', borderRadius:16, padding:'22px 20px', maxWidth:360, width:'100%', boxSizing:'border-box' }}>
-            <div style={{ fontSize:15, fontWeight:700, color:'#111', textAlign:'center', marginBottom:10, lineHeight:1.4 }}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:SURF, borderRadius:16, padding:'22px 20px', maxWidth:360, width:'100%', boxSizing:'border-box' }}>
+            <div style={{ fontSize:15, fontWeight:700, color:TXT, textAlign:'center', marginBottom:10, lineHeight:1.4 }}>
               Ты тренируешься по программе «{showSwitchProgramModal.from}», выполнено {showSwitchProgramModal.count} из {SLOT_COUNT} тренировок.
               <br />Перейти на «{showSwitchProgramModal.to}»?
             </div>
-            <div style={{ fontSize:12.5, color:'#6b7280', textAlign:'center', lineHeight:1.5, marginBottom:20 }}>
+            <div style={{ fontSize:12.5, color:TXT3, textAlign:'center', lineHeight:1.5, marginBottom:20 }}>
               Прогресс не потеряется: веса, которые ты набрал в упражнениях, сохранятся и в новой программе.
             </div>
             <button onClick={async()=>{const to=showSwitchProgramModal.to;const{ok}=await selectProgram(to);if(ok){setShowSwitchProgramModal(null);startSlotWorkout()}}}
@@ -2669,7 +2683,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               Перейти на «{showSwitchProgramModal.to}»
             </button>
             <button onClick={()=>setShowSwitchProgramModal(null)}
-              style={{ width:'100%', padding:'11px', borderRadius:12, border:'none', background:'none', color:'#9ca3af', fontSize:13, cursor:'pointer' }}>
+              style={{ width:'100%', padding:'11px', borderRadius:12, border:'none', background:'none', color:TXT3, fontSize:13, cursor:'pointer' }}>
               Остаться на «{showSwitchProgramModal.from}»
             </button>
           </div>
@@ -2680,12 +2694,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           три варианта дальше, каждый заметная кнопка с подписью под ней. */}
       {completedProgramModal&&createPortal(
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1400, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
-          <div style={{ background:'#fff', borderRadius:16, padding:'24px 20px', maxWidth:380, width:'100%', boxSizing:'border-box' }}>
+          <div style={{ background:SURF, borderRadius:16, padding:'24px 20px', maxWidth:380, width:'100%', boxSizing:'border-box' }}>
             <div style={{ fontSize:34, textAlign:'center', marginBottom:8 }}>🎉</div>
-            <div style={{ fontSize:18, fontWeight:700, color:'#111', textAlign:'center', marginBottom:8 }}>
+            <div style={{ fontSize:18, fontWeight:700, color:TXT, textAlign:'center', marginBottom:8 }}>
               Программа «{completedProgramModal}» пройдена!
             </div>
-            <div style={{ fontSize:13.5, color:'#6b7280', textAlign:'center', lineHeight:1.5, marginBottom:22 }}>
+            <div style={{ fontSize:13.5, color:TXT3, textAlign:'center', lineHeight:1.5, marginBottom:22 }}>
               Ты прошёл все 12 тренировок. Отличная работа.
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
@@ -2694,7 +2708,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   style={{ width:'100%', padding:'13px', borderRadius:12, border:'none', background:PUR, color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer' }}>
                   Пройти «{completedProgramModal}» заново
                 </button>
-                <div style={{ fontSize:11.5, color:'#9ca3af', textAlign:'center', lineHeight:1.4, marginTop:6 }}>
+                <div style={{ fontSize:11.5, color:TXT3, textAlign:'center', lineHeight:1.4, marginTop:6 }}>
                   Начнёшь сначала, но веса приложение подберёт от твоего текущего уровня, а не со старта.
                 </div>
               </div>
@@ -2703,7 +2717,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   style={{ width:'100%', padding:'13px', borderRadius:12, border:`1.5px solid ${PUR}`, background:'none', color:PUR, fontSize:14, fontWeight:700, cursor:'pointer' }}>
                   Выбрать другую программу
                 </button>
-                <div style={{ fontSize:11.5, color:'#9ca3af', textAlign:'center', lineHeight:1.4, marginTop:6 }}>
+                <div style={{ fontSize:11.5, color:TXT3, textAlign:'center', lineHeight:1.4, marginTop:6 }}>
                   Твой прогресс сохранится — в новой программе веса в знакомых упражнениях останутся набранными.
                 </div>
               </div>
@@ -2712,7 +2726,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   style={{ display:'block', width:'100%', padding:'13px', borderRadius:12, border:'none', background:'#16a34a', color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', textAlign:'center', textDecoration:'none', boxSizing:'border-box' }}>
                   Написать тренеру
                 </a>
-                <div style={{ fontSize:11.5, color:'#9ca3af', textAlign:'center', lineHeight:1.4, marginTop:6 }}>
+                <div style={{ fontSize:11.5, color:TXT3, textAlign:'center', lineHeight:1.4, marginTop:6 }}>
                   Максим посмотрит твой прогресс детально и подскажет, куда двигаться дальше. Рекомендую этот вариант.
                 </div>
               </div>
@@ -2723,14 +2737,14 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
 
       {/* ── Уровень 1: список тренировок в папке ── */}
       {openFolder&&createPortal(
-        <div style={{ position:'fixed', inset:0, background:'#f3f4f6', zIndex:1000, display:'flex', flexDirection:'column' }}>
-          <div style={{ background:'#fff', borderBottom:'1px solid #e5e7eb', padding:'14px 18px', display:'flex', alignItems:'center', gap:14, flexShrink:0 }}>
+        <div style={{ position:'fixed', inset:0, background:SURF2, zIndex:1000, display:'flex', flexDirection:'column' }}>
+          <div style={{ background:SURF, borderBottom:`1px solid ${HAIR}`, padding:'14px 18px', display:'flex', alignItems:'center', gap:14, flexShrink:0 }}>
             <button onClick={()=>setOpenFolder(null)}
-              style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:'#6b7280', lineHeight:1, padding:0, minHeight:'unset' }}>←</button>
+              style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}>←</button>
             <span style={{ fontSize:22 }}>{FOLDER_ICONS[openFolder]}</span>
             <div>
-              <div style={{ fontSize:17, fontWeight:700, color:'#111' }}>{openFolder}</div>
-              <div style={{ fontSize:11, color:'#9ca3af' }}>
+              <div style={{ fontSize:17, fontWeight:700, color:TXT }}>{openFolder}</div>
+              <div style={{ fontSize:11, color:TXT3 }}>
                 {SLOT_COUNT} тренировок · {folderSlots[openFolder].reduce((s,sl)=>s+sl.exercises.filter(e=>e.videoId).length,0)} видео
               </div>
             </div>
@@ -2749,15 +2763,15 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               const completions=workoutsSinceCycleStart(openFolder).filter(w=>w.name===slotName)
               const lastDate=completions.length?completions.reduce((max,w)=>w.date>max?w.date:max,completions[0].date):null
               return (
-                <div key={slot.id} style={{ background:'#fff', borderRadius:13, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', marginBottom:10, display:'flex', flexDirection:'column', alignItems:'center', padding:'16px 16px 14px', cursor:'pointer', position:'relative' }}
+                <div key={slot.id} style={{ background:SURF, borderRadius:20, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', marginBottom:10, display:'flex', flexDirection:'column', alignItems:'center', padding:'16px 16px 14px', cursor:'pointer', position:'relative' }}
                   onClick={()=>setOpenSlotId(slot.id)}>
-                  <div style={{ position:'absolute', top:14, left:14, width:36, height:36, borderRadius:'50%', background:ec>0?PUR:'#f3f4f6', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:ec>0?'#fff':'#9ca3af' }}>
+                  <div style={{ position:'absolute', top:14, left:14, width:36, height:36, borderRadius:'50%', background:ec>0?PUR:SURF2, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:ec>0?'#fff':TXT3 }}>
                     {slot.slotNum}
                   </div>
-                  <span style={{ position:'absolute', top:18, right:14, fontSize:18, color:'#c7cad1' }}>›</span>
+                  <span style={{ position:'absolute', top:18, right:14, fontSize:18, color:TXT3 }}>›</span>
                   <div style={{ textAlign:'center', paddingTop:6 }}>
-                    <div style={{ fontSize:16, fontWeight:700, color:'#111', marginBottom:4 }}>{slot.title}</div>
-                    <div style={{ fontSize:12, color:'#9ca3af' }}>
+                    <div style={{ fontSize:16, fontWeight:700, color:TXT, marginBottom:4 }}>{slot.title}</div>
+                    <div style={{ fontSize:12, color:TXT3 }}>
                       {ec===0?'Нет упражнений':`${ec} упр.${vc>0?` · ${vc} видео`:''}`}
                     </div>
                     {completions.length>0&&(
@@ -2779,27 +2793,27 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           строкой, не мешают основному списку папок ниже; пусто (нет строки
           для этого клиента) — баннер просто не рендерится вообще. */}
       {assignedProgramLoading?(
-        <div style={{ fontSize:12, color:'#9ca3af', marginBottom:14, padding:'4px 2px' }}>Загрузка программы от тренера...</div>
+        <div style={{ fontSize:12, color:TXT3, marginBottom:14, padding:'4px 2px' }}>Загрузка программы от тренера...</div>
       ):assignedProgramError?(
         <div style={{ fontSize:12, color:'#ef4444', marginBottom:14, padding:'4px 2px', display:'flex', alignItems:'center', gap:8 }}>
           Не удалось загрузить программу от тренера
-          <button onClick={loadAssignedProgram} style={{ fontSize:11, color:PUR, background:'none', border:'1px solid #e5e7eb', borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>Повторить</button>
+          <button onClick={loadAssignedProgram} style={{ fontSize:11, color:PUR, background:'none', border:`1px solid ${HAIR}`, borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>Повторить</button>
         </div>
       ):assignedProgram&&(
-        <Card style={{ marginBottom:14, border:`1.5px solid ${PUR}33`, background:'#EEEDFE' }}>
+        <Card style={{ marginBottom:14, border:`1.5px solid ${PUR}33`, background:'rgba(124,122,240,0.14)' }}>
           <div style={{ fontSize:12, fontWeight:700, color:PUR, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:8 }}>
             📋 Программа от тренера
           </div>
-          <div style={{ fontSize:15, fontWeight:700, color:'#111', marginBottom:10 }}>{assignedProgram.title||'Программа'}</div>
+          <div style={{ fontSize:15, fontWeight:700, color:TXT, marginBottom:10 }}>{assignedProgram.title||'Программа'}</div>
           <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
             {(Array.isArray(assignedProgram.structure)?assignedProgram.structure:[]).map((w,wi)=>(
-              <div key={wi} style={{ background:'#fff', borderRadius:10, padding:'10px 12px' }}>
-                <div style={{ fontSize:13, fontWeight:600, color:'#111', marginBottom:6 }}>{w.name||`Тренировка ${wi+1}`}</div>
+              <div key={wi} style={{ background:SURF, borderRadius:10, padding:'10px 12px' }}>
+                <div style={{ fontSize:13, fontWeight:600, color:TXT, marginBottom:6 }}>{w.name||`Тренировка ${wi+1}`}</div>
                 <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
                   {(w.exercises||[]).map((ex,ei)=>(
-                    <div key={ei} style={{ fontSize:12, color:'#374151' }}>
+                    <div key={ei} style={{ fontSize:12, color:TXT2 }}>
                       <span style={{ fontWeight:500 }}>{ex.name}</span>
-                      {ex.sets&&<span style={{ color:'#6b7280' }}>{': '}{ex.sets}</span>}
+                      {ex.sets&&<span style={{ color:TXT3 }}>{': '}{ex.sets}</span>}
                     </div>
                   ))}
                 </div>
@@ -2815,16 +2829,16 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         const totalVids=folderSlots[folder].reduce((s,sl)=>s+sl.exercises.filter(e=>e.videoId).length,0)
         const isSelected=selectedProgram===folder
         return (
-          <Card key={folder} style={{ marginBottom:10, cursor:'pointer', position:'relative', border:isSelected?`1.5px solid ${PUR}`:'1.5px solid transparent', background:isSelected?'#EEEDFE':'#fff' }}
+          <Card key={folder} style={{ marginBottom:10, cursor:'pointer', position:'relative', border:isSelected?`1.5px solid ${PUR}`:'1.5px solid transparent', background:isSelected?'rgba(124,122,240,0.14)':SURF }}
             onClick={()=>setOpenFolder(folder)}>
-            <span style={{ position:'absolute', top:'50%', right:16, transform:'translateY(-50%)', fontSize:20, color:'#c7cad1' }}>›</span>
+            <span style={{ position:'absolute', top:'50%', right:16, transform:'translateY(-50%)', fontSize:20, color:TXT3 }}>›</span>
             <button onClick={e=>{e.stopPropagation();setInfoFolder(folder)}}
-              style={{ position:'absolute', top:10, left:12, width:22, height:22, borderRadius:'50%', border:'1px solid #e5e7eb', background:'#f9fafb', color:'#9ca3af', fontSize:12, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset', padding:0 }}>?</button>
+              style={{ position:'absolute', top:10, left:12, width:22, height:22, borderRadius:'50%', border:`1px solid ${HAIR}`, background:SURF2, color:TXT3, fontSize:12, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset', padding:0 }}>?</button>
             {isSelected&&<span style={{ position:'absolute', top:10, right:16, fontSize:15, color:PUR }}>✓</span>}
             <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingRight:20 }}>
               <div style={{ fontSize:28, marginBottom:6 }}>{FOLDER_ICONS[folder]}</div>
-              <div style={{ fontSize:16, fontWeight:700, color:'#111', textAlign:'center' }}>{folder}</div>
-              <div style={{ fontSize:12, color:'#9ca3af', marginTop:3, textAlign:'center' }}>
+              <div style={{ fontSize:16, fontWeight:700, color:TXT, textAlign:'center' }}>{folder}</div>
+              <div style={{ fontSize:12, color:TXT3, marginTop:3, textAlign:'center' }}>
                 {SLOT_COUNT} тренировок · {totalEx} упр.{totalVids>0?` · ${totalVids} видео`:''}
               </div>
             </div>
@@ -2835,16 +2849,16 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       {/* ── Модалка описания программы ── */}
       {infoFolder&&createPortal(
         <div onClick={()=>setInfoFolder(null)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:1300, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
-          <div onClick={e=>e.stopPropagation()} style={{ background:'#fff', borderRadius:16, padding:'22px 20px', maxWidth:340, width:'100%', boxSizing:'border-box' }}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:SURF, borderRadius:16, padding:'22px 20px', maxWidth:340, width:'100%', boxSizing:'border-box' }}>
             <div style={{ fontSize:32, textAlign:'center', marginBottom:8 }}>{FOLDER_ICONS[infoFolder]}</div>
-            <div style={{ fontSize:17, fontWeight:700, color:'#111', textAlign:'center', marginBottom:8 }}>{infoFolder}</div>
-            <div style={{ fontSize:13, color:'#6b7280', textAlign:'center', lineHeight:1.5, marginBottom:18 }}>{FOLDER_DESCRIPTIONS[infoFolder]||''}</div>
+            <div style={{ fontSize:17, fontWeight:700, color:TXT, textAlign:'center', marginBottom:8 }}>{infoFolder}</div>
+            <div style={{ fontSize:13, color:TXT3, textAlign:'center', lineHeight:1.5, marginBottom:18 }}>{FOLDER_DESCRIPTIONS[infoFolder]||''}</div>
             <button onClick={()=>selectProgram(infoFolder)}
-              style={{ width:'100%', padding:'13px', borderRadius:12, border:'none', background:selectedProgram===infoFolder?'#e5e7eb':PUR, color:selectedProgram===infoFolder?'#6b7280':'#fff', fontSize:14, fontWeight:700, cursor:'pointer', marginBottom:8 }}>
+              style={{ width:'100%', padding:'13px', borderRadius:12, border:'none', background:selectedProgram===infoFolder?SURF2:PUR, color:selectedProgram===infoFolder?TXT3:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', marginBottom:8 }}>
               {selectedProgram===infoFolder?'✓ Эта программа выбрана':'Тренироваться по этой программе'}
             </button>
             <button onClick={()=>setInfoFolder(null)}
-              style={{ width:'100%', padding:'11px', borderRadius:12, border:'none', background:'none', color:'#9ca3af', fontSize:13, cursor:'pointer' }}>
+              style={{ width:'100%', padding:'11px', borderRadius:12, border:'none', background:'none', color:TXT3, fontSize:13, cursor:'pointer' }}>
               Закрыть
             </button>
           </div>
@@ -7174,7 +7188,7 @@ export default function App() {
 
       {isMobile ? (
         /* ── МОБИЛЬНЫЙ LAYOUT ── */
-        <div style={{ display:'flex', flexDirection:'column', minHeight:'100vh', fontFamily:'system-ui,sans-serif', background:'#f9fafb' }}>
+        <div style={{ display:'flex', flexDirection:'column', minHeight:'100vh', fontFamily:'system-ui,sans-serif', background:BG, color:TXT }}>
 
           {/* Мобильный хедер */}
           <div style={{ position:'fixed', top:0, left:0, right:0, height:MOBILE_TOP_H, background:'#fff', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 16px', zIndex:901, flexShrink:0 }}>
@@ -7195,7 +7209,7 @@ export default function App() {
 
           <nav className="bottom-nav" style={{
             position:'fixed', bottom:0, left:0, right:0,
-            background:'#fff', borderTop:'1px solid #e5e7eb',
+            background:'rgba(20,20,22,0.86)', backdropFilter:'blur(20px)', WebkitBackdropFilter:'blur(20px)', borderTop:`1px solid ${SEP}`,
             display:'flex', height:BOTTOM_NAV_H, zIndex:900,
           }}>
             {NAV_MOBILE.filter(item=>userRole==='trainer'||item.id!=='clients').map(item=>{
@@ -7206,9 +7220,9 @@ export default function App() {
                   gap:3, border:'none', background:'none', cursor:'pointer', padding:'0 2px',
                   position:'relative', minHeight:'unset',
                 }}>
-                  <div style={{ position:'absolute', top:0, left:'50%', transform:'translateX(-50%)', width:active?28:0, height:2.5, borderRadius:'0 0 3px 3px', background:PUR, transition:'width 0.18s' }} />
+                  <div style={{ position:'absolute', top:0, left:'50%', transform:'translateX(-50%)', width:active?28:0, height:2.5, borderRadius:'0 0 3px 3px', background:ACCENT2, transition:'width 0.18s' }} />
                   <span style={{ fontSize:22, lineHeight:1 }}>{item.icon}</span>
-                  <span style={{ fontSize:11, fontWeight:active?700:400, color:active?PUR:'#9ca3af' }}>{item.label}</span>
+                  <span style={{ fontSize:11, fontWeight:active?700:400, color:active?ACCENT2:TXT3 }}>{item.label}</span>
                 </button>
               )
             })}
@@ -7259,7 +7273,7 @@ export default function App() {
         </div>
       ) : (
         /* ── ДЕСКТОПНЫЙ LAYOUT ── */
-        <div style={{ display:'flex', minHeight:'100vh', fontFamily:'system-ui,sans-serif', background:'#f9fafb' }}>
+        <div style={{ display:'flex', minHeight:'100vh', fontFamily:'system-ui,sans-serif', background:BG, color:TXT }}>
           <div style={{ width:190, background:'#fff', borderRight:'1px solid #e5e7eb', display:'flex', flexDirection:'column', flexShrink:0 }}>
             <div style={{ padding:'16px 14px 12px', borderBottom:'1px solid #e5e7eb' }}>
               <div onClick={()=>setShowProfileView(true)} style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
