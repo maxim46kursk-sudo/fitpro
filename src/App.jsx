@@ -5726,8 +5726,8 @@ function SettingsView({ user, performLogout }) {
           <div style={{fontSize:12,color:TXT3,marginBottom:10}}>История автоматически очищается раз в 30 дней. Перед очисткой ты получишь письмо с архивом на твой email.</div>
           {!clearConfirm?(
             <button onClick={()=>setClearConfirm(true)} style={{
-              width:'100%',padding:'11px',borderRadius:10,border:'1.5px solid #fee2e2',
-              background:'#fff5f5',color:'#ef4444',fontSize:14,fontWeight:600,cursor:'pointer',minHeight:'unset',
+              width:'100%',padding:'11px',borderRadius:10,border:'1px solid rgba(255,69,58,.40)',
+              background:'rgba(255,69,58,.12)',color:DANGER,fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset',
             }}>Очистить историю чата</button>
           ):(
             <div style={{display:'flex',gap:8}}>
@@ -5748,8 +5748,8 @@ function SettingsView({ user, performLogout }) {
           }}>📤 Скачать мои данные</button>
           {!deleteConfirm?(
             <button onClick={()=>setDeleteConfirm(true)} style={{
-              width:'100%',padding:'11px',borderRadius:10,border:'1.5px solid #fee2e2',
-              background:'#fff5f5',color:'#ef4444',fontSize:14,fontWeight:600,cursor:'pointer',minHeight:'unset',
+              width:'100%',padding:'11px',borderRadius:10,border:'1px solid rgba(255,69,58,.40)',
+              background:'rgba(255,69,58,.12)',color:DANGER,fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset',
             }}>🗑 Удалить все мои данные</button>
           ):(
             <div style={{background:'#fff5f5',borderRadius:12,padding:'14px',border:'1.5px solid #fecaca'}}>
@@ -6110,7 +6110,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
               <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>Цель</label>
               {/* Строка-триггер */}
               <button onClick={()=>setShowGoalPicker(v=>!v)}
-                style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${profile.goal?PUR:HAIR}`,background:profile.goal?'#EEEDFE':SURF,cursor:'pointer',textAlign:'left',minHeight:'unset',transition:'all 0.2s'}}>
+                style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${profile.goal?PUR:HAIR}`,background:profile.goal?'rgba(124,122,240,.14)':SURF2,cursor:'pointer',textAlign:'left',minHeight:'unset',transition:'all 0.2s'}}>
                 <span style={{fontSize:15,fontWeight:600,color:profile.goal?PUR:TXT3}}>
                   {profile.goal||'Выбрать цель...'}
                 </span>
@@ -6126,7 +6126,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                     {val:'Рельеф',      icon:'✂️'},
                   ].map(opt=>(
                     <button key={opt.val} onClick={()=>{setProfile(p=>({...p,goal:opt.val}));setShowGoalPicker(false)}}
-                      style={{display:'flex',alignItems:'center',gap:10,padding:'11px 14px',borderRadius:10,border:`1.5px solid ${profile.goal===opt.val?PUR:HAIR}`,background:profile.goal===opt.val?'#EEEDFE':SURF,cursor:'pointer',textAlign:'left',minHeight:'unset',transition:'all 0.15s'}}>
+                      style={{display:'flex',alignItems:'center',gap:10,padding:'11px 14px',borderRadius:10,border:`1.5px solid ${profile.goal===opt.val?PUR:HAIR}`,background:profile.goal===opt.val?'rgba(124,122,240,.14)':SURF2,cursor:'pointer',textAlign:'left',minHeight:'unset',transition:'all 0.15s'}}>
                       <span style={{fontSize:18}}>{opt.icon}</span>
                       <span style={{fontSize:15,fontWeight:600,color:profile.goal===opt.val?PUR:TXT2}}>{opt.val}</span>
                       {profile.goal===opt.val&&<span style={{marginLeft:'auto',fontSize:15,color:PUR}}>✓</span>}
@@ -6185,36 +6185,36 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
             </div>
 
             {/* Активность */}
-            <div style={{background:'#f0eeff',borderRadius:12,padding:'14px 16px'}}>
+            <div style={{background:SURF,border:`1px solid ${HAIR}`,borderRadius:12,padding:'14px 16px'}}>
               <div style={{fontSize:14,fontWeight:700,color:PUR,marginBottom:12}}>Активность</div>
               <div style={{display:'flex',flexDirection:'column',gap:12}}>
                 <div>
-                  <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>Шагов в день (среднее)</label>
+                  <label style={{fontSize:13,fontWeight:600,color:TXT2,display:'block',marginBottom:6}}>Шагов в день (среднее)</label>
                   <input value={profile.steps||''} type="number" placeholder="например 8000"
                     onChange={e=>setProfile(p=>({...p,steps:e.target.value}))}
-                    style={{width:'100%',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,fontSize:15,color:TXT,outline:'none',boxSizing:'border-box',background:SURF}}
+                    style={{width:'100%',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,fontSize:15,color:TXT,outline:'none',boxSizing:'border-box',background:SURF2}}
                     onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                 </div>
                 <div>
-                  <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>Тренировок в неделю</label>
+                  <label style={{fontSize:13,fontWeight:600,color:TXT2,display:'block',marginBottom:6}}>Тренировок в неделю</label>
                   <input value={profile.gymDays||''} type="number" placeholder="например 3"
                     onChange={e=>setProfile(p=>({...p,gymDays:e.target.value}))}
-                    style={{width:'100%',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,fontSize:15,color:TXT,outline:'none',boxSizing:'border-box',background:SURF}}
+                    style={{width:'100%',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,fontSize:15,color:TXT,outline:'none',boxSizing:'border-box',background:SURF2}}
                     onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                 </div>
                 <div>
-                  <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>Род деятельности</label>
+                  <label style={{fontSize:13,fontWeight:600,color:TXT2,display:'block',marginBottom:6}}>Род деятельности</label>
                   <input value={profile.occupation||''} type="text" placeholder="например: сидячая работа, много стою, физический труд"
                     onChange={e=>setProfile(p=>({...p,occupation:e.target.value}))}
-                    style={{width:'100%',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,fontSize:15,color:TXT,outline:'none',boxSizing:'border-box',background:SURF}}
+                    style={{width:'100%',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,fontSize:15,color:TXT,outline:'none',boxSizing:'border-box',background:SURF2}}
                     onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                 </div>
                 <div>
-                  <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>Уровень активности</label>
+                  <label style={{fontSize:13,fontWeight:600,color:TXT2,display:'block',marginBottom:6}}>Уровень активности</label>
                   <div style={{display:'flex',gap:8}}>
                     {[['sedentary','Малоподвижный'],['moderate','Умеренный'],['high','Высокий']].map(([val,lbl])=>(
                       <button key={val} type="button" onClick={()=>setProfile(p=>({...p,activityLevel:val}))}
-                        style={{flex:1,padding:'10px 6px',borderRadius:10,border:`1.5px solid ${profile.activityLevel===val?PUR:HAIR}`,background:profile.activityLevel===val?`${PUR}12`:SURF,color:profile.activityLevel===val?PUR:TXT3,fontSize:12,fontWeight:600,cursor:'pointer',minHeight:'unset'}}>
+                        style={{flex:1,padding:'10px 6px',borderRadius:10,border:`1.5px solid ${profile.activityLevel===val?PUR:HAIR}`,background:profile.activityLevel===val?'rgba(124,122,240,.14)':SURF2,color:profile.activityLevel===val?PUR:TXT2,fontSize:12,fontWeight:600,cursor:'pointer',minHeight:'unset'}}>
                         {lbl}
                       </button>
                     ))}
@@ -6233,14 +6233,14 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
         {tab==='measurements'&&(
           <div>
             {/* Подсказка о замерах */}
-            <div style={{display:'flex',gap:10,background:'#fff8e6',border:'1px solid #fcd34d',borderRadius:12,padding:'12px 14px',marginBottom:18,alignItems:'flex-start'}}>
+            <div style={{display:'flex',gap:10,background:'rgba(255,159,10,.10)',border:'1px solid rgba(255,159,10,.30)',borderRadius:12,padding:'12px 14px',marginBottom:18,alignItems:'flex-start'}}>
               <span style={{fontSize:16,flexShrink:0}}>❗</span>
-              <div style={{fontSize:13,color:'#92400e',lineHeight:1.6}}>
-                <b>Важно:</b> все замеры делаются в самых выпуклых (наибольших) точках тела. Мышцы расслаблены, лента расположена горизонтально, без натяжения.
+              <div style={{fontSize:13,color:TXT,lineHeight:1.6}}>
+                <b style={{color:'#FF9F0A'}}>Важно:</b> все замеры делаются в самых выпуклых (наибольших) точках тела. Мышцы расслаблены, лента расположена горизонтально, без натяжения.
               </div>
             </div>
 
-            <button onClick={()=>setShowAddM(true)} style={{width:'100%',padding:'14px',borderRadius:12,border:`2px dashed ${PUR}`,background:'#f0eeff',color:PUR,fontSize:15,fontWeight:700,cursor:'pointer',marginBottom:20}}>
+            <button onClick={()=>setShowAddM(true)} style={{width:'100%',padding:'14px',borderRadius:12,border:`2px dashed ${PUR}`,background:'rgba(124,122,240,.10)',color:PUR,fontSize:15,fontWeight:700,cursor:'pointer',marginBottom:20}}>
               + Добавить замеры
             </button>
 
