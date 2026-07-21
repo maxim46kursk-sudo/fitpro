@@ -4525,17 +4525,17 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 <div onClick={()=>setShowWorkoutMenu(false)} style={{ position:'fixed',inset:0,zIndex:10 }} />
                 <div style={{ position:'absolute',top:42,right:0,background:SURF,borderRadius:13,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:228,overflow:'hidden',border:`1px solid ${HAIR}` }}>
                   {[
-                    {icon:'📅',label:'Запланировать тренировку',sub:'Назначить дату'},
-                    {icon:'▶️',label:'Начать тренировку',sub:'Запустить прямо сейчас',key:'start'},
-                    {icon:'✅',label:'Добавить выполненную',sub:'Записать прошедшую',key:'done'},
-                    {icon:'📋',label:'Шаблон тренировки',sub:'Выбрать из готовых',key:'template'},
+                    {ic:'solar:calendar-bold',color:PUR,label:'Запланировать тренировку',sub:'Назначить дату'},
+                    {ic:'solar:play-bold',color:TEA,label:'Начать тренировку',sub:'Запустить прямо сейчас',key:'start'},
+                    {ic:'solar:check-circle-bold',color:TEA,label:'Добавить выполненную',sub:'Записать прошедшую',key:'done'},
+                    {ic:'solar:clipboard-bold',color:BLU,label:'Шаблон тренировки',sub:'Выбрать из готовых',key:'template'},
                   ].map((item,idx)=>(
                     <button key={idx} onClick={()=>{
                       setShowWorkoutMenu(false)
                       if(item.key){if(onWorkoutAction)onWorkoutAction(item.key)}
                       else{setShowScheduleForm(true)}
                     }} style={{ display:'flex',alignItems:'center',gap:11,width:'100%',padding:'11px 15px',border:'none',borderTop:idx>0?`1px solid ${HAIR}`:'none',background:'transparent',cursor:'pointer',textAlign:'left' }}>
-                      <span style={{ fontSize:19,flexShrink:0 }}>{item.icon}</span>
+                      <Ic name={item.ic} size={22} color={item.color} />
                       <div>
                         <div style={{ fontSize:13,fontWeight:500,color:TXT }}>{item.label}</div>
                         <div style={{ fontSize:11,color:TXT3 }}>{item.sub}</div>
@@ -4618,10 +4618,10 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                       {openCardMenu===i&&(
                         <div onClick={e=>e.stopPropagation()} style={{ position:'absolute',top:34,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:200,overflow:'hidden',border:`1px solid ${HAIR}` }}>
                           {[
-                            {icon:'✏️',label:'Редактировать тренировку'},
-                            {icon:'📋',label:'Копировать тренировку'},
-                            {icon:'📁',label:'Сделать шаблон'},
-                            {icon:'🗑',label:'Удалить тренировку',danger:true},
+                            {ic:'solar:pen-bold',color:TXT2,label:'Редактировать тренировку'},
+                            {ic:'solar:copy-bold',color:TXT2,label:'Копировать тренировку'},
+                            {ic:'solar:folder-bold',color:TXT2,label:'Сделать шаблон'},
+                            {ic:'solar:trash-bin-minimalistic-bold',color:DANGER,label:'Удалить тренировку',danger:true},
                           ].map((item,idx)=>(
                             <button key={idx} onClick={()=>{
                               setOpenCardMenu(null)
@@ -4632,7 +4632,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                                 if(window.confirm(`Удалить тренировку «${w.name}»?`)){if(onDeleteWorkout)onDeleteWorkout(w.histIdx);setSelIdx(null)}
                               }
                             }} style={{ display:'flex',alignItems:'center',gap:10,width:'100%',padding:'11px 15px',border:'none',borderTop:idx>0?`1px solid ${HAIR}`:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:item.danger?'#ef4444':TXT,fontSize:13 }}>
-                              <span>{item.icon}</span>{item.label}
+                              <Ic name={item.ic} size={20} color={item.color} />{item.label}
                             </button>
                           ))}
                         </div>

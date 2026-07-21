@@ -69,6 +69,11 @@ const SOLAR = [
   'women-bold',               // пол: женский
   'scissors-bold',            // цель «рельеф»
   'magic-stick-3-bold',       // «первое приложение с AI»
+  'play-bold',                // начать тренировку
+  'check-circle-bold',        // добавить выполненную / готово
+  'sun-bold',                 // утро
+  'moon-bold',                // вечер
+  'clock-circle-bold',        // таймер / время
 ]
 
 const SETS = [
