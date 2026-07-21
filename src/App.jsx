@@ -4668,7 +4668,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
             <div onClick={()=>onOpenAI('nutrition')} style={{ display:'flex',alignItems:'center',gap:12,background:'linear-gradient(135deg,#1D9E7518,#1D9E7508)',border:'1.5px solid #1D9E7544',borderRadius:14,padding:'12px 16px',marginBottom:14,cursor:'pointer' }}>
               <div style={{ width:38,height:38,borderRadius:'50%',background:'linear-gradient(135deg,#1D9E75,#157a5b)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0 }}>🤖</div>
               <div style={{ flex:1 }}>
-                <div style={{ fontSize:13,fontWeight:700,color:'#1D9E75' }}>Спросить AI диетолога</div>
+                <div style={{ fontSize:13,fontWeight:700,color:'#1D9E75' }}>Спросить AI-ассистента</div>
                 <div style={{ fontSize:11,color:'#9ca3af',marginTop:1 }}>Знает твой план и остаток калорий</div>
               </div>
               <span style={{ fontSize:18,color:'#1D9E75' }}>›</span>
@@ -5684,8 +5684,8 @@ function SettingsView({ user, performLogout }) {
       </Section>
 
       {/* AI ассистент */}
-      <Section title="AI ассистент">
-        <Row label="Стиль AI ассистента" sub={aiStyle==='ask'?'Уточняет граммовки и детали перед записью еды':'Сам прикидывает и сразу записывает, потом можно поправить'} right={
+      <Section title="AI-ассистент">
+        <Row label="Стиль AI-ассистента" sub={aiStyle==='ask'?'Уточняет граммовки и детали перед записью еды':'Сам прикидывает и сразу записывает, потом можно поправить'} right={
           <div style={{display:'flex',gap:4}}>
             {[['ask','Спрашивай меня'],['act','Действуй сам']].map(([v,lbl])=>(
               <button key={v} onClick={()=>saveAiStyle(v)} style={{

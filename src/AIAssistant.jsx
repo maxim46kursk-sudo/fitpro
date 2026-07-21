@@ -617,7 +617,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
             }}>←</button>
             <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,#7F77DD,#5b54c4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🤖</div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: '#111', lineHeight: 1.2 }}>AI Ассистент</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#111', lineHeight: 1.2 }}>AI-ассистент</div>
               <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 500 }}>● онлайн</div>
             </div>
             {/* Постоянная кнопка в дневник — всегда видна, не только после SET_PROGRAM/ADD.
@@ -692,8 +692,8 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
                     <div style={{ fontSize: 42, marginBottom: 12 }}>{mode === 'workout' ? '🏋️' : '🥗'}</div>
                     <div style={{ fontSize: 15, fontWeight: 700, color: '#111', marginBottom: 6 }}>
                       {mode === 'workout'
-                        ? (ctx?.profile?.name ? `Привет, ${ctx.profile.name.split(' ')[0]}! 🏋️` : 'AI-тренер')
-                        : (ctx?.profile?.name ? `Привет, ${ctx.profile.name.split(' ')[0]}! 🥗` : 'AI диетолог')}
+                        ? (ctx?.profile?.name ? `Привет, ${ctx.profile.name.split(' ')[0]}! 🏋️` : 'AI-ассистент')
+                        : (ctx?.profile?.name ? `Привет, ${ctx.profile.name.split(' ')[0]}! 🥗` : 'AI-ассистент')}
                     </div>
                     <div style={{ fontSize: 13, color: '#9ca3af', lineHeight: 1.65, marginBottom: 20 }}>
                       {mode === 'workout'

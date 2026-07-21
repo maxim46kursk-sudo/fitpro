@@ -197,7 +197,7 @@ export const buildSystemPrompt = ({ profile, goals, diary, today }) => {
   return `${FORMAT_RULE}
 ${FRESH_DATA_RULE}
 
-Ты AI помощник по питанию в приложении FitPro тренера Максима.
+Ты AI-ассистент по питанию в приложении FitPro тренера Максима.
 
 Данные клиента:
 Имя: ${profile.name || 'не указано'}
