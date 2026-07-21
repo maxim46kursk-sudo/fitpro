@@ -2085,20 +2085,21 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         {/* Контент */}
         <div style={{ flex:1, overflowY:'auto', padding:'14px 18px' }}>
 
-          {/* Секундомер — только в режиме активной тренировки */}
+          {/* Секундомер — компактный липкий бар вверху скролла (только в режиме
+              активной тренировки). Липнет к верху скролл-области; отрицательные
+              margin + top:-14 «выпускают» его в padding контейнера, сплошной
+              фон BG перекрывает уезжающий под него контент. Логика таймера
+              (toggleStopwatch/resetStopwatch/swTime) не менялась. */}
           {wMode==='start'&&(
-            <div style={{ background:SURF, border:`1px solid ${HAIR}`, borderRadius:20, padding:'14px 18px 16px', marginBottom:16, textAlign:'center' }}>
-              <div style={{ fontSize:11, color:TXT3, textTransform:'uppercase', letterSpacing:'.22em', fontWeight:700, marginBottom:8 }}>Секундомер</div>
-              <div style={{ fontSize:46, fontWeight:800, letterSpacing:'.02em', fontVariantNumeric:'tabular-nums', marginBottom:14, color:'#EDEBFF' }}>
-                {fmt(swTime)}
-              </div>
-              <div style={{ display:'flex', gap:10, justifyContent:'center' }}>
+            <div style={{ position:'sticky', top:-14, zIndex:20, margin:'-14px -18px 12px', padding:'14px 18px 0', background:BG }}>
+              <div style={{ display:'flex', alignItems:'center', gap:10, background:SURF, border:`1px solid ${HAIR}`, borderRadius:16, padding:'8px 12px' }}>
+                <span style={{ fontSize:22, fontWeight:800, letterSpacing:'.02em', fontVariantNumeric:'tabular-nums', color:'#EDEBFF', marginRight:'auto' }}>⏱ {fmt(swTime)}</span>
                 <button onClick={toggleStopwatch}
-                  style={{ padding:'10px 32px', borderRadius:14, border:'none', background:swRunning?SURF2:TEA, color:swRunning?TXT2:'#04310f', fontSize:14, fontWeight:700, cursor:'pointer' }}>
+                  style={{ padding:'8px 20px', borderRadius:12, border:'none', background:swRunning?SURF2:TEA, color:swRunning?TXT2:'#04310f', fontSize:13, fontWeight:700, cursor:'pointer', minHeight:'unset' }}>
                   {swRunning?'⏸ Стоп':'▶ Старт'}
                 </button>
                 <button onClick={resetStopwatch}
-                  style={{ padding:'10px 18px', borderRadius:14, border:`1px solid ${HAIR}`, background:SURF2, color:TXT2, fontSize:14, cursor:'pointer' }}>
+                  style={{ padding:'8px 14px', borderRadius:12, border:`1px solid ${HAIR}`, background:SURF2, color:TXT2, fontSize:14, cursor:'pointer', minHeight:'unset' }}>
                   ↺
                 </button>
               </div>
@@ -2300,12 +2301,14 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               )
             })
           )}
-        </div>
 
-        {/* Поле комментария к тренировке */}
-        <div style={{ padding:'8px 14px', background:SURF2, borderTop:`1px solid ${SEP}`, flexShrink:0 }}>
-          <textarea value={wComment} onChange={e=>setWComment(e.target.value)} placeholder="💬 Комментарий к тренировке..." rows={2}
-            style={{ width:'100%', background:SURF, border:`1px solid ${HAIR}`, borderRadius:16, padding:'7px 11px', fontSize:12, color:TXT, resize:'none', outline:'none', fontFamily:'inherit', boxSizing:'border-box', lineHeight:1.5 }} />
+          {/* Комментарий к тренировке — в конце прокрутки, над закреплённым
+              баром "Завершить" (появляется, когда долистал донизу). Логика
+              (wComment/setWComment) не менялась, только перенесён сюда. */}
+          <div style={{ marginTop:14 }}>
+            <textarea value={wComment} onChange={e=>setWComment(e.target.value)} placeholder="💬 Комментарий к тренировке..." rows={2}
+              style={{ width:'100%', background:SURF, border:`1px solid ${HAIR}`, borderRadius:16, padding:'10px 12px', fontSize:13, color:TXT, resize:'none', outline:'none', fontFamily:'inherit', boxSizing:'border-box', lineHeight:1.5 }} />
+          </div>
         </div>
 
         {/* Нижняя панель */}
@@ -6645,6 +6648,9 @@ export default function App() {
   // тренировка не на переднем плане.
   const [workoutMeta,setWorkoutMeta]=useState(null) // {wName,wColor,startedAt} | null
   const workoutMinimized = !!workoutMeta && !isWorkoutForeground
+  // Активная тренировка на весь экран (мобайл) — прячем общий хедер App и
+  // отдаём его место контенту (см. мобильный layout ниже).
+  const workoutFullscreen = !!workoutMeta && isWorkoutForeground
   // Открыть свёрнутую тренировку — закрывает все оверлеи, которые могли её
   // загородить (см. isWorkoutForeground), и возвращает nav на 'workouts'.
   const reopenWorkout=()=>{
@@ -7186,7 +7192,9 @@ export default function App() {
         /* ── МОБИЛЬНЫЙ LAYOUT ── */
         <div style={{ display:'flex', flexDirection:'column', minHeight:'100vh', fontFamily:'system-ui,sans-serif', background:BG, color:TXT }}>
 
-          {/* Мобильный хедер */}
+          {/* Мобильный хедер — на весь экран активной тренировки скрыт, чтобы
+              не держать пустую полосу сверху (см. workoutFullscreen). */}
+          {!workoutFullscreen&&(
           <div style={{ position:'fixed', top:0, left:0, right:0, height:MOBILE_TOP_H, background:BG, borderBottom:`1px solid ${SEP}`, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 16px', zIndex:901, flexShrink:0 }}>
             <button onClick={()=>setShowProfileSheet(true)}
               style={{ width:36, height:36, borderRadius:'50%', border:'none', background:'transparent', padding:0, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset', overflow:'hidden' }}>
@@ -7197,8 +7205,9 @@ export default function App() {
               <span style={{ fontSize:16, fontWeight:800, color:TXT, letterSpacing:'-0.3px' }}>FitPro</span>
             </div>
           </div>
+          )}
 
-          <div ref={mobileContentRef} className="mobile-content" style={{ flex:1, overflowY:'auto', padding:`${MOBILE_TOP_H+14}px 16px ${BOTTOM_NAV_H+16}px`, position:'relative' }}>
+          <div ref={mobileContentRef} className="mobile-content" style={{ flex:1, overflowY:'auto', padding:`${workoutFullscreen?14:MOBILE_TOP_H+14}px 16px ${BOTTOM_NAV_H+16}px`, position:'relative' }}>
             <PullToRefreshIndicator pull={ptrPull} refreshing={ptrRefreshing} />
             {renderMain()}
           </div>
