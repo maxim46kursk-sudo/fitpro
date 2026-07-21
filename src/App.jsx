@@ -125,10 +125,10 @@ function Badge({ lbl }) {
   return <span style={{ fontSize:10, padding:'2px 7px', borderRadius:20, background:c.bg, color:c.tx, fontWeight:500 }}>{lbl}</span>
 }
 
-function NavBtn({ icon, label, active, onClick }) {
+function NavBtn({ ic, color, label, active, onClick }) {
   return (
     <button onClick={onClick} style={{ width:'100%', display:'flex', alignItems:'center', gap:9, padding:'8px 10px', borderRadius:8, border:'none', background:active?PUR:'transparent', color:active?'#fff':TXT3, fontSize:13, textAlign:'left', marginBottom:2, cursor:'pointer' }}>
-      <span style={{ fontSize:16 }}>{icon}</span>{label}
+      <Ic name={ic} size={18} color={active?'#fff':color} />{label}
     </button>
   )
 }
@@ -1967,7 +1967,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             onClick={dismissAiTip}>
             <div style={{ maxWidth:320, width:'100%' }} onClick={e=>e.stopPropagation()}>
               <div style={{ display:'flex', alignItems:'flex-end', gap:8 }}>
-                <div style={{ width:32, height:32, borderRadius:'50%', background:'linear-gradient(135deg,#7F77DD,#5b54c4)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, flexShrink:0 }}>🤖</div>
+                <div style={{ width:32, height:32, borderRadius:'50%', background:`linear-gradient(135deg,${PUR},#5b54c4)`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><Ic name="solar:chat-round-bold-duotone" size={17} color="#fff" /></div>
                 <div style={{ background:SURF2, border:`1px solid ${HAIR}`, borderRadius:'4px 16px 16px 16px', padding:'14px 16px', fontSize:13.5, color:'#e5e7eb', lineHeight:1.6, whiteSpace:'pre-wrap' }}>
                   {'Привет! Смотри, как тут всё работает:\n\nВес — это подсказка для старта. Вес горит красным — значит пиши свой реальный вес — тот, с которым действительно тренируешься, и обязательно поставь оценку (1 — легко, 5 — тяжело).\n\nПо оценке я сам подберу тебе вес дальше.\nПогнали! 💪'}
                 </div>
@@ -3535,9 +3535,9 @@ function NutritionView({ userId }){
             <span style={{ fontSize:20,color:TXT3 }}>›</span>
           </div>
           <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,marginTop:12 }}>
-            {[['🔥',`~${plan.target.cal}`,PUR,'ккал/день'],['🥩',`${plan.target.p}г`,TEA,'белков'],['🍚',`${plan.target.c}г`,BLU,'углеводов'],['🥑',`${plan.target.f}г`,COR,'жиров']].map(([ic,v,c,l])=>(
+            {[['game-icons:fire',`~${plan.target.cal}`,KCAL,'ккал/день'],['game-icons:steak',`${plan.target.p}г`,TEA,'белков'],['game-icons:grain-bundle',`${plan.target.c}г`,BLU,'углеводов'],['game-icons:avocado',`${plan.target.f}г`,COR,'жиров']].map(([ic,v,c,l])=>(
               <div key={l} style={{ background:SURF2,borderRadius:9,padding:'8px 6px',textAlign:'center' }}>
-                <div style={{ fontSize:13 }}>{ic}</div>
+                <div style={{ display:'flex',justifyContent:'center',marginBottom:2 }}><Ic name={ic} size={16} color={c} /></div>
                 <div style={{ fontSize:13,fontWeight:700,color:c }}>{v}</div>
                 <div style={{ fontSize:9,color:TXT3 }}>{l}</div>
               </div>
@@ -3549,7 +3549,19 @@ function NutritionView({ userId }){
   )
 }
 
-const MUSCLE_ICONS={'Ноги':'🦵','Ягодицы':'🍑','Грудь':'💪','Спина':'🔙','Плечи':'🏔','Руки':'💪','Кор':'⚡','Всё тело':'🔥','Кардио':'❤️'}
+// Мышечные группы — силуэтные иконки game-icons, каждая в своём цвете палитры.
+const MUSCLE_ICONS={
+  'Ноги':      {ic:'game-icons:leg',             color:PUR},
+  'Ягодицы':   {ic:'game-icons:muscle-up',       color:ACCENT2},
+  'Грудь':     {ic:'game-icons:chest',           color:COR},
+  'Спина':     {ic:'game-icons:spine-arrow',     color:BLU},
+  'Плечи':     {ic:'game-icons:shoulder-armor',  color:KCAL},
+  'Руки':      {ic:'game-icons:biceps',          color:TEA},
+  'Кор':       {ic:'game-icons:abdominal-armor', color:'#F59E0B'},
+  'Всё тело':  {ic:'game-icons:fire',            color:KCAL},
+  'Кардио':    {ic:'game-icons:heart-organ',     color:DANGER},
+}
+const MUSCLE_FALLBACK={ic:'game-icons:weight-lifting-up',color:PUR}
 const EQ_TIPS={
   'Штанга':'Контролируй траекторию, не бросай снаряд.',
   'Гантели':'Следи за симметрией движения обеих рук.',
@@ -3586,8 +3598,8 @@ function LibraryView({ customExercises }) {
       <div>
         <button onClick={()=>setSel(null)} style={{ fontSize:13,color:TXT3,border:'none',background:'none',cursor:'pointer',padding:0,marginBottom:18,display:'flex',alignItems:'center',gap:5 }}>← Все упражнения</button>
         <div style={{ display:'flex',alignItems:'center',gap:12,marginBottom:20 }}>
-          <div style={{ width:52,height:52,borderRadius:14,background:'#EEEDFE',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0 }}>
-            {MUSCLE_ICONS[sel.m]||'🏋️'}
+          <div style={{ width:52,height:52,borderRadius:14,background:'rgba(124,122,240,.14)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
+            <Ic {...{name:(MUSCLE_ICONS[sel.m]||MUSCLE_FALLBACK).ic,color:(MUSCLE_ICONS[sel.m]||MUSCLE_FALLBACK).color}} size={28} />
           </div>
           <div>
             <h2 style={{ fontSize:20,fontWeight:700,color:TXT,margin:0 }}>{sel.n}</h2>
@@ -3652,7 +3664,7 @@ function LibraryView({ customExercises }) {
         {fl.map((ex,i)=>(
           <Card key={i} onClick={()=>setSel(ex)} style={{ cursor:'pointer' }}>
             <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
-              <span style={{ fontSize:22 }}>{MUSCLE_ICONS[ex.m]||'🏋️'}</span>
+              <Ic {...{name:(MUSCLE_ICONS[ex.m]||MUSCLE_FALLBACK).ic,color:(MUSCLE_ICONS[ex.m]||MUSCLE_FALLBACK).color}} size={24} />
               <div style={{ textAlign:'center' }}>
                 <div style={{ fontSize:15, fontWeight:600, color:TXT }}>{ex.n}{ex.custom&&<span style={{ marginLeft:6, fontSize:10, padding:'1px 6px', borderRadius:4, background:'#EEEDFE', color:PUR }}>моё</span>}</div>
                 <div style={{ fontSize:12, color:TXT3, marginTop:2 }}>{ex.m}{ex.eq?` · ${ex.eq}`:''}</div>
@@ -4697,7 +4709,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           {/* Плашка AI диетолога */}
           {onOpenAI&&(
             <div onClick={()=>onOpenAI('nutrition')} style={{ display:'flex',alignItems:'center',gap:12,background:'linear-gradient(120deg,rgba(48,209,88,.14),rgba(48,209,88,.04))',border:'1px solid rgba(48,209,88,.28)',borderRadius:18,padding:'12px 16px',marginBottom:14,cursor:'pointer' }}>
-              <div style={{ width:38,height:38,borderRadius:'50%',background:`linear-gradient(135deg,${TEA},#1f8f3d)`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0 }}>🤖</div>
+              <div style={{ width:38,height:38,borderRadius:'50%',background:`linear-gradient(135deg,${TEA},#1f8f3d)`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}><Ic name='solar:chat-round-bold-duotone' size={20} color='#fff' /></div>
               <div style={{ flex:1 }}>
                 <div style={{ fontSize:14,fontWeight:700,color:TXT }}>Спросить AI-ассистента</div>
                 <div style={{ fontSize:12,color:TXT2,marginTop:1 }}>Знает твой план и остаток калорий</div>
@@ -4812,12 +4824,12 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 так перерасход виден без отдельной плашки. Норма не задана
                 (norm7<=0) — столбик пустой, показываем только факт. */}
             <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8 }}>
-              {[['🔥',weekTotal.kcal,foodGoals.kcal*7,'','ккал','linear-gradient(180deg,#d07bff,#BF5AF2)','#d79bff'],['🥩',weekTotal.p,foodGoals.p*7,'г','белки','linear-gradient(180deg,#4ce07a,#30D158)','#5be389'],['🍚',weekTotal.c,foodGoals.c*7,'г','углев.','linear-gradient(180deg,#3f9bff,#0A84FF)','#5aa8ff'],['🥑',weekTotal.f,foodGoals.f*7,'г','жиры','linear-gradient(180deg,#ffb54a,#FF9F0A)','#ffbf5a']].map(([ic,fact,norm7,unit,label,grad,factColor])=>{
+              {[['game-icons:fire',weekTotal.kcal,foodGoals.kcal*7,'','ккал','linear-gradient(180deg,#d07bff,#BF5AF2)','#d79bff'],['game-icons:steak',weekTotal.p,foodGoals.p*7,'г','белки','linear-gradient(180deg,#4ce07a,#30D158)','#5be389'],['game-icons:grain-bundle',weekTotal.c,foodGoals.c*7,'г','углев.','linear-gradient(180deg,#3f9bff,#0A84FF)','#5aa8ff'],['game-icons:avocado',weekTotal.f,foodGoals.f*7,'г','жиры','linear-gradient(180deg,#ffb54a,#FF9F0A)','#ffbf5a']].map(([ic,fact,norm7,unit,label,grad,factColor])=>{
                 const pct=norm7>0?Math.round(fact/norm7*100):0
                 const fillH=Math.min(100,pct)
                 return (
                   <div key={label} style={{ display:'flex',flexDirection:'column',alignItems:'center',textAlign:'center' }}>
-                    <div style={{ fontSize:14,marginBottom:2 }}>{ic}</div>
+                    <div style={{ display:'flex',justifyContent:'center',marginBottom:2 }}><Ic name={ic} size={18} color={factColor} /></div>
                     <div style={{ fontSize:10,color:TXT3,marginBottom:5,minHeight:12 }}>{norm7>0?`из ${norm7}${unit}`:''}</div>
                     <div style={{ width:34,height:96,background:'rgba(255,255,255,.07)',borderRadius:9,position:'relative',overflow:'hidden' }}>
                       <div style={{ position:'absolute',bottom:0,left:0,width:'100%',height:`${fillH}%`,background:grad,borderRadius:'9px 9px 0 0' }} />
@@ -5094,11 +5106,11 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   // ── ГЛАВНАЯ: папки
   const totalTon=allWorkoutTons.reduce((s,w)=>s+w.ton,0)
   const FOLDERS_DIARY=[
-    {key:'tonnage',icon:'⚖️',label:'Общий тоннаж',color:PUR,sub:`${totalTon.toLocaleString('ru')} кг · ${allWorkoutTons.length} ${plural(allWorkoutTons.length,'тренировка','тренировки','тренировок')}`},
-    {key:'exercises',icon:'📈',label:'Прогресс по упражнениям',color:TEA,sub:`${exerciseNames.length} ${plural(exerciseNames.length,'упражнение','упражнения','упражнений')} отслеживается`},
-    {key:'workouts',icon:'🏋️',label:'Мои тренировки',color:COR,sub:allWorkoutTons.length>0?`Последняя: ${fmtFull(allWorkoutTons[allWorkoutTons.length-1].date)}`:'Нет записей'},
-    {key:'food',icon:'🥗',label:'Питание',color:BLU,sub:'Дневник питания · макросы'},
-    {key:'onerm',icon:'🧮',label:'Калькулятор 1ПМ',color:'#F59E0B',sub:''},
+    {key:'tonnage',ic:'solar:scale-bold-duotone',label:'Общий тоннаж',color:PUR,sub:`${totalTon.toLocaleString('ru')} кг · ${allWorkoutTons.length} ${plural(allWorkoutTons.length,'тренировка','тренировки','тренировок')}`},
+    {key:'exercises',ic:'solar:graph-bold-duotone',label:'Прогресс по упражнениям',color:TEA,sub:`${exerciseNames.length} ${plural(exerciseNames.length,'упражнение','упражнения','упражнений')} отслеживается`},
+    {key:'workouts',ic:'game-icons:weight-lifting-up',label:'Мои тренировки',color:COR,sub:allWorkoutTons.length>0?`Последняя: ${fmtFull(allWorkoutTons[allWorkoutTons.length-1].date)}`:'Нет записей'},
+    {key:'food',ic:'game-icons:meal',label:'Питание',color:BLU,sub:'Дневник питания · макросы'},
+    {key:'onerm',ic:'solar:calculator-bold-duotone',label:'Калькулятор 1ПМ',color:'#F59E0B',sub:''},
   ]
   return(
     <div>
@@ -5117,8 +5129,8 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
       {FOLDERS_DIARY.map(f=>(
         <div key={f.key} style={{ background:SURF,borderRadius:14,boxShadow:'0 1px 5px rgba(0,0,0,0.08)',marginBottom:10,display:'flex',alignItems:'center',gap:14,padding:'16px',cursor:'pointer' }}
           onClick={()=>{if(f.key==='exercises'){setExPeriod('all');setExCustomFrom('');setExCustomTo('')}setSection(f.key)}}>
-          <div style={{ width:50,height:50,borderRadius:14,background:`${f.color}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0 }}>
-            {f.icon}
+          <div style={{ width:50,height:50,borderRadius:14,background:`${f.color}18`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
+            <Ic name={f.ic} size={26} color={f.color} />
           </div>
           <div style={{ flex:1,minWidth:0 }}>
             <div style={{ fontSize:15,fontWeight:700,color:TXT }}>{f.label}</div>
@@ -5131,21 +5143,23 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   )
 }
 
+// Иконки меню — гибрид: game-icons для спорта/еды (фирменные силуэты),
+// solar bold-duotone для UI-разделов. Вшиты офлайн (см. src/icons.jsx).
+// color — «свой» цвет пункта, применяется на активной вкладке.
 const NAV=[
-  {id:'dashboard',icon:'🏠',label:'Главная'},
-  {id:'clients',icon:'👥',label:'Клиенты'},
-  {id:'workouts',icon:'🏋️',label:'Тренировки'},
-  {id:'nutrition',icon:'🥗',label:'Питание'},
-  {id:'library',icon:'📚',label:'Упражнения'},
-  {id:'progress',icon:'📓',label:'Дневник'},
+  {id:'dashboard',ic:'solar:home-2-bold-duotone',color:PUR,label:'Главная'},
+  {id:'clients',ic:'solar:users-group-rounded-bold-duotone',color:ACCENT2,label:'Клиенты'},
+  {id:'workouts',ic:'game-icons:weight-lifting-up',color:PUR,label:'Тренировки'},
+  {id:'nutrition',ic:'game-icons:meal',color:TEA,label:'Питание'},
+  {id:'library',ic:'solar:book-bold-duotone',color:BLU,label:'Упражнения'},
+  {id:'progress',ic:'solar:notebook-bookmark-bold-duotone',color:COR,label:'Дневник'},
 ]
-// Нижнее меню — иконки Solar (bold-duotone), вшиты офлайн (см. src/icons.jsx).
 const NAV_MOBILE=[
-  {id:'workouts',ic:'solar:dumbbell-bold-duotone',label:'Тренировки'},
-  {id:'nutrition',ic:'solar:chef-hat-bold-duotone',label:'Питание'},
-  {id:'library',ic:'solar:book-bold-duotone',label:'Упражнения'},
-  {id:'progress',ic:'solar:notebook-bookmark-bold-duotone',label:'Дневник'},
-  {id:'clients',ic:'solar:users-group-rounded-bold-duotone',label:'Клиенты'},
+  {id:'workouts',ic:'game-icons:weight-lifting-up',color:PUR,label:'Тренировки'},
+  {id:'nutrition',ic:'game-icons:meal',color:TEA,label:'Питание'},
+  {id:'library',ic:'solar:book-bold-duotone',color:BLU,label:'Упражнения'},
+  {id:'progress',ic:'solar:notebook-bookmark-bold-duotone',color:COR,label:'Дневник'},
+  {id:'clients',ic:'solar:users-group-rounded-bold-duotone',color:ACCENT2,label:'Клиенты'},
 ]
 
 // Поле пароля с кнопкой-глазиком (показать/скрыть) — переиспользуется на
@@ -5274,7 +5288,7 @@ function LandingPage({ onEnter, isTelegram }) {
               {/* Хедер карточки */}
               <div style={{ background:`linear-gradient(90deg,${PUR}28,transparent)`,borderBottom:`1px solid ${PUR}25`,padding:'16px 20px',display:'flex',alignItems:'center',gap:14 }}>
                 <div style={{ position:'relative',flexShrink:0 }}>
-                  <div style={{ width:52,height:52,borderRadius:'50%',background:`linear-gradient(135deg,${PUR},#4d47b0)`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,boxShadow:`0 4px 16px ${PUR}50` }}>🤖</div>
+                  <div style={{ width:52,height:52,borderRadius:'50%',background:`linear-gradient(135deg,${PUR},#4d47b0)`,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:`0 4px 16px ${PUR}50` }}><Ic name="solar:chat-round-bold-duotone" size={28} color="#fff" /></div>
                   <div style={{ position:'absolute',bottom:2,right:2,width:13,height:13,borderRadius:'50%',background:'#22c55e',border:'2.5px solid #0d0d1a' }} />
                 </div>
                 <div>
@@ -6166,11 +6180,11 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                 }}>
                 <div style={{
                   width:44,height:44,borderRadius:'50%',
-                  background:'linear-gradient(135deg,#1D9E75,#157a5b)',
+                  background:`linear-gradient(135deg,${TEA},#1f8f3d)`,
                   display:'flex',alignItems:'center',justifyContent:'center',
-                  fontSize:22,flexShrink:0,
+                  flexShrink:0,
                   animation: typingDone ? 'bot-float 2.2s ease-in-out infinite' : 'none',
-                }}>🤖</div>
+                }}><Ic name="solar:chat-round-bold-duotone" size={24} color="#fff" /></div>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:15,fontWeight:700,color:'#1D9E75',minHeight:22}}>
                     {typedText}
@@ -7245,7 +7259,7 @@ export default function App() {
                   position:'relative', minHeight:'unset',
                 }}>
                   <div style={{ position:'absolute', top:0, left:'50%', transform:'translateX(-50%)', width:active?28:0, height:2.5, borderRadius:'0 0 3px 3px', background:ACCENT2, transition:'width 0.18s' }} />
-                  <Ic name={item.ic} size={22} color={active?ACCENT2:TXT3} />
+                  <Ic name={item.ic} size={22} color={active?item.color:TXT3} />
                   <span style={{ fontSize:11, fontWeight:active?700:400, color:active?ACCENT2:TXT3 }}>{item.label}</span>
                 </button>
               )
@@ -7271,12 +7285,12 @@ export default function App() {
                 </div>
                 {/* Меню */}
                 {[
-                  { icon:'👤', label:'Мои данные',  sub:'Профиль, замеры и динамика',    action:()=>{ setShowProfileSheet(false); setShowProfileView(true) } },
-                  { icon:'📊', label:'Мой прогресс', sub:'Тоннаж, тренировки, питание', action:()=>{ setShowProfileSheet(false); handleNav('progress') } },
-                  { icon:'⚙️', label:'Настройки',   sub:'Уведомления, единицы, данные',  action:()=>{ setShowProfileSheet(false); setShowSettingsView(true) } },
+                  { ic:'solar:user-rounded-bold-duotone', color:PUR,     label:'Мои данные',  sub:'Профиль, замеры и динамика',    action:()=>{ setShowProfileSheet(false); setShowProfileView(true) } },
+                  { ic:'solar:chart-bold-duotone',        color:TEA,     label:'Мой прогресс', sub:'Тоннаж, тренировки, питание', action:()=>{ setShowProfileSheet(false); handleNav('progress') } },
+                  { ic:'solar:settings-bold-duotone',     color:ACCENT2, label:'Настройки',   sub:'Уведомления, единицы, данные',  action:()=>{ setShowProfileSheet(false); setShowSettingsView(true) } },
                 ].map((item,i)=>(
                   <button key={i} onClick={item.action} style={{ width:'100%', display:'flex', alignItems:'center', gap:14, padding:'14px 16px', borderRadius:14, border:`1px solid ${HAIR}`, background:SURF2, cursor:'pointer', marginBottom:10, textAlign:'left' }}>
-                    <span style={{ fontSize:24 }}>{item.icon}</span>
+                    <Ic name={item.ic} size={24} color={item.color} />
                     <div>
                       <div style={{ fontSize:15, fontWeight:700, color:TXT }}>{item.label}</div>
                       <div style={{ fontSize:12, color:TXT3, marginTop:1 }}>{item.sub}</div>
