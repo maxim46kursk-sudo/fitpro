@@ -85,7 +85,7 @@ function Av({ lbl, sz=36, bg=PUR, photo, gender }) {
   )
   const genderEmoji = gender==='female' ? '👩' : gender==='male' ? '👨' : null
   return (
-    <div style={{ width:sz, height:sz, borderRadius:'50%', background:genderEmoji?'#f3f4f6':bg, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:genderEmoji?Math.round(sz*.52):Math.round(sz*.35), fontWeight:500, flexShrink:0 }}>
+    <div style={{ width:sz, height:sz, borderRadius:'50%', background:genderEmoji?SURF2:bg, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:genderEmoji?Math.round(sz*.52):Math.round(sz*.35), fontWeight:500, flexShrink:0 }}>
       {genderEmoji || lbl}
     </div>
   )
@@ -156,7 +156,7 @@ function Toggle({ on, onToggle }) {
     }}>
       <span style={{
         position:'absolute', top:2, left:on?22:2, width:20, height:20, borderRadius:'50%',
-        background:'#fff', transition:'left 0.2s', boxShadow:'0 1px 3px #0002', display:'block',
+        background:SURF, transition:'left 0.2s', boxShadow:'0 1px 3px #0002', display:'block',
       }}/>
     </button>
   )
@@ -164,10 +164,10 @@ function Toggle({ on, onToggle }) {
 
 function Row({ label, sub, right }) {
   return (
-    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 0',borderBottom:'1px solid #f3f4f6'}}>
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 0',borderBottom:`1px solid ${HAIR}`}}>
       <div>
-        <div style={{fontSize:15,color:'#111',fontWeight:500}}>{label}</div>
-        {sub&&<div style={{fontSize:12,color:'#9ca3af',marginTop:2}}>{sub}</div>}
+        <div style={{fontSize:15,color:TXT,fontWeight:500}}>{label}</div>
+        {sub&&<div style={{fontSize:12,color:TXT3,marginTop:2}}>{sub}</div>}
       </div>
       {right}
     </div>
@@ -176,8 +176,8 @@ function Row({ label, sub, right }) {
 
 function Section({ title, children }) {
   return (
-    <div style={{background:'#fff',borderRadius:14,padding:'0 16px',marginBottom:14,boxShadow:'0 1px 4px #0000000a'}}>
-      <div style={{fontSize:12,fontWeight:700,color:'#9ca3af',padding:'14px 0 6px',letterSpacing:'0.5px',textTransform:'uppercase'}}>{title}</div>
+    <div style={{background:SURF,borderRadius:14,padding:'0 16px',marginBottom:14,boxShadow:'0 1px 4px #0000000a'}}>
+      <div style={{fontSize:12,fontWeight:700,color:TXT3,padding:'14px 0 6px',letterSpacing:'0.5px',textTransform:'uppercase'}}>{title}</div>
       {children}
     </div>
   )
@@ -199,8 +199,8 @@ function Dashboard({ setNav, setSC, isTrainer }) {
   return (
     <div>
       <div style={{ marginBottom:18 }}>
-        <h2 style={{ fontSize:20, fontWeight:500, color:'#111', margin:0 }}>Добро пожаловать 👋</h2>
-        <p style={{ fontSize:13, color:'#6b7280', marginTop:4 }}>Твоя платформа для тренеров</p>
+        <h2 style={{ fontSize:20, fontWeight:500, color:TXT, margin:0 }}>Добро пожаловать 👋</h2>
+        <p style={{ fontSize:13, color:TXT3, marginTop:4 }}>Твоя платформа для тренеров</p>
       </div>
       <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginBottom:18 }}>
         <Metric label="Клиентов" value={CLIENTS.length} icon="👥" color={PUR} />
@@ -211,15 +211,15 @@ function Dashboard({ setNav, setSC, isTrainer }) {
         {isTrainer&&(
           <Card>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
-              <span style={{ fontWeight:500, color:'#111' }}>Клиенты</span>
+              <span style={{ fontWeight:500, color:TXT }}>Клиенты</span>
               <button onClick={()=>setNav('clients')} style={{ fontSize:12, color:PUR, border:'none', background:'none', cursor:'pointer' }}>Все →</button>
             </div>
             {CLIENTS.map(c=>(
-              <div key={c.id} onClick={()=>{setSC(c);setNav('cdetail')}} style={{ display:'flex', alignItems:'center', gap:9, padding:'7px 0', borderBottom:'1px solid #f3f4f6', cursor:'pointer' }}>
+              <div key={c.id} onClick={()=>{setSC(c);setNav('cdetail')}} style={{ display:'flex', alignItems:'center', gap:9, padding:'7px 0', borderBottom:`1px solid ${HAIR}`, cursor:'pointer' }}>
                 <Av lbl={c.av} sz={30} />
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:13, fontWeight:500, color:'#111' }}>{c.name}</div>
-                  <div style={{ fontSize:11, color:'#9ca3af' }}>{c.goal}</div>
+                  <div style={{ fontSize:13, fontWeight:500, color:TXT }}>{c.name}</div>
+                  <div style={{ fontSize:11, color:TXT3 }}>{c.goal}</div>
                   <PBar v={c.progress} color={c.progress>70?TEA:PUR} />
                 </div>
                 <span style={{ fontSize:12, fontWeight:500, color:c.progress>70?TEA:PUR }}>{c.progress}%</span>
@@ -228,10 +228,10 @@ function Dashboard({ setNav, setSC, isTrainer }) {
           </Card>
         )}
         <Card>
-          <div style={{ fontWeight:500, color:'#111', marginBottom:12 }}>Быстрые действия</div>
+          <div style={{ fontWeight:500, color:TXT, marginBottom:12 }}>Быстрые действия</div>
           {quickActions.map(a=>(
-            <button key={a.label} onClick={()=>setNav(a.nav)} style={{ width:'100%', display:'flex', alignItems:'center', gap:9, padding:'8px 10px', marginBottom:6, background:'#f9fafb', border:'none', borderRadius:8, cursor:'pointer', textAlign:'left' }}>
-              <span>{a.icon}</span><span style={{ fontSize:13, color:'#111' }}>{a.label}</span>
+            <button key={a.label} onClick={()=>setNav(a.nav)} style={{ width:'100%', display:'flex', alignItems:'center', gap:9, padding:'8px 10px', marginBottom:6, background:SURF2, border:'none', borderRadius:8, cursor:'pointer', textAlign:'left' }}>
+              <span>{a.icon}</span><span style={{ fontSize:13, color:TXT }}>{a.label}</span>
             </button>
           ))}
         </Card>
@@ -3362,7 +3362,7 @@ function NutritionView({ userId }){
     const plan=NUTRITION_PLANS.find(p=>p.id===openPlan)
     const day=plan.days[openDay]
     return createPortal(
-      <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1001,display:'flex',flexDirection:'column' }}>
+      <div style={{ position:'fixed',inset:0,background:BG,zIndex:1001,display:'flex',flexDirection:'column' }}>
         {showLogSaveError&&(
           <div style={{
             position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
@@ -3373,39 +3373,39 @@ function NutritionView({ userId }){
             Не удалось сохранить — проверь связь и повтори
           </div>
         )}
-        <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexShrink:0 }}>
-          <button onClick={()=>setOpenDay(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
+        <div style={{ background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexShrink:0 }}>
+          <button onClick={()=>setOpenDay(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
           <div>
-            <div style={{ fontSize:17,fontWeight:700,color:'#111' }}>День {day.n} — {DAY_NAMES[openDay]}</div>
-            <div style={{ fontSize:11,color:'#9ca3af' }}>{plan.title}</div>
+            <div style={{ fontSize:17,fontWeight:700,color:TXT }}>День {day.n} — {DAY_NAMES[openDay]}</div>
+            <div style={{ fontSize:11,color:TXT3 }}>{plan.title}</div>
           </div>
         </div>
         <div style={{ flex:1,overflowY:'auto',padding:'14px 16px 100px' }}>
           {/* Target macros */}
           <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:14 }}>
             {[{l:'Калории',v:`${day.total.cal}`,u:'ккал',c:PUR},{l:'Белки',v:`${day.total.p}`,u:'г',c:TEA},{l:'Углеводы',v:`${day.total.c}`,u:'г',c:BLU},{l:'Жиры',v:`${day.total.f}`,u:'г',c:COR}].map(m=>(
-              <div key={m.l} style={{ background:'#fff',borderRadius:11,padding:'10px 8px',textAlign:'center',boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
-                <div style={{ fontSize:15,fontWeight:700,color:m.c }}>{m.v}<span style={{ fontSize:10,fontWeight:400,color:'#9ca3af' }}> {m.u}</span></div>
-                <div style={{ fontSize:10,color:'#9ca3af',marginTop:2 }}>{m.l}</div>
+              <div key={m.l} style={{ background:SURF,borderRadius:11,padding:'10px 8px',textAlign:'center',boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
+                <div style={{ fontSize:15,fontWeight:700,color:m.c }}>{m.v}<span style={{ fontSize:10,fontWeight:400,color:TXT3 }}> {m.u}</span></div>
+                <div style={{ fontSize:10,color:TXT3,marginTop:2 }}>{m.l}</div>
               </div>
             ))}
           </div>
           {/* Meals */}
           {day.meals.map((meal,mi)=>(
-            <div key={mi} style={{ background:'#fff',borderRadius:13,boxShadow:'0 1px 4px rgba(0,0,0,0.07)',marginBottom:10,overflow:'hidden' }}>
-              <div style={{ background:`${TEA}12`,padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid #f3f4f6' }}>
+            <div key={mi} style={{ background:SURF,borderRadius:13,boxShadow:'0 1px 4px rgba(0,0,0,0.07)',marginBottom:10,overflow:'hidden' }}>
+              <div style={{ background:`${TEA}12`,padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:`1px solid ${HAIR}` }}>
                 <div style={{ display:'flex',alignItems:'center',gap:7 }}>
                   <span style={{ fontSize:16 }}>{MEAL_ICONS[meal.name]||'🍴'}</span>
-                  <span style={{ fontSize:14,fontWeight:700,color:'#111' }}>{meal.name}</span>
-                  {meal.time&&<span style={{ fontSize:11,color:'#9ca3af' }}>({meal.time})</span>}
+                  <span style={{ fontSize:14,fontWeight:700,color:TXT }}>{meal.name}</span>
+                  {meal.time&&<span style={{ fontSize:11,color:TXT3 }}>({meal.time})</span>}
                 </div>
                 <span style={{ fontSize:13,fontWeight:600,color:COR }}>{meal.cal} ккал</span>
               </div>
               <div style={{ padding:'10px 14px' }}>
                 {meal.items.map((item,ii)=>(
-                  <div key={ii} style={{ fontSize:13,color:'#374151',padding:'3px 0',borderBottom:ii<meal.items.length-1?'1px solid #f9fafb':'none' }}>{item}</div>
+                  <div key={ii} style={{ fontSize:13,color:TXT2,padding:'3px 0',borderBottom:ii<meal.items.length-1?'1px solid #f9fafb':'none' }}>{item}</div>
                 ))}
-                <div style={{ display:'flex',gap:12,marginTop:8,paddingTop:8,borderTop:'1px solid #f3f4f6' }}>
+                <div style={{ display:'flex',gap:12,marginTop:8,paddingTop:8,borderTop:`1px solid ${HAIR}` }}>
                   {[['Б',meal.p,TEA],['У',meal.c,BLU],['Ж',meal.f,COR]].map(([l,v,c])=>(
                     <span key={l} style={{ fontSize:11,color:c,fontWeight:600 }}>{l}: {v}г</span>
                   ))}
@@ -3415,13 +3415,13 @@ function NutritionView({ userId }){
           ))}
           {/* Tip */}
           {day.tip&&(
-            <div style={{ background:`${PUR}12`,border:`1px solid ${PUR}30`,borderRadius:11,padding:'10px 14px',fontSize:12,color:'#374151',lineHeight:1.6 }}>
+            <div style={{ background:`${PUR}12`,border:`1px solid ${PUR}30`,borderRadius:11,padding:'10px 14px',fontSize:12,color:TXT2,lineHeight:1.6 }}>
               <span style={{ fontWeight:700,color:PUR }}>💡 Можно: </span>{day.tip}
             </div>
           )}
         </div>
         {/* ── Панель «Копировать рацион» */}
-        <div style={{ background:'#fff',borderTop:'1px solid #e5e7eb',padding:'10px 16px 14px',flexShrink:0 }}>
+        <div style={{ background:SURF,borderTop:`1px solid ${HAIR}`,padding:'10px 16px 14px',flexShrink:0 }}>
           {showLogDatePicker?(()=>{
             const toISO=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
             const yd=new Date();yd.setDate(yd.getDate()-1);const yISO=toISO(yd)
@@ -3429,16 +3429,16 @@ function NutritionView({ userId }){
             const tmr=new Date();tmr.setDate(tmr.getDate()+1);const tmrISO=toISO(tmr)
             return(
               <div>
-                <div style={{ fontSize:12,color:'#6b7280',fontWeight:600,marginBottom:8,textAlign:'center' }}>Выбери дату:</div>
+                <div style={{ fontSize:12,color:TXT3,fontWeight:600,marginBottom:8,textAlign:'center' }}>Выбери дату:</div>
                 <div style={{ display:'flex',gap:6,marginBottom:10 }}>
                   {[['Вчера',yISO],['Сегодня',tISO],['Завтра',tmrISO]].map(([lbl,iso])=>(
                     <button key={iso} onClick={()=>setLogDate(iso)}
-                      style={{ flex:1,padding:'9px 4px',borderRadius:10,border:`1.5px solid ${logDate===iso?BLU:'#e5e7eb'}`,background:logDate===iso?`${BLU}15`:'#fff',color:logDate===iso?BLU:'#6b7280',fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>
+                      style={{ flex:1,padding:'9px 4px',borderRadius:10,border:`1.5px solid ${logDate===iso?BLU:HAIR}`,background:logDate===iso?`${BLU}15`:SURF,color:logDate===iso?BLU:TXT3,fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>
                       {lbl}
                     </button>
                   ))}
                   <button onClick={()=>logCalInputRef.current?.showPicker?.()??logCalInputRef.current?.click()}
-                    style={{ width:42,flexShrink:0,borderRadius:10,border:'1.5px solid #e5e7eb',background:'#fff',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',minHeight:'unset' }}>
+                    style={{ width:42,flexShrink:0,borderRadius:10,border:`1.5px solid ${HAIR}`,background:SURF,cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',minHeight:'unset' }}>
                     📅
                     <input ref={logCalInputRef} type="date" value={logDate} onChange={e=>setLogDate(e.target.value)}
                       style={{ position:'absolute',opacity:0,width:0,height:0,pointerEvents:'none' }} />
@@ -3450,7 +3450,7 @@ function NutritionView({ userId }){
                     📋 Копировать
                   </button>
                   <button onClick={()=>setShowLogDatePicker(false)}
-                    style={{ padding:'12px 16px',borderRadius:12,border:'none',background:'#f3f4f6',color:'#6b7280',fontSize:14,cursor:'pointer',minHeight:'unset' }}>
+                    style={{ padding:'12px 16px',borderRadius:12,border:'none',background:SURF2,color:TXT3,fontSize:14,cursor:'pointer',minHeight:'unset' }}>
                     Отмена
                   </button>
                 </div>
@@ -3472,34 +3472,34 @@ function NutritionView({ userId }){
   if(openPlan!==null){
     const plan=NUTRITION_PLANS.find(p=>p.id===openPlan)
     return createPortal(
-      <div style={{ position:'fixed',inset:0,background:'#f3f4f6',zIndex:1000,display:'flex',flexDirection:'column' }}>
-        <div style={{ background:'#fff',borderBottom:'1px solid #e5e7eb',padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexShrink:0 }}>
-          <button onClick={()=>setOpenPlan(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#6b7280',lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
+      <div style={{ position:'fixed',inset:0,background:BG,zIndex:1000,display:'flex',flexDirection:'column' }}>
+        <div style={{ background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexShrink:0 }}>
+          <button onClick={()=>setOpenPlan(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}>←</button>
           <span style={{ fontSize:22 }}>{plan.icon}</span>
           <div>
-            <div style={{ fontSize:17,fontWeight:700,color:'#111' }}>{plan.title}</div>
-            <div style={{ fontSize:11,color:'#9ca3af' }}>Цель: {plan.target.p}г Б / {plan.target.c}г У / {plan.target.f}г Ж / ~{plan.target.cal} ккал</div>
+            <div style={{ fontSize:17,fontWeight:700,color:TXT }}>{plan.title}</div>
+            <div style={{ fontSize:11,color:TXT3 }}>Цель: {plan.target.p}г Б / {plan.target.c}г У / {plan.target.f}г Ж / ~{plan.target.cal} ккал</div>
           </div>
         </div>
         <div style={{ flex:1,overflowY:'auto',padding:'14px 16px 32px' }}>
           {plan.days.map((day,di)=>(
-            <div key={di} style={{ background:'#fff',borderRadius:13,boxShadow:'0 1px 4px rgba(0,0,0,0.07)',marginBottom:10,display:'flex',alignItems:'center',gap:12,padding:'14px 16px',cursor:'pointer' }}
+            <div key={di} style={{ background:SURF,borderRadius:13,boxShadow:'0 1px 4px rgba(0,0,0,0.07)',marginBottom:10,display:'flex',alignItems:'center',gap:12,padding:'14px 16px',cursor:'pointer' }}
               onClick={()=>setOpenDay(di)}>
               <div style={{ flexShrink:0,width:46,height:46,borderRadius:12,background:TEA,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center' }}>
                 <span style={{ fontSize:11,fontWeight:700,color:'#fff',lineHeight:1 }}>{DAY_NAMES[di]}</span>
                 <span style={{ fontSize:16,fontWeight:800,color:'#fff',lineHeight:1.2 }}>{di+1}</span>
               </div>
               <div style={{ flex:1,minWidth:0 }}>
-                <div style={{ fontSize:15,fontWeight:600,color:'#111' }}>День {day.n}</div>
-                <div style={{ fontSize:11,color:'#9ca3af',marginTop:2 }}>
+                <div style={{ fontSize:15,fontWeight:600,color:TXT }}>День {day.n}</div>
+                <div style={{ fontSize:11,color:TXT3,marginTop:2 }}>
                   {day.meals.length} приёма · Итого: Б{day.total.p}г У{day.total.c}г Ж{day.total.f}г
                 </div>
               </div>
               <div style={{ textAlign:'right',flexShrink:0 }}>
                 <div style={{ fontSize:15,fontWeight:700,color:COR }}>{day.total.cal}</div>
-                <div style={{ fontSize:10,color:'#9ca3af' }}>ккал</div>
+                <div style={{ fontSize:10,color:TXT3 }}>ккал</div>
               </div>
-              <span style={{ fontSize:20,color:'#c7cad1' }}>›</span>
+              <span style={{ fontSize:20,color:TXT3 }}>›</span>
             </div>
           ))}
         </div>
@@ -3509,25 +3509,25 @@ function NutritionView({ userId }){
 
   return(
     <div>
-      <h2 style={{ fontSize:20,fontWeight:500,color:'#111',margin:'0 0 14px' }}>Планы питания</h2>
+      <h2 style={{ fontSize:20,fontWeight:500,color:TXT,margin:'0 0 14px' }}>Планы питания</h2>
       {NUTRITION_PLANS.map(plan=>(
         <Card key={plan.id} style={{ marginBottom:10,cursor:'pointer' }} onClick={()=>setOpenPlan(plan.id)}>
           <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center' }}>
             <div style={{ display:'flex',alignItems:'center',gap:12 }}>
               <div style={{ fontSize:30 }}>{plan.icon}</div>
               <div>
-                <div style={{ fontSize:15,fontWeight:600,color:'#111' }}>{plan.title}</div>
-                <div style={{ fontSize:11,color:'#9ca3af',marginTop:2 }}>{plan.subtitle}</div>
+                <div style={{ fontSize:15,fontWeight:600,color:TXT }}>{plan.title}</div>
+                <div style={{ fontSize:11,color:TXT3,marginTop:2 }}>{plan.subtitle}</div>
               </div>
             </div>
-            <span style={{ fontSize:20,color:'#c7cad1' }}>›</span>
+            <span style={{ fontSize:20,color:TXT3 }}>›</span>
           </div>
           <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,marginTop:12 }}>
             {[['🔥',`~${plan.target.cal}`,PUR,'ккал/день'],['🥩',`${plan.target.p}г`,TEA,'белков'],['🍚',`${plan.target.c}г`,BLU,'углеводов'],['🥑',`${plan.target.f}г`,COR,'жиров']].map(([ic,v,c,l])=>(
-              <div key={l} style={{ background:'#f9fafb',borderRadius:9,padding:'8px 6px',textAlign:'center' }}>
+              <div key={l} style={{ background:SURF2,borderRadius:9,padding:'8px 6px',textAlign:'center' }}>
                 <div style={{ fontSize:13 }}>{ic}</div>
                 <div style={{ fontSize:13,fontWeight:700,color:c }}>{v}</div>
-                <div style={{ fontSize:9,color:'#9ca3af' }}>{l}</div>
+                <div style={{ fontSize:9,color:TXT3 }}>{l}</div>
               </div>
             ))}
           </div>
@@ -3572,49 +3572,49 @@ function LibraryView({ customExercises }) {
     const best=records.length?Math.max(...records.map(r=>r.maxKg)):0
     return(
       <div>
-        <button onClick={()=>setSel(null)} style={{ fontSize:13,color:'#6b7280',border:'none',background:'none',cursor:'pointer',padding:0,marginBottom:18,display:'flex',alignItems:'center',gap:5 }}>← Все упражнения</button>
+        <button onClick={()=>setSel(null)} style={{ fontSize:13,color:TXT3,border:'none',background:'none',cursor:'pointer',padding:0,marginBottom:18,display:'flex',alignItems:'center',gap:5 }}>← Все упражнения</button>
         <div style={{ display:'flex',alignItems:'center',gap:12,marginBottom:20 }}>
           <div style={{ width:52,height:52,borderRadius:14,background:'#EEEDFE',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0 }}>
             {MUSCLE_ICONS[sel.m]||'🏋️'}
           </div>
           <div>
-            <h2 style={{ fontSize:20,fontWeight:700,color:'#111',margin:0 }}>{sel.n}</h2>
-            <div style={{ fontSize:12,color:'#9ca3af',marginTop:3 }}>{sel.m}{sel.eq?` · ${sel.eq}`:''}{sel.custom&&<span style={{ marginLeft:6,fontSize:10,padding:'1px 6px',borderRadius:4,background:'#EEEDFE',color:PUR }}>моё</span>}</div>
+            <h2 style={{ fontSize:20,fontWeight:700,color:TXT,margin:0 }}>{sel.n}</h2>
+            <div style={{ fontSize:12,color:TXT3,marginTop:3 }}>{sel.m}{sel.eq?` · ${sel.eq}`:''}{sel.custom&&<span style={{ marginLeft:6,fontSize:10,padding:'1px 6px',borderRadius:4,background:'#EEEDFE',color:PUR }}>моё</span>}</div>
           </div>
         </div>
         <Card style={{ marginBottom:12,border:`1.5px solid ${PUR}22` }}>
           <div style={{ fontSize:11,fontWeight:700,color:PUR,marginBottom:6,textTransform:'uppercase',letterSpacing:'0.5px' }}>💡 Техника</div>
-          <div style={{ fontSize:13,color:'#374151',lineHeight:1.6 }}>{tip}</div>
+          <div style={{ fontSize:13,color:TXT2,lineHeight:1.6 }}>{tip}</div>
         </Card>
         {records.length===0?(
           <Card>
-            <div style={{ textAlign:'center',padding:'20px 0',color:'#c7cad1',fontSize:13 }}>
+            <div style={{ textAlign:'center',padding:'20px 0',color:TXT3,fontSize:13 }}>
               <div style={{ fontSize:32,marginBottom:8 }}>📊</div>
               Нет данных. Выполни тренировку с этим упражнением.
             </div>
           </Card>
         ):(
           <Card>
-            <div style={{ fontSize:13,fontWeight:700,color:'#111',marginBottom:12 }}>Статистика</div>
+            <div style={{ fontSize:13,fontWeight:700,color:TXT,marginBottom:12 }}>Статистика</div>
             <div style={{ display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:14 }}>
               {[{l:'Лучший вес',v:`${best} кг`,c:PUR},{l:'Тренировок',v:records.length,c:'#111'},{l:'Посл. тоннаж',v:`${records[records.length-1].ton} кг`,c:TEA}].map(m=>(
-                <div key={m.l} style={{ background:'#f9fafb',borderRadius:10,padding:'10px 12px',textAlign:'center' }}>
-                  <div style={{ fontSize:10,color:'#9ca3af',marginBottom:4 }}>{m.l}</div>
+                <div key={m.l} style={{ background:SURF2,borderRadius:10,padding:'10px 12px',textAlign:'center' }}>
+                  <div style={{ fontSize:10,color:TXT3,marginBottom:4 }}>{m.l}</div>
                   <div style={{ fontSize:16,fontWeight:700,color:m.c }}>{m.v}</div>
                 </div>
               ))}
             </div>
-            <div style={{ fontSize:11,color:'#9ca3af',marginBottom:6 }}>История по дням</div>
+            <div style={{ fontSize:11,color:TXT3,marginBottom:6 }}>История по дням</div>
             <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
               {[...records].reverse().slice(0,5).map((r,i)=>(
-                <div key={i} style={{ display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 12px',background:'#f9fafb',borderRadius:9 }}>
+                <div key={i} style={{ display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 12px',background:SURF2,borderRadius:9 }}>
                   <div>
-                    <div style={{ fontSize:13,fontWeight:500,color:'#111' }}>{new Date(r.date).toLocaleDateString('ru',{day:'numeric',month:'short'})}</div>
-                    <div style={{ fontSize:11,color:'#9ca3af',marginTop:1 }}>{r.workoutName}</div>
+                    <div style={{ fontSize:13,fontWeight:500,color:TXT }}>{new Date(r.date).toLocaleDateString('ru',{day:'numeric',month:'short'})}</div>
+                    <div style={{ fontSize:11,color:TXT3,marginTop:1 }}>{r.workoutName}</div>
                   </div>
                   <div style={{ textAlign:'right' }}>
                     <div style={{ fontSize:13,fontWeight:700,color:PUR }}>{r.maxKg} кг</div>
-                    <div style={{ fontSize:10,color:'#9ca3af' }}>макс. вес</div>
+                    <div style={{ fontSize:10,color:TXT3 }}>макс. вес</div>
                   </div>
                 </div>
               ))}
@@ -3627,13 +3627,13 @@ function LibraryView({ customExercises }) {
 
   return (
     <div>
-      <h2 style={{ fontSize:20, fontWeight:500, color:'#111', margin:'0 0 14px' }}>Библиотека упражнений</h2>
+      <h2 style={{ fontSize:20, fontWeight:500, color:TXT, margin:'0 0 14px' }}>Библиотека упражнений</h2>
       <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Поиск упражнения..."
-        style={{ width:'100%',padding:'9px 12px',fontSize:13,borderRadius:9,border:'1.5px solid #e5e7eb',boxSizing:'border-box',outline:'none',marginBottom:10,color:'#111' }}
+        style={{ width:'100%',padding:'9px 12px',fontSize:13,borderRadius:9,border:`1.5px solid ${HAIR}`,boxSizing:'border-box',outline:'none',marginBottom:10,color:TXT }}
         onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
       <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:14 }}>
         {muscles.map(m=>(
-          <button key={m} onClick={()=>setFilt(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:20, cursor:'pointer', border:`1px solid ${filt===m?PUR:'#e5e7eb'}`, background:filt===m?'#EEEDFE':'transparent', color:filt===m?'#3C3489':'#6b7280' }}>{m}</button>
+          <button key={m} onClick={()=>setFilt(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:20, cursor:'pointer', border:`1px solid ${filt===m?PUR:HAIR}`, background:filt===m?'#EEEDFE':'transparent', color:filt===m?'#3C3489':TXT3 }}>{m}</button>
         ))}
       </div>
       <div style={{ display:'flex', flexDirection:'column', gap:9 }}>
@@ -3642,13 +3642,13 @@ function LibraryView({ customExercises }) {
             <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
               <span style={{ fontSize:22 }}>{MUSCLE_ICONS[ex.m]||'🏋️'}</span>
               <div style={{ textAlign:'center' }}>
-                <div style={{ fontSize:15, fontWeight:600, color:'#111' }}>{ex.n}{ex.custom&&<span style={{ marginLeft:6, fontSize:10, padding:'1px 6px', borderRadius:4, background:'#EEEDFE', color:PUR }}>моё</span>}</div>
-                <div style={{ fontSize:12, color:'#9ca3af', marginTop:2 }}>{ex.m}{ex.eq?` · ${ex.eq}`:''}</div>
+                <div style={{ fontSize:15, fontWeight:600, color:TXT }}>{ex.n}{ex.custom&&<span style={{ marginLeft:6, fontSize:10, padding:'1px 6px', borderRadius:4, background:'#EEEDFE', color:PUR }}>моё</span>}</div>
+                <div style={{ fontSize:12, color:TXT3, marginTop:2 }}>{ex.m}{ex.eq?` · ${ex.eq}`:''}</div>
               </div>
             </div>
           </Card>
         ))}
-        {fl.length===0&&<div style={{ color:'#c7cad1',fontSize:13,gridColumn:'1/-1',textAlign:'center',padding:'30px 0' }}>Ничего не найдено</div>}
+        {fl.length===0&&<div style={{ color:TXT3,fontSize:13,gridColumn:'1/-1',textAlign:'center',padding:'30px 0' }}>Ничего не найдено</div>}
       </div>
     </div>
   )
@@ -3689,11 +3689,11 @@ function DateScroller({ value, onChange }) {
     <div style={{ marginBottom:14, userSelect:'none' }}>
       {/* Заголовок с текущей датой */}
       <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 4px',marginBottom:8 }}>
-        <span style={{ fontSize:15,fontWeight:700,color:'#111' }}>{label}</span>
-        <span style={{ fontSize:12,color:'#9ca3af' }}>{selDate.toLocaleDateString('ru',{weekday:'long'})}</span>
+        <span style={{ fontSize:15,fontWeight:700,color:TXT }}>{label}</span>
+        <span style={{ fontSize:12,color:TXT3 }}>{selDate.toLocaleDateString('ru',{weekday:'long'})}</span>
       </div>
       {/* Скроллер */}
-      <div style={{ background:'#f9fafb',borderRadius:16,padding:'10px 0',border:'1px solid #f0f0f0' }}>
+      <div style={{ background:SURF2,borderRadius:16,padding:'10px 0',border:`1px solid ${HAIR}` }}>
         <div ref={ref} style={{ display:'flex',overflowX:'auto',scrollbarWidth:'none',WebkitOverflowScrolling:'touch',padding:'0 10px' }}>
           {days.map(d=>{
             const iso = toISO(d)
@@ -3702,13 +3702,13 @@ function DateScroller({ value, onChange }) {
             return (
               <div key={iso} onClick={()=>onChange(iso)}
                 style={{ display:'flex',flexDirection:'column',alignItems:'center',flexShrink:0,width:ITEM_W,cursor:'pointer',padding:'2px 0' }}>
-                <span style={{ fontSize:10,fontWeight:500,color:sel?PUR:isToday?PUR:'#b0b7c3',marginBottom:4,letterSpacing:'0.02em',textTransform:'uppercase' }}>
+                <span style={{ fontSize:10,fontWeight:500,color:sel?PUR:isToday?PUR:TXT3,marginBottom:4,letterSpacing:'0.02em',textTransform:'uppercase' }}>
                   {DAY_RU[d.getDay()]}
                 </span>
                 <div style={{ width:34,height:34,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',
                   background: sel?PUR:isToday?`${PUR}15`:'transparent',
                   fontSize:13,fontWeight:sel?700:isToday?600:400,
-                  color:sel?'#fff':isToday?PUR:'#6b7280',
+                  color:sel?'#fff':isToday?PUR:TXT3,
                   transition:'all 0.15s' }}>
                   {d.getDate()}
                 </div>
@@ -5682,7 +5682,7 @@ function SettingsView({ user, performLogout }) {
                 и saveUnits не трогаем — на случай если пересчёт появится позже. */}
             {['kg'].map(v=>(
               <button key={v} onClick={()=>saveUnits({...units,weight:v})} style={{
-                padding:'5px 12px',borderRadius:8,border:`1.5px solid ${units.weight===v?PUR:'#e5e7eb'}`,
+                padding:'5px 12px',borderRadius:8,border:`1.5px solid ${units.weight===v?PUR:HAIR}`,
                 background:units.weight===v?`${PUR}15`:SURF,color:units.weight===v?PUR:TXT3,
                 fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset',
               }}>{v}</button>
@@ -5693,7 +5693,7 @@ function SettingsView({ user, performLogout }) {
           <div style={{display:'flex',gap:4}}>
             {['cm','in'].map(v=>(
               <button key={v} onClick={()=>saveUnits({...units,height:v})} style={{
-                padding:'5px 12px',borderRadius:8,border:`1.5px solid ${units.height===v?PUR:'#e5e7eb'}`,
+                padding:'5px 12px',borderRadius:8,border:`1.5px solid ${units.height===v?PUR:HAIR}`,
                 background:units.height===v?`${PUR}15`:SURF,color:units.height===v?PUR:TXT3,
                 fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset',
               }}>{v}</button>
@@ -5708,7 +5708,7 @@ function SettingsView({ user, performLogout }) {
           <div style={{display:'flex',gap:4}}>
             {[['ask','Спрашивай меня'],['act','Действуй сам']].map(([v,lbl])=>(
               <button key={v} onClick={()=>saveAiStyle(v)} style={{
-                padding:'5px 10px',borderRadius:8,border:`1.5px solid ${aiStyle===v?PUR:'#e5e7eb'}`,
+                padding:'5px 10px',borderRadius:8,border:`1.5px solid ${aiStyle===v?PUR:HAIR}`,
                 background:aiStyle===v?`${PUR}15`:SURF,color:aiStyle===v?PUR:TXT3,
                 fontSize:12,fontWeight:600,cursor:'pointer',minHeight:'unset',whiteSpace:'nowrap',
               }}>{lbl}</button>
@@ -5770,7 +5770,7 @@ function SettingsView({ user, performLogout }) {
           <div style={{display:'flex',gap:4}}>
             {[['ru','Русский'],['en','English']].map(([v,lbl])=>(
               <button key={v} onClick={()=>saveLang(v)} style={{
-                padding:'5px 12px',borderRadius:8,border:`1.5px solid ${lang===v?PUR:'#e5e7eb'}`,
+                padding:'5px 12px',borderRadius:8,border:`1.5px solid ${lang===v?PUR:HAIR}`,
                 background:lang===v?`${PUR}15`:SURF,color:lang===v?PUR:TXT3,
                 fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset',
               }}>{lbl}</button>
@@ -6055,7 +6055,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
               <div style={{display:'flex',gap:8}}>
                 {[['male','👨 Мужчина'],['female','👩 Женщина']].map(([val,lbl])=>(
                   <button key={val} onClick={()=>setUserEdit(u=>({...u,gender:val}))} type="button"
-                    style={{flex:1,padding:'10px',borderRadius:10,border:`1.5px solid ${userEdit.gender===val?PUR:'#e5e7eb'}`,background:userEdit.gender===val?`${PUR}12`:SURF,color:userEdit.gender===val?PUR:TXT3,fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset'}}>
+                    style={{flex:1,padding:'10px',borderRadius:10,border:`1.5px solid ${userEdit.gender===val?PUR:HAIR}`,background:userEdit.gender===val?`${PUR}12`:SURF,color:userEdit.gender===val?PUR:TXT3,fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset'}}>
                     {lbl}
                   </button>
                 ))}
@@ -6110,7 +6110,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
               <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>Цель</label>
               {/* Строка-триггер */}
               <button onClick={()=>setShowGoalPicker(v=>!v)}
-                style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${profile.goal?PUR:'#e5e7eb'}`,background:profile.goal?'#EEEDFE':SURF,cursor:'pointer',textAlign:'left',minHeight:'unset',transition:'all 0.2s'}}>
+                style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${profile.goal?PUR:HAIR}`,background:profile.goal?'#EEEDFE':SURF,cursor:'pointer',textAlign:'left',minHeight:'unset',transition:'all 0.2s'}}>
                 <span style={{fontSize:15,fontWeight:600,color:profile.goal?PUR:TXT3}}>
                   {profile.goal||'Выбрать цель...'}
                 </span>
@@ -6126,7 +6126,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                     {val:'Рельеф',      icon:'✂️'},
                   ].map(opt=>(
                     <button key={opt.val} onClick={()=>{setProfile(p=>({...p,goal:opt.val}));setShowGoalPicker(false)}}
-                      style={{display:'flex',alignItems:'center',gap:10,padding:'11px 14px',borderRadius:10,border:`1.5px solid ${profile.goal===opt.val?PUR:'#e5e7eb'}`,background:profile.goal===opt.val?'#EEEDFE':SURF,cursor:'pointer',textAlign:'left',minHeight:'unset',transition:'all 0.15s'}}>
+                      style={{display:'flex',alignItems:'center',gap:10,padding:'11px 14px',borderRadius:10,border:`1.5px solid ${profile.goal===opt.val?PUR:HAIR}`,background:profile.goal===opt.val?'#EEEDFE':SURF,cursor:'pointer',textAlign:'left',minHeight:'unset',transition:'all 0.15s'}}>
                       <span style={{fontSize:18}}>{opt.icon}</span>
                       <span style={{fontSize:15,fontWeight:600,color:profile.goal===opt.val?PUR:TXT2}}>{opt.val}</span>
                       {profile.goal===opt.val&&<span style={{marginLeft:'auto',fontSize:15,color:PUR}}>✓</span>}
@@ -6214,7 +6214,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                   <div style={{display:'flex',gap:8}}>
                     {[['sedentary','Малоподвижный'],['moderate','Умеренный'],['high','Высокий']].map(([val,lbl])=>(
                       <button key={val} type="button" onClick={()=>setProfile(p=>({...p,activityLevel:val}))}
-                        style={{flex:1,padding:'10px 6px',borderRadius:10,border:`1.5px solid ${profile.activityLevel===val?PUR:'#e5e7eb'}`,background:profile.activityLevel===val?`${PUR}12`:SURF,color:profile.activityLevel===val?PUR:TXT3,fontSize:12,fontWeight:600,cursor:'pointer',minHeight:'unset'}}>
+                        style={{flex:1,padding:'10px 6px',borderRadius:10,border:`1.5px solid ${profile.activityLevel===val?PUR:HAIR}`,background:profile.activityLevel===val?`${PUR}12`:SURF,color:profile.activityLevel===val?PUR:TXT3,fontSize:12,fontWeight:600,cursor:'pointer',minHeight:'unset'}}>
                         {lbl}
                       </button>
                     ))}
@@ -7116,8 +7116,8 @@ export default function App() {
   }
 
   if(recoveryMode) return <ResetPasswordView onDone={()=>setRecoveryMode(false)} />
-  if(authLoading) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#08080f',color:'#9ca3af',fontSize:14}}>Загрузка...</div>
-  if(!user&&telegramAuthPending) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#08080f',color:'#9ca3af',fontSize:14}}>Входим…</div>
+  if(authLoading) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:BG,color:TXT3,fontSize:14}}>Загрузка...</div>
+  if(!user&&telegramAuthPending) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:BG,color:TXT3,fontSize:14}}>Входим…</div>
   if(!user) return <LandingPage onEnter={setUser} isTelegram={isTelegram} />
 
   // Всё, КРОМЕ Тренировок — обычная свитч-навигация, монтируется/
@@ -7279,13 +7279,13 @@ export default function App() {
       ) : (
         /* ── ДЕСКТОПНЫЙ LAYOUT ── */
         <div style={{ display:'flex', minHeight:'100vh', fontFamily:'system-ui,sans-serif', background:BG, color:TXT }}>
-          <div style={{ width:190, background:'#fff', borderRight:'1px solid #e5e7eb', display:'flex', flexDirection:'column', flexShrink:0 }}>
-            <div style={{ padding:'16px 14px 12px', borderBottom:'1px solid #e5e7eb' }}>
+          <div style={{ width:190, background:SURF, borderRight:`1px solid ${HAIR}`, display:'flex', flexDirection:'column', flexShrink:0 }}>
+            <div style={{ padding:'16px 14px 12px', borderBottom:`1px solid ${HAIR}` }}>
               <div onClick={()=>setShowProfileView(true)} style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
                 <Av lbl={user.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={34} photo={user.photoURL} gender={user.gender} />
                 <div style={{ minWidth:0 }}>
-                  <div style={{ fontSize:13, fontWeight:500, color:'#111', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{user.name.split(' ')[0]}</div>
-                  <div style={{ fontSize:11, color:'#9ca3af' }}>{userRole==='trainer'?'Тренер':'Клиент'}</div>
+                  <div style={{ fontSize:13, fontWeight:500, color:TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{user.name.split(' ')[0]}</div>
+                  <div style={{ fontSize:11, color:TXT3 }}>{userRole==='trainer'?'Тренер':'Клиент'}</div>
                 </div>
               </div>
             </div>
@@ -7294,14 +7294,14 @@ export default function App() {
                 <NavBtn key={item.id} {...item} active={nav===item.id||(nav==='cdetail'&&item.id==='clients')} onClick={()=>handleNav(item.id)} />
               ))}
             </nav>
-            <div style={{ padding:'12px 14px', borderTop:'1px solid #e5e7eb' }}>
+            <div style={{ padding:'12px 14px', borderTop:`1px solid ${HAIR}` }}>
               <button onClick={()=>setShowSettingsView(true)}
-                style={{ display:'flex',alignItems:'center',gap:7,fontSize:12,color:'#6b7280',background:'none',border:'none',cursor:'pointer',padding:'4px 0',marginBottom:4,width:'100%' }}>
+                style={{ display:'flex',alignItems:'center',gap:7,fontSize:12,color:TXT3,background:'none',border:'none',cursor:'pointer',padding:'4px 0',marginBottom:4,width:'100%' }}>
                 <span>⚙️</span> Настройки
               </button>
               {!isTelegram&&(
                 <button onClick={performLogout}
-                  style={{ fontSize:11, color:'#9ca3af', background:'none', border:'none', cursor:'pointer', padding:0, marginTop:2, display:'block' }}>
+                  style={{ fontSize:11, color:TXT3, background:'none', border:'none', cursor:'pointer', padding:0, marginTop:2, display:'block' }}>
                   Выйти →
                 </button>
               )}
