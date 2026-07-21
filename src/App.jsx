@@ -5102,6 +5102,17 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   return(
     <div>
       <h2 style={{ fontSize:20,fontWeight:500,color:TXT,margin:'0 0 16px' }}>Дневник</h2>
+      {/* Статус загрузки истории тренировок — иначе при сбое папки тоннажа/
+          упражнений/тренировок молча показывали бы нули, будто данных нет.
+          Питания не касается (у него своя загрузка). */}
+      {historyLoadError?(
+        <div style={{ display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',background:SURF,border:`1px solid ${HAIR}`,borderRadius:14,padding:'12px 16px',marginBottom:10 }}>
+          <span style={{ fontSize:13,color:DANGER,fontWeight:600,flex:1,minWidth:0 }}>Не удалось загрузить историю тренировок</span>
+          <button onClick={onRetryHistory} style={{ fontSize:12,fontWeight:600,padding:'7px 16px',borderRadius:10,border:`1px solid ${HAIR}`,background:SURF2,color:PUR,cursor:'pointer',minHeight:'unset',flexShrink:0 }}>Повторить</button>
+        </div>
+      ):historyLoading&&workoutHistory.length===0?(
+        <div style={{ fontSize:12,color:TXT3,marginBottom:10 }}>Загрузка истории…</div>
+      ):null}
       {FOLDERS_DIARY.map(f=>(
         <div key={f.key} style={{ background:SURF,borderRadius:14,boxShadow:'0 1px 5px rgba(0,0,0,0.08)',marginBottom:10,display:'flex',alignItems:'center',gap:14,padding:'16px',cursor:'pointer' }}
           onClick={()=>{if(f.key==='exercises'){setExPeriod('all');setExCustomFrom('');setExCustomTo('')}setSection(f.key)}}>
