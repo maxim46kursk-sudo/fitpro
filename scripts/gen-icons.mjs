@@ -1,85 +1,30 @@
-// Генератор src/iconData.js — вытаскивает ТОЛЬКО нужные иконки из наборов
-// Iconify (в node_modules каждый набор — мегабайты, целиком в бандл нельзя).
-// Данные попадают в сборку статически, поэтому в рантайме приложение НЕ ходит
-// в api.iconify.design — важно для Telegram Mini App (работает офлайн).
+// Генератор src/iconData.js.
 //
-// ЕДИНЫЙ ВЕС: берём только СПЛОШНЫЕ (filled/solid) начертания — game-icons
-// (силуэты), healthicons (filled), solar '-bold' (НЕ '-bold-duotone', иначе
-// полупрозрачные подложки duotone дают разнобой рядом с силуэтами).
+// ВНИМАНИЕ: почти вся иконография приложения — это КАСТОМНЫЙ набор
+// src/glassIcons.jsx (<GlassIcon name="..."/>), он не требует Iconify вообще.
+// Через этот генератор осталось ровно одно: 4 цветные иконки макросов еды
+// (ккал / белки / углеводы / жиры) из Fluent Emoji Flat — их рисованный
+// цветной стиль в glassIcons не воспроизвести.
 //
-// Добавить иконку: впиши имя в нужный список и запусти `node scripts/gen-icons.mjs`.
+// Данные вшиваются в сборку статически, поэтому в рантайме приложение НЕ
+// ходит в api.iconify.design — важно для Telegram Mini App (работает офлайн).
+//
+// Добавить иконку: впиши имя в FLUENT и запусти `node scripts/gen-icons.mjs`.
 // Поиск по набору:
-//   node -e "console.log(Object.keys(require('./node_modules/@iconify-json/game-icons/icons.json').icons).filter(k=>k.includes('leg')))"
+//   node -e "console.log(Object.keys(require('./node_modules/@iconify-json/fluent-emoji-flat/icons.json').icons).filter(k=>k.includes('meat')))"
 
 import { readFileSync, writeFileSync } from 'node:fs'
 
-// Спорт, еда, анатомия — game-icons (сплошные силуэты)
-const GAME = [
-  'weight-lifting-up',  // тренировки
-  'meal',               // питание
-  'fire',               // ккал
-  'steak',              // белки
-  'grain-bundle',       // углеводы
-  'avocado',            // жиры
-  'leg',                // ноги
-  'spine-arrow',        // спина
-  'biceps',             // руки
-  'muscular-torso',     // кор / пресс
-  'heart-organ',        // кардио
-]
-
-// Тело/здоровье — healthicons (filled)
-const HEALTH = [
-  'body',               // всё тело
-]
-
-// UI — solar '-bold' (сплошные, без duotone-подложек)
-const SOLAR = [
-  'book-bold',                // упражнения
-  'notebook-bookmark-bold',   // дневник
-  'users-group-rounded-bold', // клиенты
-  'home-2-bold',              // главная
-  'scale-bold',               // общий тоннаж
-  'graph-bold',               // прогресс по упражнениям
-  'calculator-bold',          // калькулятор 1ПМ
-  'trash-bin-minimalistic-bold', // удалить
-  'pen-bold',                 // редактировать
-  'notes-bold',               // заметка к подходу
-  'video-frame-bold',         // видео тренеру
-  'share-bold',               // отправить отчёт
-  'paperclip-bold',           // прикрепить фото
-  'camera-bold',              // фото профиля
-  'calendar-bold',            // дата
-  'settings-bold',            // настройки
-  'user-rounded-bold',        // мои данные
-  'chart-bold',               // мой прогресс
-  'lightbulb-bold',           // подсказка
-  'ruler-bold',               // замеры
-  'target-bold',              // цель
-  'clipboard-bold',           // программа
-  'copy-bold',                // копировать
-  'folder-bold',              // шаблон/папка
-  'chat-round-bold',          // комментарий / AI
-  'refresh-bold',             // пройти заново
-  'letter-bold',              // почта
-  'bug-bold',                 // сообщить об ошибке
-  'question-circle-bold',     // поддержка
-  'danger-triangle-bold',     // важно/предупреждение
-  'men-bold',                 // пол: мужской
-  'women-bold',               // пол: женский
-  'scissors-bold',            // цель «рельеф»
-  'magic-stick-3-bold',       // «первое приложение с AI»
-  'play-bold',                // начать тренировку
-  'check-circle-bold',        // добавить выполненную / готово
-  'sun-bold',                 // утро
-  'moon-bold',                // вечер
-  'clock-circle-bold',        // таймер / время
+// Макросы еды — Fluent Emoji Flat (цветные, профессиональный набор)
+const FLUENT = [
+  'fire',         // ккал
+  'cut-of-meat',  // белки
+  'cooked-rice',  // углеводы
+  'avocado',      // жиры
 ]
 
 const SETS = [
-  ['node_modules/@iconify-json/solar/icons.json', SOLAR],
-  ['node_modules/@iconify-json/game-icons/icons.json', GAME],
-  ['node_modules/@iconify-json/healthicons/icons.json', HEALTH],
+  ['node_modules/@iconify-json/fluent-emoji-flat/icons.json', FLUENT],
 ]
 
 const out = {}
@@ -99,8 +44,8 @@ for (const [path, names] of SETS) {
 }
 
 const file = `// СГЕНЕРИРОВАНО scripts/gen-icons.mjs — вручную не редактировать.
-// Иконки Iconify (solar/game-icons/healthicons), вшиты в сборку — offline,
-// без обращений к api.iconify.design.
+// Иконки макросов еды (Fluent Emoji Flat), вшиты в сборку — offline, без
+// обращений к api.iconify.design. Вся остальная иконография — src/glassIcons.jsx.
 export const ICON_DATA = ${JSON.stringify(out, null, 2)}
 `
 writeFileSync('src/iconData.js', file, 'utf8')

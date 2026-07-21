@@ -14,11 +14,11 @@
     "@iconify/react": "^6.0.2",
     "@supabase/supabase-js": "^2.110.0",
     "react": "^19.2.6",
-    "react-body-highlighter": "^2.0.5",
     "react-dom": "^19.2.6"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@iconify-json/fluent-emoji-flat": "^1.2.5",
     "@iconify-json/game-icons": "^1.2.4",
     "@iconify-json/healthicons": "^1.2.12",
     "@iconify-json/mdi": "^1.2.3",
