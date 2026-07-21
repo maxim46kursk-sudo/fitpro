@@ -1790,8 +1790,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
 
   // ── Активная тренировка
   if(step==='active'){
+    // Высота учитывает верхний отступ контента (~14) + фиксированное нижнее
+    // меню приложения (BOTTOM_NAV_H=62) + запас 12 + safe-area iPhone — чтобы
+    // бар "+/Завершить/📤" (последний flex-элемент) стоял НАД меню, а не уходил
+    // под него. Внутренняя прокрутка листается выше бара.
     return (
-      <div style={{ display:'flex', flexDirection:'column', height:'calc(100vh - 40px)', background:BG, borderRadius:14, overflow:'hidden', color:'#fff', position:'relative' }}>
+      <div style={{ display:'flex', flexDirection:'column', height:'calc(100vh - 88px - env(safe-area-inset-bottom, 0px))', background:BG, borderRadius:14, overflow:'hidden', color:'#fff', position:'relative' }}>
 
         {/* Тост ошибки сохранения — тренировка НЕ записалась в Supabase,
             остаёмся на экране (см. finishWorkout), клиент ничего не теряет
@@ -2082,8 +2086,10 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           </div>
         )}
 
-        {/* Контент */}
-        <div style={{ flex:1, overflowY:'auto', padding:'14px 18px' }}>
+        {/* Контент. paddingBottom крупнее — чтобы последнее упражнение и поле
+            «Комментарий» отходили от закреплённого бара действий и не липли к
+            нему при долистывании донизу. */}
+        <div style={{ flex:1, overflowY:'auto', padding:'14px 18px 24px' }}>
 
           {/* Секундомер — компактный липкий бар вверху скролла (только в режиме
               активной тренировки). Липнет к верху скролл-области; отрицательные
