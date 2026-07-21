@@ -14,6 +14,7 @@
     "@iconify/react": "^6.0.2",
     "@supabase/supabase-js": "^2.110.0",
     "react": "^19.2.6",
+    "react-body-highlighter": "^2.0.5",
     "react-dom": "^19.2.6"
   },
   "devDependencies": {

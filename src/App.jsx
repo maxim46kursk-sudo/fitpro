@@ -9,6 +9,7 @@ import { oneRepMax, weightForReps, roundToPlate, percentTable, plateStep } from 
 import { buildExerciseAggregates, computeTemplateScale, parseTemplateSets, computeProgressSteps, computeBandTarget, UNRATED_STOP_AFTER } from './workoutPrompt.js'
 import { MAX_TELEGRAM_URL } from './config.js'
 import { Ic } from './icons.jsx'
+import { MuscleMap, hasMuscleMap } from './MuscleMap.jsx'
 import './App.css'
 
 // ── Тёмная тема (единая палитра, шаг 1: каркас + экран «Тренировки»).
@@ -3562,9 +3563,6 @@ const MUSCLE_ICONS={
   'Кор':       {ic:'game-icons:muscular-torso', color:'#F59E0B'},
   'Кардио':    {ic:'game-icons:heart-organ',    color:DANGER},
   'Всё тело':  {ic:'healthicons:body',          color:KCAL},
-  'Ягодицы':   {emoji:'🍑'},
-  'Грудь':     {emoji:'💪'},
-  'Плечи':     {emoji:'🏔'},
 }
 const MUSCLE_FALLBACK={ic:'game-icons:weight-lifting-up',color:PUR}
 // Рендерит иконку мышечной группы, а где её нет — эмодзи того же кегля.
@@ -3609,8 +3607,10 @@ function LibraryView({ customExercises }) {
       <div>
         <button onClick={()=>setSel(null)} style={{ fontSize:13,color:TXT3,border:'none',background:'none',cursor:'pointer',padding:0,marginBottom:18,display:'flex',alignItems:'center',gap:5 }}>← Все упражнения</button>
         <div style={{ display:'flex',alignItems:'center',gap:12,marginBottom:20 }}>
-          <div style={{ width:52,height:52,borderRadius:14,background:'rgba(124,122,240,.14)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
-            <MuscleIcon m={sel.m} size={40} />
+          <div style={{ width:72,height:96,borderRadius:16,background:'rgba(124,122,240,.14)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
+            {hasMuscleMap(sel.m)
+              ? <MuscleMap m={sel.m} height={84} color={PUR} />
+              : <MuscleIcon m={sel.m} size={44} />}
           </div>
           <div>
             <h2 style={{ fontSize:20,fontWeight:700,color:TXT,margin:0 }}>{sel.n}</h2>
@@ -3675,7 +3675,9 @@ function LibraryView({ customExercises }) {
         {fl.map((ex,i)=>(
           <Card key={i} onClick={()=>setSel(ex)} style={{ cursor:'pointer' }}>
             <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
-              <MuscleIcon m={ex.m} size={34} />
+              {hasMuscleMap(ex.m)
+                ? <MuscleMap m={ex.m} height={56} color={PUR} />
+                : <MuscleIcon m={ex.m} size={40} />}
               <div style={{ textAlign:'center' }}>
                 <div style={{ fontSize:15, fontWeight:600, color:TXT }}>{ex.n}{ex.custom&&<span style={{ marginLeft:6, fontSize:10, padding:'1px 6px', borderRadius:4, background:'#EEEDFE', color:PUR }}>моё</span>}</div>
                 <div style={{ fontSize:12, color:TXT3, marginTop:2 }}>{ex.m}{ex.eq?` · ${ex.eq}`:''}</div>
