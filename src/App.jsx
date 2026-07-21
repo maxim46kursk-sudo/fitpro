@@ -5585,18 +5585,6 @@ function SettingsView({ user, performLogout }) {
       }
     }
   }
-  const saveLang=async(v)=>{
-    const prev=lang
-    setLang(v);localStorage.setItem('fitpro_lang',v)
-    if(user?.id){
-      const{error}=await supabase.from('profiles').update({lang:v}).eq('id',user.id)
-      if(error){
-        console.error('Ошибка сохранения языка:',error)
-        setLang(prev);localStorage.setItem('fitpro_lang',prev)
-        flashSettingsSaveError()
-      }
-    }
-  }
   const saveAiStyle=async(v)=>{
     const prev=aiStyle
     setAiStyle(v)
@@ -5762,21 +5750,6 @@ function SettingsView({ user, performLogout }) {
             </div>
           )}
         </div>
-      </Section>
-
-      {/* Язык */}
-      <Section title="Язык">
-        <Row label="Язык приложения" right={
-          <div style={{display:'flex',gap:4}}>
-            {[['ru','Русский'],['en','English']].map(([v,lbl])=>(
-              <button key={v} onClick={()=>saveLang(v)} style={{
-                padding:'5px 12px',borderRadius:8,border:`1.5px solid ${lang===v?PUR:HAIR}`,
-                background:lang===v?`${PUR}15`:SURF,color:lang===v?PUR:TXT3,
-                fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset',
-              }}>{lbl}</button>
-            ))}
-          </div>
-        }/>
       </Section>
 
       {/* Поддержка */}
