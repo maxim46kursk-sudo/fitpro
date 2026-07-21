@@ -5208,7 +5208,7 @@ function LandingPage({ onEnter, isTelegram }) {
   const GB='1px solid rgba(255,255,255,0.09)'
 
   return(
-    <div style={{ minHeight:'100vh',background:'#08080f',color:'#fff',fontFamily:'system-ui,-apple-system,sans-serif',overflowX:'hidden' }}>
+    <div style={{ minHeight:'100vh',background:BG,color:'#fff',fontFamily:'system-ui,-apple-system,sans-serif',overflowX:'hidden' }}>
 
       {/* ── Шапка */}
       <div style={{ padding:'13px 22px',display:'flex',alignItems:'center',justifyContent:'space-between',borderBottom:'1px solid rgba(255,255,255,0.07)',position:'sticky',top:0,background:'rgba(8,8,15,0.92)',backdropFilter:'blur(12px)',zIndex:20 }}>
@@ -5240,7 +5240,7 @@ function LandingPage({ onEnter, isTelegram }) {
             </h1>
 
             <button onClick={()=>openForm('register')}
-              style={{ padding:'15px 40px',borderRadius:14,border:'none',background:`linear-gradient(135deg,${PUR},#5b54c4)`,color:'#fff',fontSize:17,fontWeight:700,cursor:'pointer',boxShadow:`0 10px 32px ${PUR}55`,marginBottom:52 }}>
+              style={{ padding:'15px 40px',borderRadius:14,border:'none',background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontSize:17,fontWeight:700,cursor:'pointer',boxShadow:`0 10px 32px ${PUR}55`,marginBottom:52 }}>
               Попробовать бесплатно
             </button>
 
@@ -5314,7 +5314,7 @@ function LandingPage({ onEnter, isTelegram }) {
           {/* ── Кнопка внизу */}
           <div style={{ textAlign:'center',paddingBottom:52 }}>
             <button onClick={()=>openForm('register')}
-              style={{ padding:'15px 44px',borderRadius:14,border:'none',background:`linear-gradient(135deg,${PUR},#5b54c4)`,color:'#fff',fontSize:17,fontWeight:700,cursor:'pointer',boxShadow:`0 10px 32px ${PUR}50` }}>
+              style={{ padding:'15px 44px',borderRadius:14,border:'none',background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontSize:17,fontWeight:700,cursor:'pointer',boxShadow:`0 10px 32px ${PUR}50` }}>
               Попробовать бесплатно
             </button>
           </div>
@@ -5424,7 +5424,7 @@ function LandingPage({ onEnter, isTelegram }) {
                     )}
 
                     <button onClick={authTab==='login'?handleLogin:handleRegister} disabled={authBusy}
-                      style={{ padding:'14px',borderRadius:11,border:'none',background:authBusy?'#6b7280':PUR,color:'#fff',fontSize:15,fontWeight:700,cursor:authBusy?'not-allowed':'pointer',marginTop:2,boxShadow:`0 6px 22px ${PUR}44`,transition:'all 0.15s' }}>
+                      style={{ padding:'14px',borderRadius:11,border:'none',background:authBusy?SURF2:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontSize:15,fontWeight:700,cursor:authBusy?'not-allowed':'pointer',marginTop:2,boxShadow:`0 6px 22px ${PUR}44`,transition:'all 0.15s' }}>
                       {authBusy ? 'Подожди...' : authTab==='login' ? 'Войти →' : 'Создать аккаунт →'}
                     </button>
 
@@ -5484,7 +5484,7 @@ function ResetPasswordView({ onDone }) {
   const GB='1px solid rgba(255,255,255,0.09)'
 
   return(
-    <div style={{ minHeight:'100vh',background:'#08080f',color:'#fff',fontFamily:'system-ui,-apple-system,sans-serif',display:'flex',alignItems:'center',justifyContent:'center',padding:'28px 18px' }}>
+    <div style={{ minHeight:'100vh',background:BG,color:'#fff',fontFamily:'system-ui,-apple-system,sans-serif',display:'flex',alignItems:'center',justifyContent:'center',padding:'28px 18px' }}>
       <div style={{ width:'100%',maxWidth:400 }}>
         <div style={{ background:'rgba(255,255,255,0.04)',border:GB,borderRadius:20,padding:'30px 24px' }}>
           {done ? (
@@ -5517,7 +5517,7 @@ function ResetPasswordView({ onDone }) {
                   </div>
                 )}
                 <button onClick={handleSave} disabled={busy}
-                  style={{ padding:'14px',borderRadius:11,border:'none',background:busy?'#6b7280':PUR,color:'#fff',fontSize:15,fontWeight:700,cursor:busy?'not-allowed':'pointer',marginTop:2,boxShadow:`0 6px 22px ${PUR}44`,transition:'all 0.15s' }}>
+                  style={{ padding:'14px',borderRadius:11,border:'none',background:busy?SURF2:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontSize:15,fontWeight:700,cursor:busy?'not-allowed':'pointer',marginTop:2,boxShadow:`0 6px 22px ${PUR}44`,transition:'all 0.15s' }}>
                   {busy?'Сохраняем...':'Сохранить пароль'}
                 </button>
               </div>
