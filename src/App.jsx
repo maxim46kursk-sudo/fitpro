@@ -95,13 +95,25 @@ function Av({ lbl, sz=36, bg=PUR, photo, gender }) {
   )
 }
 
-// Подпись снаряда под названием упражнения (src/exerciseMeta.js — эвристика по
-// названию). Снаряд определяется не у всех упражнений: если не определился —
-// строки просто нет, пустое место не занимаем.
-function EqLabel({ name, style={} }) {
-  const eq = equipment(name)
-  if (!eq) return null
-  return <div style={{ fontSize:12, color:TXT2, marginTop:2, ...style }}>{eq.label}</div>
+const MUSCLE_LABELS = { chest:'Грудь', back:'Спина', legs:'Ноги', shoulders:'Плечи',
+  arms:'Руки', abs:'Пресс', cardio:'Кардио' }
+// Справочник по названию: у упражнений из программы поля m/eq приходят пустыми
+// (см. сборку wExercises), а в EXERCISES они заполнены руками и точнее любой
+// эвристики — на 68 из 76 упражнений разбор по названию даёт другой ответ.
+const EX_BY_NAME = new Map(EXERCISES.map(e => [e.n, e]))
+
+// Мелкая строка под названием упражнения: группа мышц · снаряд.
+// Порядок источников — от точного к приблизительному: поля переданного
+// упражнения, затем справочник EXERCISES, и только потом эвристика
+// src/exerciseMeta.js (нужна для пользовательских упражнений, их в справочнике
+// нет). Если не определилось ни то ни другое — строки нет, пустое место не занимаем.
+function ExMeta({ name, m, eq, style={} }) {
+  const known = EX_BY_NAME.get(name)
+  const group = m || known?.m || MUSCLE_LABELS[muscleGroup(name)] || ''
+  const gear = eq || known?.eq || equipment(name)?.label || ''
+  const text = [group, gear].filter(Boolean).join(' · ')
+  if (!text) return null
+  return <div style={{ fontSize:12, color:TXT2, marginTop:2, ...style }}>{text}</div>
 }
 
 function Card({ children, style={}, onClick }) {
@@ -2143,10 +2155,9 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, gap:8 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:10, flex:1, minWidth:0 }}>
                       <span style={{ width:30, height:30, borderRadius:10, background:`linear-gradient(135deg, ${PUR}, #5b56c9)`, color:'#fff', fontWeight:800, fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>{ei+1}</span>
-                      <MuscleIcon group={muscleGroup(ex.n)} size={42} style={{ flex:'0 0 auto' }} />
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontSize:16, fontWeight:700, color:ex.done?'#4ade80':TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ex.n}</div>
-                        <EqLabel name={ex.n} />
+                        <ExMeta name={ex.n} m={ex.m} eq={ex.eq} />
                       </div>
                     </div>
                     <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
@@ -2614,10 +2625,9 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                 <div key={ex.id} style={{ padding:'14px 14px 12px', borderTop:borderTop?'1px dashed rgba(0,0,0,0.1)':undefined }}>
                   <div style={{ display:'flex', alignItems:'flex-start', gap:12 }}>
                     <div style={{ flexShrink:0, width:36, height:36, borderRadius:'50%', background:PUR, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:700, color:'#fff' }}>{ex.num}</div>
-                    <MuscleIcon group={muscleGroup(ex.name)} size={42} style={{ flex:'0 0 auto' }} />
                     <div style={{ flex:1, minWidth:0 }}>
                       <div style={{ fontSize:14, fontWeight:700, color:TXT, marginBottom:3 }}>{ex.name||'Упражнение'}</div>
-                      <EqLabel name={ex.name} style={{ marginTop:-2, marginBottom:3 }} />
+                      <ExMeta name={ex.name} style={{ marginTop:-2, marginBottom:3 }} />
                       {ex.sets&&<div style={{ fontSize:12, color:TXT3, lineHeight:1.7 }}>{ex.sets}</div>}
                     </div>
                     <div style={{ position:'relative',flexShrink:0 }}>
@@ -3604,7 +3614,7 @@ function LibraryView({ customExercises }) {
         <button onClick={()=>setSel(null)} style={{ fontSize:13,color:TXT3,border:'none',background:'none',cursor:'pointer',padding:0,marginBottom:18,display:'flex',alignItems:'center',gap:5 }}><GlassIcon name="back" size={16} />Все упражнения</button>
         <div style={{ display:'flex',alignItems:'center',gap:12,marginBottom:20 }}>
           <div style={{ width:56,height:56,borderRadius:16,background:'rgba(124,122,240,.14)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
-            <MuscleIcon group={muscleGroup(sel.n)} size={46} />
+            <GlassIcon name="dumbbell" size={38} />
           </div>
           <div>
             <h2 style={{ fontSize:20,fontWeight:700,color:TXT,margin:0 }}>{sel.n}</h2>
@@ -3668,12 +3678,8 @@ function LibraryView({ customExercises }) {
       <div style={{ display:'flex', flexDirection:'column', gap:9 }}>
         {fl.map((ex,i)=>(
           <Card key={i} onClick={()=>setSel(ex)} style={{ cursor:'pointer' }}>
-            {/* Снаряд здесь берём из данных упражнения (ex.eq), а не из
-                эвристики exerciseMeta — данные точнее. Иконка группы мышц
-                эвристике доверяет: она только визуальная подсказка. */}
-            <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-              <MuscleIcon group={muscleGroup(ex.n)} size={42} style={{ flex:'0 0 auto' }} />
-              <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
+              <div style={{ textAlign:'center' }}>
                 <div style={{ fontSize:15, fontWeight:600, color:TXT }}>{ex.n}{ex.custom&&<span style={{ marginLeft:6, fontSize:10, padding:'1px 6px', borderRadius:4, background:'#EEEDFE', color:PUR }}>моё</span>}</div>
                 <div style={{ fontSize:12, color:TXT3, marginTop:2 }}>{ex.m}{ex.eq?` · ${ex.eq}`:''}</div>
               </div>
@@ -7200,7 +7206,10 @@ export default function App() {
     <>
       {/* Градиенты для стеклянных иконок — монтируются один раз на всё приложение */}
       <GlassDefs/>
-      {/* Градиенты для иконок групп мышц — тоже один раз на всё приложение */}
+      {/* Градиенты для иконок групп мышц. Сам <MuscleIcon> в рядах упражнений
+          сейчас не используется (откатили силуэт-манекен, остались текстовые
+          подписи ExMeta), но набор оставлен в проекте — чтобы вернуть, хватит
+          одной строки в ряду, пересобирать ничего не нужно. */}
       <MuscleDefs/>
       {/* Глобальные стили — адаптив */}
       <style>{`
