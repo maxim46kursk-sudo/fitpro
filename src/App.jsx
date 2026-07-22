@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import AIAssistant from './AIAssistant'
-import { supabase } from './supabase.js'
+import { supabase, SUPABASE_AUTH_STORAGE_KEY } from './supabase.js'
 import { FOLDERS, PROGRAMS_MAP, EXERCISES, isOneSidedExercise, countCompletedProgramSlots, isProgramFullyCompleted } from './programs.js'
 import { oneRepMax, weightForReps, roundToPlate, percentTable, plateStep } from './oneRepMax.js'
 // Движок прогрессии (1ПМ) — врезан в кнопку "▶ Начать тренировку" внутри
@@ -12,6 +12,7 @@ import { Ic } from './icons.jsx'
 import { GlassDefs, GlassIcon } from './glassIcons'
 import { MuscleDefs, MuscleIcon } from './muscleIcons'
 import { muscleGroup, equipment } from './exerciseMeta'
+import { POLICY_VERSION, POLICY_SECTIONS, OFFER_SECTIONS, CONSENT_INTRO, CONSENT_CHECKBOX } from './legalText'
 import './App.css'
 
 // ── Тёмная тема (единая палитра, шаг 1: каркас + экран «Тренировки»).
@@ -5239,16 +5240,16 @@ function LandingPage({ onEnter, isTelegram }) {
   }
 
   const handleLogin=async()=>{
-    if(!form.email.trim()||!form.password.trim()){setAuthError('Введи email и пароль');return}
+    if(!form.email.trim()||!form.password.trim()){setAuthError('Введи почту и пароль');return}
     setAuthBusy(true);setAuthError('')
     const{error}=await supabase.auth.signInWithPassword({email:form.email.trim(),password:form.password})
-    if(error){setAuthError('Неверный email или пароль');setAuthBusy(false);return}
+    if(error){setAuthError('Неверная почта или пароль');setAuthBusy(false);return}
     setAuthBusy(false)
     // onAuthStateChange в App() автоматически установит пользователя
   }
 
   const handleForgot=async()=>{
-    if(!forgotEmail.trim()){setForgotError('Введи email');return}
+    if(!forgotEmail.trim()){setForgotError('Введи почту');return}
     setForgotBusy(true);setForgotError('')
     const{error}=await supabase.auth.resetPasswordForEmail(forgotEmail.trim(),{redirectTo:window.location.origin})
     if(error){setForgotError(error.message);setForgotBusy(false);return}
@@ -5389,7 +5390,7 @@ function LandingPage({ onEnter, isTelegram }) {
                   </button>
                   <h2 style={{ fontSize:20,fontWeight:800,margin:'0 0 6px' }}>Восстановление пароля</h2>
                   <p style={{ fontSize:13,color:'rgba(255,255,255,0.38)',margin:'0 0 22px',lineHeight:1.65 }}>
-                    Введи email — пришлём инструкции по восстановлению
+                    Введи почту — пришлём инструкции по восстановлению
                   </p>
                   {forgotDone ? (
                     <div style={{ textAlign:'center',padding:'24px 0' }}>
@@ -5400,7 +5401,7 @@ function LandingPage({ onEnter, isTelegram }) {
                   ):(
                     <div style={{ display:'flex',flexDirection:'column',gap:14 }}>
                       <div>
-                        <label style={{ fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.45)',display:'block',marginBottom:6 }}>Email</label>
+                        <label style={{ fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.45)',display:'block',marginBottom:6 }}>Эл. почта</label>
                         <input value={forgotEmail} type="email" placeholder="ivan@example.com"
                           onChange={e=>{setForgotEmail(e.target.value);setForgotError('')}}
                           onKeyDown={e=>e.key==='Enter'&&!forgotBusy&&handleForgot()}
@@ -5445,7 +5446,7 @@ function LandingPage({ onEnter, isTelegram }) {
                     )}
 
                     <div>
-                      <label style={{ fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.45)',display:'block',marginBottom:6 }}>Email <span style={{ color:COR }}>*</span></label>
+                      <label style={{ fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.45)',display:'block',marginBottom:6 }}>Эл. почта <span style={{ color:COR }}>*</span></label>
                       <input value={form.email} type="email" placeholder="ivan@example.com"
                         onChange={e=>{setForm(v=>({...v,email:e.target.value}));setAuthError('')}}
                         onKeyDown={e=>e.key==='Enter'&&(authTab==='login'?handleLogin():handleRegister())}
@@ -5582,16 +5583,20 @@ function ResetPasswordView({ onDone }) {
 }
 
 // ── SettingsView ─────────────────────────────────────────────────────────────
-function SettingsView({ user, performLogout }) {
+function SettingsView({ user, performLogout, onAccountDeleted }) {
   const load=(k,def)=>{try{return JSON.parse(localStorage.getItem(k)??'null')??def}catch{return def}}
   const [notifs,setNotifs]=useState(()=>load('fitpro_notifs',{workout:false,diary:false,report:false}))
   const [units,setUnits]=useState(()=>load('fitpro_units',{weight:'kg',height:'cm'}))
   const [chatCount,setChatCount]=useState(null)
   const [clearConfirm,setClearConfirm]=useState(false)
   const [deleteConfirm,setDeleteConfirm]=useState(false)
+  const [deleting,setDeleting]=useState(false)
+  const [exporting,setExporting]=useState(false)
   const [dataMsg,setDataMsg]=useState('')
   const [deleteError,setDeleteError]=useState(false)
   const [aiStyle,setAiStyle]=useState('act')
+  const [showPolicy,setShowPolicy]=useState(false)
+  const [showOffer,setShowOffer]=useState(false)
   // Тост ошибки записи настроек — тот же паттерн, что showFoodSaveError и т.п.
   const [showSettingsSaveError,setShowSettingsSaveError]=useState(false)
   const flashSettingsSaveError=()=>{setShowSettingsSaveError(true);setTimeout(()=>setShowSettingsSaveError(false),3500)}
@@ -5654,42 +5659,90 @@ function SettingsView({ user, performLogout }) {
     setChatCount(0);setClearConfirm(false)
   }
 
-  // "Удалить все мои данные" раньше чистила только chat_messages/food_diary/
-  // food_goals + localStorage — ни workouts/workout_sets (дневник тренировок),
-  // ни constructor_sets/constructor_exercises (история Конструктора) не
-  // трогались вообще. Из-за этого дневник выглядел пустым локально (localStorage
-  // стёрт, signOut), но данные в Supabase переживали "очистку" и either
-  // возвращались при следующем входе, либо оставались невидимым источником
-  // рекомендаций в Конструкторе. Теперь удаляем реально всё, что принадлежит
-  // пользователю, во всех таблицах — без исключений и без возможности
-  // восстановления. workout_sets чистим по user_id напрямую (не полагаясь
-  // только на ON DELETE CASCADE от workouts), чтобы захватить и старые строки
-  // без workout_id — их не задел бы каскад.
-  const deleteAll=async()=>{
-    if(!user?.id)return
-    // Каждое удаление проверяем отдельно — раньше все восемь шли вслепую, и
-    // при частичном сбое (сеть, RLS и т.п.) клиент видел безусловный логаут,
-    // как будто "всё удалено", хотя часть таблиц могла остаться нетронутой.
-    const results=[
-      await supabase.from('chat_messages').delete().eq('user_id',user.id),
-      await supabase.from('food_diary').delete().eq('user_id',user.id),
-      await supabase.from('food_goals').delete().eq('user_id',user.id),
-      await supabase.from('workout_sets').delete().eq('user_id',user.id),
-      await supabase.from('workouts').delete().eq('user_id',user.id),
-      await supabase.from('planned_workouts').delete().eq('user_id',user.id),
-      await supabase.from('constructor_sets').delete().eq('user_id',user.id),
-      await supabase.from('constructor_exercises').delete().eq('user_id',user.id),
-    ]
-    const failed=results.some(r=>r.error)
-    if(failed){
-      results.forEach(r=>{if(r.error)console.error('Ошибка при "Удалить все мои данные":',r.error)})
+  // "Скачать мои данные" — реализация права на доступ к своим ПДн (152-ФЗ).
+  // Раньше кнопка была заглушкой: рисовала "✓ Данные будут отправлены на твой
+  // email" и не делала вообще ничего — никакой выгрузки и никакого письма.
+  // Теперь состав файла собирает api/export-data.js по тому же перечню таблиц,
+  // что и удаление (api/_userTables.js), и браузер сохраняет его как JSON.
+  const exportData=async()=>{
+    if(!user?.id||exporting)return
+    setExporting(true);setDeleteError(false);setDataMsg('')
+    let url=null
+    try{
+      const{data:{session}}=await supabase.auth.getSession()
+      const token=session?.access_token
+      if(!token)throw new Error('нет активной сессии, перезайди в приложение')
+      const res=await fetch('/api/export-data',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+      })
+      const body=await res.json().catch(()=>({}))
+      if(!res.ok)throw new Error(body?.error||`сервер вернул ${res.status}`)
+      // Blob + временная <a download> — единственный способ отдать файл без
+      // серверного эндпоинта отдачи и без открытия новой вкладки.
+      url=URL.createObjectURL(new Blob([JSON.stringify(body,null,2)],{type:'application/json'}))
+      const a=document.createElement('a')
+      a.href=url
+      a.download=`fitpro-данные-${localTodayISO()}.json`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setDataMsg('✓ Файл скачан')
+      setTimeout(()=>setDataMsg(''),4000)
+    }catch(e){
+      console.error('Ошибка выгрузки данных:',e)
       setDeleteError(true)
-      setDataMsg('Не всё удалилось — проверь связь и повтори')
-      setTimeout(()=>{setDataMsg('');setDeleteError(false)},4000)
-      return
+      setDataMsg(`Не удалось выгрузить данные: ${e.message}`)
+      setTimeout(()=>{setDataMsg('');setDeleteError(false)},6000)
+    }finally{
+      // Без revoke Blob висит в памяти вкладки до перезагрузки страницы.
+      // Отзываем в следующем тике: Safari успевает начать скачивание только
+      // после возврата в цикл событий.
+      if(url)setTimeout(()=>URL.revokeObjectURL(url),0)
+      setExporting(false)
     }
-    performLogout()
   }
+
+  // "Удалить аккаунт и данные" — реализация права на удаление (152-ФЗ) и
+  // одновременно механизм отзыва согласия на обработку ПДн.
+  //
+  // Раньше здесь была кнопка "Удалить все мои данные", которая чистила восемь
+  // таблиц запросами прямо с клиента. Она НЕ удаляла сам аккаунт (auth.users)
+  // и строку profiles, а также не трогала measurements, custom_exercises,
+  // training_survey, workout_templates, assigned_programs и trainer_clients —
+  // "удалившийся" пользователь при следующем входе получал прежний аккаунт с
+  // частью истории на месте. Полное удаление с клиента и невозможно: анонимный
+  // ключ под RLS не имеет доступа к auth.users. Поэтому всё делает серверная
+  // функция api/delete-account.js на service_role-ключе, а личность берёт из
+  // токена вызывающего.
+  const deleteAccount=async()=>{
+    if(!user?.id||deleting)return
+    setDeleting(true);setDeleteError(false);setDataMsg('')
+    try{
+      const{data:{session}}=await supabase.auth.getSession()
+      const token=session?.access_token
+      if(!token)throw new Error('нет активной сессии, перезайди в приложение')
+      const res=await fetch('/api/delete-account',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+      })
+      const body=await res.json().catch(()=>({}))
+      if(!res.ok)throw new Error(body?.error||`сервер вернул ${res.status}`)
+      // Успех — состояние чистит App (onAccountDeleted): без вопроса о
+      // несохранённых тренировках, спасать уже нечего.
+      onAccountDeleted()
+    }catch(e){
+      console.error('Ошибка удаления аккаунта:',e)
+      setDeleting(false)
+      setDeleteConfirm(false)
+      setDeleteError(true)
+      setDataMsg(`Не удалось удалить аккаунт: ${e.message}`)
+      setTimeout(()=>{setDataMsg('');setDeleteError(false)},6000)
+    }
+  }
+
+  if(showPolicy) return <PolicyView onClose={()=>setShowPolicy(false)} />
+  if(showOffer) return <OfferView onClose={()=>setShowOffer(false)} />
 
   return(
     <div style={{padding:'16px 16px 40px',display:'flex',flexDirection:'column',gap:0}}>
@@ -5757,48 +5810,55 @@ function SettingsView({ user, performLogout }) {
 
       {/* История чата */}
       <Section title="История чата">
-        <Row label="Сохранено сообщений" sub="История очищается раз в 30 дней" right={
+        <Row label="Сохранено сообщений" sub="Хранится, пока не удалишь" right={
           <span style={{fontSize:15,fontWeight:700,color:PUR}}>{chatCount===null?'...' :chatCount}</span>
         }/>
         <div style={{padding:'6px 0 14px'}}>
-          <div style={{fontSize:12,color:TXT3,marginBottom:10}}>История автоматически очищается раз в 30 дней. Перед очисткой ты получишь письмо с архивом на твой email.</div>
+          <div style={{fontSize:12,color:TXT3,marginBottom:10}}>Переписка хранится на сервере, пока ты сам её не удалишь. Хочешь сохранить — сначала выгрузи файл кнопкой «Скачать мои данные» ниже, в разделе «Конфиденциальность».</div>
           {!clearConfirm?(
             <button onClick={()=>setClearConfirm(true)} style={{
               width:'100%',padding:'11px',borderRadius:10,border:'1px solid rgba(255,69,58,.40)',
               background:'rgba(255,69,58,.12)',color:DANGER,fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset',
             }}>Очистить историю чата</button>
           ):(
-            <div style={{display:'flex',gap:8}}>
-              <button onClick={clearChat} style={{flex:1,padding:'11px',borderRadius:10,border:'none',background:'#ef4444',color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset'}}>Удалить</button>
-              <button onClick={()=>setClearConfirm(false)} style={{flex:1,padding:'11px',borderRadius:10,border:`1.5px solid ${HAIR}`,background:SURF,color:TXT3,fontSize:14,cursor:'pointer',minHeight:'unset'}}>Отмена</button>
-            </div>
+            <>
+              <div style={{fontSize:13,fontWeight:600,color:TXT,marginBottom:10}}>Очистить историю чата? Действие необратимо, восстановить переписку будет нельзя.</div>
+              <div style={{display:'flex',gap:8}}>
+                <button onClick={clearChat} style={{flex:1,padding:'11px',borderRadius:10,border:'none',background:'#ef4444',color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset'}}>Удалить</button>
+                <button onClick={()=>setClearConfirm(false)} style={{flex:1,padding:'11px',borderRadius:10,border:`1.5px solid ${HAIR}`,background:SURF,color:TXT3,fontSize:14,cursor:'pointer',minHeight:'unset'}}>Отмена</button>
+              </div>
+            </>
           )}
         </div>
       </Section>
 
       {/* Конфиденциальность */}
       <Section title="Конфиденциальность">
+        <button onClick={()=>setShowPolicy(true)} style={{
+          display:'block',width:'100%',padding:0,border:'none',background:'none',
+          textAlign:'left',cursor:'pointer',minHeight:'unset',
+        }}>
+          <Row label="Политика конфиденциальности" sub="Как обрабатываются твои данные (152-ФЗ)"
+               right={<span style={{fontSize:16,color:TXT3}}>›</span>}/>
+        </button>
+        <button onClick={()=>setShowOffer(true)} style={{
+          display:'block',width:'100%',padding:0,border:'none',background:'none',
+          textAlign:'left',cursor:'pointer',minHeight:'unset',
+        }}>
+          <Row label="Пользовательское соглашение (оферта)" sub="Условия оказания услуг"
+               right={<span style={{fontSize:16,color:TXT3}}>›</span>}/>
+        </button>
         {dataMsg&&<div style={{padding:'10px 0',fontSize:13,color:deleteError?'#ef4444':TEA,fontWeight:500}}>{dataMsg}</div>}
         <div style={{paddingBottom:14,display:'flex',flexDirection:'column',gap:8}}>
-          <button onClick={()=>{setDataMsg('✓ Данные будут отправлены на твой email');setTimeout(()=>setDataMsg(''),4000)}} style={{
+          <button onClick={exportData} disabled={exporting} style={{
             width:'100%',padding:'11px',borderRadius:10,border:`1.5px solid ${HAIR}`,
-            background:SURF,color:TXT,fontSize:14,fontWeight:500,cursor:'pointer',minHeight:'unset',textAlign:'left',
-          }}>📤 Скачать мои данные</button>
-          {!deleteConfirm?(
-            <button onClick={()=>setDeleteConfirm(true)} style={{
-              width:'100%',padding:'11px',borderRadius:10,border:'1px solid rgba(255,69,58,.40)',
-              background:'rgba(255,69,58,.12)',color:DANGER,fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset',
-            }}>🗑 Удалить все мои данные</button>
-          ):(
-            <div style={{background:'#fff5f5',borderRadius:12,padding:'14px',border:'1.5px solid #fecaca'}}>
-              <div style={{fontSize:14,fontWeight:600,color:'#ef4444',marginBottom:10}}>Удалить все данные?</div>
-              <div style={{fontSize:13,color:TXT3,marginBottom:12}}>Это действие необратимо. Все тренировки, питание и история чата будут удалены.</div>
-              <div style={{display:'flex',gap:8}}>
-                <button onClick={deleteAll} style={{flex:1,padding:'11px',borderRadius:10,border:'none',background:'#ef4444',color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset'}}>Удалить всё</button>
-                <button onClick={()=>setDeleteConfirm(false)} style={{flex:1,padding:'11px',borderRadius:10,border:`1.5px solid ${HAIR}`,background:SURF,color:TXT3,fontSize:14,cursor:'pointer',minHeight:'unset'}}>Отмена</button>
-              </div>
-            </div>
-          )}
+            background:SURF,color:exporting?TXT3:TXT,fontSize:14,fontWeight:500,
+            cursor:exporting?'not-allowed':'pointer',minHeight:'unset',textAlign:'left',
+          }}>{exporting?'📤 Готовим файл…':'📤 Скачать мои данные'}</button>
+          <button onClick={()=>setDeleteConfirm(true)} style={{
+            width:'100%',padding:'11px',borderRadius:10,border:'1px solid rgba(255,69,58,.40)',
+            background:'rgba(255,69,58,.12)',color:DANGER,fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset',
+          }}>🗑 Удалить аккаунт и данные</button>
         </div>
       </Section>
 
@@ -5820,6 +5880,158 @@ function SettingsView({ user, performLogout }) {
         ))}
       </Section>
 
+      {deleteConfirm&&(
+        <div style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:2000,display:'flex',alignItems:'center',justifyContent:'center',padding:16 }}
+          onClick={()=>{if(!deleting)setDeleteConfirm(false)}}>
+          <div style={{ background:SURF,borderRadius:16,padding:'24px 22px',width:'100%',maxWidth:380,boxShadow:'0 20px 60px rgba(0,0,0,0.45)' }}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{ fontSize:16,fontWeight:700,color:TXT,marginBottom:10 }}>Удалить аккаунт?</div>
+            <div style={{ fontSize:13,lineHeight:1.55,color:TXT2,marginBottom:18 }}>
+              Все твои данные и история будут стёрты навсегда, восстановить нельзя.
+            </div>
+            <div style={{ display:'flex',gap:8 }}>
+              <button onClick={deleteAccount} disabled={deleting} style={{
+                flex:1,padding:'11px',borderRadius:10,border:'none',background:DANGER,color:'#fff',
+                fontSize:14,fontWeight:700,cursor:deleting?'not-allowed':'pointer',minHeight:'unset',opacity:deleting?0.7:1,
+              }}>{deleting?'Удаляем…':'Удалить'}</button>
+              <button onClick={()=>setDeleteConfirm(false)} disabled={deleting} style={{
+                flex:1,padding:'11px',borderRadius:10,border:`1.5px solid ${HAIR}`,background:SURF,color:TXT2,
+                fontSize:14,cursor:deleting?'not-allowed':'pointer',minHeight:'unset',
+              }}>Отмена</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  )
+}
+
+// ── Правовые тексты (Политика 152-ФЗ, Оферта). Сами формулировки живут в
+// legalText.js — здесь только вёрстка, чтобы правки текста не требовали лезть
+// в App.jsx. Разметка одна на оба документа: они отличаются лишь заголовком и
+// массивом разделов.
+function LegalTextView({ title, sections, onClose }) {
+  return (
+    <div style={{minHeight:'100vh',background:BG,color:TXT,overflowY:'auto'}}>
+      <div style={{maxWidth:720,margin:'0 auto',padding:'16px 16px 48px'}}>
+        <button onClick={onClose} style={{
+          padding:'9px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,
+          background:SURF,color:TXT,fontSize:14,fontWeight:500,cursor:'pointer',
+          minHeight:'unset',marginBottom:18,
+        }}>‹ Назад</button>
+        <h1 style={{fontSize:22,fontWeight:700,color:TXT,margin:'0 0 20px'}}>{title}</h1>
+        {sections.map(sec=>(
+          <div key={sec.h} style={{marginBottom:22}}>
+            <h2 style={{fontSize:15,fontWeight:700,color:TXT,margin:'0 0 8px'}}>{sec.h}</h2>
+            {sec.p.map((par,i)=>(
+              <p key={i} style={{fontSize:14,lineHeight:1.6,color:TXT2,margin:'0 0 8px'}}>{par}</p>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Обёртки с прежними сигнатурами — вызовы PolicyView ({onClose}) в SettingsView
+// и ConsentGate менять не пришлось.
+function PolicyView({ onClose }) {
+  return <LegalTextView title="Политика конфиденциальности" sections={POLICY_SECTIONS} onClose={onClose} />
+}
+
+function OfferView({ onClose }) {
+  return <LegalTextView title="Пользовательское соглашение" sections={OFFER_SECTIONS} onClose={onClose} />
+}
+
+// ── Ворота согласия на обработку ПДн. Показываются вместо приложения, пока в
+// profiles не записаны pd_consent_at/pd_consent_version текущей версии.
+// Факт согласия пишем В БАЗУ, а не в localStorage: это юридически значимое
+// подтверждение, оно должно переживать смену устройства и очистку кэша.
+function ConsentGate({ user, onAccepted, onDecline }) {
+  const [checked,setChecked]=useState(false)
+  const [saving,setSaving]=useState(false)
+  const [saveError,setSaveError]=useState('')
+  const [showPolicy,setShowPolicy]=useState(false)
+
+  const accept=async()=>{
+    if(!checked||saving)return
+    setSaving(true);setSaveError('')
+    // .select() обязателен: без него update по несуществующей строке профиля
+    // вернул бы success с нулём затронутых строк — пользователь прошёл бы
+    // дальше, а согласие нигде не сохранилось бы, и на следующем входе экран
+    // всплыл бы снова. Проверяем, что обновилась ровно наша строка.
+    const{data,error}=await supabase.from('profiles')
+      .update({pd_consent_at:new Date().toISOString(),pd_consent_version:POLICY_VERSION})
+      .eq('id',user.id)
+      .select('id')
+    setSaving(false)
+    if(error){
+      console.error('Ошибка сохранения согласия:',error)
+      setSaveError('Не удалось сохранить согласие — проверь связь и повтори')
+      return
+    }
+    if(!data?.length){
+      console.error('Согласие не сохранено: профиль не найден, id =',user.id)
+      setSaveError('Профиль не найден — перезайди в приложение или напиши в поддержку')
+      return
+    }
+    onAccepted()
+  }
+
+  if(showPolicy) return <PolicyView onClose={()=>setShowPolicy(false)} />
+
+  return (
+    <div style={{position:'fixed',inset:0,zIndex:3000,background:BG,color:TXT,overflowY:'auto'}}>
+      <div style={{maxWidth:560,margin:'0 auto',padding:'32px 20px 48px'}}>
+        <h1 style={{fontSize:22,fontWeight:700,color:TXT,margin:'0 0 18px'}}>Согласие на обработку данных</h1>
+
+        {CONSENT_INTRO.map((par,i)=>(
+          <p key={i} style={{fontSize:14,lineHeight:1.6,color:TXT2,margin:'0 0 12px'}}>{par}</p>
+        ))}
+
+        <button onClick={()=>setShowPolicy(true)} style={{
+          padding:0,border:'none',background:'none',color:ACCENT2,
+          fontSize:14,fontWeight:600,cursor:'pointer',minHeight:'unset',
+          textDecoration:'underline',margin:'4px 0 22px',
+        }}>Читать Политику полностью</button>
+
+        <label style={{
+          display:'flex',alignItems:'flex-start',gap:11,cursor:'pointer',
+          background:SURF,border:`1px solid ${HAIR}`,borderRadius:14,
+          padding:'14px 15px',marginBottom:18,
+        }}>
+          <input type="checkbox" checked={checked} onChange={e=>setChecked(e.target.checked)}
+                 style={{width:20,height:20,flexShrink:0,marginTop:1,accentColor:PUR,cursor:'pointer'}}/>
+          <span style={{fontSize:13,lineHeight:1.55,color:TXT}}>{CONSENT_CHECKBOX}</span>
+        </label>
+
+        {saveError&&(
+          <div style={{
+            background:'rgba(255,69,58,.12)',border:'1px solid rgba(255,69,58,.40)',
+            borderRadius:10,padding:'11px 14px',marginBottom:14,
+            fontSize:13,fontWeight:600,color:DANGER,
+          }}>{saveError}</div>
+        )}
+
+        <button onClick={accept} disabled={!checked||saving} style={{
+          width:'100%',padding:'15px',borderRadius:14,border:'none',
+          background:checked?`linear-gradient(180deg, ${ACCENT2}, ${PUR})`:SURF2,
+          color:checked?'#fff':TXT3,fontSize:16,fontWeight:700,
+          cursor:checked&&!saving?'pointer':'not-allowed',
+          boxShadow:checked?`0 10px 32px ${PUR}55`:'none',
+          opacity:saving?0.7:1,
+        }}>{saving?'Сохраняем…':'Продолжить'}</button>
+
+        {/* Без этого выхода экран — ловушка: не согласившись, пользователь не
+            может ни войти, ни выйти. onDecline разлогинивает и возвращает на
+            LandingPage; согласие в базу при этом не пишется. */}
+        <button onClick={onDecline} disabled={saving} style={{
+          display:'block',margin:'16px auto 0',padding:'8px 12px',
+          border:'none',background:'none',color:TXT3,
+          fontSize:14,fontWeight:500,cursor:saving?'not-allowed':'pointer',minHeight:'unset',
+        }}>Выйти</button>
+      </div>
     </div>
   )
 }
@@ -6098,7 +6310,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
             {/* Email и Telegram — у telegram-аккаунтов поле Email не рисуем
                 вовсе: там лежит технический tg{id}@telegram.fitpro, менять
                 который пользователю нельзя и показывать незачем. */}
-            {(isTgUser?[{key:'telegram',label:'Telegram'}]:[{key:'email',label:'Email'},{key:'telegram',label:'Telegram'}]).map(f=>(
+            {(isTgUser?[{key:'telegram',label:'Telegram'}]:[{key:'email',label:'Эл. почта'},{key:'telegram',label:'Telegram'}]).map(f=>(
               <div key={f.key}>
                 <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>{f.label}</label>
                 <input value={userEdit[f.key]||''} type="text" placeholder={f.key==='email'?'ivan@example.com':'@username'}
@@ -6617,6 +6829,11 @@ export default function App() {
     try{return JSON.parse(localStorage.getItem('fitpro_custom_ex')||'[]')}catch{return []}
   })
   const [userRole,setUserRole]=useState(()=>localStorage.getItem('fitpro_role')||'client')
+  // Согласие на обработку ПДн (152-ФЗ). consentLoaded — «ответ из базы получен»,
+  // до него приложение не рендерим вообще, иначе на секунду мелькнёт контент
+  // тому, кто согласия ещё не давал.
+  const [consentLoaded,setConsentLoaded]=useState(false)
+  const [consentGiven,setConsentGiven]=useState(false)
   // Премиум-признак клиента = у него назначен тренер (profiles.coach_id непустой).
   // По умолчанию false, пока профиль не загрузился — значок видео тренеру не
   // мигнёт свободному пользователю. У самого тренера coach_id пустой, так что
@@ -6800,6 +7017,28 @@ export default function App() {
     document.body.classList.toggle('telegram-app',isTelegram)
   },[isTelegram])
 
+  // Согласие на обработку ПДн (152-ФЗ): читаем из profiles, давал ли текущий
+  // пользователь согласие и на какую версию Политики. Версию сверяем строго —
+  // после поднятия POLICY_VERSION в legalText.js согласие спросят заново.
+  // cancelled — защита от гонки при быстрой смене пользователя: ответ по
+  // старому id не должен открыть ворота новому.
+  useEffect(()=>{
+    if(!user?.id){setConsentLoaded(false);setConsentGiven(false);return}
+    let cancelled=false
+    setConsentLoaded(false)
+    supabase.from('profiles').select('pd_consent_at,pd_consent_version').eq('id',user.id).single()
+      .then(({data,error})=>{
+        if(cancelled)return
+        if(error)console.error('Не удалось прочитать согласие на обработку ПДн:',error)
+        // При любой ошибке (сеть, строки профиля ещё нет) остаёмся на
+        // consentGiven=false — лишний раз спросить согласие безопаснее,
+        // чем пустить в приложение без него.
+        setConsentGiven(!error&&!!data?.pd_consent_at&&data?.pd_consent_version===POLICY_VERSION)
+        setConsentLoaded(true)
+      })
+    return()=>{cancelled=true}
+  },[user?.id])
+
   // Авто-вход внутри Telegram: как только известно, что мы (а) внутри
   // Telegram, (б) уже определили, есть ли сохранённая Supabase-сессия
   // (authLoading===false), и (в) пользователь всё ещё не залогинен — шлём
@@ -6888,8 +7127,30 @@ export default function App() {
     setWorkoutHistory([])
     setCustomExercises([])
     Object.keys(localStorage).filter(k=>k.startsWith('sb-')).forEach(k=>localStorage.removeItem(k))
+    // Ключ сессии живёт под 'fitpro-auth' (через дефис) — под фильтры выше
+    // ('sb-' и 'fitpro_' в clearFitproData) он не попадает, поэтому до сих пор
+    // не удалялся вообще, и выход целиком зависел от signOut(). А signOut тут
+    // best-effort: при сетевом сбое он ловится в catch, и токен оставался
+    // лежать в localStorage. Убираем явно, как и предполагал комментарий
+    // к константе в src/supabase.js.
+    localStorage.removeItem(SUPABASE_AUTH_STORAGE_KEY)
     clearFitproData()
     supabase.auth.signOut({ scope: 'local' }).catch(err => console.warn('signOut (best-effort, не блокирует выход):', err))
+  }
+
+  // Сброс после удаления аккаунта. От performLogout отличается тем, что НЕ
+  // спрашивает про несохранённые тренировки: аккаунт на сервере уже удалён,
+  // отправлять их некуда и спасать нечего. Ключ сессии убираем ещё и руками —
+  // signOut() тут best-effort (сеть может отвалиться), а протухший токен от
+  // несуществующего аккаунта в localStorage оставлять нельзя.
+  const resetAfterAccountDelete = () => {
+    setUser(null)
+    setWorkoutHistory([])
+    setCustomExercises([])
+    Object.keys(localStorage).filter(k=>k.startsWith('sb-')).forEach(k=>localStorage.removeItem(k))
+    localStorage.removeItem(SUPABASE_AUTH_STORAGE_KEY)
+    clearFitproData()
+    supabase.auth.signOut({ scope: 'local' }).catch(err => console.warn('signOut после удаления аккаунта (best-effort):', err))
   }
 
   // Свои упражнения — так же подтягиваются из Supabase; локальные без
@@ -7163,6 +7424,8 @@ export default function App() {
   if(authLoading) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:BG,color:TXT3,fontSize:14}}>Загрузка...</div>
   if(!user&&telegramAuthPending) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:BG,color:TXT3,fontSize:14}}>Входим…</div>
   if(!user) return <LandingPage onEnter={setUser} isTelegram={isTelegram} />
+  if(!consentLoaded) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:BG,color:TXT3,fontSize:14}}>Загрузка…</div>
+  if(!consentGiven) return <ConsentGate user={user} onAccepted={()=>setConsentGiven(true)} onDecline={performLogout} />
 
   // Всё, КРОМЕ Тренировок — обычная свитч-навигация, монтируется/
   // размонтируется по nav, как и раньше.
@@ -7377,7 +7640,7 @@ export default function App() {
             <span style={{fontSize:18,fontWeight:800,color:TXT,flex:1}}>Настройки</span>
           </div>
           <div style={{flex:1,overflowY:'auto'}}>
-            <SettingsView user={user} performLogout={performLogout} />
+            <SettingsView user={user} performLogout={performLogout} onAccountDeleted={resetAfterAccountDelete} />
           </div>
         </div>
       )}

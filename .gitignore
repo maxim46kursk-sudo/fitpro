@@ -14,8 +14,10 @@ dist-ssr
 
 # Environment variables (API keys)
 .env
+.env.*
 .env.local
 .env.*.local
+*.env.txt
 
 # Local MCP server config (machine-specific tool access, not app code)
 .mcp.json
@@ -31,5 +33,6 @@ dist-ssr
 *.sln
 *.sw?
 
-# Значения env для Vercel (содержит service_role) — только локально
-vercel-env-new.txt
+# Дампы env (содержат service_role) — только локально, никогда в git
+vercel-env*.txt
+env-new*
