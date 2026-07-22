@@ -7,7 +7,7 @@ import { createClient } from '@supabase/supabase-js'
 // синхронно ("supabaseKey is required") — клиент поэтому не создаём на
 // уровне модуля (это уронило бы холодный старт функции целиком), а только
 // внутри handler, после явной проверки, что ключ вообще настроен.
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://kybazlnscyzfrrafggxe.supabase.co'
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://api.fitproapp.ru'
 
 // Подписи Telegram initData старше суток не принимаем — даже валидная
 // подпись не должна работать бесконечно (initData мог быть перехвачен/

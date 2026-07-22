@@ -5,8 +5,8 @@ import { createClient } from '@supabase/supabase-js'
 // fallback-значения (URL и publishable-ключ несекретны), что и у клиента
 // (src/supabase.js) — без fallback createClient падает сразу при холодном
 // старте, если переменная почему-то не долетела до серверной функции.
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://kybazlnscyzfrrafggxe.supabase.co'
-const SUPABASE_KEY = process.env.VITE_SUPABASE_KEY || 'sb_publishable_8E9Baxz1q-rKOiV8-jbXtw_DIGOztMg'
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://api.fitproapp.ru'
+const SUPABASE_KEY = process.env.VITE_SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg0NzE0NTM5LCJleHAiOjE5NDIzOTQ1Mzl9.fKJZOQkyBX7sa0n0lbJ7xxGRsn5hcEyaX5ijl9P5404'
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 // Модель и потолок длины ответа задаём здесь, а не берём из тела запроса —
