@@ -37,7 +37,14 @@ export const FEATURES = [
 // экране Тарифов, в effectiveAccess и гейтах он не участвует (VIP не выдаётся
 // через plan, это индивидуальная договорённость).
 export const VIP_LEVEL = 99
-export const PAY_LINKS = { base:null, profit:null, premium:null } // Фаза B: сюда вставим ссылки Продамуса
+// Ссылки оплаты Продамуса по пакету. К ним PlansView добавляет ?order_id=
+// <userId>__<plan> — по этому order_id вебхук (api/prodamus-webhook.js) узнаёт,
+// кому начислять. Сам ПАКЕТ вебхук определяет по сумме платежа, а не по order_id.
+export const PAY_LINKS = {
+  base:    'https://payform.ru/96c5u51/',
+  profit:  'https://payform.ru/buc5u6t/',
+  premium: 'https://payform.ru/dvc5u7y/',
+}
 
 export function planByKey(k){ return PLANS.find(p=>p.key===k) || PLANS[0] }
 export function planByLevel(l){ return PLANS.find(p=>p.level===l) || PLANS[0] }

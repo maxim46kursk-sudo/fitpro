@@ -6168,9 +6168,13 @@ function PlansView({ user, onClose, hideBack }) {
   const canStartTrial=!!profile&&!profile.trial_used&&access.level===0
 
   const pay=(plan)=>{
-    const url=PAY_LINKS[plan.key]
-    if(url){openExternal(url);return}
-    flash('Оплата скоро подключится')
+    const base=PAY_LINKS[plan.key]
+    if(!base){flash('Оплата скоро подключится');return}
+    // order_id = <userId>__<plan>: по нему вебхук находит пользователя. userId
+    // кодируем — uuid безопасен, но формат ссылки не должен зависеть от этого.
+    // Разделитель '__' двойной, чтобы уцелеть, даже если id вдруг содержит '_'.
+    const url=`${base}${base.includes('?')?'&':'?'}order_id=${encodeURIComponent(`${user.id}__${plan.key}`)}`
+    openExternal(url)
   }
 
   // Пилюли переключателя: все пакеты + VIP отдельным псевдо-тарифом.
