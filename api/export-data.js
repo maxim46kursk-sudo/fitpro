@@ -6,6 +6,28 @@ import { USER_TABLES, TWO_SIDED_TABLES, PROFILE_TABLE, twoSidedFilter } from './
 // создаём только внутри handler, после явной проверки, что ключ настроен.
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://api.fitproapp.ru'
 
+// Telegram-аккаунты заводятся с техническим email вида tg<ID>@telegram.fitpro
+// (см. api/telegram-auth.js) — это запасной источник chat_id, если в метаданных
+// пользователя telegram_id почему-то не оказалось (например, у аккаунтов,
+// созданных до того, как метаданные начали заполняться).
+const TG_EMAIL_RE = /^tg(\d+)@telegram\.fitpro$/i
+
+// chat_id берём ТОЛЬКО из проверенного токеном пользователя, никогда из тела
+// запроса: иначе кто угодно смог бы заказать отправку чужой выгрузки себе.
+function telegramChatId(user) {
+  const fromMeta = user?.user_metadata?.telegram_id
+  if (fromMeta) return String(fromMeta)
+  const m = TG_EMAIL_RE.exec(user?.email || '')
+  return m ? m[1] : null
+}
+
+// Дата в имени файла — по местному времени сервера, формат ГГГГ-ММ-ДД.
+function todayStamp() {
+  const d = new Date()
+  const p = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -75,5 +97,54 @@ export default async function handler(req, res) {
     result[table] = data ?? []
   }
 
-  res.status(200).json(result)
+  // Обычный браузер — отдаём JSON, файл соберёт и скачает фронт.
+  if (req.body?.channel !== 'telegram') return res.status(200).json(result)
+
+  // Telegram Mini App: скачивание Blob через <a download> в webview (особенно
+  // на iOS) не срабатывает — вместо загрузки файла webview показывает его
+  // содержимое прямо на экране, а инлайн-показ ломает кириллицу. Поэтому в
+  // Telegram доставляем файл документом в чат с ботом.
+  const botToken = process.env.TELEGRAM_BOT_TOKEN
+  if (!botToken) {
+    console.error('TELEGRAM_BOT_TOKEN не настроен — выгрузка в Telegram невозможна')
+    return res.status(500).json({ error: 'Сервер не настроен для отправки в Telegram' })
+  }
+
+  const chatId = telegramChatId(authData.user)
+  if (!chatId) {
+    console.error(`Выгрузка данных ${userId}: не удалось определить telegram_id`)
+    return res.status(500).json({ error: 'Не удалось определить твой Telegram — скачай файл из браузера' })
+  }
+
+  // Buffer.from(..., 'utf-8') + явный charset: именно это даёт корректную
+  // кириллицу в файле. Без явной кодировки Telegram отдаёт документ, который
+  // клиент открывает как cp1251, и «Максим» превращается в «РњР°РєСЃРёРј».
+  const json = JSON.stringify(result, null, 2)
+  const fileName = `fitpro-данные-${todayStamp()}.json`
+
+  const form = new FormData()
+  form.append('chat_id', chatId)
+  form.append('caption', 'Выгрузка твоих данных из FitPro')
+  form.append(
+    'document',
+    new Blob([Buffer.from(json, 'utf-8')], { type: 'application/json;charset=utf-8' }),
+    fileName,
+  )
+
+  try {
+    const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendDocument`, {
+      method: 'POST',
+      body: form,
+    })
+    const tgBody = await tgRes.json().catch(() => ({}))
+    if (!tgRes.ok || !tgBody?.ok) {
+      console.error(`Выгрузка данных ${userId}: Telegram отклонил sendDocument:`, tgBody)
+      return res.status(500).json({ error: 'Не удалось отправить файл в Telegram' })
+    }
+  } catch (e) {
+    console.error(`Выгрузка данных ${userId}: сбой запроса к Telegram:`, e)
+    return res.status(500).json({ error: 'Не удалось отправить файл в Telegram' })
+  }
+
+  res.status(200).json({ ok: true, delivered: 'telegram' })
 }

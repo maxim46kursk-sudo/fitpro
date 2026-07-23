@@ -5583,7 +5583,11 @@ function ResetPasswordView({ onDone }) {
 }
 
 // ── SettingsView ─────────────────────────────────────────────────────────────
-function SettingsView({ user, performLogout, onAccountDeleted }) {
+// subPage/setSubPage подняты в App: под-страницы (Политика, Оферта) рисуются
+// внутри Настроек, но кнопка «назад» живёт в шапке уровнем выше — без общего
+// состояния она не знала бы, что открыта под-страница, и уводила бы сразу на
+// Главную.
+function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPage }) {
   const load=(k,def)=>{try{return JSON.parse(localStorage.getItem(k)??'null')??def}catch{return def}}
   const [notifs,setNotifs]=useState(()=>load('fitpro_notifs',{workout:false,diary:false,report:false}))
   const [units,setUnits]=useState(()=>load('fitpro_units',{weight:'kg',height:'cm'}))
@@ -5595,8 +5599,6 @@ function SettingsView({ user, performLogout, onAccountDeleted }) {
   const [dataMsg,setDataMsg]=useState('')
   const [deleteError,setDeleteError]=useState(false)
   const [aiStyle,setAiStyle]=useState('act')
-  const [showPolicy,setShowPolicy]=useState(false)
-  const [showOffer,setShowOffer]=useState(false)
   // Тост ошибки записи настроек — тот же паттерн, что showFoodSaveError и т.п.
   const [showSettingsSaveError,setShowSettingsSaveError]=useState(false)
   const flashSettingsSaveError=()=>{setShowSettingsSaveError(true);setTimeout(()=>setShowSettingsSaveError(false),3500)}
@@ -5672,15 +5674,28 @@ function SettingsView({ user, performLogout, onAccountDeleted }) {
       const{data:{session}}=await supabase.auth.getSession()
       const token=session?.access_token
       if(!token)throw new Error('нет активной сессии, перезайди в приложение')
+      // В Telegram Mini App скачивание Blob через <a download> не работает:
+      // webview не сохраняет файл, а показывает его содержимое на экране, и при
+      // таком инлайн-показе ломается кириллица. Поэтому внутри Telegram просим
+      // сервер прислать файл документом в чат с ботом.
+      const inTelegram=!!window.Telegram?.WebApp?.initData
       const res=await fetch('/api/export-data',{
         method:'POST',
         headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+        body:JSON.stringify(inTelegram?{channel:'telegram'}:{}),
       })
       const body=await res.json().catch(()=>({}))
       if(!res.ok)throw new Error(body?.error||`сервер вернул ${res.status}`)
-      // Blob + временная <a download> — единственный способ отдать файл без
-      // серверного эндпоинта отдачи и без открытия новой вкладки.
-      url=URL.createObjectURL(new Blob([JSON.stringify(body,null,2)],{type:'application/json'}))
+      if(inTelegram){
+        setDataMsg('✓ Файл с твоими данными отправлен тебе в чат с ботом')
+        setTimeout(()=>setDataMsg(''),6000)
+        return
+      }
+      // Обычный браузер: Blob + временная <a download> — способ отдать файл без
+      // серверного эндпоинта отдачи и без открытия новой вкладки. charset=utf-8
+      // обязателен, иначе часть браузеров читает файл как cp1251 и кириллица
+      // превращается в «РњР°РєСЃРёРј».
+      url=URL.createObjectURL(new Blob([JSON.stringify(body,null,2)],{type:'application/json;charset=utf-8'}))
       const a=document.createElement('a')
       a.href=url
       a.download=`fitpro-данные-${localTodayISO()}.json`
@@ -5741,8 +5756,11 @@ function SettingsView({ user, performLogout, onAccountDeleted }) {
     }
   }
 
-  if(showPolicy) return <PolicyView onClose={()=>setShowPolicy(false)} />
-  if(showOffer) return <OfferView onClose={()=>setShowOffer(false)} />
+  // hideBack: у под-страницы уже есть шапка Настроек со стрелкой «назад» —
+  // вторая кнопка внутри текста была бы дублем. В ConsentGate шапки нет, там
+  // PolicyView по-прежнему рисует свою кнопку.
+  if(subPage==='policy') return <PolicyView hideBack onClose={()=>setSubPage(null)} />
+  if(subPage==='offer') return <OfferView hideBack onClose={()=>setSubPage(null)} />
 
   return(
     <div style={{padding:'16px 16px 40px',display:'flex',flexDirection:'column',gap:0}}>
@@ -5834,14 +5852,14 @@ function SettingsView({ user, performLogout, onAccountDeleted }) {
 
       {/* Конфиденциальность */}
       <Section title="Конфиденциальность">
-        <button onClick={()=>setShowPolicy(true)} style={{
+        <button onClick={()=>setSubPage('policy')} style={{
           display:'block',width:'100%',padding:0,border:'none',background:'none',
           textAlign:'left',cursor:'pointer',minHeight:'unset',
         }}>
           <Row label="Политика конфиденциальности" sub="Как обрабатываются твои данные (152-ФЗ)"
                right={<span style={{fontSize:16,color:TXT3}}>›</span>}/>
         </button>
-        <button onClick={()=>setShowOffer(true)} style={{
+        <button onClick={()=>setSubPage('offer')} style={{
           display:'block',width:'100%',padding:0,border:'none',background:'none',
           textAlign:'left',cursor:'pointer',minHeight:'unset',
         }}>
@@ -5907,19 +5925,28 @@ function SettingsView({ user, performLogout, onAccountDeleted }) {
   )
 }
 
+// Заголовки под-страниц Настроек — один источник и для самой страницы, и для
+// шапки Настроек, чтобы они не разошлись.
+const SETTINGS_SUBPAGE_TITLES = {
+  policy: 'Политика конфиденциальности',
+  offer: 'Пользовательское соглашение',
+}
+
 // ── Правовые тексты (Политика 152-ФЗ, Оферта). Сами формулировки живут в
 // legalText.js — здесь только вёрстка, чтобы правки текста не требовали лезть
 // в App.jsx. Разметка одна на оба документа: они отличаются лишь заголовком и
 // массивом разделов.
-function LegalTextView({ title, sections, onClose }) {
+function LegalTextView({ title, sections, onClose, hideBack }) {
   return (
     <div style={{minHeight:'100vh',background:BG,color:TXT,overflowY:'auto'}}>
       <div style={{maxWidth:720,margin:'0 auto',padding:'16px 16px 48px'}}>
-        <button onClick={onClose} style={{
-          padding:'9px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,
-          background:SURF,color:TXT,fontSize:14,fontWeight:500,cursor:'pointer',
-          minHeight:'unset',marginBottom:18,
-        }}>‹ Назад</button>
+        {!hideBack&&(
+          <button onClick={onClose} style={{
+            padding:'9px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,
+            background:SURF,color:TXT,fontSize:14,fontWeight:500,cursor:'pointer',
+            minHeight:'unset',marginBottom:18,
+          }}>‹ Назад</button>
+        )}
         <h1 style={{fontSize:22,fontWeight:700,color:TXT,margin:'0 0 20px'}}>{title}</h1>
         {sections.map(sec=>(
           <div key={sec.h} style={{marginBottom:22}}>
@@ -5936,12 +5963,12 @@ function LegalTextView({ title, sections, onClose }) {
 
 // Обёртки с прежними сигнатурами — вызовы PolicyView ({onClose}) в SettingsView
 // и ConsentGate менять не пришлось.
-function PolicyView({ onClose }) {
-  return <LegalTextView title="Политика конфиденциальности" sections={POLICY_SECTIONS} onClose={onClose} />
+function PolicyView({ onClose, hideBack }) {
+  return <LegalTextView title={SETTINGS_SUBPAGE_TITLES.policy} sections={POLICY_SECTIONS} onClose={onClose} hideBack={hideBack} />
 }
 
-function OfferView({ onClose }) {
-  return <LegalTextView title="Пользовательское соглашение" sections={OFFER_SECTIONS} onClose={onClose} />
+function OfferView({ onClose, hideBack }) {
+  return <LegalTextView title={SETTINGS_SUBPAGE_TITLES.offer} sections={OFFER_SECTIONS} onClose={onClose} hideBack={hideBack} />
 }
 
 // ── Ворота согласия на обработку ПДн. Показываются вместо приложения, пока в
@@ -6897,6 +6924,10 @@ export default function App() {
   const [showProfileView,setShowProfileView]=useState(false)
   const [showProfileSheet,setShowProfileSheet]=useState(false)
   const [showSettingsView,setShowSettingsView]=useState(false)
+  // Открытая под-страница Настроек: null | 'policy' | 'offer'. Живёт здесь, а не
+  // в SettingsView, потому что стрелка «назад» в шапке ниже должна закрывать
+  // сначала под-страницу и только потом сами Настройки.
+  const [settingsSubPage,setSettingsSubPage]=useState(null)
   const aiRef=useRef()
 
   // Тренировка "на переднем плане" — виден именно её полный экран, а не
@@ -6920,8 +6951,24 @@ export default function App() {
   const reopenWorkout=()=>{
     setShowProfileView(false)
     setShowSettingsView(false)
+    setSettingsSubPage(null)
     setShowProfileSheet(false)
     setNav('workouts')
+  }
+
+  // «Назад» в шапке Настроек: под-страница → список Настроек → Главная.
+  // Раньше стрелка всегда закрывала Настройки целиком, и из Политики/Оферты
+  // пользователь улетал на Главную, минуя список настроек.
+  const closeSettingsOrSubPage=()=>{
+    if(settingsSubPage){setSettingsSubPage(null);return}
+    setShowSettingsView(false)
+  }
+
+  // Настройки всегда открываются со списка, а не на под-странице, открытой в
+  // прошлый заход.
+  const openSettings=()=>{
+    setSettingsSubPage(null)
+    setShowSettingsView(true)
   }
 
   // Проверка ?trainer=1 в URL при загрузке
@@ -7571,7 +7618,7 @@ export default function App() {
                 {[
                   { ic:'people',     label:'Мои данные',  sub:'Профиль, замеры и динамика',    action:()=>{ setShowProfileSheet(false); setShowProfileView(true) } },
                   { ic:'chart',     label:'Мой прогресс', sub:'Тоннаж, тренировки, питание', action:()=>{ setShowProfileSheet(false); handleNav('progress') } },
-                  { ic:'gear', label:'Настройки',   sub:'Уведомления, единицы, данные',  action:()=>{ setShowProfileSheet(false); setShowSettingsView(true) } },
+                  { ic:'gear', label:'Настройки',   sub:'Уведомления, единицы, данные',  action:()=>{ setShowProfileSheet(false); openSettings() } },
                 ].map((item,i)=>(
                   <button key={i} onClick={item.action} style={{ width:'100%', display:'flex', alignItems:'center', gap:14, padding:'14px 16px', borderRadius:14, border:`1px solid ${HAIR}`, background:SURF2, cursor:'pointer', marginBottom:10, textAlign:'left' }}>
                     <GlassIcon name={item.ic} size={32} />
@@ -7612,7 +7659,7 @@ export default function App() {
               ))}
             </nav>
             <div style={{ padding:'12px 14px', borderTop:`1px solid ${HAIR}` }}>
-              <button onClick={()=>setShowSettingsView(true)}
+              <button onClick={openSettings}
                 style={{ display:'flex',alignItems:'center',gap:7,fontSize:12,color:TXT3,background:'none',border:'none',cursor:'pointer',padding:'4px 0',marginBottom:4,width:'100%' }}>
                 <span>⚙️</span> Настройки
               </button>
@@ -7636,11 +7683,11 @@ export default function App() {
       {showSettingsView&&(
         <div style={{position:'fixed',inset:0,background:BG,zIndex:1060,display:'flex',flexDirection:'column',fontFamily:'system-ui,sans-serif'}}>
           <div style={{background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
-            <button onClick={()=>setShowSettingsView(false)} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset'}}><GlassIcon name="back" size={26} /></button>
-            <span style={{fontSize:18,fontWeight:800,color:TXT,flex:1}}>Настройки</span>
+            <button onClick={closeSettingsOrSubPage} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset'}}><GlassIcon name="back" size={26} /></button>
+            <span style={{fontSize:18,fontWeight:800,color:TXT,flex:1}}>{settingsSubPage?SETTINGS_SUBPAGE_TITLES[settingsSubPage]:'Настройки'}</span>
           </div>
           <div style={{flex:1,overflowY:'auto'}}>
-            <SettingsView user={user} performLogout={performLogout} onAccountDeleted={resetAfterAccountDelete} />
+            <SettingsView user={user} performLogout={performLogout} onAccountDeleted={resetAfterAccountDelete} subPage={settingsSubPage} setSubPage={setSettingsSubPage} />
           </div>
         </div>
       )}
