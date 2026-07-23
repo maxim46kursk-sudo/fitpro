@@ -13,7 +13,7 @@ import { GlassDefs, GlassIcon } from './glassIcons'
 import { MuscleDefs, MuscleIcon } from './muscleIcons'
 import { muscleGroup, equipment } from './exerciseMeta'
 import { POLICY_VERSION, POLICY_SECTIONS, OFFER_SECTIONS, CONSENT_INTRO, CONSENT_CHECKBOX } from './legalText'
-import { PLANS, VIP, PAY_LINKS, TEST_MODE, TRIAL_DAYS, priceOf, effectiveAccess } from './plans'
+import { PLANS, VIP, VIP_LEVEL, FEATURES, PAY_LINKS, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, effectiveAccess } from './plans'
 import './App.css'
 
 // ── Тёмная тема (единая палитра, шаг 1: каркас + экран «Тренировки»).
@@ -6111,6 +6111,8 @@ function PlansView({ user, onClose, hideBack }) {
   const [trialBusy,setTrialBusy]=useState(false)
   const [msg,setMsg]=useState('')
   const [msgError,setMsgError]=useState(false)
+  // Выбранная пилюля тарифа. По умолчанию ПРОФИТ — он же «Хит».
+  const [selectedKey,setSelectedKey]=useState('profit')
 
   const flash=(text,isError)=>{setMsg(text);setMsgError(!!isError);setTimeout(()=>setMsg(''),5000)}
 
@@ -6171,6 +6173,18 @@ function PlansView({ user, onClose, hideBack }) {
     flash('Оплата скоро подключится')
   }
 
+  // Пилюли переключателя: все пакеты + VIP отдельным псевдо-тарифом.
+  const planTabs=[...PLANS.map(p=>({key:p.key,name:p.name})),{key:'vip',name:VIP.name}]
+  const isVip=selectedKey==='vip'
+  const selectedPlan=isVip?null:planByKey(selectedKey)
+  // Уровень для подсветки списка. У VIP горят все пункты (VIP_LEVEL выше всех).
+  const selectedLevel=isVip?VIP_LEVEL:selectedPlan.level
+  const selectedName=isVip?VIP.name:selectedPlan.name
+  const isHit=!isVip&&!!selectedPlan.highlight
+  // «Твой пакет» — сравнение с текущим доступом (во время пробного access.planKey
+  // указывает на ПРОФИТ, что и есть фактический пакет пользователя).
+  const isCurrent=!isVip&&access.planKey===selectedKey
+
   if(loading) return (
     <div style={{minHeight:'100vh',background:BG,display:'flex',alignItems:'center',justifyContent:'center',color:TXT3,fontSize:14}}>Загрузка…</div>
   )
@@ -6186,20 +6200,21 @@ function PlansView({ user, onClose, hideBack }) {
           }}>‹ Назад</button>
         )}
 
-        {/* Статус текущего доступа */}
-        <div style={{background:SURF,border:`1px solid ${HAIR}`,borderRadius:14,padding:'14px 16px',marginBottom:16}}>
-          <div style={{fontSize:12,color:TXT3,marginBottom:4}}>Твой доступ</div>
-          {loadError?(
-            <div style={{fontSize:14,color:DANGER,fontWeight:600}}>
-              Не удалось загрузить статус
-              <button onClick={loadProfile} style={{marginLeft:10,padding:'3px 10px',borderRadius:8,border:`1px solid ${HAIR}`,background:SURF2,color:TXT,fontSize:12,cursor:'pointer',minHeight:'unset'}}>Повторить</button>
-            </div>
-          ):(
-            <div style={{fontSize:17,fontWeight:700,color:access.level>0?ACCENT2:TXT}}>
-              {access.label}{access.until&&` до ${fmtPlanDate(access.until)}`}
-            </div>
-          )}
-        </div>
+        {/* Строки «Твой доступ» больше нет — срок показывается под названием
+            текущего тарифа ниже. Но сообщение о неудачной загрузке профиля
+            оставляем: без него пользователь не поймёт, почему пакет и сроки
+            выглядят как у бесплатного СТАРТА, и не сможет повторить попытку. */}
+        {loadError&&(
+          <div style={{
+            display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',
+            background:'rgba(255,69,58,.12)',border:'1px solid rgba(255,69,58,.40)',
+            borderRadius:12,padding:'11px 14px',marginBottom:16,
+            fontSize:13,fontWeight:600,color:DANGER,
+          }}>
+            Не удалось загрузить твой пакет
+            <button onClick={loadProfile} style={{padding:'4px 11px',borderRadius:8,border:`1px solid ${HAIR}`,background:SURF2,color:TXT,fontSize:12,cursor:'pointer',minHeight:'unset'}}>Повторить</button>
+          </div>
+        )}
 
         {msg&&(
           <div style={{
@@ -6210,74 +6225,139 @@ function PlansView({ user, onClose, hideBack }) {
           }}>{msg}</div>
         )}
 
+        {/* 1. Баннер пробного — только пока пробный реально доступен */}
         {canStartTrial&&(
-          <button onClick={startTrial} disabled={trialBusy} style={{
-            width:'100%',padding:'14px',borderRadius:14,border:'none',marginBottom:18,
-            background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',
-            fontSize:15,fontWeight:700,cursor:trialBusy?'not-allowed':'pointer',
-            boxShadow:`0 8px 24px ${PUR}45`,opacity:trialBusy?0.7:1,
-          }}>{trialBusy?'Активируем…':`Активировать пробный период (${TRIAL_DAYS} дней)`}</button>
+          <div style={{
+            borderRadius:18,padding:'18px 18px 16px',marginBottom:18,
+            background:`linear-gradient(135deg, ${ACCENT2}, ${PUR})`,
+            boxShadow:`0 10px 30px ${PUR}45`,
+          }}>
+            <div style={{fontSize:17,fontWeight:800,color:'#fff',marginBottom:6}}>
+              🎁 {TRIAL_DAYS} дней ПРОФИТ — бесплатно
+            </div>
+            <div style={{fontSize:13,lineHeight:1.5,color:'rgba(255,255,255,0.85)',marginBottom:14}}>
+              Попробуй ИИ-ассистента и все тренировки без оплаты. Карта не нужна.
+            </div>
+            <button onClick={startTrial} disabled={trialBusy} style={{
+              width:'100%',padding:'13px',borderRadius:12,border:'none',
+              background:'#fff',color:PUR,fontSize:15,fontWeight:800,
+              cursor:trialBusy?'not-allowed':'pointer',opacity:trialBusy?0.7:1,minHeight:'unset',
+            }}>{trialBusy?'Активируем…':'Активировать пробный период'}</button>
+          </div>
         )}
 
-        {/* Карточки пакетов */}
-        {PLANS.map(plan=>{
-          const isCurrent=access.planKey===plan.key
-          const price=priceOf(plan)
-          return (
-            <div key={plan.key} style={{
-              background:SURF,borderRadius:16,padding:'16px 17px',marginBottom:12,
-              border:plan.highlight?`1.5px solid ${PUR}`:`1px solid ${HAIR}`,
-              boxShadow:plan.highlight?`0 0 32px ${PUR}22`:'none',
-            }}>
-              <div style={{display:'flex',alignItems:'baseline',gap:9,flexWrap:'wrap',marginBottom:2}}>
-                <span style={{fontSize:17,fontWeight:800,color:plan.highlight?ACCENT2:TXT}}>{plan.name}</span>
-                {isCurrent&&(
-                  <span style={{fontSize:11,fontWeight:700,color:TEA,background:`${TEA}18`,border:`1px solid ${TEA}40`,borderRadius:20,padding:'2px 9px'}}>Твой пакет</span>
-                )}
-                {plan.highlight&&!isCurrent&&(
-                  <span style={{fontSize:11,fontWeight:700,color:ACCENT2,background:`${PUR}20`,border:`1px solid ${PUR}40`,borderRadius:20,padding:'2px 9px'}}>Популярный</span>
-                )}
-              </div>
+        {/* 2. Переключатель тарифов. Горизонтальная прокрутка: пять пилюль в
+            строку на узком экране не помещаются, и VIP не должен обрезаться —
+            поэтому flexShrink:0 у пилюль и запас справа. */}
+        <div style={{
+          display:'flex',gap:7,overflowX:'auto',paddingBottom:10,marginBottom:14,
+          scrollbarWidth:'none',WebkitOverflowScrolling:'touch',
+        }}>
+          {planTabs.map(tab=>{
+            const on=tab.key===selectedKey
+            return (
+              <button key={tab.key} onClick={()=>setSelectedKey(tab.key)} style={{
+                flexShrink:0,whiteSpace:'nowrap',padding:'9px 15px',borderRadius:22,
+                border:`1px solid ${on?'transparent':HAIR}`,
+                background:on?`linear-gradient(180deg, ${ACCENT2}, ${PUR})`:SURF,
+                color:on?'#fff':TXT2,fontSize:13,fontWeight:700,
+                cursor:'pointer',minHeight:'unset',
+              }}>{tab.name}</button>
+            )
+          })}
+          {/* Запас справа, чтобы последняя пилюля не липла к краю при скролле */}
+          <span style={{flexShrink:0,width:4}} />
+        </div>
 
-              <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:10}}>
-                <span style={{fontSize:20,fontWeight:800,color:TXT}}>
-                  {price===0?'Бесплатно':`${price} ₽`}
-                </span>
-                {price>0&&<span style={{fontSize:12,color:TXT3}}>/ мес</span>}
-                {TEST_MODE&&price>0&&(
-                  <span style={{fontSize:11,fontWeight:600,color:COR,background:`${COR}18`,border:`1px solid ${COR}40`,borderRadius:20,padding:'2px 8px'}}>тестовая цена</span>
+        {/* 3. Шапка выбранного тарифа */}
+        <div style={{
+          background:SURF,borderRadius:18,padding:'18px 18px 16px',marginBottom:16,
+          border:isHit?`1.5px solid ${PUR}`:`1px solid ${HAIR}`,
+          boxShadow:isHit?`0 0 32px ${PUR}22`:'none',
+        }}>
+          <div style={{display:'flex',alignItems:'center',gap:9,flexWrap:'wrap',marginBottom:10}}>
+            <span style={{fontSize:22,fontWeight:800,color:isHit?ACCENT2:TXT}}>{selectedName}</span>
+            {isHit&&(
+              <span style={{fontSize:11,fontWeight:700,color:ACCENT2,background:`${PUR}20`,border:`1px solid ${PUR}40`,borderRadius:20,padding:'3px 10px'}}>★ Хит</span>
+            )}
+            {isCurrent&&(
+              <span style={{fontSize:11,fontWeight:700,color:TEA,background:`${TEA}18`,border:`1px solid ${TEA}40`,borderRadius:20,padding:'3px 10px'}}>Твой пакет</span>
+            )}
+          </div>
+
+          {/* Срок — только когда он реально есть: у бесплатного СТАРТА
+              effectiveAccess отдаёт until:null, и строка не рисуется. */}
+          {isCurrent&&access.until&&(
+            <div style={{fontSize:12,color:TXT3,marginTop:-4,marginBottom:10}}>
+              {access.isTrial?'Пробный период':'Подписка активна'} до {fmtPlanDate(access.until)}
+            </div>
+          )}
+
+          {isVip?(
+            <div style={{fontSize:13,lineHeight:1.55,color:TXT2,marginBottom:14}}>{VIP.desc}</div>
+          ):selectedPlan.level===0?(
+            <div style={{fontSize:22,fontWeight:800,color:TXT,marginBottom:14}}>Бесплатно</div>
+          ):(
+            <div style={{marginBottom:14}}>
+              <div style={{display:'flex',alignItems:'baseline',gap:10,flexWrap:'wrap'}}>
+                {TEST_MODE&&(
+                  <span style={{fontSize:16,color:TXT3,textDecoration:'line-through'}}>{selectedPlan.price} ₽</span>
                 )}
+                <span style={{fontSize:26,fontWeight:800,color:TXT}}>{priceOf(selectedPlan)} ₽</span>
+                <span style={{fontSize:13,color:TXT3}}>/ мес</span>
               </div>
-
-              <div style={{fontSize:12,color:TXT3,marginBottom:7}}>{plan.tagline}</div>
-              <div style={{display:'flex',flexDirection:'column',gap:6,marginBottom:plan.key==='start'?0:13}}>
-                {plan.features.map((f,i)=>(
-                  <div key={i} style={{display:'flex',gap:8,alignItems:'flex-start'}}>
-                    <span style={{color:TEA,fontSize:13,lineHeight:1.5,flexShrink:0}}>✓</span>
-                    <span style={{fontSize:13,lineHeight:1.5,color:TXT2}}>{f}</span>
-                  </div>
-                ))}
-              </div>
-
-              {plan.key!=='start'&&(
-                <button onClick={()=>pay(plan)} style={{
-                  width:'100%',padding:'11px',borderRadius:11,border:'none',
-                  background:plan.highlight?`linear-gradient(180deg, ${ACCENT2}, ${PUR})`:SURF2,
-                  color:plan.highlight?'#fff':TXT,fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset',
-                }}>Оплатить</button>
+              {TEST_MODE&&(
+                <div style={{fontSize:11.5,color:COR,marginTop:4}}>тестовая цена на время запуска</div>
               )}
             </div>
-          )
-        })}
+          )}
 
-        {/* VIP */}
-        <div style={{background:SURF,borderRadius:16,padding:'16px 17px',border:`1px solid ${HAIR}`}}>
-          <div style={{fontSize:17,fontWeight:800,color:TXT,marginBottom:6}}>{VIP.name}</div>
-          <div style={{fontSize:13,lineHeight:1.5,color:TXT2,marginBottom:13}}>{VIP.desc}</div>
-          <button onClick={()=>openExternal(MAX_TELEGRAM_URL)} style={{
-            width:'100%',padding:'11px',borderRadius:11,border:`1.5px solid ${HAIR}`,
-            background:SURF2,color:TXT,fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset',
-          }}>Написать в личку</button>
+          {isVip?(
+            <button onClick={()=>openExternal(MAX_TELEGRAM_URL)} style={{
+              width:'100%',padding:'13px',borderRadius:12,border:`1.5px solid ${HAIR}`,
+              background:SURF2,color:TXT,fontSize:15,fontWeight:700,cursor:'pointer',minHeight:'unset',
+            }}>Написать в личку</button>
+          ):isCurrent?(
+            <button disabled style={{
+              width:'100%',padding:'13px',borderRadius:12,
+              border:`1px solid ${TEA}40`,background:`${TEA}18`,color:TEA,
+              fontSize:15,fontWeight:700,cursor:'default',minHeight:'unset',
+            }}>Твой пакет</button>
+          ):selectedPlan.level>0?(
+            <button onClick={()=>pay(selectedPlan)} style={{
+              width:'100%',padding:'13px',borderRadius:12,border:'none',
+              background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',
+              fontSize:15,fontWeight:800,cursor:'pointer',minHeight:'unset',
+              boxShadow:`0 8px 24px ${PUR}45`,
+            }}>Оформить {selectedPlan.name} · {priceOf(selectedPlan)} ₽</button>
+          ):null}
+        </div>
+
+        {/* 4. Единый список возможностей: гаснут те, что выше выбранного тарифа */}
+        <div style={{background:SURF,borderRadius:18,padding:'16px 18px 18px',border:`1px solid ${HAIR}`}}>
+          <div style={{fontSize:12,fontWeight:700,color:TXT3,letterSpacing:'0.5px',textTransform:'uppercase',marginBottom:12}}>
+            Что входит в приложение
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:11}}>
+            {FEATURES.map((f,i)=>{
+              const lit=selectedLevel>=f.min
+              return (
+                <div key={i} style={{display:'flex',gap:10,alignItems:'flex-start',opacity:lit?1:0.5}}>
+                  <span style={{
+                    flexShrink:0,width:20,height:20,borderRadius:'50%',marginTop:1,
+                    background:lit?`${TEA}20`:'transparent',
+                    border:lit?`1px solid ${TEA}45`:`1px solid ${HAIR}`,
+                    display:'flex',alignItems:'center',justifyContent:'center',
+                    fontSize:lit?11:9,color:lit?TEA:TXT3,fontWeight:700,
+                  }}>{lit?'✓':'🔒'}</span>
+                  <span style={{
+                    fontSize:13.5,lineHeight:1.5,color:lit?TXT2:TXT3,
+                    textDecoration:lit?'none':'line-through',
+                  }}>{f.t}</span>
+                </div>
+              )
+            })}
+          </div>
         </div>
       </div>
     </div>
@@ -6377,7 +6457,13 @@ function ConsentGate({ user, onAccepted, onDecline }) {
 }
 
 // ── ProfileView ──────────────────────────────────────────────────────────────
-function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
+// access/openPlans — для плашки текущего тарифа в шапке профиля. access берём
+// готовым из App (там он уже посчитан по профилю), чтобы не заводить второй
+// источник правды о пакете.
+function ProfileView({ user, onClose, onOpenAI, onUserUpdate, access, openPlans }) {
+  // Во время пробного показываем «Пробный», иначе короткое имя пакета —
+  // access.label для СТАРТ содержит «СТАРТ (бесплатный)», в плашку он длинный.
+  const planBadgeLabel=access?.isTrial?'Пробный':planByKey(access?.planKey||'start').name
   const [tab,setTab]=useState('profile')
   const [profile,setProfile]=useState(()=>{
     try{return JSON.parse(localStorage.getItem('fitpro_profile')||'null')||{name:user?.name||'',birthdate:'',height:'',weight:'',goal:'',steps:'',gymDays:'',occupation:'',activityLevel:''}}catch{return{name:user?.name||'',birthdate:'',height:'',weight:'',goal:'',steps:'',gymDays:'',occupation:'',activityLevel:''}}
@@ -6619,11 +6705,27 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                 <Av lbl={(userEdit.name||user?.name||'').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={64} photo={userEdit.photoURL} gender={userEdit.gender} />
                 <div style={{position:'absolute',bottom:0,right:0,width:22,height:22,borderRadius:'50%',background:PUR,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,border:'2px solid #fff'}}><GlassIcon name="plus" size={18} /></div>
               </div>
+              {/* minWidth:0 — чтобы длинное имя/ник сжимались и не выдавливали
+                  плашку тарифа за край на узких экранах. */}
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:13,fontWeight:600,color:TXT,marginBottom:2}}>{userEdit.name||user?.name}</div>
-                <div style={{fontSize:11,color:TXT3}}>{isTgUser?tgNick:(userEdit.email||user?.email)}</div>
+                <div style={{fontSize:13,fontWeight:600,color:TXT,marginBottom:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{userEdit.name||user?.name}</div>
+                <div style={{fontSize:11,color:TXT3,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{isTgUser?tgNick:(userEdit.email||user?.email)}</div>
                 <div style={{fontSize:11,color:PUR,marginTop:2,cursor:'pointer'}} onClick={()=>photoInputPVRef.current?.click()}>Изменить фото</div>
               </div>
+              {/* Плашка текущего тарифа — вход на экран Тарифов прямо из профиля */}
+              {openPlans&&(
+                <button onClick={openPlans} style={{
+                  flexShrink:0,display:'flex',alignItems:'center',gap:6,
+                  padding:'7px 10px',borderRadius:11,cursor:'pointer',minHeight:'unset',
+                  background:SURF2,border:`1px solid ${HAIR}`,
+                }}>
+                  <span style={{textAlign:'right'}}>
+                    <span style={{display:'block',fontSize:9.5,color:TXT3,lineHeight:1.2}}>Тариф</span>
+                    <span style={{display:'block',fontSize:12.5,fontWeight:800,color:ACCENT2,lineHeight:1.25}}>{planBadgeLabel}</span>
+                  </span>
+                  <span style={{fontSize:14,color:TXT3,lineHeight:1}}>›</span>
+                </button>
+              )}
             </div>
 
             {/* Пол */}
@@ -8005,7 +8107,7 @@ export default function App() {
         </div>
       )}
       {/* Экран "Мои данные" (mobile + desktop) */}
-      {showProfileView&&<ProfileView user={user} onClose={()=>setShowProfileView(false)} onOpenAI={m=>aiRef.current?.open(m)} onUserUpdate={u=>setUser(u)} />}
+      {showProfileView&&<ProfileView user={user} onClose={()=>setShowProfileView(false)} onOpenAI={m=>aiRef.current?.open(m)} onUserUpdate={u=>setUser(u)} access={access} openPlans={openPlans} />}
 
       {/* Экран "Настройки" (mobile + desktop) */}
       {showSettingsView&&(
