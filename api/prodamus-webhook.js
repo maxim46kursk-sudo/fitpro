@@ -119,7 +119,9 @@ export default async function handler(req, res) {
       provider_order_num: null,
       order_id: data.order_id != null ? String(data.order_id) : null,
       status: 'bad_signature',
-      raw: { body: data, received_sign: provided.toLowerCase(), computed_sign: computed, json_string: jsonString },
+      // raw_body — СЫРАЯ строка тела до разбора: нужна, чтобы увидеть точные
+      // символы и кодировку, если qs.parse что-то трактует не так, как Продамус.
+      raw: { body: data, raw_body: raw, received_sign: provided.toLowerCase(), computed_sign: computed, json_string: jsonString },
     })
     if (diagErr) console.error('Prodamus webhook: не удалось записать диагностику bad_signature:', diagErr)
     return res.status(400).send('Bad signature')
@@ -133,14 +135,20 @@ export default async function handler(req, res) {
   const paymentStatus = data.payment_status != null ? String(data.payment_status) : ''
   const sumNum = Number(data.sum)
 
-  // userId — часть order_id до последнего '__'. Пишем в user_id только валидный
-  // uuid, иначе NULL (мусорный order_id не должен ронять запись в журнал).
-  let userId = null
-  if (orderId) {
-    const cut = orderId.lastIndexOf('__')
-    const candidate = cut > 0 ? orderId.slice(0, cut) : orderId
-    if (UUID_RE.test(candidate)) userId = candidate
+  // userId — часть до последнего '__'. Берём из customer_extra: наш order_id
+  // Продамус подменяет своим номером, а customer_extra возвращает эхом. Если
+  // customer_extra пуст — запасной разбор order_id (на случай старых ссылок).
+  // Пакет отсюда НЕ берём — только userId; пакет определяется суммой ниже.
+  // Пишем в user_id только валидный uuid, иначе NULL (мусор не должен ронять
+  // запись в журнал).
+  const extractUserId = src => {
+    if (!src) return null
+    const cut = src.lastIndexOf('__')
+    const candidate = cut > 0 ? src.slice(0, cut) : src
+    return UUID_RE.test(candidate) ? candidate : null
   }
+  const customerExtra = data.customer_extra != null ? String(data.customer_extra) : null
+  const userId = extractUserId(customerExtra) || extractUserId(orderId)
 
   // Пакет по сумме. undefined → сумма незнакомая.
   const planFromAmount = Number.isFinite(sumNum) ? AMOUNT_TO_PLAN[sumNum] : undefined

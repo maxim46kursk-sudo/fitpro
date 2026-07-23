@@ -6170,10 +6170,12 @@ function PlansView({ user, onClose, hideBack }) {
   const pay=(plan)=>{
     const base=PAY_LINKS[plan.key]
     if(!base){flash('Оплата скоро подключится');return}
-    // order_id = <userId>__<plan>: по нему вебхук находит пользователя. userId
-    // кодируем — uuid безопасен, но формат ссылки не должен зависеть от этого.
-    // Разделитель '__' двойной, чтобы уцелеть, даже если id вдруг содержит '_'.
-    const url=`${base}${base.includes('?')?'&':'?'}order_id=${encodeURIComponent(`${user.id}__${plan.key}`)}`
+    // Идентификатор передаём через customer_extra: наш order_id Продамус
+    // заменяет своим номером, а customer_extra возвращает в уведомлении эхом.
+    // Формат <userId>__<plan>; разделитель '__' двойной, чтобы уцелеть, даже
+    // если id вдруг содержит '_'. Пакет вебхук всё равно берёт по сумме —
+    // из customer_extra ему нужен только userId.
+    const url=`${base}${base.includes('?')?'&':'?'}customer_extra=${encodeURIComponent(`${user.id}__${plan.key}`)}`
     openExternal(url)
   }
 
