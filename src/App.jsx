@@ -6269,11 +6269,14 @@ function PlansView({ user, onClose, hideBack }) {
           <span style={{flexShrink:0,width:4}} />
         </div>
 
-        {/* 3. Шапка выбранного тарифа */}
+        {/* 3. Шапка выбранного тарифа. Акцентная рамка со свечением — у любого
+            выбранного пакета, а не только у «Хита»: она означает «это сейчас
+            выбрано», а не «это лучший тариф». Бейдж ★ Хит по-прежнему только
+            у ПРОФИТ (isHit ниже). */}
         <div style={{
           background:SURF,borderRadius:18,padding:'18px 18px 16px',marginBottom:16,
-          border:isHit?`1.5px solid ${PUR}`:`1px solid ${HAIR}`,
-          boxShadow:isHit?`0 0 32px ${PUR}22`:'none',
+          border:`1.5px solid ${PUR}`,
+          boxShadow:`0 0 32px ${PUR}22`,
         }}>
           <div style={{display:'flex',alignItems:'center',gap:9,flexWrap:'wrap',marginBottom:10}}>
             <span style={{fontSize:22,fontWeight:800,color:isHit?ACCENT2:TXT}}>{selectedName}</span>
@@ -6334,7 +6337,11 @@ function PlansView({ user, onClose, hideBack }) {
         </div>
 
         {/* 4. Единый список возможностей: гаснут те, что выше выбранного тарифа */}
-        <div style={{background:SURF,borderRadius:18,padding:'18px',border:`1px solid ${HAIR}`}}>
+        <div style={{
+          background:SURF,borderRadius:18,padding:'18px',
+          border:`1.5px solid ${PUR}`,
+          boxShadow:`0 0 32px ${PUR}22`,
+        }}>
           <div style={{display:'flex',flexDirection:'column',gap:11}}>
             {FEATURES.map((f,i)=>{
               const lit=selectedLevel>=f.min
