@@ -8,7 +8,7 @@
 export const OPERATOR_FIO   = 'Завалишин Максим Игоревич'
 export const OPERATOR_INN   = '463227811939'
 export const OPERATOR_TG    = '@maxim_athlete'
-export const OPERATOR_EMAIL = 'maxim46kursk@gmail.com'
+export const OPERATOR_EMAIL = 'maxim-46kursk@mail.ru'
 
 export const POLICY_VERSION = '2026-07-22'
 

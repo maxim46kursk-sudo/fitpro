@@ -12,7 +12,7 @@ import { Ic } from './icons.jsx'
 import { GlassDefs, GlassIcon } from './glassIcons'
 import { MuscleDefs, MuscleIcon } from './muscleIcons'
 import { muscleGroup, equipment } from './exerciseMeta'
-import { POLICY_VERSION, POLICY_SECTIONS, OFFER_SECTIONS, CONSENT_INTRO, CONSENT_CHECKBOX } from './legalText'
+import { POLICY_VERSION, POLICY_SECTIONS, CONSENT_INTRO, CONSENT_CHECKBOX } from './legalText'
 import { PLANS, VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, effectiveAccess } from './plans'
 import './App.css'
 
@@ -5861,7 +5861,6 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
   // PolicyView по-прежнему рисует свою кнопку.
   if(subPage==='plans') return <PlansView user={user} hideBack onClose={()=>setSubPage(null)} />
   if(subPage==='policy') return <PolicyView hideBack onClose={()=>setSubPage(null)} />
-  if(subPage==='offer') return <OfferView hideBack onClose={()=>setSubPage(null)} />
 
   return(
     <div style={{padding:'16px 16px 40px',display:'flex',flexDirection:'column',gap:0}}>
@@ -5971,12 +5970,14 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
           <Row label="Политика конфиденциальности" sub="Как обрабатываются твои данные (152-ФЗ)"
                right={<span style={{fontSize:16,color:TXT3}}>›</span>}/>
         </button>
-        <button onClick={()=>setSubPage('offer')} style={{
+        {/* Оферта ведёт на внешнюю оферту Продамуса (там же оформляется оплата),
+            а не на внутреннюю страницу. Стрелка «↗» — признак внешней ссылки. */}
+        <button onClick={()=>openExternal('https://maximathlete.payform.ru/public_offer')} style={{
           display:'block',width:'100%',padding:0,border:'none',background:'none',
           textAlign:'left',cursor:'pointer',minHeight:'unset',
         }}>
           <Row label="Пользовательское соглашение (оферта)" sub="Условия оказания услуг"
-               right={<span style={{fontSize:16,color:TXT3}}>›</span>}/>
+               right={<span style={{fontSize:16,color:TXT3}}>↗</span>}/>
         </button>
         {dataMsg&&<div style={{padding:'10px 0',fontSize:13,color:deleteError?'#ef4444':TEA,fontWeight:500}}>{dataMsg}</div>}
         <div style={{paddingBottom:14,display:'flex',flexDirection:'column',gap:8}}>
@@ -6042,7 +6043,6 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
 const SETTINGS_SUBPAGE_TITLES = {
   plans: 'Тарифы и подписка',
   policy: 'Политика конфиденциальности',
-  offer: 'Пользовательское соглашение',
 }
 
 // ── Правовые тексты (Политика 152-ФЗ, Оферта). Сами формулировки живут в
@@ -6078,10 +6078,6 @@ function LegalTextView({ title, sections, onClose, hideBack }) {
 // и ConsentGate менять не пришлось.
 function PolicyView({ onClose, hideBack }) {
   return <LegalTextView title={SETTINGS_SUBPAGE_TITLES.policy} sections={POLICY_SECTIONS} onClose={onClose} hideBack={hideBack} />
-}
-
-function OfferView({ onClose, hideBack }) {
-  return <LegalTextView title={SETTINGS_SUBPAGE_TITLES.offer} sections={OFFER_SECTIONS} onClose={onClose} hideBack={hideBack} />
 }
 
 // ── Тарифы и подписка. Пока ТОЛЬКО показывает пакеты и статус — ничего не
@@ -7358,7 +7354,7 @@ export default function App() {
   const [showProfileView,setShowProfileView]=useState(false)
   const [showProfileSheet,setShowProfileSheet]=useState(false)
   const [showSettingsView,setShowSettingsView]=useState(false)
-  // Открытая под-страница Настроек: null | 'policy' | 'offer'. Живёт здесь, а не
+  // Открытая под-страница Настроек: null | 'plans' | 'policy'. Живёт здесь, а не
   // в SettingsView, потому что стрелка «назад» в шапке ниже должна закрывать
   // сначала под-страницу и только потом сами Настройки.
   const [settingsSubPage,setSettingsSubPage]=useState(null)
