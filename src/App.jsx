@@ -6342,11 +6342,18 @@ function PlansView({ user, onClose, hideBack }) {
           border:`1.5px solid ${PUR}`,
           boxShadow:`0 0 32px ${PUR}22`,
         }}>
-          <div style={{display:'flex',flexDirection:'column',gap:11}}>
-            {FEATURES.map((f,i)=>{
+          <div style={{display:'flex',flexDirection:'column',gap:11,textAlign:'left'}}>
+            {FEATURES
+              // startOnly-строки осмысленны только на СТАРТ: на остальных тарифах
+              // их заменяет «Доступ ко всем программам тренировок».
+              .filter(f=>!f.startOnly||selectedLevel===0)
+              .map((f,i)=>{
               const lit=selectedLevel>=f.min
               return (
-                <div key={i} style={{display:'flex',gap:10,alignItems:'flex-start',opacity:lit?1:0.5}}>
+                // alignItems:flex-start + flex:1 у текста — чтобы двухстрочные
+                // пункты переносились по левому краю, а иконка держалась сверху,
+                // одинаково у горящих и погашенных.
+                <div key={i} style={{display:'flex',gap:10,alignItems:'flex-start',textAlign:'left',opacity:lit?1:0.5}}>
                   <span style={{
                     flexShrink:0,width:20,height:20,borderRadius:'50%',marginTop:1,
                     background:lit?`${TEA}20`:'transparent',
@@ -6355,6 +6362,7 @@ function PlansView({ user, onClose, hideBack }) {
                     fontSize:lit?11:9,color:lit?TEA:TXT3,fontWeight:700,
                   }}>{lit?'✓':'🔒'}</span>
                   <span style={{
+                    flex:1,minWidth:0,textAlign:'left',
                     fontSize:13.5,lineHeight:1.5,color:lit?TXT2:TXT3,
                     textDecoration:lit?'none':'line-through',
                   }}>{f.t}</span>
