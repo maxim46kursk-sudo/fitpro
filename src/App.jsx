@@ -12,7 +12,7 @@ import { Ic } from './icons.jsx'
 import { GlassDefs, GlassIcon } from './glassIcons'
 import { MuscleDefs, MuscleIcon } from './muscleIcons'
 import { muscleGroup, equipment } from './exerciseMeta'
-import { POLICY_VERSION, POLICY_SECTIONS, CONSENT_INTRO, CONSENT_CHECKBOX } from './legalText'
+import { POLICY_VERSION, POLICY_SECTIONS, CONSENT_SECTIONS, CONSENT_INTRO, CONSENT_CHECKBOX } from './legalText'
 import { PLANS, VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, effectiveAccess } from './plans'
 import './App.css'
 
@@ -5861,6 +5861,7 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
   // PolicyView по-прежнему рисует свою кнопку.
   if(subPage==='plans') return <PlansView user={user} hideBack onClose={()=>setSubPage(null)} />
   if(subPage==='policy') return <PolicyView hideBack onClose={()=>setSubPage(null)} />
+  if(subPage==='consent') return <ConsentDocView user={user} hideBack onClose={()=>setSubPage(null)} />
 
   return(
     <div style={{padding:'16px 16px 40px',display:'flex',flexDirection:'column',gap:0}}>
@@ -5970,6 +5971,13 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
           <Row label="Политика конфиденциальности" sub="Как обрабатываются твои данные (152-ФЗ)"
                right={<span style={{fontSize:16,color:TXT3}}>›</span>}/>
         </button>
+        <button onClick={()=>setSubPage('consent')} style={{
+          display:'block',width:'100%',padding:0,border:'none',background:'none',
+          textAlign:'left',cursor:'pointer',minHeight:'unset',
+        }}>
+          <Row label="Согласие на обработку данных" sub="Текст согласия и когда ты его дал"
+               right={<span style={{fontSize:16,color:TXT3}}>›</span>}/>
+        </button>
         {/* Оферта ведёт на внешнюю оферту Продамуса (там же оформляется оплата),
             а не на внутреннюю страницу. Стрелка «↗» — признак внешней ссылки. */}
         <button onClick={()=>openExternal('https://maximathlete.payform.ru/public_offer')} style={{
@@ -6043,6 +6051,7 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
 const SETTINGS_SUBPAGE_TITLES = {
   plans: 'Тарифы и подписка',
   policy: 'Политика конфиденциальности',
+  consent: 'Согласие на обработку данных',
 }
 
 // ── Правовые тексты (Политика 152-ФЗ, Оферта). Сами формулировки живут в
@@ -6078,6 +6087,57 @@ function LegalTextView({ title, sections, onClose, hideBack }) {
 // и ConsentGate менять не пришлось.
 function PolicyView({ onClose, hideBack }) {
   return <LegalTextView title={SETTINGS_SUBPAGE_TITLES.policy} sections={POLICY_SECTIONS} onClose={onClose} hideBack={hideBack} />
+}
+
+// Читаемая копия документа согласия (экран согласия при входе — отдельно, в
+// ConsentGate, его не трогаем). Сверху показываем, когда и на какую версию
+// согласие было дано — из profiles. Разметку не наследуем от LegalTextView,
+// т.к. нужна ещё строка-статус над текстом.
+function ConsentDocView({ user, onClose, hideBack }) {
+  const [given,setGiven]=useState(null) // { at, version } | null
+
+  useEffect(()=>{
+    if(!user?.id)return
+    let cancelled=false
+    supabase.from('profiles').select('pd_consent_at,pd_consent_version').eq('id',user.id).single()
+      .then(({data,error})=>{
+        if(cancelled)return
+        if(error){console.error('Не удалось прочитать статус согласия:',error);return}
+        if(data?.pd_consent_at)setGiven({at:data.pd_consent_at,version:data.pd_consent_version})
+      })
+    return()=>{cancelled=true}
+  },[user?.id])
+
+  return (
+    <div style={{minHeight:'100vh',background:BG,color:TXT,overflowY:'auto'}}>
+      <div style={{maxWidth:720,margin:'0 auto',padding:'16px 16px 48px'}}>
+        {!hideBack&&(
+          <button onClick={onClose} style={{
+            padding:'9px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,
+            background:SURF,color:TXT,fontSize:14,fontWeight:500,cursor:'pointer',
+            minHeight:'unset',marginBottom:18,
+          }}>‹ Назад</button>
+        )}
+        <h1 style={{fontSize:22,fontWeight:700,color:TXT,margin:'0 0 20px'}}>{SETTINGS_SUBPAGE_TITLES.consent}</h1>
+        {given&&(
+          <div style={{
+            background:`${TEA}14`,border:`1px solid ${TEA}40`,borderRadius:12,
+            padding:'11px 14px',marginBottom:20,fontSize:13,fontWeight:600,color:TEA,
+          }}>
+            Согласие дано: {fmtPlanDate(given.at)}{given.version?` (версия ${given.version})`:''}
+          </div>
+        )}
+        {CONSENT_SECTIONS.map(sec=>(
+          <div key={sec.h} style={{marginBottom:22}}>
+            <h2 style={{fontSize:15,fontWeight:700,color:TXT,margin:'0 0 8px'}}>{sec.h}</h2>
+            {sec.p.map((par,i)=>(
+              <p key={i} style={{fontSize:14,lineHeight:1.6,color:TXT2,margin:'0 0 8px'}}>{par}</p>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 // ── Тарифы и подписка. Пока ТОЛЬКО показывает пакеты и статус — ничего не
@@ -7354,7 +7414,7 @@ export default function App() {
   const [showProfileView,setShowProfileView]=useState(false)
   const [showProfileSheet,setShowProfileSheet]=useState(false)
   const [showSettingsView,setShowSettingsView]=useState(false)
-  // Открытая под-страница Настроек: null | 'plans' | 'policy'. Живёт здесь, а не
+  // Открытая под-страница Настроек: null | 'plans' | 'policy' | 'consent'. Живёт здесь, а не
   // в SettingsView, потому что стрелка «назад» в шапке ниже должна закрывать
   // сначала под-страницу и только потом сами Настройки.
   const [settingsSubPage,setSettingsSubPage]=useState(null)
