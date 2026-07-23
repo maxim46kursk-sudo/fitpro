@@ -12,7 +12,7 @@ import { Ic } from './icons.jsx'
 import { GlassDefs, GlassIcon } from './glassIcons'
 import { MuscleDefs, MuscleIcon } from './muscleIcons'
 import { muscleGroup, equipment } from './exerciseMeta'
-import { POLICY_VERSION, POLICY_SECTIONS, CONSENT_SECTIONS, CONSENT_INTRO, CONSENT_CHECKBOX } from './legalText'
+import { POLICY_VERSION, POLICY_SECTIONS, CONSENT_SECTIONS, CONSENT_CHECKBOX } from './legalText'
 import { PLANS, VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, effectiveAccess } from './plans'
 import './App.css'
 
@@ -6490,56 +6490,109 @@ function ConsentGate({ user, onAccepted, onDecline }) {
 
   if(showPolicy) return <PolicyView onClose={()=>setShowPolicy(false)} />
 
+  // Текст галочки из legalText, где «Политику конфиденциальности» — ссылка на
+  // PolicyView. Разбиваем строку по этой фразе, чтобы не дублировать текст в
+  // коде: если формулировку в legalText поменяют, ссылка просто исчезнет, а не
+  // сломает рендер. stopPropagation — клик по ссылке не переключает галочку.
+  const LINK_PHRASE='Политику конфиденциальности'
+  const [before,after]=CONSENT_CHECKBOX.split(LINK_PHRASE)
+  const checkboxText=(
+    <>
+      {before}
+      {after!==undefined?(
+        <>
+          <span onClick={e=>{e.stopPropagation();setShowPolicy(true)}}
+                style={{color:ACCENT2,fontWeight:600,textDecoration:'underline',cursor:'pointer'}}>{LINK_PHRASE}</span>
+          {after}
+        </>
+      ):null}
+    </>
+  )
+
+  // Три «плашки-успокоителя».
+  const reassurances=[
+    {icon:'🇷🇺',title:'Данные — в России',text:'Хранятся на сервере в РФ, не уходят налево'},
+    {icon:'🔒',title:'Под защитой',text:'Доступ только у тебя, соединение шифруется'},
+    {icon:'🗑️',title:'Ты хозяин',text:'Удалить всё можно в один тап в Настройках'},
+  ]
+
   return (
     <div style={{position:'fixed',inset:0,zIndex:3000,background:BG,color:TXT,overflowY:'auto'}}>
-      <div style={{maxWidth:560,margin:'0 auto',padding:'32px 20px 48px'}}>
-        <h1 style={{fontSize:22,fontWeight:700,color:TXT,margin:'0 0 18px'}}>Согласие на обработку данных</h1>
+      {/* Мягкое свечение акцентом вверху */}
+      <div style={{
+        position:'absolute',top:0,left:'50%',transform:'translateX(-50%)',
+        width:420,height:280,borderRadius:'50%',pointerEvents:'none',
+        background:`radial-gradient(closest-side, ${PUR}33, transparent)`,
+      }}/>
+      <div style={{position:'relative',maxWidth:460,margin:'0 auto',padding:'40px 20px 44px',textAlign:'center'}}>
 
-        {CONSENT_INTRO.map((par,i)=>(
-          <p key={i} style={{fontSize:14,lineHeight:1.6,color:TXT2,margin:'0 0 12px'}}>{par}</p>
-        ))}
+        {/* 1. Эмодзи */}
+        <div style={{fontSize:60,lineHeight:1,marginBottom:16,filter:`drop-shadow(0 6px 20px ${PUR}66)`}}>👋</div>
 
-        <button onClick={()=>setShowPolicy(true)} style={{
-          padding:0,border:'none',background:'none',color:ACCENT2,
-          fontSize:14,fontWeight:600,cursor:'pointer',minHeight:'unset',
-          textDecoration:'underline',margin:'4px 0 22px',
-        }}>Читать Политику полностью</button>
+        {/* 2-3. Заголовок и подзаголовок */}
+        <h1 style={{fontSize:25,fontWeight:800,color:TXT,margin:'0 0 12px'}}>Привет! Ты в ФитПро</h1>
+        <p style={{fontSize:14.5,lineHeight:1.55,color:TXT2,margin:'0 auto 26px',maxWidth:360}}>
+          Рады тебя видеть 💪 Одна короткая формальность — и начинаем. Обещаем: быстро и без занудства.
+        </p>
 
-        <label style={{
-          display:'flex',alignItems:'flex-start',gap:11,cursor:'pointer',
-          background:SURF,border:`1px solid ${HAIR}`,borderRadius:14,
-          padding:'14px 15px',marginBottom:18,
+        {/* 4. Плашки-успокоители */}
+        <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:22,textAlign:'left'}}>
+          {reassurances.map(r=>(
+            <div key={r.title} style={{
+              display:'flex',alignItems:'center',gap:13,
+              background:SURF,border:`1px solid ${HAIR}`,borderRadius:14,padding:'13px 15px',
+            }}>
+              <span style={{fontSize:24,flexShrink:0,lineHeight:1}}>{r.icon}</span>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:14.5,fontWeight:700,color:TXT}}>{r.title}</div>
+                <div style={{fontSize:12.5,lineHeight:1.4,color:TXT3,marginTop:2}}>{r.text}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* 5. Строка согласия — клик по строке переключает галочку */}
+        <div onClick={()=>setChecked(c=>!c)} style={{
+          display:'flex',alignItems:'flex-start',gap:12,cursor:'pointer',textAlign:'left',
+          background:SURF,border:`1px solid ${checked?ACCENT2:HAIR}`,borderRadius:14,
+          padding:'14px 15px',marginBottom:16,transition:'border-color 0.15s',
         }}>
-          <input type="checkbox" checked={checked} onChange={e=>setChecked(e.target.checked)}
-                 style={{width:20,height:20,flexShrink:0,marginTop:1,accentColor:PUR,cursor:'pointer'}}/>
-          <span style={{fontSize:13,lineHeight:1.55,color:TXT}}>{CONSENT_CHECKBOX}</span>
-        </label>
+          <span style={{
+            width:24,height:24,borderRadius:7,flexShrink:0,marginTop:1,
+            display:'flex',alignItems:'center',justifyContent:'center',
+            fontSize:14,fontWeight:900,color:'#fff',
+            background:checked?`linear-gradient(180deg, ${ACCENT2}, ${PUR})`:SURF2,
+            border:checked?'none':`1.5px solid ${HAIR}`,
+          }}>{checked?'✓':''}</span>
+          <span style={{fontSize:13,lineHeight:1.55,color:TXT}}>{checkboxText}</span>
+        </div>
 
         {saveError&&(
           <div style={{
             background:'rgba(255,69,58,.12)',border:'1px solid rgba(255,69,58,.40)',
-            borderRadius:10,padding:'11px 14px',marginBottom:14,
+            borderRadius:10,padding:'11px 14px',marginBottom:14,textAlign:'left',
             fontSize:13,fontWeight:600,color:DANGER,
           }}>{saveError}</div>
         )}
 
+        {/* 6. Кнопка «Поехали» */}
         <button onClick={accept} disabled={!checked||saving} style={{
           width:'100%',padding:'15px',borderRadius:14,border:'none',
           background:checked?`linear-gradient(180deg, ${ACCENT2}, ${PUR})`:SURF2,
-          color:checked?'#fff':TXT3,fontSize:16,fontWeight:700,
+          color:checked?'#fff':TXT3,fontSize:16,fontWeight:800,
           cursor:checked&&!saving?'pointer':'not-allowed',
           boxShadow:checked?`0 10px 32px ${PUR}55`:'none',
           opacity:saving?0.7:1,
-        }}>{saving?'Сохраняем…':'Продолжить'}</button>
+        }}>{saving?'Сохраняем…':'Поехали 🚀'}</button>
 
-        {/* Без этого выхода экран — ловушка: не согласившись, пользователь не
+        {/* 7. Выход. Без него экран — ловушка: не согласившись, пользователь не
             может ни войти, ни выйти. onDecline разлогинивает и возвращает на
             LandingPage; согласие в базу при этом не пишется. */}
         <button onClick={onDecline} disabled={saving} style={{
           display:'block',margin:'16px auto 0',padding:'8px 12px',
           border:'none',background:'none',color:TXT3,
           fontSize:14,fontWeight:500,cursor:saving?'not-allowed':'pointer',minHeight:'unset',
-        }}>Выйти</button>
+        }}>Пока не готов — выйти</button>
       </div>
     </div>
   )
