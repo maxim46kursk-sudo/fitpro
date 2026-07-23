@@ -13,7 +13,7 @@ import { GlassDefs, GlassIcon } from './glassIcons'
 import { MuscleDefs, MuscleIcon } from './muscleIcons'
 import { muscleGroup, equipment } from './exerciseMeta'
 import { POLICY_VERSION, POLICY_SECTIONS, OFFER_SECTIONS, CONSENT_INTRO, CONSENT_CHECKBOX } from './legalText'
-import { PLANS, VIP, VIP_LEVEL, FEATURES, PAY_LINKS, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, effectiveAccess } from './plans'
+import { PLANS, VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, effectiveAccess } from './plans'
 import './App.css'
 
 // ── Тёмная тема (единая палитра, шаг 1: каркас + экран «Тренировки»).
@@ -6109,6 +6109,7 @@ function PlansView({ user, onClose, hideBack }) {
   const [loading,setLoading]=useState(true)
   const [loadError,setLoadError]=useState(false)
   const [trialBusy,setTrialBusy]=useState(false)
+  const [payBusy,setPayBusy]=useState(false)
   const [msg,setMsg]=useState('')
   const [msgError,setMsgError]=useState(false)
   // Выбранная пилюля тарифа. По умолчанию ПРОФИТ — он же «Хит».
@@ -6167,16 +6168,30 @@ function PlansView({ user, onClose, hideBack }) {
   // никакого активного доступа (ни платного, ни пробного).
   const canStartTrial=!!profile&&!profile.trial_used&&access.level===0
 
-  const pay=(plan)=>{
-    const base=PAY_LINKS[plan.key]
-    if(!base){flash('Оплата скоро подключится');return}
-    // Идентификатор передаём через customer_extra: наш order_id Продамус
-    // заменяет своим номером, а customer_extra возвращает в уведомлении эхом.
-    // Формат <userId>__<plan>; разделитель '__' двойной, чтобы уцелеть, даже
-    // если id вдруг содержит '_'. Пакет вебхук всё равно берёт по сумме —
-    // из customer_extra ему нужен только userId.
-    const url=`${base}${base.includes('?')?'&':'?'}customer_extra=${encodeURIComponent(`${user.id}__${plan.key}`)}`
-    openExternal(url)
+  // Ссылку оплаты строит сервер (api/create-payment.js): статические ссылки
+  // Продамуса не могут нести наш userId, поэтому подписанную ссылку с userId в
+  // order_id/customer_extra выписывает бэкенд по токену пользователя.
+  const pay=async(plan)=>{
+    if(payBusy)return
+    setPayBusy(true);setMsg('')
+    try{
+      const{data:{session}}=await supabase.auth.getSession()
+      const token=session?.access_token
+      if(!token)throw new Error('нет активной сессии, перезайди в приложение')
+      const res=await fetch('/api/create-payment',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+        body:JSON.stringify({plan:plan.key}),
+      })
+      const body=await res.json().catch(()=>({}))
+      if(!res.ok||!body?.url)throw new Error(body?.error||`сервер вернул ${res.status}`)
+      openExternal(body.url)
+    }catch(e){
+      console.error('Ошибка создания ссылки оплаты:',e)
+      flash(`Не удалось открыть оплату: ${e.message}`,true)
+    }finally{
+      setPayBusy(false)
+    }
   }
 
   // Пилюли переключателя: все пакеты + VIP отдельным псевдо-тарифом.
@@ -6333,12 +6348,12 @@ function PlansView({ user, onClose, hideBack }) {
               fontSize:15,fontWeight:700,cursor:'default',minHeight:'unset',
             }}>Твой пакет</button>
           ):selectedPlan.level>0?(
-            <button onClick={()=>pay(selectedPlan)} style={{
+            <button onClick={()=>pay(selectedPlan)} disabled={payBusy} style={{
               width:'100%',padding:'13px',borderRadius:12,border:'none',
               background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',
-              fontSize:15,fontWeight:800,cursor:'pointer',minHeight:'unset',
-              boxShadow:`0 8px 24px ${PUR}45`,
-            }}>Оформить {selectedPlan.name} · {priceOf(selectedPlan)} ₽</button>
+              fontSize:15,fontWeight:800,cursor:payBusy?'not-allowed':'pointer',minHeight:'unset',
+              boxShadow:`0 8px 24px ${PUR}45`,opacity:payBusy?0.7:1,
+            }}>{payBusy?'Готовим оплату…':`Оформить ${selectedPlan.name} · ${priceOf(selectedPlan)} ₽`}</button>
           ):null}
         </div>
 

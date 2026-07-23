@@ -1,6 +1,6 @@
-import crypto from 'node:crypto'
 import qs from 'qs'
 import { createClient } from '@supabase/supabase-js'
+import { createSignature, signPayload, verifySignature } from './_prodamus.js'
 
 // Вебхук уведомлений Продамуса. Тело подписано, поэтому НЕ даём Vercel его
 // разобрать — подпись считается по точной сырой форме, любой репарсинг
@@ -23,46 +23,8 @@ const AMOUNT_TO_PLAN = {
 const PLAN_DAYS = 30
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-// ── Подпись как в официальной библиотеке Prodamus\Hmac (PHP).
-// Нормализуем структуру: у объектов ключи сортируем по алфавиту (рекурсивно),
-// у массивов порядок элементов сохраняем, но их вложенные объекты тоже
-// сортируем; все конечные значения приводим к строке.
-function normalizeForSign(value) {
-  if (Array.isArray(value)) return value.map(normalizeForSign)
-  if (value && typeof value === 'object') {
-    const out = {}
-    for (const key of Object.keys(value).sort()) out[key] = normalizeForSign(value[key])
-    return out
-  }
-  // null/undefined → пустая строка (в форме таких почти не бывает, но чтобы
-  // JSON не получил null вместо "").
-  return value == null ? '' : String(value)
-}
-
-// Итоговая JSON-строка, по которой считается HMAC. json_encode PHP по
-// умолчанию экранирует прямые слэши как \/ (JSON_UNESCAPED_SLASHES не задан),
-// а юникод НЕ экранирует (задан JSON_UNESCAPED_UNICODE) — JS не экранирует
-// юникод сам, а слэши воспроизводим руками.
-export function signPayload(data) {
-  const clean = { ...data }
-  delete clean.signature
-  return JSON.stringify(normalizeForSign(clean)).replace(/\//g, '\\/')
-}
-
-export function computeSignature(data, key) {
-  return crypto.createHmac('sha256', key).update(signPayload(data), 'utf8').digest('hex')
-}
-
-// Сравнение подписей: регистр к нижнему, длину сверяем до timingSafeEqual
-// (он бросает на разной длине), само сравнение — постоянного времени.
-export function verifySignature(data, key, provided) {
-  if (!provided) return false
-  const expected = computeSignature(data, key)
-  const a = Buffer.from(String(provided).toLowerCase(), 'utf8')
-  const b = Buffer.from(expected.toLowerCase(), 'utf8')
-  if (a.length !== b.length) return false
-  return crypto.timingSafeEqual(a, b)
-}
+// Подпись — общая с исходящей ссылкой (api/_prodamus.js): один алгоритм,
+// уже принятый Продамусом на входящих уведомлениях.
 
 function readRawBody(req) {
   return new Promise((resolve, reject) => {
@@ -103,7 +65,7 @@ export default async function handler(req, res) {
   // и вычисленную подписи и саму JSON-строку — по ним правится сериализация.
   const provided = (req.headers['sign'] || data.signature || '').toString()
   if (!verifySignature(data, secret, provided)) {
-    const computed = computeSignature(data, secret)
+    const computed = createSignature(data, secret)
     const jsonString = signPayload(data)
     console.error('Prodamus webhook: подпись не сошлась', {
       provided: provided.toLowerCase(),
