@@ -6457,13 +6457,7 @@ function ConsentGate({ user, onAccepted, onDecline }) {
 }
 
 // ── ProfileView ──────────────────────────────────────────────────────────────
-// access/openPlans — для плашки текущего тарифа в шапке профиля. access берём
-// готовым из App (там он уже посчитан по профилю), чтобы не заводить второй
-// источник правды о пакете.
-function ProfileView({ user, onClose, onOpenAI, onUserUpdate, access, openPlans }) {
-  // Во время пробного показываем «Пробный», иначе короткое имя пакета —
-  // access.label для СТАРТ содержит «СТАРТ (бесплатный)», в плашку он длинный.
-  const planBadgeLabel=access?.isTrial?'Пробный':planByKey(access?.planKey||'start').name
+function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
   const [tab,setTab]=useState('profile')
   const [profile,setProfile]=useState(()=>{
     try{return JSON.parse(localStorage.getItem('fitpro_profile')||'null')||{name:user?.name||'',birthdate:'',height:'',weight:'',goal:'',steps:'',gymDays:'',occupation:'',activityLevel:''}}catch{return{name:user?.name||'',birthdate:'',height:'',weight:'',goal:'',steps:'',gymDays:'',occupation:'',activityLevel:''}}
@@ -6712,20 +6706,6 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate, access, openPlans 
                 <div style={{fontSize:11,color:TXT3,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{isTgUser?tgNick:(userEdit.email||user?.email)}</div>
                 <div style={{fontSize:11,color:PUR,marginTop:2,cursor:'pointer'}} onClick={()=>photoInputPVRef.current?.click()}>Изменить фото</div>
               </div>
-              {/* Плашка текущего тарифа — вход на экран Тарифов прямо из профиля */}
-              {openPlans&&(
-                <button onClick={openPlans} style={{
-                  flexShrink:0,display:'flex',alignItems:'center',gap:6,
-                  padding:'7px 10px',borderRadius:11,cursor:'pointer',minHeight:'unset',
-                  background:SURF2,border:`1px solid ${HAIR}`,
-                }}>
-                  <span style={{textAlign:'right'}}>
-                    <span style={{display:'block',fontSize:9.5,color:TXT3,lineHeight:1.2}}>Тариф</span>
-                    <span style={{display:'block',fontSize:12.5,fontWeight:800,color:ACCENT2,lineHeight:1.25}}>{planBadgeLabel}</span>
-                  </span>
-                  <span style={{fontSize:14,color:TXT3,lineHeight:1}}>›</span>
-                </button>
-              )}
             </div>
 
             {/* Пол */}
@@ -8036,13 +8016,29 @@ export default function App() {
                 {/* Аватар + имя */}
                 <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20, padding:'0 2px' }}>
                   <Av lbl={user.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={48} photo={user.photoURL} gender={user.gender} />
-                  <div>
+                  {/* minWidth:0 — чтобы длинное имя/ник сжимались многоточием и не
+                      выдавливали плашку тарифа за край шторки на узких экранах. */}
+                  <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:7 }}>
-                      <span style={{ fontSize:17, fontWeight:700, color:TXT }}>{user.name}</span>
-                      {userRole==='trainer'&&<span style={{ fontSize:11, fontWeight:700, color:PUR, background:`${PUR}18`, borderRadius:6, padding:'2px 7px' }}>Тренер</span>}
+                      <span style={{ fontSize:17, fontWeight:700, color:TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{user.name}</span>
+                      {userRole==='trainer'&&<span style={{ fontSize:11, fontWeight:700, color:PUR, background:`${PUR}18`, borderRadius:6, padding:'2px 7px', flexShrink:0 }}>Тренер</span>}
                     </div>
-                    <div style={{ fontSize:12, color:TXT3, marginTop:2 }}>{(user?.email||'').endsWith('@telegram.fitpro')?(user.tgUsername?'@'+user.tgUsername:(user.telegram||'')):user.email}</div>
+                    <div style={{ fontSize:12, color:TXT3, marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{(user?.email||'').endsWith('@telegram.fitpro')?(user.tgUsername?'@'+user.tgUsername:(user.telegram||'')):user.email}</div>
                   </div>
+                  {/* Плашка текущего тарифа — вход на экран Тарифов из шторки */}
+                  <button onClick={()=>{setShowProfileSheet(false);openPlans()}} style={{
+                    flexShrink:0, display:'flex', alignItems:'center', gap:6,
+                    padding:'7px 10px', borderRadius:11, cursor:'pointer', minHeight:'unset',
+                    background:SURF2, border:`1px solid ${HAIR}`,
+                  }}>
+                    <span style={{ textAlign:'right' }}>
+                      <span style={{ display:'block', fontSize:9.5, color:TXT3, lineHeight:1.2 }}>Тариф</span>
+                      <span style={{ display:'block', fontSize:12.5, fontWeight:800, color:ACCENT2, lineHeight:1.25 }}>
+                        {access.isTrial?'Пробный':planByKey(access.planKey).name}
+                      </span>
+                    </span>
+                    <span style={{ fontSize:14, color:TXT3, lineHeight:1 }}>›</span>
+                  </button>
                 </div>
                 {/* Меню */}
                 {[
@@ -8107,7 +8103,7 @@ export default function App() {
         </div>
       )}
       {/* Экран "Мои данные" (mobile + desktop) */}
-      {showProfileView&&<ProfileView user={user} onClose={()=>setShowProfileView(false)} onOpenAI={m=>aiRef.current?.open(m)} onUserUpdate={u=>setUser(u)} access={access} openPlans={openPlans} />}
+      {showProfileView&&<ProfileView user={user} onClose={()=>setShowProfileView(false)} onOpenAI={m=>aiRef.current?.open(m)} onUserUpdate={u=>setUser(u)} />}
 
       {/* Экран "Настройки" (mobile + desktop) */}
       {showSettingsView&&(
