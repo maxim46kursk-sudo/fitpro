@@ -62,30 +62,14 @@ export default async function handler(req, res) {
 
   // ── Проверка подписи. Подпись — из заголовка sign, запасной вариант — поле
   // signature в теле. Секрет НЕ логируем; на несовпадении логируем присланную
-  // и вычисленную подписи и саму JSON-строку — по ним правится сериализация.
+  // и вычисленную подписи и JSON-строку в консоль (в БД не пишем).
   const provided = (req.headers['sign'] || data.signature || '').toString()
   if (!verifySignature(data, secret, provided)) {
-    const computed = createSignature(data, secret)
-    const jsonString = signPayload(data)
     console.error('Prodamus webhook: подпись не сошлась', {
       provided: provided.toLowerCase(),
-      expected: computed,
-      signedString: jsonString,
+      expected: createSignature(data, secret),
+      signedString: signPayload(data),
     })
-    // ВРЕМЕННО (диагностика первого живого платежа): пишем несошедшееся
-    // уведомление в журнал, чтобы по нему поправить сериализацию, не гоняя
-    // тестовые оплаты вслепую. provider_order_num=NULL — не ловим UNIQUE.
-    // СЕКРЕТ в raw не кладём. Ошибку записи только логируем: ответ всё равно
-    // 400, и это не должно превратиться в 500.
-    const { error: diagErr } = await supabaseAdmin.from('payments').insert({
-      provider_order_num: null,
-      order_id: data.order_id != null ? String(data.order_id) : null,
-      status: 'bad_signature',
-      // raw_body — СЫРАЯ строка тела до разбора: нужна, чтобы увидеть точные
-      // символы и кодировку, если qs.parse что-то трактует не так, как Продамус.
-      raw: { body: data, raw_body: raw, received_sign: provided.toLowerCase(), computed_sign: computed, json_string: jsonString },
-    })
-    if (diagErr) console.error('Prodamus webhook: не удалось записать диагностику bad_signature:', diagErr)
     return res.status(400).send('Bad signature')
   }
 
