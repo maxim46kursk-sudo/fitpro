@@ -13,6 +13,7 @@ import { GlassDefs, GlassIcon } from './glassIcons'
 import { MuscleDefs, MuscleIcon } from './muscleIcons'
 import { muscleGroup, equipment } from './exerciseMeta'
 import { POLICY_VERSION, POLICY_SECTIONS, OFFER_SECTIONS, CONSENT_INTRO, CONSENT_CHECKBOX } from './legalText'
+import { PLANS, VIP, PAY_LINKS, TEST_MODE, TRIAL_DAYS, priceOf, effectiveAccess } from './plans'
 import './App.css'
 
 // ── Тёмная тема (единая палитра, шаг 1: каркас + экран «Тренировки»).
@@ -208,6 +209,52 @@ function Section({ title, children }) {
     </div>
   )
 }
+
+// ── Единая подсказка «нужен пакет повыше». Одна вёрстка на все точки блокировки,
+// чтобы формулировка и кнопка не разъезжались по экранам.
+function PlanLockNotice({ title, text, onOpenPlans }) {
+  return (
+    <div style={{textAlign:'center',padding:'8px 4px'}}>
+      <div style={{
+        width:56,height:56,borderRadius:'50%',margin:'0 auto 14px',
+        background:`${PUR}20`,border:`1px solid ${PUR}40`,
+        display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,
+      }}>🔒</div>
+      <div style={{fontSize:17,fontWeight:800,color:TXT,marginBottom:8}}>{title}</div>
+      {text&&<div style={{fontSize:13,lineHeight:1.55,color:TXT2,maxWidth:320,margin:'0 auto 18px'}}>{text}</div>}
+      <button onClick={onOpenPlans} style={{
+        width:'100%',maxWidth:280,padding:'13px',borderRadius:13,border:'none',
+        background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',
+        fontSize:15,fontWeight:700,cursor:'pointer',boxShadow:`0 8px 24px ${PUR}45`,
+      }}>Открыть тарифы</button>
+    </div>
+  )
+}
+
+// Та же подсказка модалкой — для мест, где нет отдельного экрана (список слотов,
+// пункт меню Дневника).
+function PlanLockModal({ title, text, onClose, onOpenPlans }) {
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:2000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}
+      onClick={onClose}>
+      <div style={{background:SURF,borderRadius:18,padding:'24px 22px',width:'100%',maxWidth:360,boxShadow:'0 20px 60px rgba(0,0,0,0.45)'}}
+        onClick={e=>e.stopPropagation()}>
+        <PlanLockNotice title={title} text={text} onOpenPlans={onOpenPlans} />
+        <button onClick={onClose} style={{
+          display:'block',margin:'12px auto 0',padding:'8px 14px',border:'none',background:'none',
+          color:TXT3,fontSize:14,fontWeight:500,cursor:'pointer',minHeight:'unset',
+        }}>Закрыть</button>
+      </div>
+    </div>
+  )
+}
+
+// Тексты гейтов — в одном месте, чтобы не расходились между точками блокировки.
+const LOCK_SLOTS = { title:'Тренировки 4–12 доступны в пакете БАЗА', text:'В СТАРТ открыты первые 3 тренировки в каждом шаблоне. БАЗА открывает все тренировки во всех четырёх шаблонах.' }
+const LOCK_EXERCISES = { title:'Прогресс по упражнениям доступен в пакете БАЗА', text:'Покажет динамику весов и повторений по каждому упражнению за любой период.' }
+// Со скольки слотов начинается платная часть шаблона и какой уровень нужен.
+const FREE_SLOTS = 3
+const SLOTS_MIN_LEVEL = 1
 
 // ── Экраны
 function Dashboard({ setNav, setSC, isTrainer }) {
@@ -902,7 +949,16 @@ const makeDefaultFolderSlots=()=>{
   const o={}; FOLDERS.forEach(f=>{o[f]=makeDefaultSlots(f)}); return o
 }
 
-function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, isPremium }) {
+// hasTrainer — «к клиенту прикреплён тренер» (profiles.coach_id). Раньше проп
+// назывался isPremium, что путало с пакетом ПРЕМИУМ: это разные вещи, подписка
+// приходит отдельно, в accessLevel.
+// accessLevel — уровень пакета: тренировки 4–12 в шаблонах требуют БАЗУ (1),
+// в СТАРТ (0) открыты только первые FREE_SLOTS.
+function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, hasTrainer, accessLevel = 0, openPlans }) {
+  // Подсказка «нужен пакет БАЗА» — показывается модалкой поверх списка слотов.
+  const [showSlotLock,setShowSlotLock]=useState(false)
+  // Заперт ли слот: платная часть шаблона начинается с FREE_SLOTS+1.
+  const isSlotLocked=slotNum=>accessLevel<SLOTS_MIN_LEVEL&&slotNum>FREE_SLOTS
   const [openFolder,setOpenFolder]=useState(null)
   const [infoFolder,setInfoFolder]=useState(null) // карточка-описание программы ("?")
   const [selectedProgram,setSelectedProgram]=useState(null) // выбранная программа клиента (profiles.program)
@@ -1671,6 +1727,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   // тренировку") — сам запуск может случиться не сразу по клику, а только
   // после подтверждения в модалке.
   const runStartSlotWorkout=()=>{
+    // Гейт по пакету — здесь, а не в обработчиках кликов: через эту функцию
+    // проходят ВСЕ пути запуска слота (кнопка "▶ Начать тренировку", модалки
+    // "принять программу" и "сменить программу", отложенный старт после
+    // конфликта с активной тренировкой). Поставь проверку выше — часть путей
+    // осталась бы открытой.
+    if(isSlotLocked(currentSlot.slotNum)){setOpenSlotId(null);setShowSlotLock(true);return}
     const exs=currentSlot.exercises.filter(e=>e.name)
     if(exs.length===0)return
     setWName(`${openFolder} — тренировка ${currentSlot.slotNum}`)
@@ -2260,13 +2322,13 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                               </div>
                               <button onClick={()=>setOpenSetNote(noteOpen?null:{ei,si})}
                                 style={{ width:26, height:26, borderRadius:6, border:'none', background:set.note?`${PUR}50`:SURF2, color:set.note?PUR:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}><GlassIcon name="pen" size={26} /></button>
-                              {/* Видео тренеру — только премиум-клиенту (isPremium).
+                              {/* Видео тренеру — только клиенту с тренером (hasTrainer).
                                   Не загрузка в приложение: открывает чат с тренером
                                   в Telegram, клиент шлёт видео сам. openTelegramLink
                                   сворачивает Mini App (не закрывает — close() не зовём),
                                   тренировка в памяти переживает переход. Плейсхолдер
-                                  <span/> у не-премиума держит колонку, чтобы ✕ не съехал. */}
-                              {isPremium?(
+                                  <span/> у остальных держит колонку, чтобы ✕ не съехал. */}
+                              {hasTrainer?(
                                 <button onClick={()=>{
                                   if(window.Telegram?.WebApp)window.Telegram.WebApp.openTelegramLink(MAX_TELEGRAM_URL)
                                   else window.open(MAX_TELEGRAM_URL,'_blank')
@@ -2690,6 +2752,14 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         </div>
       , document.body)}
 
+      {/* Подсказка про пакет — через портал, как соседние модалки: список слотов
+          лежит в прокручиваемом контейнере, обычный fixed внутри него на iOS
+          иногда позиционируется относительно предка. */}
+      {showSlotLock&&createPortal(
+        <PlanLockModal {...LOCK_SLOTS} onClose={()=>setShowSlotLock(false)}
+          onOpenPlans={()=>{setShowSlotLock(false);openPlans?.()}} />,
+        document.body)}
+
       {/* Модалка: программа вообще не выбрана — предлагаем принять текущую
           по клику "▶ Начать тренировку" (второй путь выбора программы). */}
       {showAdoptProgramModal&&createPortal(
@@ -2808,17 +2878,20 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               const slotName=`${openFolder} — тренировка ${slot.slotNum}`
               const completions=workoutsSinceCycleStart(openFolder).filter(w=>w.name===slotName)
               const lastDate=completions.length?completions.reduce((max,w)=>w.date>max?w.date:max,completions[0].date):null
+              // Слоты платной части шаблона: приглушены, вместо "›" замок,
+              // клик не открывает слот, а показывает подсказку про пакет.
+              const locked=isSlotLocked(slot.slotNum)
               return (
-                <div key={slot.id} style={{ background:SURF, borderRadius:20, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', marginBottom:10, display:'flex', flexDirection:'column', alignItems:'center', padding:'16px 16px 14px', cursor:'pointer', position:'relative' }}
-                  onClick={()=>setOpenSlotId(slot.id)}>
-                  <div style={{ position:'absolute', top:14, left:14, width:36, height:36, borderRadius:'50%', background:ec>0?PUR:SURF2, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:ec>0?'#fff':TXT3 }}>
+                <div key={slot.id} style={{ background:SURF, borderRadius:20, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', marginBottom:10, display:'flex', flexDirection:'column', alignItems:'center', padding:'16px 16px 14px', cursor:'pointer', position:'relative', opacity:locked?0.55:1 }}
+                  onClick={()=>{if(locked){setShowSlotLock(true);return}setOpenSlotId(slot.id)}}>
+                  <div style={{ position:'absolute', top:14, left:14, width:36, height:36, borderRadius:'50%', background:locked?SURF2:(ec>0?PUR:SURF2), display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:locked?TXT3:(ec>0?'#fff':TXT3) }}>
                     {slot.slotNum}
                   </div>
-                  <span style={{ position:'absolute', top:18, right:14, fontSize:18, color:TXT3 }}>›</span>
+                  <span style={{ position:'absolute', top:18, right:14, fontSize:locked?15:18, color:TXT3 }}>{locked?'🔒':'›'}</span>
                   <div style={{ textAlign:'center', paddingTop:6 }}>
                     <div style={{ fontSize:16, fontWeight:700, color:TXT, marginBottom:4 }}>{slot.title}</div>
                     <div style={{ fontSize:12, color:TXT3 }}>
-                      {ec===0?'Нет упражнений':`${ec} упр.${vc>0?` · ${vc} видео`:''}`}
+                      {locked?'Доступно в пакете БАЗА':(ec===0?'Нет упражнений':`${ec} упр.${vc>0?` · ${vc} видео`:''}`)}
                     </div>
                     {completions.length>0&&(
                       <div style={{ fontSize:11.5, color:'#16a34a', fontWeight:600, marginTop:5, display:'flex', alignItems:'center', gap:4 }}>
@@ -3762,7 +3835,12 @@ function DateScroller({ value, onChange }) {
 }
 
 // ── Дневник
-function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, onOpenAI, userId, initialSection, diaryJumpToken, onSectionChange, historyLoading, historyLoadError, onRetryHistory, readOnly=false, readOnlyName='' }) {
+// accessLevel — уровень пакета: «Прогресс по упражнениям» требует БАЗУ (1).
+// Остальные разделы Дневника (тоннаж, тренировки, питание, 1ПМ) бесплатны.
+// readOnly — просмотр чужого дневника тренером, там гейт не применяем.
+function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, onOpenAI, userId, initialSection, diaryJumpToken, onSectionChange, historyLoading, historyLoadError, onRetryHistory, readOnly=false, readOnlyName='', accessLevel = 0, openPlans }) {
+  const exercisesLocked=!readOnly&&accessLevel<SLOTS_MIN_LEVEL
+  const [showExLock,setShowExLock]=useState(false)
   const [section, setSection] = useState(()=>initialSection??null)
   // Сообщаем родителю текущий подраздел — чтобы App мог его запомнить и вернуть
   // при повторном монтировании DiaryView после вынужденного перехода на другую
@@ -4241,6 +4319,19 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
 
   // ── СЕКЦИЯ: Прогресс по упражнениям
   if(section==='exercises'){
+    // Второй путь в секцию — initialSection (возврат в Дневник из тренировки,
+    // App.jsx восстанавливает последнюю открытую секцию), он минует пункт меню.
+    // Поэтому гейт продублирован здесь, а не только на клике.
+    // Тот же полноэкранный портал, что у обычного содержимого секции ниже —
+    // иначе подсказка отрисовалась бы внутри списка Дневника, а не поверх него.
+    if(exercisesLocked) return createPortal(
+      <div style={{ position:'fixed',inset:0,background:BG,zIndex:1000,display:'flex',flexDirection:'column' }}>
+        <BackBtn label={sectionTitle('Прогресс по упражнениям')} onBack={()=>setSection(null)} />
+        <div style={{ flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:'24px 16px' }}>
+          <PlanLockNotice {...LOCK_EXERCISES} onOpenPlans={()=>openPlans?.()} />
+        </div>
+      </div>
+    , document.body)
     const EX_PERIOD_DAYS={'30d':30}
     const filteredExerciseMap={}
     workoutHistory.forEach((w,histIdx)=>{
@@ -5141,19 +5232,28 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
       ):historyLoading&&workoutHistory.length===0?(
         <div style={{ fontSize:12,color:TXT3,marginBottom:10 }}>Загрузка истории…</div>
       ):null}
-      {FOLDERS_DIARY.map(f=>(
-        <div key={f.key} style={{ background:SURF,borderRadius:14,boxShadow:'0 1px 5px rgba(0,0,0,0.08)',marginBottom:10,display:'flex',alignItems:'center',gap:14,padding:'16px',cursor:'pointer' }}
-          onClick={()=>{if(f.key==='exercises'){setExPeriod('all');setExCustomFrom('');setExCustomTo('')}setSection(f.key)}}>
+      {FOLDERS_DIARY.map(f=>{
+        // Заперт только "Прогресс по упражнениям"; соседние разделы бесплатны.
+        const locked=f.key==='exercises'&&exercisesLocked
+        return (
+        <div key={f.key} style={{ background:SURF,borderRadius:14,boxShadow:'0 1px 5px rgba(0,0,0,0.08)',marginBottom:10,display:'flex',alignItems:'center',gap:14,padding:'16px',cursor:'pointer',opacity:locked?0.55:1 }}
+          onClick={()=>{if(locked){setShowExLock(true);return}if(f.key==='exercises'){setExPeriod('all');setExCustomFrom('');setExCustomTo('')}setSection(f.key)}}>
           <div style={{ width:50,height:50,borderRadius:14,background:`${f.color}18`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
             <GlassIcon name={f.ic} size={40} />
           </div>
           <div style={{ flex:1,minWidth:0 }}>
             <div style={{ fontSize:15,fontWeight:700,color:TXT }}>{f.label}</div>
-            {f.sub&&<div style={{ fontSize:11,color:TXT3,marginTop:3 }}>{f.sub}</div>}
+            {locked?<div style={{ fontSize:11,color:TXT3,marginTop:3 }}>Доступно в пакете БАЗА</div>
+                   :f.sub&&<div style={{ fontSize:11,color:TXT3,marginTop:3 }}>{f.sub}</div>}
           </div>
-          <span style={{ fontSize:22,color:TXT3,flexShrink:0 }}>›</span>
+          <span style={{ fontSize:locked?17:22,color:TXT3,flexShrink:0 }}>{locked?'🔒':'›'}</span>
         </div>
-      ))}
+        )
+      })}
+      {showExLock&&createPortal(
+        <PlanLockModal {...LOCK_EXERCISES} onClose={()=>setShowExLock(false)}
+          onOpenPlans={()=>{setShowExLock(false);openPlans?.()}} />,
+        document.body)}
     </div>
   )
 }
@@ -5759,6 +5859,7 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
   // hideBack: у под-страницы уже есть шапка Настроек со стрелкой «назад» —
   // вторая кнопка внутри текста была бы дублем. В ConsentGate шапки нет, там
   // PolicyView по-прежнему рисует свою кнопку.
+  if(subPage==='plans') return <PlansView user={user} hideBack onClose={()=>setSubPage(null)} />
   if(subPage==='policy') return <PolicyView hideBack onClose={()=>setSubPage(null)} />
   if(subPage==='offer') return <OfferView hideBack onClose={()=>setSubPage(null)} />
 
@@ -5774,6 +5875,17 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
           Не удалось сохранить — проверь связь и повтори
         </div>
       )}
+
+      {/* Подписка */}
+      <Section title="Подписка">
+        <button onClick={()=>setSubPage('plans')} style={{
+          display:'block',width:'100%',padding:0,border:'none',background:'none',
+          textAlign:'left',cursor:'pointer',minHeight:'unset',
+        }}>
+          <Row label="Тарифы и подписка" sub="Пакеты, пробный период и оплата"
+               right={<span style={{fontSize:16,color:TXT3}}>›</span>}/>
+        </button>
+      </Section>
 
       {/* Уведомления */}
       <Section title="Уведомления">
@@ -5928,6 +6040,7 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
 // Заголовки под-страниц Настроек — один источник и для самой страницы, и для
 // шапки Настроек, чтобы они не разошлись.
 const SETTINGS_SUBPAGE_TITLES = {
+  plans: 'Тарифы и подписка',
   policy: 'Политика конфиденциальности',
   offer: 'Пользовательское соглашение',
 }
@@ -5969,6 +6082,206 @@ function PolicyView({ onClose, hideBack }) {
 
 function OfferView({ onClose, hideBack }) {
   return <LegalTextView title={SETTINGS_SUBPAGE_TITLES.offer} sections={OFFER_SECTIONS} onClose={onClose} hideBack={hideBack} />
+}
+
+// ── Тарифы и подписка. Пока ТОЛЬКО показывает пакеты и статус — ничего не
+// блокирует: доступ по level нигде не проверяется, это следующая фаза.
+const fmtPlanDate = iso => {
+  const d = new Date(iso)
+  const p = n => String(n).padStart(2,'0')
+  return `${p(d.getDate())}.${p(d.getMonth()+1)}.${d.getFullYear()}`
+}
+
+// Ссылки наружу: внутри Telegram обычный window.open заблокирован webview,
+// нужен SDK. t.me открываем как telegram-ссылку, остальное — как внешнюю.
+const openExternal = url => {
+  const tg = window.Telegram?.WebApp
+  if(tg?.initData){
+    if(/^https:\/\/t\.me\//.test(url)) tg.openTelegramLink(url)
+    else tg.openLink(url)
+    return
+  }
+  window.open(url,'_blank','noopener,noreferrer')
+}
+
+function PlansView({ user, onClose, hideBack }) {
+  const [profile,setProfile]=useState(null)
+  const [loading,setLoading]=useState(true)
+  const [loadError,setLoadError]=useState(false)
+  const [trialBusy,setTrialBusy]=useState(false)
+  const [msg,setMsg]=useState('')
+  const [msgError,setMsgError]=useState(false)
+
+  const flash=(text,isError)=>{setMsg(text);setMsgError(!!isError);setTimeout(()=>setMsg(''),5000)}
+
+  const loadProfile=async()=>{
+    if(!user?.id)return
+    setLoading(true);setLoadError(false)
+    const{data,error}=await supabase.from('profiles')
+      .select('plan,plan_until,trial_until,trial_used').eq('id',user.id).single()
+    if(error){
+      console.error('Не удалось загрузить статус подписки:',error)
+      setLoadError(true)
+    }else{
+      setProfile(data)
+    }
+    setLoading(false)
+  }
+
+  useEffect(()=>{loadProfile()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[user?.id])
+
+  const startTrial=async()=>{
+    if(trialBusy)return
+    setTrialBusy(true);setMsg('')
+    try{
+      const{data:{session}}=await supabase.auth.getSession()
+      const token=session?.access_token
+      if(!token)throw new Error('нет активной сессии, перезайди в приложение')
+      const res=await fetch('/api/start-trial',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+      })
+      const body=await res.json().catch(()=>({}))
+      if(!res.ok)throw new Error(body?.error||`сервер вернул ${res.status}`)
+      if(body?.ok===false&&body?.reason==='used'){
+        flash('Пробный уже использован',true)
+        await loadProfile()
+        return
+      }
+      await loadProfile()
+      flash(`Пробный активирован до ${fmtPlanDate(body.trial_until)}`)
+    }catch(e){
+      console.error('Ошибка активации пробного периода:',e)
+      flash(`Не удалось активировать пробный: ${e.message}`,true)
+    }finally{
+      setTrialBusy(false)
+    }
+  }
+
+  const access=effectiveAccess(profile)
+  // Пробный предлагаем, только если его ещё не брали и сейчас нет вообще
+  // никакого активного доступа (ни платного, ни пробного).
+  const canStartTrial=!!profile&&!profile.trial_used&&access.level===0
+
+  const pay=(plan)=>{
+    const url=PAY_LINKS[plan.key]
+    if(url){openExternal(url);return}
+    flash('Оплата скоро подключится')
+  }
+
+  if(loading) return (
+    <div style={{minHeight:'100vh',background:BG,display:'flex',alignItems:'center',justifyContent:'center',color:TXT3,fontSize:14}}>Загрузка…</div>
+  )
+
+  return (
+    <div style={{minHeight:'100vh',background:BG,color:TXT,overflowY:'auto'}}>
+      <div style={{maxWidth:720,margin:'0 auto',padding:'16px 16px 48px'}}>
+        {!hideBack&&(
+          <button onClick={onClose} style={{
+            padding:'9px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,
+            background:SURF,color:TXT,fontSize:14,fontWeight:500,cursor:'pointer',
+            minHeight:'unset',marginBottom:18,
+          }}>‹ Назад</button>
+        )}
+
+        {/* Статус текущего доступа */}
+        <div style={{background:SURF,border:`1px solid ${HAIR}`,borderRadius:14,padding:'14px 16px',marginBottom:16}}>
+          <div style={{fontSize:12,color:TXT3,marginBottom:4}}>Твой доступ</div>
+          {loadError?(
+            <div style={{fontSize:14,color:DANGER,fontWeight:600}}>
+              Не удалось загрузить статус
+              <button onClick={loadProfile} style={{marginLeft:10,padding:'3px 10px',borderRadius:8,border:`1px solid ${HAIR}`,background:SURF2,color:TXT,fontSize:12,cursor:'pointer',minHeight:'unset'}}>Повторить</button>
+            </div>
+          ):(
+            <div style={{fontSize:17,fontWeight:700,color:access.level>0?ACCENT2:TXT}}>
+              {access.label}{access.until&&` до ${fmtPlanDate(access.until)}`}
+            </div>
+          )}
+        </div>
+
+        {msg&&(
+          <div style={{
+            borderRadius:10,padding:'11px 14px',marginBottom:14,fontSize:13,fontWeight:600,
+            background:msgError?'rgba(255,69,58,.12)':`${TEA}18`,
+            border:`1px solid ${msgError?'rgba(255,69,58,.40)':TEA+'40'}`,
+            color:msgError?DANGER:TEA,
+          }}>{msg}</div>
+        )}
+
+        {canStartTrial&&(
+          <button onClick={startTrial} disabled={trialBusy} style={{
+            width:'100%',padding:'14px',borderRadius:14,border:'none',marginBottom:18,
+            background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',
+            fontSize:15,fontWeight:700,cursor:trialBusy?'not-allowed':'pointer',
+            boxShadow:`0 8px 24px ${PUR}45`,opacity:trialBusy?0.7:1,
+          }}>{trialBusy?'Активируем…':`Активировать пробный период (${TRIAL_DAYS} дней)`}</button>
+        )}
+
+        {/* Карточки пакетов */}
+        {PLANS.map(plan=>{
+          const isCurrent=access.planKey===plan.key
+          const price=priceOf(plan)
+          return (
+            <div key={plan.key} style={{
+              background:SURF,borderRadius:16,padding:'16px 17px',marginBottom:12,
+              border:plan.highlight?`1.5px solid ${PUR}`:`1px solid ${HAIR}`,
+              boxShadow:plan.highlight?`0 0 32px ${PUR}22`:'none',
+            }}>
+              <div style={{display:'flex',alignItems:'baseline',gap:9,flexWrap:'wrap',marginBottom:2}}>
+                <span style={{fontSize:17,fontWeight:800,color:plan.highlight?ACCENT2:TXT}}>{plan.name}</span>
+                {isCurrent&&(
+                  <span style={{fontSize:11,fontWeight:700,color:TEA,background:`${TEA}18`,border:`1px solid ${TEA}40`,borderRadius:20,padding:'2px 9px'}}>Твой пакет</span>
+                )}
+                {plan.highlight&&!isCurrent&&(
+                  <span style={{fontSize:11,fontWeight:700,color:ACCENT2,background:`${PUR}20`,border:`1px solid ${PUR}40`,borderRadius:20,padding:'2px 9px'}}>Популярный</span>
+                )}
+              </div>
+
+              <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:10}}>
+                <span style={{fontSize:20,fontWeight:800,color:TXT}}>
+                  {price===0?'Бесплатно':`${price} ₽`}
+                </span>
+                {price>0&&<span style={{fontSize:12,color:TXT3}}>/ мес</span>}
+                {TEST_MODE&&price>0&&(
+                  <span style={{fontSize:11,fontWeight:600,color:COR,background:`${COR}18`,border:`1px solid ${COR}40`,borderRadius:20,padding:'2px 8px'}}>тестовая цена</span>
+                )}
+              </div>
+
+              <div style={{fontSize:12,color:TXT3,marginBottom:7}}>{plan.tagline}</div>
+              <div style={{display:'flex',flexDirection:'column',gap:6,marginBottom:plan.key==='start'?0:13}}>
+                {plan.features.map((f,i)=>(
+                  <div key={i} style={{display:'flex',gap:8,alignItems:'flex-start'}}>
+                    <span style={{color:TEA,fontSize:13,lineHeight:1.5,flexShrink:0}}>✓</span>
+                    <span style={{fontSize:13,lineHeight:1.5,color:TXT2}}>{f}</span>
+                  </div>
+                ))}
+              </div>
+
+              {plan.key!=='start'&&(
+                <button onClick={()=>pay(plan)} style={{
+                  width:'100%',padding:'11px',borderRadius:11,border:'none',
+                  background:plan.highlight?`linear-gradient(180deg, ${ACCENT2}, ${PUR})`:SURF2,
+                  color:plan.highlight?'#fff':TXT,fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset',
+                }}>Оплатить</button>
+              )}
+            </div>
+          )
+        })}
+
+        {/* VIP */}
+        <div style={{background:SURF,borderRadius:16,padding:'16px 17px',border:`1px solid ${HAIR}`}}>
+          <div style={{fontSize:17,fontWeight:800,color:TXT,marginBottom:6}}>{VIP.name}</div>
+          <div style={{fontSize:13,lineHeight:1.5,color:TXT2,marginBottom:13}}>{VIP.desc}</div>
+          <button onClick={()=>openExternal(MAX_TELEGRAM_URL)} style={{
+            width:'100%',padding:'11px',borderRadius:11,border:`1.5px solid ${HAIR}`,
+            background:SURF2,color:TXT,fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset',
+          }}>Написать в личку</button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ── Ворота согласия на обработку ПДн. Показываются вместо приложения, пока в
@@ -6861,11 +7174,17 @@ export default function App() {
   // тому, кто согласия ещё не давал.
   const [consentLoaded,setConsentLoaded]=useState(false)
   const [consentGiven,setConsentGiven]=useState(false)
-  // Премиум-признак клиента = у него назначен тренер (profiles.coach_id непустой).
+  // Признак «к клиенту прикреплён тренер» (profiles.coach_id непустой).
   // По умолчанию false, пока профиль не загрузился — значок видео тренеру не
   // мигнёт свободному пользователю. У самого тренера coach_id пустой, так что
-  // он тоже премиум-функцию не увидит.
+  // он тоже эту функцию не увидит.
+  // ВАЖНО: это НЕ уровень подписки. Пакет живёт отдельно, в access ниже —
+  // у клиента с тренером может не быть ПРЕМИУМА и наоборот.
   const [hasCoach,setHasCoach]=useState(false)
+  // Уровень доступа по пакету (см. effectiveAccess, src/plans.js): 0 СТАРТ,
+  // 1 БАЗА, 2 ПРОФИТ, 3 ПРЕМИУМ. До загрузки профиля — 0: платную функцию
+  // лучше на миг не показать, чем показать тому, кто её не купил.
+  const [access,setAccess]=useState(()=>effectiveAccess(null))
   const [nav,setNav]=useState('dashboard')
   // История переходов верхнего уровня — чтобы "назад" из экранов вроде деталей
   // клиента (открываются и с Главной, и со вкладки Клиенты) вело туда, откуда
@@ -6969,6 +7288,14 @@ export default function App() {
   const openSettings=()=>{
     setSettingsSubPage(null)
     setShowSettingsView(true)
+  }
+
+  // Открыть Тарифы из любой точки приложения (подсказки «доступно в ПРОФИТ»).
+  // Настройки открываются сразу на под-странице тарифов; «назад» из неё, как и
+  // обычно, вернёт в список Настроек — см. closeSettingsOrSubPage.
+  const openPlans=()=>{
+    setShowSettingsView(true)
+    setSettingsSubPage('plans')
   }
 
   // Проверка ?trainer=1 в URL при загрузке
@@ -7253,13 +7580,14 @@ export default function App() {
   useEffect(()=>{
     if(!user?.id)return
     let cancelled=false
-    supabase.from('profiles').select('name,gender,telegram,photo_url,role,coach_id,tg_username').eq('id',user.id).single().then(({data})=>{
+    supabase.from('profiles').select('name,gender,telegram,photo_url,role,coach_id,tg_username,plan,plan_until,trial_until').eq('id',user.id).single().then(({data})=>{
       if(cancelled||!data)return
       setUser(u=>u?{...u,name:data.name||u.name,gender:data.gender||u.gender,telegram:data.telegram||u.telegram,photoURL:data.photo_url||u.photoURL,tgUsername:data.tg_username}:u)
       const role=data.role||'client'
       setUserRole(role)
       localStorage.setItem('fitpro_role',role)
       setHasCoach(!!data.coach_id)
+      setAccess(effectiveAccess(data))
     })
     return()=>{cancelled=true}
   },[user?.id])
@@ -7481,11 +7809,11 @@ export default function App() {
     switch(nav){
       case 'dashboard': return userRole==='trainer'
         ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} />
-        : <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} />
+        : <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} accessLevel={access.level} openPlans={openPlans} />
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} userId={user?.id} />
       case 'nutrition': return <NutritionView userId={user?.id} />
       case 'library':   return <LibraryView customExercises={customExercises} />
-      case 'progress':  return <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} />
+      case 'progress':  return <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} accessLevel={access.level} openPlans={openPlans} />
       default:          return null
     }
   }
@@ -7502,7 +7830,7 @@ export default function App() {
   const renderMain=()=>(
     <>
       <div style={{ display: nav==='workouts' ? 'block' : 'none' }}>
-        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} isPremium={hasCoach} />
+        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} hasTrainer={hasCoach} accessLevel={access.level} openPlans={openPlans} />
       </div>
       {nav!=='workouts'&&renderOther()}
     </>
@@ -7706,7 +8034,7 @@ export default function App() {
           просто свёрнута: тогда кнопка возвращается, но приподнятая на
           высоту плашки (extraBottomOffset), чтобы плашка её не перекрыла
           (известный ранее z-index-баг, явно проверяем каждый раз). */}
-      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} hideButton={isWorkoutForeground} extraBottomOffset={workoutMinimized?MINIMIZED_BAR_H:0} />
+      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} hideButton={isWorkoutForeground} extraBottomOffset={workoutMinimized?MINIMIZED_BAR_H:0} accessLevel={access.level} openPlans={openPlans} />
     </>
   )
 }

@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
+import { effectiveLevel, AI_MIN_LEVEL } from './_access.js'
 
-// Серверный клиент Supabase — только для проверки токена (auth.getUser),
-// никаких данных отсюда не читаем/не пишем. Тот же env и те же безопасные
+// Серверный клиент Supabase — проверка токена (auth.getUser) и, ниже, чтение
+// пакета пользователя service_role-ключом. Тот же env и те же безопасные
 // fallback-значения (URL и publishable-ключ несекретны), что и у клиента
 // (src/supabase.js) — без fallback createClient падает сразу при холодном
 // старте, если переменная почему-то не долетела до серверной функции.
@@ -31,6 +32,34 @@ export default async function handler(req, res) {
 
   const { data, error: authError } = await supabase.auth.getUser(token)
   if (authError || !data?.user) return res.status(401).json({ error: 'Требуется авторизация' })
+
+  // ── Гейт по пакету. Клиентской блокировки (AIAssistant.jsx) недостаточно:
+  // без этой проверки любой авторизованный пользователь дёргает /api/chat
+  // напрямую и гоняет Anthropic за наш счёт в обход тарифа.
+  //
+  // Профиль читаем service_role-ключом: под RLS анонимный клиент чужую строку
+  // не увидит, а нам нужен гарантированный ответ по id из токена.
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!serviceRoleKey) {
+    // Fail closed: без ключа уровень не проверить, а пускать всех к платной
+    // функции нельзя. Ошибка громкая — чинится настройкой переменной.
+    console.error('SUPABASE_SERVICE_ROLE_KEY не настроен — проверка пакета невозможна')
+    return res.status(500).json({ error: 'Сервер не настроен' })
+  }
+
+  const supabaseAdmin = createClient(SUPABASE_URL, serviceRoleKey)
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from('profiles')
+    .select('plan, plan_until, trial_until')
+    .eq('id', data.user.id)
+    .maybeSingle()
+  if (profileError) {
+    console.error(`ИИ-ассистент ${data.user.id}: ошибка чтения пакета:`, profileError)
+    return res.status(500).json({ error: 'Не удалось проверить доступ' })
+  }
+  if (effectiveLevel(profile) < AI_MIN_LEVEL) {
+    return res.status(403).json({ error: 'ИИ-ассистент доступен в пакете ПРОФИТ' })
+  }
 
   // Тело клиента не прокидываем целиком — только system/messages, реально
   // нужные для ответа. model и max_tokens задаём/клампим сами (см. выше).

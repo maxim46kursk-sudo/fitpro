@@ -118,7 +118,14 @@ const stripMd = (t) => t
   .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
   .trim()
 
-const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWorkoutsDiary, onGoToFoodDiary, hideButton = false, extraBottomOffset = 0 }, ref) {
+// accessLevel — уровень пакета (см. effectiveAccess, src/plans.js). ИИ открыт
+// с уровня AI_MIN_LEVEL (ПРОФИТ). До загрузки профиля App отдаёт 0, поэтому по
+// умолчанию считаем доступ закрытым: лучше на миг не показать кнопку, чем
+// показать её тому, кто пакет не покупал.
+const AI_MIN_LEVEL = 2
+
+const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWorkoutsDiary, onGoToFoodDiary, hideButton = false, extraBottomOffset = 0, accessLevel = 0, openPlans }, ref) {
+  const locked = accessLevel < AI_MIN_LEVEL
   const [isOpen, setIsOpen]     = useState(false)
   const [mode, setMode]         = useState('nutrition')
   const [messages, setMessages] = useState([])
@@ -586,7 +593,10 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
           экрана (например, оценке "5" в ряду 1-5) — на этих экранах прячем
           сам плавающий триггер, чат по-прежнему открывается программно
           (aiRef.current?.open) со всех остальных экранов. */}
-      {!isOpen && !hideButton && (
+      {/* locked — пакет ниже ПРОФИТ: кнопку не рисуем совсем (та же механика,
+          что и hideButton). Программный вызов open() при этом не игнорируем —
+          он показывает заглушку с предложением тарифа, см. ниже. */}
+      {!isOpen && !hideButton && !locked && (
         <button onClick={() => setIsOpen(true)} style={{
           position: 'fixed', bottom: BTN_BOTTOM, right: 18, zIndex: 1070,
           width: 52, height: 52, borderRadius: '50%', border: 'none',
@@ -598,8 +608,42 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
         }}><GlassIcon name="robot" size={30} /></button>
       )}
 
+      {/* Заглушка вместо чата, если пакет ниже ПРОФИТ. Перехватывает второй
+          путь входа — программный aiRef.current.open() из Дневника питания и
+          карточки в профиле: там кнопки живут вне этого компонента, и просто
+          спрятать плавающий триггер было бы недостаточно. */}
+      {isOpen && locked && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 1050,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          background: BG, padding: '32px 24px', textAlign: 'center',
+        }}>
+          <div style={{
+            width: 66, height: 66, borderRadius: '50%', marginBottom: 18,
+            background: 'linear-gradient(135deg,#7C7AF0,#5b54c4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30,
+          }}>🤖</div>
+          <div style={{ fontSize: 19, fontWeight: 800, color: '#fff', marginBottom: 10 }}>
+            ИИ-ассистент доступен в пакете ПРОФИТ
+          </div>
+          <div style={{ fontSize: 14, lineHeight: 1.55, color: 'rgba(235,235,245,0.62)', maxWidth: 340, marginBottom: 24 }}>
+            Помогает с тренировками и питанием: подскажет вес, разберёт рацион и ответит так, как ответил бы тренер.
+          </div>
+          <button onClick={() => { setIsOpen(false); openPlans?.() }} style={{
+            width: '100%', maxWidth: 300, padding: '14px', borderRadius: 14, border: 'none',
+            background: 'linear-gradient(180deg,#9D96FF,#7C7AF0)', color: '#fff',
+            fontSize: 15, fontWeight: 700, cursor: 'pointer', marginBottom: 10,
+            boxShadow: '0 8px 24px #7C7AF045',
+          }}>Открыть тарифы</button>
+          <button onClick={() => setIsOpen(false)} style={{
+            padding: '9px 16px', border: 'none', background: 'none',
+            color: 'rgba(235,235,245,0.30)', fontSize: 14, fontWeight: 500, cursor: 'pointer',
+          }}>Закрыть</button>
+        </div>
+      )}
+
       {/* Чат */}
-      {isOpen && (
+      {isOpen && !locked && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 1050,
           display: 'flex', flexDirection: 'column', background: BG,
