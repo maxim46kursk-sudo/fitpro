@@ -6334,10 +6334,7 @@ function PlansView({ user, onClose, hideBack }) {
         </div>
 
         {/* 4. Единый список возможностей: гаснут те, что выше выбранного тарифа */}
-        <div style={{background:SURF,borderRadius:18,padding:'16px 18px 18px',border:`1px solid ${HAIR}`}}>
-          <div style={{fontSize:12,fontWeight:700,color:TXT3,letterSpacing:'0.5px',textTransform:'uppercase',marginBottom:12}}>
-            Что входит в приложение
-          </div>
+        <div style={{background:SURF,borderRadius:18,padding:'18px',border:`1px solid ${HAIR}`}}>
           <div style={{display:'flex',flexDirection:'column',gap:11}}>
             {FEATURES.map((f,i)=>{
               const lit=selectedLevel>=f.min
