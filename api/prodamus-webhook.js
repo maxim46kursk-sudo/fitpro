@@ -35,6 +35,26 @@ function readRawBody(req) {
   })
 }
 
+// id тренера, к которому привязываем покупателей ПРЕМИУМ. Приоритет у
+// TRAINER_USER_ID: переменная однозначна и переживёт появление второго тренера
+// в базе, тогда как поиск по роли в этом случае вернёт произвольного. Если
+// тренера определить не удалось — возвращаем null, привязку просто пропускаем
+// (начисление пакета от этого не зависит и падать не должно).
+async function resolveTrainerId(supabaseAdmin) {
+  const fromEnv = (process.env.TRAINER_USER_ID || '').trim()
+  if (fromEnv) {
+    if (UUID_RE.test(fromEnv)) return fromEnv
+    console.warn('Prodamus webhook: TRAINER_USER_ID задан, но это не UUID — игнорируем')
+  }
+  const { data, error } = await supabaseAdmin
+    .from('profiles').select('id').eq('role', 'trainer').limit(1).maybeSingle()
+  if (error) {
+    console.error('Prodamus webhook: ошибка поиска тренера:', error)
+    return null
+  }
+  return data?.id || null
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).send('Method not allowed')
 
@@ -112,7 +132,7 @@ export default async function handler(req, res) {
   } else {
     // Пользователь существует?
     const { data: prof, error: profErr } = await supabaseAdmin
-      .from('profiles').select('id, plan_until').eq('id', userId).maybeSingle()
+      .from('profiles').select('id, plan_until, coach_id').eq('id', userId).maybeSingle()
     if (profErr) {
       console.error(`Prodamus webhook: ошибка проверки пользователя ${userId}:`, profErr)
       // Отдаём 200, но НЕ начисляем и в журнал пишем как ошибку — Продамус
@@ -122,7 +142,7 @@ export default async function handler(req, res) {
       status = 'user_not_found'
     } else {
       status = 'success'
-      accruePlan = { plan: planFromAmount, currentUntil: prof.plan_until }
+      accruePlan = { plan: planFromAmount, currentUntil: prof.plan_until, coachId: prof.coach_id }
     }
   }
 
@@ -161,15 +181,49 @@ export default async function handler(req, res) {
   const baseMs = Math.max(now, Number.isFinite(currentUntilMs) ? currentUntilMs : 0)
   const newUntil = new Date(baseMs + PLAN_DAYS * 24 * 60 * 60 * 1000).toISOString()
 
-  const { error: updErr } = await supabaseAdmin
+  const updateFields = { plan: accruePlan.plan, plan_until: newUntil }
+
+  // ── Привязка к тренеру: покупка ПРЕМИУМ делает человека клиентом тренера.
+  // Только при пустом coach_id — уже привязанного клиента не перетаскиваем к
+  // другому тренеру. coach_id здесь НИКОГДА не очищается: истечение подписки
+  // не отвязывает клиента, это осознанно. Не нашли тренера — начисляем пакет
+  // как обычно, просто без привязки.
+  if (accruePlan.plan === 'premium' && !accruePlan.coachId) {
+    const trainerId = await resolveTrainerId(supabaseAdmin)
+    if (!trainerId) {
+      console.warn(`Prodamus webhook: тренер не найден, ПРЕМИУМ ${userId} начислен без привязки`)
+    } else if (trainerId === userId) {
+      // Тренер купил ПРЕМИУМ сам себе. У тренера coach_id пустой (см. App.jsx,
+      // hasCoach) — ссылку на самого себя не ставим.
+      console.log(`Prodamus webhook: ${userId} — сам тренер, привязка не нужна`)
+    } else {
+      updateFields.coach_id = trainerId
+    }
+  }
+
+  // .select() возвращает строку ПОСЛЕ триггеров: если guard_profile_privileged
+  // откатит coach_id, мы это увидим и не соврём в логе о привязке.
+  const { data: updated, error: updErr } = await supabaseAdmin
     .from('profiles')
-    .update({ plan: accruePlan.plan, plan_until: newUntil })
+    .update(updateFields)
     .eq('id', userId)
+    .select('coach_id')
+    .maybeSingle()
   if (updErr) {
     // Платёж уже в журнале со статусом success — начисление можно будет
     // доиграть вручную по журналу. 200, чтобы Продамус не слал повторы.
     console.error(`Prodamus webhook: платёж ${orderNum} записан, но НЕ удалось начислить пакет пользователю ${userId}:`, updErr)
     return res.status(200).send('OK')
+  }
+
+  if (updateFields.coach_id) {
+    if (updated?.coach_id === updateFields.coach_id) {
+      console.log(`Prodamus webhook: ${userId} привязан к тренеру ${updateFields.coach_id}`)
+    } else {
+      // Пакет начислен, но привязка не легла — почти наверняка её срезал
+      // триггер. Громко, чтобы не искать потом «почему клиент не появился».
+      console.error(`Prodamus webhook: coach_id для ${userId} НЕ записан (в базе ${updated?.coach_id ?? 'null'}) — проверь guard_profile_privileged`)
+    }
   }
 
   console.log(`Prodamus webhook: пользователю ${userId} начислен ${accruePlan.plan} до ${newUntil}`)
