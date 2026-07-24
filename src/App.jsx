@@ -1161,6 +1161,10 @@ const FOLDER_DESCRIPTIONS={
 }
 const SLOT_COUNT=12
 const SUPERSET_COLORS={'A':PUR,'B':TEA,'C':COR,'D':BLU}
+// Сентинел для profiles.program, когда выбрана программа тренера, а не
+// шаблонная папка. Специально не совпадает ни с одним ключом FOLDERS — иначе
+// подсветка шаблонов (selectedProgram===folder) ложно бы срабатывала.
+const TRAINER_PROGRAM_KEY='__trainer__'
 // Тексты progressNote холодного старта (см. кнопку "▶ Начать тренировку") —
 // раньше показывались инлайн в карточке упражнения, теперь объясняются
 // модалкой "Откуда взялся этот вес" (showProgressionIntro), инлайн-строку
@@ -1523,6 +1527,23 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     setSelectedProgram(folder)
     setInfoFolder(null)
     return{ok:true}
+  }
+
+  // Выбор программы тренера как активной. profiles.program пишем сентинелом —
+  // никакой логики циклов/адаптации шаблона тут нет (её у программы тренера и
+  // не бывает), только отметка «клиент тренируется по этой программе».
+  // Колонка program не под защитой триггера, клиент пишет её сам — как
+  // selectProgram выше.
+  const selectTrainerProgram=async()=>{
+    if(!userId)return
+    const{error}=await supabase.from('profiles').update({program:TRAINER_PROGRAM_KEY}).eq('id',userId)
+    if(error){
+      console.error('Ошибка выбора программы тренера:',error)
+      setShowProgramSaveError(true)
+      setTimeout(()=>setShowProgramSaveError(false),3500)
+      return
+    }
+    setSelectedProgram(TRAINER_PROGRAM_KEY)
   }
 
   // Второй путь выбора программы — прямо из "▶ Начать тренировку" в слоте
@@ -2150,6 +2171,8 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     setStep('active')
     setProgramOpen(false)
     setOpenProgramWorkoutIdx(null)
+    // Клиент реально тренируется по программе тренера — отмечаем её выбранной.
+    selectTrainerProgram()
   }
   // Точка входа кнопки — проверка активной тренировки живёт ЗДЕСЬ, а не
   // внутри runTrainerWorkout, ровно как у пары startSlotWorkout/
@@ -3259,6 +3282,9 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         <Card style={{ marginBottom:14, cursor:'pointer', position:'relative', border:`1.5px solid ${PUR}33`, background:'rgba(124,122,240,0.14)' }}
           onClick={()=>setProgramOpen(true)}>
           <span style={{ position:'absolute', top:'50%', right:16, transform:'translateY(-50%)', fontSize:20, color:TXT3 }}>›</span>
+          {/* Отметка «выбрана» — как у шаблонных папок, но по сентинелу, а не
+              по имени папки: горит, когда клиент тренируется по программе тренера. */}
+          {selectedProgram===TRAINER_PROGRAM_KEY&&<span style={{ position:'absolute', top:10, right:38 }}><GlassIcon name="check" size={18} /></span>}
           <div style={{ paddingRight:20 }}>
             <div style={{ fontSize:12, fontWeight:700, color:PUR, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:6, display:'flex', alignItems:'center', gap:6 }}>
               <GlassIcon name="template" size={18} />Программа от тренера
@@ -3314,6 +3340,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                     </div>
                   </div>
                 ))}
+                {/* Выбор программы тренера активной — по образцу кнопки в
+                    модалке infoFolder у шаблонов. С отметкой, когда уже выбрана. */}
+                <button onClick={selectTrainerProgram}
+                  style={{ width:'100%', marginTop:4, padding:'13px', borderRadius:12, border:'none', background:selectedProgram===TRAINER_PROGRAM_KEY?SURF2:PUR, color:selectedProgram===TRAINER_PROGRAM_KEY?TXT3:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:7 }}>
+                  {selectedProgram===TRAINER_PROGRAM_KEY&&<GlassIcon name="check" size={17} />}{selectedProgram===TRAINER_PROGRAM_KEY?'Эта программа выбрана':'Тренироваться по этой программе'}
+                </button>
               </div>
             ):(
               // Одна тренировка: что делать и кнопка запуска. Веса и повторения
