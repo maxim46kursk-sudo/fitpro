@@ -1155,6 +1155,8 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const [assignedProgramError,setAssignedProgramError]=useState(false)
   // Программа свёрнута в карточку-папку, содержимое — в модалке по клику.
   const [programOpen,setProgramOpen]=useState(false)
+  // Индекс открытой тренировки внутри модалки программы (null — список).
+  const [openProgramWorkoutIdx,setOpenProgramWorkoutIdx]=useState(null)
   const loadAssignedProgram=()=>{
     if(!userId){setAssignedProgramLoading(false);return}
     setAssignedProgramLoading(true);setAssignedProgramError(false)
@@ -1987,6 +1989,60 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       return
     }
     runStartSlotWorkout()
+  }
+
+  // Запуск тренировки из программы тренера. Сознательно БЕЗ движка прогрессии
+  // (buildExerciseAggregates/computeTemplateScale, как в runStartSlotWorkout):
+  // тренер задал конкретные веса и повторения, и клиент должен получить ровно
+  // их — поэтому подходы собираются литерально из parseTemplateSets.
+  const runTrainerWorkout=(workout)=>{
+    const exs=(workout?.exercises||[]).filter(e=>e.name)
+    if(exs.length===0)return
+    const builtExercises=exs.map(ex=>{
+      const templateSets=parseTemplateSets(ex.sets)
+      const parsedSets=templateSets.map(ts=>({
+        kg:ts.templateKg!=null?String(ts.templateKg):'',
+        bandLevel:ts.bandLevel??null,
+        reps:String(ts.reps),
+        // recKg пуст и fromTemplate=false — рекомендованного веса тут нет,
+        // а значит не должно быть и рамки «откуда взялся вес».
+        recKg:'',
+        rating:'',
+        fromTemplate:false,
+      }))
+      return{n:ex.name,m:'',eq:'',sets:parsedSets,done:false,progressNote:null}
+    })
+    // Имя уезжает в дневник как есть (workouts.name, см. handleWorkoutComplete)
+    // — по нему потом видно, что тренировка была из программы тренера.
+    setWName(`Программа от тренера · ${workout.name||'Тренировка'}`)
+    setWColor(PUR)
+    setWExercises(builtExercises)
+    setWMode('start')
+    setWDate('')
+    setStartedAt(Date.now());setSwAccumMs(0);setSwStartedAt(null)
+    // Движка прогрессии нет — значит ни предупреждения о правке повторений,
+    // ни кнопки «?» с объяснением прогрессии здесь быть не должно.
+    setWIsFromProgram(false)
+    setRepsWarningShownThisWorkout(false)
+    setStep('active')
+    setProgramOpen(false)
+    setOpenProgramWorkoutIdx(null)
+  }
+  // Точка входа кнопки — проверка активной тренировки живёт ЗДЕСЬ, а не
+  // внутри runTrainerWorkout, ровно как у пары startSlotWorkout/
+  // runStartSlotWorkout. Иначе бы вышла петля: confirmStartOverActive зовёт
+  // отложённую функцию сразу после exitWorkout(), а step в замыкании к тому
+  // моменту ещё 'active' — проверка внутри откладывала бы запуск снова.
+  // Модалку программы при этом закрываем: подтверждение конфликта рисуется
+  // в самой странице и оказалось бы под её полноэкранной панелью.
+  const startTrainerWorkout=(workout)=>{
+    if(step==='active'){
+      setPendingConflictStart(()=>()=>runTrainerWorkout(workout))
+      setProgramOpen(false)
+      setOpenProgramWorkoutIdx(null)
+      return
+    }
+    runTrainerWorkout(workout)
   }
 
   // Клик по "▶ Начать тренировку" — сначала проверяем выбранную программу
@@ -3089,32 +3145,62 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       {programOpen&&assignedProgram&&createPortal(
         <div style={{ position:'fixed', inset:0, background:SURF2, zIndex:1000, display:'flex', flexDirection:'column' }}>
           <div style={{ background:SURF, borderBottom:`1px solid ${HAIR}`, padding:'14px 18px', display:'flex', alignItems:'center', gap:14, flexShrink:0 }}>
-            <button onClick={()=>setProgramOpen(false)}
+            {/* «Назад» из тренировки возвращает к списку, из списка — закрывает
+                модалку целиком (и сбрасывает выбранную тренировку). */}
+            <button onClick={()=>{if(openProgramWorkoutIdx!=null){setOpenProgramWorkoutIdx(null);return}setProgramOpen(false);setOpenProgramWorkoutIdx(null)}}
               style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
             <GlassIcon name="template" size={34} />
             <div>
-              <div style={{ fontSize:17, fontWeight:700, color:TXT }}>{assignedProgram.title||'Программа'}</div>
+              <div style={{ fontSize:17, fontWeight:700, color:TXT }}>
+                {openProgramWorkoutIdx==null
+                  ?(assignedProgram.title||'Программа')
+                  :(assignedProgram.structure?.[openProgramWorkoutIdx]?.name||`Тренировка ${openProgramWorkoutIdx+1}`)}
+              </div>
               <div style={{ fontSize:11, color:TXT3 }}>
-                Программа от тренера · {assignedProgram.structure?.length||0} {pluralizeWorkouts(assignedProgram.structure?.length||0)}
+                {openProgramWorkoutIdx==null
+                  ?`Программа от тренера · ${assignedProgram.structure?.length||0} ${pluralizeWorkouts(assignedProgram.structure?.length||0)}`
+                  :(assignedProgram.title||'Программа')}
               </div>
             </div>
           </div>
           <div style={{ flex:1, overflowY:'auto', padding:'14px 16px 32px' }}>
-            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-              {(Array.isArray(assignedProgram.structure)?assignedProgram.structure:[]).map((w,wi)=>(
-                <div key={wi} style={{ background:SURF, borderRadius:10, padding:'10px 12px' }}>
-                  <div style={{ fontSize:13, fontWeight:600, color:TXT, marginBottom:6 }}>{w.name||`Тренировка ${wi+1}`}</div>
-                  <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-                    {(w.exercises||[]).map((ex,ei)=>(
-                      <div key={ei} style={{ fontSize:12, color:TXT2 }}>
-                        <span style={{ fontWeight:500 }}>{ex.name}</span>
-                        {ex.sets&&<span style={{ color:TXT3 }}>{': '}{ex.sets}</span>}
-                      </div>
-                    ))}
+            {openProgramWorkoutIdx==null?(
+              // Список тренировок — каждая открывается по клику.
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                {(Array.isArray(assignedProgram.structure)?assignedProgram.structure:[]).map((w,wi)=>(
+                  <div key={wi} onClick={()=>setOpenProgramWorkoutIdx(wi)}
+                    style={{ background:SURF, borderRadius:10, padding:'10px 12px', cursor:'pointer', position:'relative' }}>
+                    <span style={{ position:'absolute', top:'50%', right:12, transform:'translateY(-50%)', fontSize:18, color:TXT3 }}>›</span>
+                    <div style={{ fontSize:13, fontWeight:600, color:TXT, marginBottom:6, paddingRight:18 }}>{w.name||`Тренировка ${wi+1}`}</div>
+                    <div style={{ display:'flex', flexDirection:'column', gap:3, paddingRight:18 }}>
+                      {(w.exercises||[]).map((ex,ei)=>(
+                        <div key={ei} style={{ fontSize:12, color:TXT2 }}>
+                          <span style={{ fontWeight:500 }}>{ex.name}</span>
+                          {ex.sets&&<span style={{ color:TXT3 }}>{': '}{ex.sets}</span>}
+                        </div>
+                      ))}
+                    </div>
                   </div>
+                ))}
+              </div>
+            ):(
+              // Одна тренировка: что делать и кнопка запуска. Веса и повторения
+              // ровно те, что задал тренер — без пересчёта прогрессией.
+              <div>
+                <div style={{ background:SURF, borderRadius:10, padding:'12px 14px', marginBottom:14, display:'flex', flexDirection:'column', gap:5 }}>
+                  {(assignedProgram.structure?.[openProgramWorkoutIdx]?.exercises||[]).map((ex,ei)=>(
+                    <div key={ei} style={{ fontSize:13, color:TXT2 }}>
+                      <span style={{ fontWeight:500 }}>{ex.name}</span>
+                      {ex.sets&&<span style={{ color:TXT3 }}>{': '}{ex.sets}</span>}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+                <button onClick={()=>startTrainerWorkout(assignedProgram.structure[openProgramWorkoutIdx])}
+                  style={{ display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',padding:'15px',borderRadius:12,border:'none',background:TEA,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',boxSizing:'border-box',minHeight:'unset' }}>
+                  ▶ Начать тренировку
+                </button>
+              </div>
+            )}
           </div>
         </div>
       , document.body)}
