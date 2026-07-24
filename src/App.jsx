@@ -6359,13 +6359,16 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
           const n=notifs[key]
           const setField=patch=>saveNotifs({...notifs,[key]:{...n,...patch}})
           const toggleDay=d=>setField({days:n.days.includes(d)?n.days.filter(x=>x!==d):[...n.days,d]})
+          // У report расписание фиксированное (задаётся на сервере) — в UI
+          // только тумблер, без времени и дней. time/days в модели остаются.
+          const scheduleEditable=key!=='report'
           return (
             <div key={key} style={{ borderBottom:`1px solid ${HAIR}` }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'13px 0' }}>
                 <div style={{ fontSize:15, color:TXT, fontWeight:500 }}>{label}</div>
                 <Toggle on={n.enabled} onToggle={()=>setField({enabled:!n.enabled})}/>
               </div>
-              {n.enabled&&(
+              {scheduleEditable&&n.enabled&&(
                 <div style={{ padding:'0 0 14px', display:'flex', flexDirection:'column', gap:10 }}>
                   <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                     <span style={{ fontSize:13, color:TXT3 }}>Время</span>
