@@ -18,6 +18,10 @@ export const USER_TABLES = [
   { table: 'constructor_exercises', column: 'user_id' },
   { table: 'workout_sets',          column: 'user_id' },
   { table: 'workouts',              column: 'user_id' },
+  // Служебный журнал отправленных напоминаний (api/send-reminders.js). Внешнего
+  // ключа на auth.users нет, удалению аккаунта он не мешает, но это данные
+  // пользователя — чистим вместе с остальным.
+  { table: 'notification_log',      column: 'user_id' },
   { table: 'planned_workouts',      column: 'user_id' },
   { table: 'chat_messages',         column: 'user_id' },
   { table: 'food_diary',            column: 'user_id' },
