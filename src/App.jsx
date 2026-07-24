@@ -7,7 +7,7 @@ import { oneRepMax, weightForReps, roundToPlate, percentTable, plateStep } from 
 // Движок прогрессии (1ПМ) — врезан в кнопку "▶ Начать тренировку" внутри
 // слота шаблонной программы (WorkoutsView), см. подробный комментарий там.
 import { buildExerciseAggregates, computeTemplateScale, parseTemplateSets, computeProgressSteps, computeBandTarget, UNRATED_STOP_AFTER } from './workoutPrompt.js'
-import { MAX_TELEGRAM_URL } from './config.js'
+import { MAX_TELEGRAM_URL, BOT_USERNAME } from './config.js'
 import { Ic } from './icons.jsx'
 import { GlassDefs, GlassIcon } from './glassIcons'
 import { MuscleDefs, MuscleIcon } from './muscleIcons'
@@ -364,6 +364,29 @@ function ClientsView({ setSC, setNav, userId }) {
   const [showClientSaveError,setShowClientSaveError]=useState(false)
   const flashClientSaveError=()=>{setShowClientSaveError(true);setTimeout(()=>setShowClientSaveError(false),3500)}
 
+  // ── Ссылка-приглашение тренера ───────────────────────────────────────────
+  // startapp прилетает клиенту как start_param и разбирается в App
+  // (pendingInviteRef) — сама привязка идёт через api/link-client.js.
+  const [showInvite,setShowInvite]=useState(false)
+  const [showCopied,setShowCopied]=useState(false)
+  const flashCopied=()=>{setShowCopied(true);setTimeout(()=>setShowCopied(false),2000)}
+  const inviteLink=userId?`https://t.me/${BOT_USERNAME}?startapp=coach_${userId}`:''
+  // Тот же критерий «мы правда внутри Telegram», что и в App (initData пуст в
+  // обычном браузере, хотя объект WebApp там есть — SDK грузится всегда).
+  const inTelegram=!!window.Telegram?.WebApp?.initData
+  const copyInvite=async()=>{
+    try{
+      await navigator.clipboard.writeText(inviteLink)
+      flashCopied()
+    }catch(e){
+      console.error('Не удалось скопировать ссылку-приглашение:',e)
+      flashClientSaveError()
+    }
+  }
+  const shareInvite=()=>{
+    if(window.Telegram?.WebApp)window.Telegram.WebApp.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(inviteLink)}`)
+  }
+
   const saveLocal=(list)=>{
     setLocalClients(list)
     localStorage.setItem('fitpro_local_clients',JSON.stringify(list))
@@ -502,10 +525,49 @@ function ClientsView({ setSC, setNav, userId }) {
           Не удалось сохранить — проверь связь и повтори
         </div>
       )}
+      {showCopied&&(
+        <div style={{
+          position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
+          zIndex:2400, padding:'10px 18px', borderRadius:24, maxWidth:320, textAlign:'center',
+          background:TEA, color:'#fff', fontSize:13, fontWeight:700,
+          boxShadow:'0 6px 20px rgba(48,209,88,0.35)',
+        }}>
+          Скопировано
+        </div>
+      )}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
         <h2 style={{ fontSize:20, fontWeight:500, color:TXT, margin:0 }}>Клиенты</h2>
-        <button onClick={()=>setShowAdd(true)} style={{ fontSize:13, padding:'7px 14px', background:PUR, color:'#fff', border:'none', borderRadius:8, cursor:'pointer' }}>+ Добавить</button>
+        <div style={{ display:'flex', gap:8 }}>
+          <button onClick={()=>setShowInvite(true)} style={{ fontSize:13, padding:'7px 14px', background:'none', color:PUR, border:`1px solid ${PUR}`, borderRadius:8, cursor:'pointer' }}>Пригласить</button>
+          <button onClick={()=>setShowAdd(true)} style={{ fontSize:13, padding:'7px 14px', background:PUR, color:'#fff', border:'none', borderRadius:8, cursor:'pointer' }}>+ Добавить</button>
+        </div>
       </div>
+
+      {showInvite&&(
+        <div style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:2000,display:'flex',alignItems:'center',justifyContent:'center',padding:16 }}
+          onClick={()=>setShowInvite(false)}>
+          <div style={{ background:SURF,borderRadius:16,padding:'24px 22px',width:'100%',maxWidth:380,boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14 }}>
+              <span style={{ fontSize:16,fontWeight:700,color:TXT }}>Пригласить клиента</span>
+              <button onClick={()=>setShowInvite(false)} style={{ background:'none',border:'none',fontSize:20,cursor:'pointer',color:TXT3,lineHeight:1 }}><GlassIcon name="close" size={26} /></button>
+            </div>
+            <div style={{ fontSize:13,color:TXT2,lineHeight:1.45,marginBottom:14 }}>
+              Отправь эту ссылку клиенту. Когда он откроет её и войдёт — он станет твоим клиентом.
+            </div>
+            <input value={inviteLink} readOnly onFocus={e=>e.target.select()} onClick={e=>e.target.select()}
+              style={{ width:'100%',padding:'10px 12px',fontSize:12,borderRadius:9,border:`1.5px solid ${HAIR}`,boxSizing:'border-box',outline:'none',color:TXT,background:SURF2,marginBottom:12 }} />
+            <div style={{ display:'flex',flexDirection:'column',gap:8 }}>
+              <button onClick={copyInvite} style={{ width:'100%',padding:'12px',fontSize:14,borderRadius:14,border:'none',background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontWeight:800,cursor:'pointer',boxShadow:'0 8px 22px rgba(124,122,240,.4)' }}>Копировать</button>
+              {/* Кнопка только внутри Telegram: openTelegramLink в обычном
+                  браузере ничего не сделает. */}
+              {inTelegram&&(
+                <button onClick={shareInvite} style={{ width:'100%',padding:'11px',fontSize:13,borderRadius:9,border:`1px solid ${HAIR}`,background:'none',color:PUR,cursor:'pointer',fontWeight:600 }}>Поделиться в Telegram</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAdd&&(
         <div style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:2000,display:'flex',alignItems:'center',justifyContent:'center',padding:16 }}
@@ -7600,6 +7662,80 @@ export default function App() {
     }
   },[])
 
+  // ── Ссылка-приглашение от тренера ────────────────────────────────────────
+  // id тренера из приглашения. Кладём в ref, а не в state: привязку решаем
+  // ниже, когда загрузится профиль (нужны роль и текущий coach_id), а лишняя
+  // перерисовка тут ни к чему.
+  const pendingInviteRef=useRef(null)
+  // Тост о применении приглашения — тот же паттерн, что showFoodSaveError.
+  const [inviteToast,setInviteToast]=useState(null)   // {text,color}
+  const flashInvite=(text,color)=>{setInviteToast({text,color});setTimeout(()=>setInviteToast(null),4000)}
+  // Перечитать профиль после привязки — тем же приёмом, что historyReloadToken.
+  const [profileReloadToken,setProfileReloadToken]=useState(0)
+
+  // Захват приглашения при загрузке. Telegram отдаёт его в start_param
+  // ('coach_<uuid>'), веб — обычным ?coach=<uuid>. Сам uuid не проверяем:
+  // это делает сервер (api/link-client.js), здесь только достаём и прячем.
+  useEffect(()=>{
+    const startParam=window.Telegram?.WebApp?.initDataUnsafe?.start_param
+    if(typeof startParam==='string'&&startParam.startsWith('coach_')){
+      pendingInviteRef.current=startParam.slice('coach_'.length)
+      return   // start_param не наш, чистить его не нужно
+    }
+    const params=new URLSearchParams(window.location.search)
+    const coach=params.get('coach')
+    if(!coach)return
+    pendingInviteRef.current=coach
+    // Чистим адресную строку тем же способом, что обработчик ?trainer=1 выше:
+    // иначе приглашение осталось бы в URL и «срабатывало» при каждом заходе.
+    params.delete('coach')
+    const newUrl=window.location.pathname+(params.toString()?'?'+params.toString():'')
+    window.history.replaceState({},'',newUrl)
+  },[])
+
+  // Второй заход за start_param — уже после того, как Telegram опознан и
+  // отработал tg.ready(). Страхует случай, когда на mount initDataUnsafe был
+  // ещё пуст. Уже захваченное приглашение (в том числе из ?coach=) не трогаем:
+  // первым пришло — тем и привязываем.
+  useEffect(()=>{
+    if(!isTelegram||pendingInviteRef.current)return
+    const startParam=window.Telegram?.WebApp?.initDataUnsafe?.start_param
+    if(typeof startParam==='string'&&startParam.startsWith('coach_')){
+      pendingInviteRef.current=startParam.slice('coach_'.length)
+    }
+  },[isTelegram])
+
+  // Собственно привязка. Дёргается один раз — после того как стало известно,
+  // что пользователь клиент и тренера у него ещё нет. Неудача не критична:
+  // приложение работает и без привязки, поэтому просто сообщаем клиенту.
+  const applyInvite=async(trainerId)=>{
+    try{
+      const{data:sessionData}=await supabase.auth.getSession()
+      const token=sessionData?.session?.access_token
+      if(!token){console.error('Приглашение: нет access-токена, привязка пропущена');return}
+      const res=await fetch('/api/link-client',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+        body:JSON.stringify({trainerId}),
+      })
+      const body=await res.json().catch(()=>null)
+      if(!res.ok||!body?.ok){
+        console.error('Приглашение: привязка не удалась',res.status,body?.error||'')
+        flashInvite('Не удалось применить приглашение',DANGER)
+        return
+      }
+      // already — клиент уже с тренером, сервер ничего не менял. Молча: он
+      // не просил ничего менять, а «ты уже привязан» звучит как ошибка.
+      if(body.already){console.log('Приглашение: клиент уже привязан, привязка не менялась');return}
+      setHasCoach(true)
+      setProfileReloadToken(t=>t+1)
+      flashInvite(`Теперь тебя ведёт ${body.trainer_name||'твой тренер'} 🎉`,TEA)
+    }catch(e){
+      console.error('Приглашение: сетевая ошибка привязки:',e)
+      flashInvite('Не удалось применить приглашение',DANGER)
+    }
+  }
+
   const mergeUserWithProfile=(supaUser)=>{
     if(!supaUser)return null
     let stored={},profile={}
@@ -7883,9 +8019,18 @@ export default function App() {
       // false.
       setCoachSubExpired(!!data.coach_id&&!!data.plan_until&&new Date(data.plan_until).getTime()<=Date.now())
       setAccess(effectiveAccess(data))
+      // Ссылка-приглашение (см. pendingInviteRef выше). Решаем именно здесь:
+      // до загрузки профиля роль и coach_id неизвестны. Тренера не привязываем
+      // (он ничей не клиент), уже привязанного — тоже, чужую связь не рвём.
+      // Ref гасим в любом случае: одна попытка на заход, без ретраев.
+      const invite=pendingInviteRef.current
+      if(invite){
+        pendingInviteRef.current=null
+        if(role!=='trainer'&&!data.coach_id)applyInvite(invite)
+      }
     })
     return()=>{cancelled=true}
-  },[user?.id])
+  },[user?.id,profileReloadToken])
 
   // Клиентский захват @-ника из Telegram при открытии Mini App: если у
   // текущего клиента в WebApp есть username и он отличается от сохранённого,
@@ -8144,6 +8289,18 @@ export default function App() {
           подписи ExMeta), но набор оставлен в проекте — чтобы вернуть, хватит
           одной строки в ряду, пересобирать ничего не нужно. */}
       <MuscleDefs/>
+      {/* Тост о применении приглашения от тренера — поверх всего, см.
+          applyInvite. Тот же вид, что тосты ошибок записи в других экранах. */}
+      {inviteToast&&(
+        <div style={{
+          position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
+          zIndex:3000, padding:'11px 20px', borderRadius:24, maxWidth:340, textAlign:'center',
+          background:inviteToast.color, color:'#fff', fontSize:13, fontWeight:700,
+          boxShadow:'0 6px 20px rgba(0,0,0,0.28)',
+        }}>
+          {inviteToast.text}
+        </div>
+      )}
       {/* Глобальные стили — адаптив */}
       <style>{`
         *, *::before, *::after { box-sizing: border-box; }
