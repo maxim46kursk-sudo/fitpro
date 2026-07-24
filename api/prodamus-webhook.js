@@ -1,6 +1,6 @@
 import qs from 'qs'
 import { createClient } from '@supabase/supabase-js'
-import { createSignature, signPayload, verifySignature } from './_prodamus.js'
+import { verifySignature } from './_prodamus.js'
 
 // Вебхук уведомлений Продамуса. Тело подписано, поэтому НЕ даём Vercel его
 // разобрать — подпись считается по точной сырой форме, любой репарсинг
@@ -61,20 +61,20 @@ export default async function handler(req, res) {
   const supabaseAdmin = createClient(SUPABASE_URL, serviceRoleKey)
 
   // ── Проверка подписи. Подпись — из заголовка sign, запасной вариант — поле
-  // signature в теле. Секрет НЕ логируем; на несовпадении логируем присланную
-  // и вычисленную подписи и JSON-строку в консоль (в БД не пишем).
+  // signature в теле. В лог — только факт отказа: ни секрет, ни ожидаемая
+  // подпись, ни подписываемая строка наружу попадать не должны.
   const provided = (req.headers['sign'] || data.signature || '').toString()
   if (!verifySignature(data, secret, provided)) {
-    console.error('Prodamus webhook: подпись не сошлась', {
-      provided: provided.toLowerCase(),
-      expected: createSignature(data, secret),
-      signedString: signPayload(data),
-    })
+    console.error('Prodamus webhook: подпись не сошлась', { order_num: data.order_num ?? null })
     return res.status(400).send('Bad signature')
   }
 
-  // Подпись верна — логируем всё тело (нужно для первого боевого теста).
-  console.log('Prodamus webhook: подтверждённое уведомление', JSON.stringify(data))
+  // Подпись верна — логируем только служебные поля, без персональных данных.
+  console.log('Prodamus webhook: подтверждённое уведомление', {
+    order_num: data.order_num ?? null,
+    sum: data.sum ?? null,
+    payment_status: data.payment_status ?? null,
+  })
 
   const orderId = data.order_id != null ? String(data.order_id) : null
   const orderNum = data.order_num != null ? String(data.order_num) : null
