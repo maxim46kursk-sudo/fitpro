@@ -853,6 +853,10 @@ function ProgramEditor({ client, trainerId }) {
           }))
           return{...ex,sets:parsed.length?parsed:[{reps:'',kg:''}]}
         }),
+        // Существующие тренировки — свёрнуты: тренер видит чистый список
+        // названий и разворачивает нужную. collapsed чисто для UI, в
+        // structure при сохранении не уходит (saveProgram берёт name+exercises).
+        collapsed:true,
       })))
       setEditorOpen(!!data)
       setProgramLoading(false)
@@ -861,7 +865,11 @@ function ProgramEditor({ client, trainerId }) {
   useEffect(()=>{loadProgram()},[client.id])
 
   const addWorkout=()=>{
-    setWorkouts(w=>[...w,{name:`Тренировка ${w.length+1}`,exercises:[]}])
+    // Новую сразу разворачиваем — тренер начинает её наполнять.
+    setWorkouts(w=>[...w,{name:`Тренировка ${w.length+1}`,exercises:[],collapsed:false}])
+  }
+  const toggleWorkout=(wi)=>{
+    setWorkouts(w=>w.map((x,i)=>i===wi?{...x,collapsed:!x.collapsed}:x))
   }
   const removeWorkout=(wi)=>{
     if(!window.confirm('Удалить тренировку из программы?'))return
@@ -871,7 +879,19 @@ function ProgramEditor({ client, trainerId }) {
     setWorkouts(w=>w.map((x,i)=>i===wi?{...x,name}:x))
   }
   const addExercise=(wi,exerciseName)=>{
-    setWorkouts(w=>w.map((x,i)=>i===wi?{...x,exercises:[...(x.exercises||[]),{name:exerciseName,sets:[{reps:'',kg:''}]}]}:x))
+    setWorkouts(w=>{
+      // Если это же упражнение уже где-то заведено с заполненными подходами —
+      // переносим их копией: тренер часто повторяет упражнение с той же
+      // схемой, и вводить заново неудобно. Берём последнее подходящее.
+      let carried=null
+      for(const wk of w){
+        for(const ex of wk.exercises||[]){
+          if(ex.name===exerciseName&&Array.isArray(ex.sets)&&ex.sets.some(s=>String(s.reps??'').trim()||String(s.kg??'').trim()))carried=ex.sets
+        }
+      }
+      const sets=carried?carried.map(s=>({reps:s.reps,kg:s.kg})):[{reps:'',kg:''}]
+      return w.map((x,i)=>i===wi?{...x,exercises:[...(x.exercises||[]),{name:exerciseName,sets}]}:x)
+    })
     setPickerFor(null);setPickerQuery('')
   }
   const removeExercise=(wi,ei)=>{
@@ -964,12 +984,22 @@ function ProgramEditor({ client, trainerId }) {
       <div style={{ display:'flex', flexDirection:'column', gap:12, marginBottom:14 }}>
         {workouts.map((w,wi)=>(
           <Card key={wi}>
-            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:w.collapsed?0:10 }}>
+              {/* Шеврон сворачивает тренировку в одну строку с названием. */}
+              <button onClick={()=>toggleWorkout(wi)} style={{ background:'none', border:'none', color:TXT3, cursor:'pointer', lineHeight:1, padding:2, flexShrink:0, transform:w.collapsed?'none':'rotate(90deg)', transition:'transform .15s' }}>
+                <span style={{ fontSize:18 }}>›</span>
+              </button>
               <input value={w.name} onChange={e=>renameWorkout(wi,e.target.value)} placeholder={`Тренировка ${wi+1}`}
                 style={{ flex:1, padding:'7px 10px', fontSize:13, fontWeight:600, borderRadius:8, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
                 onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
               <button onClick={()=>removeWorkout(wi)} style={{ background:'none', border:'none', color:TXT3, fontSize:16, cursor:'pointer', lineHeight:1, padding:4, flexShrink:0 }}><GlassIcon name="close" size={26} /></button>
             </div>
+            {w.collapsed?(
+              // Свёрнуто: только строка тоннажа под названием, тело скрыто.
+              (w.exercises||[]).length>0&&(
+                <div style={{ marginTop:8, fontSize:13, fontWeight:700, color:TXT3 }}>Общий тоннаж: {workoutTonnage(w)} кг</div>
+              )
+            ):(<>
             {/* Упражнения и подходы — та же вёрстка, что на экране активной
                 тренировки (WorkoutsView, wMode==='start'): тренер собирает
                 программу ровно в том виде, в котором её увидит клиент.
@@ -1032,6 +1062,7 @@ function ProgramEditor({ client, trainerId }) {
                 Общий тоннаж: {workoutTonnage(w)} кг
               </div>
             )}
+            </>)}
           </Card>
         ))}
       </div>
