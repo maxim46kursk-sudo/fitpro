@@ -12,7 +12,7 @@ const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://api.fitproapp.ru'
 const PAYFORM_BASE = 'https://maximathlete.payform.ru/'
 
 // После успешной оплаты Продамус вернёт пользователя сюда.
-const URL_SUCCESS = 'https://t.me/fitpro_coach_bot'
+const URL_SUCCESS = 'https://t.me/maxim_fitpro_bot'
 
 const PAID_PLANS = new Set(['base', 'profit', 'premium'])
 
@@ -55,6 +55,9 @@ export default async function handler(req, res) {
     customer_extra: tag,
     products: [{ name: `Подписка FitPro — ${PLAN_NAME[plan]}`, price: String(price), quantity: '1' }],
     urlSuccess: URL_SUCCESS,
+    // Кнопка «вернуться в магазин» на форме. Добавлено ДО подписи — иначе
+    // поле уехало бы в ссылку неподписанным и Продамус её отклонил.
+    urlReturn: URL_SUCCESS,
   }
 
   const signature = createSignature(data, secret)
