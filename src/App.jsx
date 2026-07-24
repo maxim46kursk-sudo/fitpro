@@ -687,44 +687,47 @@ function ClientsView({ setSC, setNav, userId }) {
 // в Supabase не удалялись.
 function ClientDetail({ client, goBack, trainerId }) {
   // Реальный клиент тренера (см. ClientsView) — отдельная модель данных
-  // (только id/name из profiles + настоящая история тренировок), у демо-
-  // клиентов ниже (client.wts и т.п.) взяться неоткуда.
+  // (id/name из profiles + настоящая история тренировок из Supabase).
   if(client.isReal)return <RealClientDetail client={client} goBack={goBack} trainerId={trainerId} />
-  const lost=+(client.wts[0]-client.wts[client.wts.length-1]).toFixed(1)
-  const maxW=Math.max(...client.wts), minW=Math.min(...client.wts), range=maxW-minW||1
-  const W=400,H=120,PAD=20
-  const pts=client.wts.map((kg,i)=>{
-    const x=PAD+(i/(client.wts.length-1))*(W-PAD*2)
-    const y=H-PAD-((kg-minW)/range)*(H-PAD*2)
-    return `${x},${y}`
-  }).join(' ')
+
+  // Очная карточка, заведённая тренером вручную: аккаунта в приложении у
+  // такого клиента нет, тренировок и весов в базе тоже — показываем только то,
+  // что тренер сам ввёл. Раньше здесь рисовался график по client.wts, но это
+  // поле было только у зашитых демо-клиентов; у ручных карточек оно пустое,
+  // и экран падал на wts[0].
+  const label=client.name?.trim()||'Без имени'
+  const initials=label.split(' ').map(w=>w[0]?.toUpperCase()||'').join('').slice(0,2)||'КЛ'
+  const goal=client.goal?.trim()||''
+  const program=client.program?.trim()||''
   return (
     <div>
       <button onClick={goBack} style={{ fontSize:12, color:TXT3, border:'none', background:'none', cursor:'pointer', marginBottom:14, padding:0, display:'inline-flex', alignItems:'center', gap:5 }}><GlassIcon name="back" size={16} />Назад</button>
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:18 }}>
-        <Av lbl={client.av} sz={50} />
+        <Av lbl={initials} sz={50} />
         <div>
-          <h2 style={{ fontSize:20, fontWeight:500, color:TXT, margin:0 }}>{client.name}</h2>
-          <div style={{ fontSize:13, color:TXT3, marginTop:2 }}>{client.goal} · {client.program}</div>
+          <h2 style={{ fontSize:20, fontWeight:500, color:TXT, margin:0 }}>{label}</h2>
+          <span style={{ display:'inline-block', marginTop:6, fontSize:11, fontWeight:700, color:TXT3, background:SURF2, borderRadius:6, padding:'3px 8px' }}>Очный клиент</span>
         </div>
       </div>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:16 }}>
-        <Metric label="Прогресс" value={`${client.progress}%`} icon="📈" color={PUR} />
-        <Metric label="Нач. вес" value={`${client.wts[0]} кг`} icon="⚖️" color="#6b7280" />
-        <Metric label="Тек. вес" value={`${client.wts[client.wts.length-1]} кг`} icon={<GlassIcon name="chart" size={22} />} color={TEA} />
-        <Metric label="Результат" value={`−${Math.abs(lost)} кг`} icon="🎯" color={COR} />
+      {/* Карточка с введёнными полями. Пустое поле не показываем, а если пусты
+          оба — не рисуем и саму карточку, чтобы не оставлять пустую рамку. */}
+      {(goal||program)&&(
+        <Card style={{ marginBottom:14 }}>
+          {goal&&(
+            <div style={{ fontSize:13, color:TXT, marginBottom:program?8:0 }}>
+              <span style={{ color:TXT3 }}>Цель: </span>{goal}
+            </div>
+          )}
+          {program&&(
+            <div style={{ fontSize:13, color:TXT }}>
+              <span style={{ color:TXT3 }}>Программа: </span>{program}
+            </div>
+          )}
+        </Card>
+      )}
+      <div style={{ fontSize:12, color:TXT3, lineHeight:1.5 }}>
+        Клиент не пользуется приложением — его прогресс ты ведёшь вне приложения.
       </div>
-      <Card>
-        <div style={{ fontWeight:500, color:TXT, marginBottom:10 }}>Динамика веса</div>
-        <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:H }}>
-          <polyline points={pts} fill="none" stroke={PUR} strokeWidth="2.5" strokeLinejoin="round" />
-          {client.wts.map((kg,i)=>{
-            const x=PAD+(i/(client.wts.length-1))*(W-PAD*2)
-            const y=H-PAD-((kg-minW)/range)*(H-PAD*2)
-            return <circle key={i} cx={x} cy={y} r={4} fill={PUR} />
-          })}
-        </svg>
-      </Card>
     </div>
   )
 }
