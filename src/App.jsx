@@ -1000,7 +1000,7 @@ const makeDefaultFolderSlots=()=>{
 // приходит отдельно, в accessLevel.
 // accessLevel — уровень пакета: тренировки 4–12 в шаблонах требуют БАЗУ (1),
 // в СТАРТ (0) открыты только первые FREE_SLOTS.
-function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, hasTrainer, accessLevel = 0, openPlans }) {
+function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, hasTrainer, coachSubExpired = false, accessLevel = 0, openPlans }) {
   // Подсказка «нужен пакет БАЗА» — показывается модалкой поверх списка слотов.
   const [showSlotLock,setShowSlotLock]=useState(false)
   // Заперт ли слот: платная часть шаблона начинается с FREE_SLOTS+1.
@@ -2952,6 +2952,24 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           </div>
         </div>
       , document.body)}
+
+      {/* Истёкшая подписка у клиента тренера. Именно плашка, а не блокировка:
+          клиент остаётся клиентом, программа ниже никуда не девается — это
+          мягкое напоминание продлить. */}
+      {coachSubExpired&&(
+        <Card style={{ marginBottom:14, border:`1.5px solid ${DANGER}55`, background:'rgba(255,69,58,0.10)' }}>
+          <div style={{ fontSize:12, fontWeight:700, color:DANGER, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:8 }}>
+            Подписка закончилась
+          </div>
+          <div style={{ fontSize:13, color:TXT2, lineHeight:1.45, marginBottom:12 }}>
+            Доступ к ПРЕМИУМ истёк. Продли, чтобы снова открыть ИИ-ассистента, все тренировки и прогресс по упражнениям.
+          </div>
+          <button onClick={()=>openPlans?.()}
+            style={{ padding:'10px 16px', fontSize:13, fontWeight:700, color:'#fff', background:DANGER, border:'none', borderRadius:10, cursor:'pointer' }}>
+            Продлить подписку
+          </button>
+        </Card>
+      )}
 
       {/* Персональная программа от тренера (assigned_programs) — только
           показ, см. loadAssignedProgram выше. Загрузка/ошибка — компактной
@@ -7451,6 +7469,8 @@ export default function App() {
   // ВАЖНО: это НЕ уровень подписки. Пакет живёт отдельно, в access ниже —
   // у клиента с тренером может не быть ПРЕМИУМА и наоборот.
   const [hasCoach,setHasCoach]=useState(false)
+  // «Клиент тренера с истёкшей подпиской» — см. загрузку профиля ниже.
+  const [coachSubExpired,setCoachSubExpired]=useState(false)
   // Уровень доступа по пакету (см. effectiveAccess, src/plans.js): 0 СТАРТ,
   // 1 БАЗА, 2 ПРОФИТ, 3 ПРЕМИУМ. До загрузки профиля — 0: платную функцию
   // лучше на миг не показать, чем показать тому, кто её не купил.
@@ -7857,6 +7877,11 @@ export default function App() {
       setUserRole(role)
       localStorage.setItem('fitpro_role',role)
       setHasCoach(!!data.coach_id)
+      // Клиент тренера, у которого оплаченный доступ уже кончился. coach_id и
+      // программа при этом сохраняются — признак нужен только для мягкого
+      // напоминания продлить. У тренера coach_id пуст, так что для него всегда
+      // false.
+      setCoachSubExpired(!!data.coach_id&&!!data.plan_until&&new Date(data.plan_until).getTime()<=Date.now())
       setAccess(effectiveAccess(data))
     })
     return()=>{cancelled=true}
@@ -8100,7 +8125,7 @@ export default function App() {
   const renderMain=()=>(
     <>
       <div style={{ display: nav==='workouts' ? 'block' : 'none' }}>
-        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} hasTrainer={hasCoach} accessLevel={access.level} openPlans={openPlans} />
+        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} hasTrainer={hasCoach} coachSubExpired={coachSubExpired} accessLevel={access.level} openPlans={openPlans} />
       </div>
       {nav!=='workouts'&&renderOther()}
     </>
