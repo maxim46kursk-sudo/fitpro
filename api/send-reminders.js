@@ -14,7 +14,7 @@ const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://api.fitproapp.ru'
 // (см. src/config.js BOT_USERNAME).
 const BOT_URL = 'https://t.me/maxim_fitpro_bot'
 
-// Пока шлём только эти два типа; 'report' добавим позже.
+// Шлём только напоминания о тренировке и дневнике питания.
 const REMINDER_TYPES = ['workout', 'diary']
 const TEXTS = {
   workout: '💪 Пора на тренировку! Открывай FitPro и погнали.',
