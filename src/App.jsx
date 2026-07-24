@@ -60,12 +60,6 @@ const PROFILE_WEIGHT_MIN = 0, PROFILE_WEIGHT_MAX = 500
 const PROFILE_HEIGHT_MIN = 0, PROFILE_HEIGHT_MAX = 300
 const clampNum = (v, min, max) => Math.max(min, Math.min(max, Number(v) || 0))
 
-const CLIENTS = [
-  { id:1, name:'Анна Соколова',   goal:'Похудение',    program:'Кардио + Сила',     progress:78, av:'АС', cal:1800, wk:4, wts:[75,74.2,73.5,72.8,72,71.5,71] },
-  { id:2, name:'Дмитрий Козлов', goal:'Набор массы',   program:'Силовые тренировки', progress:62, av:'ДК', cal:2800, wk:3, wts:[70,70.5,71,71.8,72.5,73,73.5] },
-  { id:3, name:'Сергей Петров',   goal:'Выносливость', program:'Бег + Кардио',       progress:45, av:'СП', cal:2400, wk:2, wts:[80,80,79.5,79,79,78.5,78] },
-]
-
 const BADGE = {
   'Сила':        { bg:'#EEEDFE', tx:'#3C3489' },
   'Кардио':      { bg:'#E1F5EE', tx:'#085041' },
@@ -257,10 +251,25 @@ const FREE_SLOTS = 3
 const SLOTS_MIN_LEVEL = 1
 
 // ── Экраны
-function Dashboard({ setNav, setSC, isTrainer }) {
+function Dashboard({ setNav, setSC, isTrainer, userId }) {
   const workoutHistory = (() => { try { return JSON.parse(localStorage.getItem('fitpro_history')||'[]') } catch { return [] } })()
   const foodDiary = (() => { try { return JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}') } catch { return {} } })()
   const foodDays = Object.keys(foodDiary).length
+
+  // Реальные клиенты тренера — те же, что на экране «Клиенты» (profiles с
+  // coach_id=мой uid). Best-effort: главная не должна падать из-за этого
+  // запроса, при ошибке список просто остаётся пустым.
+  const [realClients,setRealClients]=useState([])
+  useEffect(()=>{
+    if(!userId)return
+    let cancelled=false
+    supabase.from('profiles').select('id,name,tg_username,plan,plan_until').eq('coach_id',userId).then(({data,error})=>{
+      if(cancelled)return
+      if(error){console.error('Главная: ошибка загрузки клиентов тренера:',error);return}
+      setRealClients(data||[])
+    })
+    return()=>{cancelled=true}
+  },[userId])
   const quickActions = [
     {icon:'people',label:'Клиенты',nav:'clients'},
     {icon:'dumbbell',label:'Тренировки',nav:'workouts'},
@@ -276,7 +285,7 @@ function Dashboard({ setNav, setSC, isTrainer }) {
         <p style={{ fontSize:13, color:TXT3, marginTop:4 }}>Твоя платформа для тренеров</p>
       </div>
       <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginBottom:18 }}>
-        <Metric label="Клиентов" value={CLIENTS.length} icon="👥" color={PUR} />
+        <Metric label="Клиентов" value={realClients.length} icon="👥" color={PUR} />
         <Metric label="Тренировок" value={workoutHistory.length} icon={<GlassIcon name="dumbbell" size={22} />} color={TEA} />
         <Metric label="Дней питания" value={foodDays} icon={<GlassIcon name="food" size={22} />} color={BLU} />
       </div>
@@ -287,17 +296,23 @@ function Dashboard({ setNav, setSC, isTrainer }) {
               <span style={{ fontWeight:500, color:TXT }}>Клиенты</span>
               <button onClick={()=>setNav('clients')} style={{ fontSize:12, color:PUR, border:'none', background:'none', cursor:'pointer' }}>Все →</button>
             </div>
-            {CLIENTS.map(c=>(
-              <div key={c.id} onClick={()=>{setSC(c);setNav('cdetail')}} style={{ display:'flex', alignItems:'center', gap:9, padding:'7px 0', borderBottom:`1px solid ${HAIR}`, cursor:'pointer' }}>
-                <Av lbl={c.av} sz={30} />
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:13, fontWeight:500, color:TXT }}>{c.name}</div>
-                  <div style={{ fontSize:11, color:TXT3 }}>{c.goal}</div>
-                  <PBar v={c.progress} color={c.progress>70?TEA:PUR} />
+            {realClients.length===0?(
+              <div style={{ fontSize:13, color:TXT3, padding:'4px 0' }}>Пока нет клиентов</div>
+            ):realClients.slice(0,5).map(c=>{
+              const label=c.name?.trim()||'Без имени'
+              const initials=label.split(' ').map(w=>w[0]?.toUpperCase()||'').join('').slice(0,2)||'КЛ'
+              const sub=clientSubStatus(c.plan,c.plan_until)
+              return (
+                <div key={c.id} onClick={()=>{setSC({id:c.id,name:c.name||'Без имени',tg_username:c.tg_username||null,isReal:true});setNav('cdetail')}}
+                  style={{ display:'flex', alignItems:'center', gap:9, padding:'7px 0', borderBottom:`1px solid ${HAIR}`, cursor:'pointer' }}>
+                  <Av lbl={initials} sz={30} />
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, fontWeight:500, color:TXT }}>{label}</div>
+                    <div style={{ fontSize:11, fontWeight:600, color:sub.color, marginTop:2 }}>{sub.text}</div>
+                  </div>
                 </div>
-                <span style={{ fontSize:12, fontWeight:500, color:c.progress>70?TEA:PUR }}>{c.progress}%</span>
-              </div>
-            ))}
+              )
+            })}
           </Card>
         )}
         <Card>
@@ -315,6 +330,27 @@ function Dashboard({ setNav, setSC, isTrainer }) {
 
 // Локальная дата дд.мм — тот же паддинг-подход, что и у localTodayISO() выше.
 const fmtDDMM=d=>{const dt=new Date(d);const p=n=>String(n).padStart(2,'0');return `${p(dt.getDate())}.${p(dt.getMonth()+1)}`}
+
+const pluralizeDays=n=>{
+  const t=n%10, h=n%100
+  if(t===1&&h!==11)return 'день'
+  if([2,3,4].includes(t)&&![12,13,14].includes(h))return 'дня'
+  return 'дней'
+}
+// Статус подписки клиента для карточек тренера — на главной и на экране
+// «Клиенты» он должен читаться одинаково, поэтому хелпер общий. Источник
+// правды — planUntil: пустой означает, что клиента привязали вручную, а не
+// оплатой. Возвращает { text, color }.
+const clientSubStatus=(plan,planUntil)=>{
+  if(!planUntil)return{text:'Без подписки',color:TXT3}
+  const leftMs=new Date(planUntil).getTime()-Date.now()
+  if(!(leftMs>0))return{text:'Подписка закончилась',color:DANGER}
+  const days=Math.ceil(leftMs/86400000)
+  return{
+    text:`${planByKey(plan)?.name} · осталось ${days} ${pluralizeDays(days)}`,
+    color:days<=3?COR:TEA,   // оранжевый = вот-вот истечёт
+  }
+}
 
 function ClientsView({ setSC, setNav, userId }) {
   const [q,setQ]=useState('')
@@ -411,7 +447,9 @@ function ClientsView({ setSC, setNav, userId }) {
     })
   }
 
-  const allClients=[...CLIENTS,...localClients]
+  // Только карточки, заведённые тренером вручную. Зашитые демо-клиенты отсюда
+  // убраны вместе с самим массивом — список показывает лишь настоящие данные.
+  const allClients=[...localClients]
   const fl=allClients.filter(c=>c.name.toLowerCase().includes(q.toLowerCase()))
 
   // Реальные клиенты тренера — из profiles (coach_id=мой uid), а не демо-
@@ -427,7 +465,7 @@ function ClientsView({ setSC, setNav, userId }) {
   const loadRealClients=async()=>{
     if(!userId)return
     setRealClientsLoading(true);setRealClientsError(false)
-    const{data,error}=await supabase.from('profiles').select('id,name,tg_username').eq('coach_id',userId)
+    const{data,error}=await supabase.from('profiles').select('id,name,tg_username,plan,plan_until').eq('coach_id',userId)
     if(error){console.error('Ошибка загрузки клиентов тренера:',error);setRealClientsError(true);setRealClientsLoading(false);return}
     const clients=data||[]
     setRealClients(clients)
@@ -527,6 +565,7 @@ function ClientsView({ setSC, setNav, userId }) {
               const label=c.name?.trim()||'Без имени'
               const initials=label.split(' ').map(w=>w[0]?.toUpperCase()||'').join('').slice(0,2)||'КЛ'
               const activity=clientActivity[c.id]
+              const sub=clientSubStatus(c.plan,c.plan_until)
               return (
                 <Card key={c.id} style={{ cursor:'pointer' }} onClick={()=>openRealClient(c)}>
                   <div style={{ display:'flex', alignItems:'center', gap:10 }}>
@@ -536,6 +575,7 @@ function ClientsView({ setSC, setNav, userId }) {
                       <div style={{ fontSize:11, color:TXT3, marginTop:2 }}>
                         {activity?`Последняя: ${fmtDDMM(activity.lastDate)} · всего ${activity.count}`:'Пока нет тренировок'}
                       </div>
+                      <div style={{ fontSize:11, fontWeight:600, color:sub.color, marginTop:3 }}>{sub.text}</div>
                     </div>
                   </div>
                 </Card>
@@ -545,6 +585,11 @@ function ClientsView({ setSC, setNav, userId }) {
         )}
       </div>
 
+      {/* Очные клиенты — карточки, заведённые тренером вручную. Пока их нет,
+          блок скрыт целиком: одинокое поле поиска над пустой сеткой выглядело
+          как поломка. */}
+      {localClients.length>0&&(<>
+      <h3 style={{ fontSize:15, fontWeight:600, color:TXT, margin:'0 0 10px' }}>Очные клиенты</h3>
       <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Поиск..." style={{ width:'100%', marginBottom:14, padding:'8px 12px', fontSize:13, borderRadius:8, border:`1px solid ${HAIR}`, boxSizing:'border-box' }} />
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(240px,1fr))', gap:10 }}>
         {fl.map(c=>(
@@ -568,6 +613,7 @@ function ClientsView({ setSC, setNav, userId }) {
           </Card>
         ))}
       </div>
+      </>)}
     </div>
   )
 }
@@ -8032,7 +8078,7 @@ export default function App() {
     if(nav==='cdetail'&&sc)return <ClientDetail client={sc} goBack={goBackNav} trainerId={user?.id} />
     switch(nav){
       case 'dashboard': return userRole==='trainer'
-        ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} />
+        ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} userId={user?.id} />
         : <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} accessLevel={access.level} openPlans={openPlans} />
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} userId={user?.id} />
       case 'nutrition': return <NutritionView userId={user?.id} />
