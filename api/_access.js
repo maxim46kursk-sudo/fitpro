@@ -14,6 +14,10 @@ export const TRIAL_LEVEL = 2   // пробный открывает уровен
 // Текущий уровень по строке profiles. Возвращает число 0..3.
 // Просроченные plan_until/trial_until не считаются: уровень падает обратно в 0.
 export function effectiveLevel(profile, now) {
+  // Тренер (владелец) — максимальный уровень в обход тарифа. Зеркало раннего
+  // выхода в effectiveAccess (src/plans.js). Требует, чтобы вызывающий код
+  // ВЫБРАЛ поле role из profiles — иначе тренер молча поедет по plan/trial.
+  if (profile?.role === 'trainer') return 3
   now = now || Date.now()
   const paidActive = profile?.plan_until && new Date(profile.plan_until).getTime() > now
   const paidLevel = paidActive ? (PLAN_LEVELS[profile.plan] ?? 0) : 0

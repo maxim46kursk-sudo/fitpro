@@ -50,7 +50,7 @@ export default async function handler(req, res) {
   const supabaseAdmin = createClient(SUPABASE_URL, serviceRoleKey)
   const { data: profile, error: profileError } = await supabaseAdmin
     .from('profiles')
-    .select('plan, plan_until, trial_until')
+    .select('plan, plan_until, trial_until, role')
     .eq('id', data.user.id)
     .maybeSingle()
   if (profileError) {

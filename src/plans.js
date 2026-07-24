@@ -45,6 +45,11 @@ export function priceOf(p){ return TEST_MODE ? p.testPrice : p.price }
 // Текущий доступ по профилю. now — Date.now(). Возвращает {level,label,until,isTrial,planKey}.
 export function effectiveAccess(profile, now){
   now = now || Date.now()
+  // Тренер (владелец) не упирается в собственные платные гейты: отдаём
+  // максимальный уровень, все гейты считают по access.level и откроются сами.
+  // Зеркало серверной проверки в api/_access.js — правь оба файла.
+  if (profile?.role === 'trainer')
+    return { level:3, label:'Тренер', until:null, isTrial:false, planKey:'premium' }
   const paidActive  = profile?.plan_until  && new Date(profile.plan_until).getTime()  > now
   const paidLevel   = paidActive ? planByKey(profile.plan).level : 0
   const trialActive = profile?.trial_until && new Date(profile.trial_until).getTime() > now
