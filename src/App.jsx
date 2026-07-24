@@ -337,6 +337,12 @@ const pluralizeDays=n=>{
   if([2,3,4].includes(t)&&![12,13,14].includes(h))return 'дня'
   return 'дней'
 }
+const pluralizeWorkouts=n=>{
+  const t=n%10, h=n%100
+  if(t===1&&h!==11)return 'тренировка'
+  if([2,3,4].includes(t)&&![12,13,14].includes(h))return 'тренировки'
+  return 'тренировок'
+}
 // Статус подписки клиента для карточек тренера — на главной и на экране
 // «Клиенты» он должен читаться одинаково, поэтому хелпер общий. Источник
 // правды — planUntil: пустой означает, что клиента привязали вручную, а не
@@ -1147,6 +1153,8 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const [assignedProgram,setAssignedProgram]=useState(null)
   const [assignedProgramLoading,setAssignedProgramLoading]=useState(true)
   const [assignedProgramError,setAssignedProgramError]=useState(false)
+  // Программа свёрнута в карточку-папку, содержимое — в модалке по клику.
+  const [programOpen,setProgramOpen]=useState(false)
   const loadAssignedProgram=()=>{
     if(!userId){setAssignedProgramLoading(false);return}
     setAssignedProgramLoading(true);setAssignedProgramError(false)
@@ -3057,28 +3065,59 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           <button onClick={loadAssignedProgram} style={{ fontSize:11, color:PUR, background:'none', border:`1px solid ${HAIR}`, borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>Повторить</button>
         </div>
       ):assignedProgram&&(
-        <Card style={{ marginBottom:14, border:`1.5px solid ${PUR}33`, background:'rgba(124,122,240,0.14)' }}>
-          <div style={{ fontSize:12, fontWeight:700, color:PUR, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:8, display:'flex', alignItems:'center', gap:6 }}>
-            <GlassIcon name="template" size={18} />Программа от тренера
-          </div>
-          <div style={{ fontSize:15, fontWeight:700, color:TXT, marginBottom:10 }}>{assignedProgram.title||'Программа'}</div>
-          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-            {(Array.isArray(assignedProgram.structure)?assignedProgram.structure:[]).map((w,wi)=>(
-              <div key={wi} style={{ background:SURF, borderRadius:10, padding:'10px 12px' }}>
-                <div style={{ fontSize:13, fontWeight:600, color:TXT, marginBottom:6 }}>{w.name||`Тренировка ${wi+1}`}</div>
-                <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-                  {(w.exercises||[]).map((ex,ei)=>(
-                    <div key={ei} style={{ fontSize:12, color:TXT2 }}>
-                      <span style={{ fontWeight:500 }}>{ex.name}</span>
-                      {ex.sets&&<span style={{ color:TXT3 }}>{': '}{ex.sets}</span>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+        // Свёрнута в карточку-папку — как шаблоны ниже (тот же шеврон и клик по
+        // всей карточке), но с фиолетовым акцентом программы. Содержимое — в
+        // модалке, чтобы длинная программа не оттесняла список папок вниз.
+        <Card style={{ marginBottom:14, cursor:'pointer', position:'relative', border:`1.5px solid ${PUR}33`, background:'rgba(124,122,240,0.14)' }}
+          onClick={()=>setProgramOpen(true)}>
+          <span style={{ position:'absolute', top:'50%', right:16, transform:'translateY(-50%)', fontSize:20, color:TXT3 }}>›</span>
+          <div style={{ paddingRight:20 }}>
+            <div style={{ fontSize:12, fontWeight:700, color:PUR, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:6, display:'flex', alignItems:'center', gap:6 }}>
+              <GlassIcon name="template" size={18} />Программа от тренера
+            </div>
+            <div style={{ fontSize:15, fontWeight:700, color:TXT }}>{assignedProgram.title||'Программа'}</div>
+            <div style={{ fontSize:12, color:TXT3, marginTop:3 }}>
+              {assignedProgram.structure?.length||0} {pluralizeWorkouts(assignedProgram.structure?.length||0)}
+            </div>
           </div>
         </Card>
       )}
+
+      {/* ── Модалка программы от тренера. Устройство то же, что у модалки
+          папки-шаблона выше: полноэкранная панель с шапкой и «Назад».
+          Только чтение — запуск тренировок отсюда пока не делаем. ── */}
+      {programOpen&&assignedProgram&&createPortal(
+        <div style={{ position:'fixed', inset:0, background:SURF2, zIndex:1000, display:'flex', flexDirection:'column' }}>
+          <div style={{ background:SURF, borderBottom:`1px solid ${HAIR}`, padding:'14px 18px', display:'flex', alignItems:'center', gap:14, flexShrink:0 }}>
+            <button onClick={()=>setProgramOpen(false)}
+              style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
+            <GlassIcon name="template" size={34} />
+            <div>
+              <div style={{ fontSize:17, fontWeight:700, color:TXT }}>{assignedProgram.title||'Программа'}</div>
+              <div style={{ fontSize:11, color:TXT3 }}>
+                Программа от тренера · {assignedProgram.structure?.length||0} {pluralizeWorkouts(assignedProgram.structure?.length||0)}
+              </div>
+            </div>
+          </div>
+          <div style={{ flex:1, overflowY:'auto', padding:'14px 16px 32px' }}>
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              {(Array.isArray(assignedProgram.structure)?assignedProgram.structure:[]).map((w,wi)=>(
+                <div key={wi} style={{ background:SURF, borderRadius:10, padding:'10px 12px' }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:TXT, marginBottom:6 }}>{w.name||`Тренировка ${wi+1}`}</div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+                    {(w.exercises||[]).map((ex,ei)=>(
+                      <div key={ei} style={{ fontSize:12, color:TXT2 }}>
+                        <span style={{ fontWeight:500 }}>{ex.name}</span>
+                        {ex.sets&&<span style={{ color:TXT3 }}>{': '}{ex.sets}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      , document.body)}
 
       {/* ── Уровень 0: список папок ── */}
       {FOLDERS.map(folder=>{
