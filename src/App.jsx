@@ -169,6 +169,37 @@ function BackBtn({ label, right, onBack }) {
   )
 }
 
+// Настройки уведомлений: у каждого — вкл/выкл, время и дни недели (по getDay:
+// 0=Вс…6=Сб). Отправку сделаем отдельно, пока храним в profiles.notifs.
+const NOTIF_DEFAULTS={
+  workout:{enabled:false,time:'18:00',days:[1,2,3,4,5]},
+  diary:{enabled:false,time:'21:00',days:[0,1,2,3,4,5,6]},
+  report:{enabled:false,time:'10:00',days:[1]},
+}
+// Приводит любой сохранённый формат к новому. Старое значение было булевым
+// (notifs.workout===true) — заворачиваем в объект с дефолтным временем/днями;
+// частичный объект дополняем недостающими полями.
+const normalizeNotifs=raw=>{
+  const src=raw&&typeof raw==='object'?raw:{}
+  const out={}
+  for(const key of Object.keys(NOTIF_DEFAULTS)){
+    const def=NOTIF_DEFAULTS[key]
+    const v=src[key]
+    if(typeof v==='boolean')out[key]={enabled:v,time:def.time,days:[...def.days]}
+    else if(v&&typeof v==='object')out[key]={
+      enabled:typeof v.enabled==='boolean'?v.enabled:def.enabled,
+      time:typeof v.time==='string'?v.time:def.time,
+      days:Array.isArray(v.days)?v.days:[...def.days],
+    }
+    else out[key]={enabled:def.enabled,time:def.time,days:[...def.days]}
+  }
+  return out
+}
+// Дни недели для чипов: подпись + номер по getDay (Пн=1…Сб=6, Вс=0).
+const WEEKDAYS=[
+  {n:1,l:'Пн'},{n:2,l:'Вт'},{n:3,l:'Ср'},{n:4,l:'Чт'},{n:5,l:'Пт'},{n:6,l:'Сб'},{n:0,l:'Вс'},
+]
+
 function Toggle({ on, onToggle }) {
   return (
     <button onClick={onToggle} style={{
@@ -6120,7 +6151,7 @@ function ResetPasswordView({ onDone }) {
 // Главную.
 function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPage }) {
   const load=(k,def)=>{try{return JSON.parse(localStorage.getItem(k)??'null')??def}catch{return def}}
-  const [notifs,setNotifs]=useState(()=>load('fitpro_notifs',{workout:false,diary:false,report:false}))
+  const [notifs,setNotifs]=useState(()=>normalizeNotifs(load('fitpro_notifs',null)))
   const [units,setUnits]=useState(()=>load('fitpro_units',{weight:'kg',height:'cm'}))
   const [chatCount,setChatCount]=useState(null)
   const [clearConfirm,setClearConfirm]=useState(false)
@@ -6144,7 +6175,7 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
       .then(({data})=>{
         if(!data)return
         if(data.ai_style)setAiStyle(data.ai_style)
-        if(data.notifs)setNotifs(data.notifs)
+        if(data.notifs)setNotifs(normalizeNotifs(data.notifs))
         if(data.units)setUnits(data.units)
       })
   },[user?.id])
@@ -6320,9 +6351,46 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
 
       {/* Уведомления */}
       <Section title="Уведомления">
-        <Row label="Напоминание о тренировке" right={<Toggle on={notifs.workout} onToggle={()=>saveNotifs({...notifs,workout:!notifs.workout})}/>}/>
-        <Row label="Заполнить дневник питания вечером" right={<Toggle on={notifs.diary} onToggle={()=>saveNotifs({...notifs,diary:!notifs.diary})}/>}/>
-        <Row label="Еженедельный отчёт на почту" right={<Toggle on={notifs.report} onToggle={()=>saveNotifs({...notifs,report:!notifs.report})}/>}/>
+        {[
+          {key:'workout',label:'Напоминание о тренировке'},
+          {key:'diary',label:'Дневник питания'},
+          {key:'report',label:'Еженедельный отчёт'},
+        ].map(({key,label})=>{
+          const n=notifs[key]
+          const setField=patch=>saveNotifs({...notifs,[key]:{...n,...patch}})
+          const toggleDay=d=>setField({days:n.days.includes(d)?n.days.filter(x=>x!==d):[...n.days,d]})
+          return (
+            <div key={key} style={{ borderBottom:`1px solid ${HAIR}` }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'13px 0' }}>
+                <div style={{ fontSize:15, color:TXT, fontWeight:500 }}>{label}</div>
+                <Toggle on={n.enabled} onToggle={()=>setField({enabled:!n.enabled})}/>
+              </div>
+              {n.enabled&&(
+                <div style={{ padding:'0 0 14px', display:'flex', flexDirection:'column', gap:10 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <span style={{ fontSize:13, color:TXT3 }}>Время</span>
+                    <input type="time" value={n.time} onChange={e=>setField({time:e.target.value})}
+                      style={{ padding:'7px 10px', fontSize:14, borderRadius:8, border:`1.5px solid ${HAIR}`, outline:'none', color:TXT, background:SURF2, colorScheme:'dark' }}
+                      onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
+                  </div>
+                  <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
+                    {WEEKDAYS.map(({n:d,l})=>{
+                      const active=n.days.includes(d)
+                      return (
+                        <button key={d} onClick={()=>toggleDay(d)}
+                          style={{ width:38, height:34, borderRadius:9, cursor:'pointer', fontSize:12, fontWeight:700, padding:0, minHeight:'unset',
+                            background:active?PUR:SURF2, color:active?'#fff':TXT3,
+                            border:active?`1px solid ${PUR}`:`1px solid ${HAIR}` }}>
+                          {l}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
       </Section>
 
       {/* Единицы измерения */}
