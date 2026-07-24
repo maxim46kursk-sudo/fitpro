@@ -892,6 +892,12 @@ function ProgramEditor({ client, trainerId }) {
   const removeSet=(wi,ei,si)=>updateSets(wi,ei,sets=>sets.length<=1?sets:sets.filter((_,k)=>k!==si))
   const setSetField=(wi,ei,si,field,value)=>updateSets(wi,ei,sets=>sets.map((s,k)=>k===si?{...s,[field]:value}:s))
 
+  // Тоннаж считаем здесь: exTonnage живёт внутри WorkoutsView и сюда не
+  // достаёт. Формула та же (parseFloat×parseInt), чтобы цифра у тренера в
+  // конструкторе сходилась с той, что клиент увидит на тренировке.
+  const setsTonnage=sets=>(Array.isArray(sets)?sets:[]).reduce((sum,s)=>sum+(parseFloat(s.kg)||0)*(parseInt(s.reps)||0),0)
+  const workoutTonnage=w=>(w.exercises||[]).reduce((sum,ex)=>sum+setsTonnage(ex.sets),0)
+
   const saveProgram=async()=>{
     // structure — массив тренировок {name, exercises:[{name,sets}]}, тот же
     // формат sets, что и в PROGRAMS_MAP (programs.js) — его парсит
@@ -964,46 +970,68 @@ function ProgramEditor({ client, trainerId }) {
                 onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
               <button onClick={()=>removeWorkout(wi)} style={{ background:'none', border:'none', color:TXT3, fontSize:16, cursor:'pointer', lineHeight:1, padding:4, flexShrink:0 }}><GlassIcon name="close" size={26} /></button>
             </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {/* Упражнения и подходы — та же вёрстка, что на экране активной
+                тренировки (WorkoutsView, wMode==='start'): тренер собирает
+                программу ровно в том виде, в котором её увидит клиент.
+                Клиентские элементы сюда не переносятся — оценка нагрузки,
+                заметка к подходу, видео, рекомендованный вес и «Выполнено»
+                относятся к выполнению, а не к составлению. */}
+            <div>
               {(w.exercises||[]).map((ex,ei)=>{
                 const sets=Array.isArray(ex.sets)?ex.sets:[]
                 return (
-                  <div key={ei} style={{ display:'flex', flexDirection:'column', gap:6, padding:'8px 10px', background:SURF2, borderRadius:8 }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                      <span style={{ fontSize:13, fontWeight:500, color:TXT, flex:1 }}>{ex.name}</span>
-                      <button onClick={()=>removeExercise(wi,ei)} style={{ background:'none', border:'none', color:TXT3, fontSize:15, cursor:'pointer', lineHeight:1, padding:2, flexShrink:0 }}><GlassIcon name="close" size={26} /></button>
+                  <div key={ei} style={{ marginBottom:14, background:SURF, borderRadius:20, padding:'12px 14px', border:`1px solid ${HAIR}` }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, gap:8 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:10, flex:1, minWidth:0 }}>
+                        <span style={{ width:30, height:30, borderRadius:10, background:`linear-gradient(135deg, ${PUR}, #5b56c9)`, color:'#fff', fontWeight:800, fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>{ei+1}</span>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:16, fontWeight:700, color:TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ex.name}</div>
+                        </div>
+                      </div>
+                      <button onClick={()=>removeExercise(wi,ei)}
+                        style={{ width:26, height:26, borderRadius:6, border:'none', background:SURF2, color:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                        🗑
+                      </button>
                     </div>
-                    {/* Подходы строками: вес первым, повторения вторыми — тот
-                        же порядок, что в сохраняемой строке «20 кг × 15».
-                        Повторения обязательны, вес — нет (упражнения с весом
-                        тела или резиной). */}
+                    <div style={{ display:'grid', gridTemplateColumns:'24px 1fr 1fr 20px', gap:5, marginBottom:5 }}>
+                      {['#','КГ','ПОВТ',''].map((h,i)=>(
+                        <span key={i} style={{ fontSize:11, fontWeight:700, color:TXT2, textAlign:'center', textTransform:'uppercase', letterSpacing:'.06em' }}>{h}</span>
+                      ))}
+                    </div>
                     {sets.map((s,si)=>(
-                      <div key={si} style={{ display:'flex', alignItems:'center', gap:6 }}>
-                        <span style={{ fontSize:11, color:TXT3, width:14, flexShrink:0, textAlign:'center' }}>{si+1}</span>
-                        <input value={s.kg} onChange={e=>setSetField(wi,ei,si,'kg',e.target.value)} placeholder="кг" inputMode="decimal"
-                          style={{ flex:1, minWidth:0, padding:'7px 8px', fontSize:12, borderRadius:7, border:`1px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT, background:SURF, textAlign:'center' }}
-                          onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
-                        <span style={{ fontSize:12, color:TXT3, flexShrink:0 }}>×</span>
-                        <input value={s.reps} onChange={e=>setSetField(wi,ei,si,'reps',e.target.value)} placeholder="повт." inputMode="numeric"
-                          style={{ flex:1, minWidth:0, padding:'7px 8px', fontSize:12, borderRadius:7, border:`1px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT, background:SURF, textAlign:'center' }}
-                          onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
-                        {sets.length>1&&(
-                          <button onClick={()=>removeSet(wi,ei,si)} style={{ background:'none', border:'none', color:TXT3, cursor:'pointer', lineHeight:1, padding:0, flexShrink:0, minHeight:'unset' }}><GlassIcon name="close" size={20} /></button>
-                        )}
+                      <div key={si} style={{ display:'grid', gridTemplateColumns:'24px 1fr 1fr 20px', gap:5, alignItems:'center', marginBottom:5 }}>
+                        <span style={{ fontSize:12, color:TXT3, textAlign:'center', fontWeight:700 }}>{si+1}</span>
+                        <input value={s.kg} inputMode="decimal" onChange={e=>setSetField(wi,ei,si,'kg',e.target.value)} placeholder="0"
+                          style={{ background:SURF2, border:`1.5px solid ${HAIR}`, borderRadius:12, padding:'6px 6px', fontSize:17, fontWeight:700, fontVariantNumeric:'tabular-nums', color:TXT, textAlign:'center', width:'100%', boxSizing:'border-box' }} />
+                        <input value={s.reps} inputMode="numeric" onChange={e=>setSetField(wi,ei,si,'reps',e.target.value)} placeholder="0"
+                          style={{ background:SURF2, border:`1.5px solid ${HAIR}`, borderRadius:12, padding:'6px 6px', fontSize:17, fontWeight:700, fontVariantNumeric:'tabular-nums', color:TXT, textAlign:'center', width:'100%', boxSizing:'border-box' }} />
+                        {/* Последний подход не удаляем — упражнение без
+                            подходов не имеет смысла. Плейсхолдер держит
+                            колонку, чтобы поля не разъезжались. */}
+                        {sets.length>1?(
+                          <button onClick={()=>removeSet(wi,ei,si)}
+                            style={{ background:'none', border:'none', color:TXT3, cursor:'pointer', fontSize:14, textAlign:'center' }}><GlassIcon name="close" size={26} /></button>
+                        ):<span />}
                       </div>
                     ))}
                     <button onClick={()=>addSet(wi,ei)}
-                      style={{ width:'100%', padding:'6px', fontSize:11, color:PUR, background:'none', border:`1px dashed ${PUR}55`, borderRadius:7, cursor:'pointer', fontWeight:600, minHeight:'unset' }}>
+                      style={{ fontSize:12, color:PUR, background:'none', border:'none', cursor:'pointer', fontWeight:600, padding:0, marginTop:6 }}>
                       + Добавить подход
                     </button>
+                    <div style={{ fontSize:16, fontWeight:700, color:PUR, marginTop:8 }}>Тоннаж: {setsTonnage(ex.sets)} кг</div>
                   </div>
                 )
               })}
             </div>
             <button onClick={()=>{setPickerFor(wi);setPickerQuery('')}}
-              style={{ width:'100%', marginTop:10, padding:'8px', fontSize:12, color:PUR, background:`${PUR}10`, border:`1px dashed ${PUR}55`, borderRadius:8, cursor:'pointer', fontWeight:600 }}>
+              style={{ width:'100%', padding:'8px', fontSize:12, color:PUR, background:`${PUR}10`, border:`1px dashed ${PUR}55`, borderRadius:8, cursor:'pointer', fontWeight:600 }}>
               + Упражнение
             </button>
+            {(w.exercises||[]).length>0&&(
+              <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${HAIR}`, fontSize:15, fontWeight:800, color:TXT }}>
+                Общий тоннаж: {workoutTonnage(w)} кг
+              </div>
+            )}
           </Card>
         ))}
       </div>
