@@ -851,7 +851,7 @@ function ProgramEditor({ client, trainerId }) {
             reps:String(ts.reps),
             kg:ts.templateKg!=null?String(ts.templateKg):'',
           }))
-          return{...ex,sets:parsed.length?parsed:[{reps:'',kg:''}]}
+          return{...ex,sets:parsed.length?parsed:[{reps:'',kg:''}],note:ex.note||''}
         }),
         // Существующие тренировки — свёрнуты: тренер видит чистый список
         // названий и разворачивает нужную. collapsed чисто для UI, в
@@ -890,7 +890,9 @@ function ProgramEditor({ client, trainerId }) {
         }
       }
       const sets=carried?carried.map(s=>({reps:s.reps,kg:s.kg})):[{reps:'',kg:''}]
-      return w.map((x,i)=>i===wi?{...x,exercises:[...(x.exercises||[]),{name:exerciseName,sets}]}:x)
+      // note НЕ переносим: подходы могут повторяться, а комментарий у каждого
+      // упражнения свой.
+      return w.map((x,i)=>i===wi?{...x,exercises:[...(x.exercises||[]),{name:exerciseName,sets,note:''}]}:x)
     })
     setPickerFor(null);setPickerQuery('')
   }
@@ -911,6 +913,9 @@ function ProgramEditor({ client, trainerId }) {
   // Последний подход не удаляем — упражнение без подходов не имеет смысла.
   const removeSet=(wi,ei,si)=>updateSets(wi,ei,sets=>sets.length<=1?sets:sets.filter((_,k)=>k!==si))
   const setSetField=(wi,ei,si,field,value)=>updateSets(wi,ei,sets=>sets.map((s,k)=>k===si?{...s,[field]:value}:s))
+  const setExerciseNote=(wi,ei,note)=>{
+    setWorkouts(w=>w.map((x,i)=>i!==wi?x:{...x,exercises:x.exercises.map((ex,j)=>j!==ei?ex:{...ex,note})}))
+  }
 
   // Тоннаж считаем здесь: exTonnage живёт внутри WorkoutsView и сюда не
   // достаёт. Формула та же (parseFloat×parseInt), чтобы цифра у тренера в
@@ -936,7 +941,7 @@ function ProgramEditor({ client, trainerId }) {
       .join(', ')
     const structure=workouts.map(w=>({
       name:(w.name||'Тренировка').trim()||'Тренировка',
-      exercises:(w.exercises||[]).map(ex=>({name:ex.name,sets:serializeSets(ex.sets)})),
+      exercises:(w.exercises||[]).map(ex=>({name:ex.name,sets:serializeSets(ex.sets),note:(ex.note||'').trim()})),
     }))
     setSaving(true);setSaveMsg('')
     const{error}=await supabase.from('assigned_programs').upsert({
@@ -1048,6 +1053,10 @@ function ProgramEditor({ client, trainerId }) {
                       style={{ fontSize:12, color:PUR, background:'none', border:'none', cursor:'pointer', fontWeight:600, padding:0, marginTop:6 }}>
                       + Добавить подход
                     </button>
+                    <textarea value={ex.note||''} onChange={e=>setExerciseNote(wi,ei,e.target.value)}
+                      placeholder="Комментарий к упражнению (техника, темп, на что обратить внимание)" rows={2}
+                      style={{ width:'100%', marginTop:10, padding:'8px 10px', fontSize:12, borderRadius:8, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT, background:SURF2, resize:'vertical', fontFamily:'inherit' }}
+                      onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                     <div style={{ fontSize:16, fontWeight:700, color:PUR, marginTop:8 }}>Тоннаж: {setsTonnage(ex.sets)} кг</div>
                   </div>
                 )
@@ -2122,7 +2131,9 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         rating:'',
         fromTemplate:false,
       }))
-      return{n:ex.name,m:'',eq:'',sets:parsedSets,done:false,progressNote:null}
+      // coachNote — заметка тренера к упражнению из программы. Отдельно от
+      // progressNote (движка тут нет), показывается своим стилем на экране.
+      return{n:ex.name,m:'',eq:'',sets:parsedSets,done:false,progressNote:null,coachNote:ex.note||''}
     })
     // Имя уезжает в дневник как есть (workouts.name, см. handleWorkoutComplete)
     // — по нему потом видно, что тренировка была из программы тренера.
@@ -2531,6 +2542,15 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       )}
                     </div>
                   </div>
+                  {/* Заметка тренера из программы (coachNote, см.
+                      runTrainerWorkout). Это НЕ движок прогрессии — оформляем
+                      иначе, чем progressNote ниже: подпись «От тренера» и
+                      акцент PUR, чтобы клиент понимал, что это слова тренера. */}
+                  {ex.coachNote&&!ex.done&&(
+                    <div style={{ fontSize:12, color:TXT2, marginTop:-4, marginBottom:8, paddingLeft:8, borderLeft:`2px solid ${PUR}` }}>
+                      <span style={{ color:PUR, fontWeight:700 }}>От тренера: </span>{ex.coachNote}
+                    </div>
+                  )}
                   {/* Объяснение пересчитанного веса (см. кнопку "▶ Начать
                       тренировку" в слоте программы, где считается progressNote) —
                       одна строка на упражнение, почему вес именно такой.
@@ -3299,11 +3319,15 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               // Одна тренировка: что делать и кнопка запуска. Веса и повторения
               // ровно те, что задал тренер — без пересчёта прогрессией.
               <div>
-                <div style={{ background:SURF, borderRadius:10, padding:'12px 14px', marginBottom:14, display:'flex', flexDirection:'column', gap:5 }}>
+                <div style={{ background:SURF, borderRadius:10, padding:'12px 14px', marginBottom:14, display:'flex', flexDirection:'column', gap:8 }}>
                   {(assignedProgram.structure?.[openProgramWorkoutIdx]?.exercises||[]).map((ex,ei)=>(
-                    <div key={ei} style={{ fontSize:13, color:TXT2 }}>
-                      <span style={{ fontWeight:500 }}>{ex.name}</span>
-                      {ex.sets&&<span style={{ color:TXT3 }}>{': '}{ex.sets}</span>}
+                    <div key={ei}>
+                      <div style={{ fontSize:13, color:TXT2 }}>
+                        <span style={{ fontWeight:500 }}>{ex.name}</span>
+                        {ex.sets&&<span style={{ color:TXT3 }}>{': '}{ex.sets}</span>}
+                      </div>
+                      {/* Комментарий тренера к упражнению — приглушённой строкой. */}
+                      {ex.note&&<div style={{ fontSize:11, color:TXT3, marginTop:2, lineHeight:1.4 }}>{ex.note}</div>}
                     </div>
                   ))}
                 </div>
