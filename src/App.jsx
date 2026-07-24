@@ -840,7 +840,20 @@ function ProgramEditor({ client, trainerId }) {
     supabase.from('assigned_programs').select('*').eq('client_id',client.id).maybeSingle().then(({data,error})=>{
       if(error){console.error('Ошибка загрузки программы клиента:',error);setProgramError(true);setProgramLoading(false);return}
       setTitle(data?.title||'Программа')
-      setWorkouts(Array.isArray(data?.structure)?data.structure:[])
+      // В базе sets — строка того же формата, что в PROGRAMS_MAP. В редакторе
+      // держим её разобранной на подходы и склеиваем обратно при сохранении,
+      // чтобы формат хранения не менялся.
+      const raw=Array.isArray(data?.structure)?data.structure:[]
+      setWorkouts(raw.map(w=>({
+        ...w,
+        exercises:(w.exercises||[]).map(ex=>{
+          const parsed=(ex.sets?parseTemplateSets(ex.sets):[]).map(ts=>({
+            reps:String(ts.reps),
+            kg:ts.templateKg!=null?String(ts.templateKg):'',
+          }))
+          return{...ex,sets:parsed.length?parsed:[{reps:'',kg:''}]}
+        }),
+      })))
       setEditorOpen(!!data)
       setProgramLoading(false)
     })
@@ -858,24 +871,46 @@ function ProgramEditor({ client, trainerId }) {
     setWorkouts(w=>w.map((x,i)=>i===wi?{...x,name}:x))
   }
   const addExercise=(wi,exerciseName)=>{
-    setWorkouts(w=>w.map((x,i)=>i===wi?{...x,exercises:[...(x.exercises||[]),{name:exerciseName,sets:''}]}:x))
+    setWorkouts(w=>w.map((x,i)=>i===wi?{...x,exercises:[...(x.exercises||[]),{name:exerciseName,sets:[{reps:'',kg:''}]}]}:x))
     setPickerFor(null);setPickerQuery('')
   }
   const removeExercise=(wi,ei)=>{
     setWorkouts(w=>w.map((x,i)=>i===wi?{...x,exercises:x.exercises.filter((_,j)=>j!==ei)}:x))
   }
-  const setExerciseSets=(wi,ei,sets)=>{
-    setWorkouts(w=>w.map((x,i)=>i===wi?{...x,exercises:x.exercises.map((ex,j)=>j===ei?{...ex,sets}:ex)}:x))
+  // Общая обёртка для правок подходов — чтобы три обработчика ниже не
+  // повторяли двойной map по тренировкам и упражнениям.
+  const updateSets=(wi,ei,fn)=>{
+    setWorkouts(w=>w.map((x,i)=>i!==wi?x:{...x,exercises:x.exercises.map((ex,j)=>j!==ei?ex:{...ex,sets:fn(Array.isArray(ex.sets)?ex.sets:[])})}))
   }
+  // Новый подход копирует последний: тренер обычно задаёт несколько
+  // одинаковых, и «ещё такой же» экономит ввод.
+  const addSet=(wi,ei)=>updateSets(wi,ei,sets=>{
+    const last=sets[sets.length-1]
+    return[...sets,last?{...last}:{reps:'',kg:''}]
+  })
+  // Последний подход не удаляем — упражнение без подходов не имеет смысла.
+  const removeSet=(wi,ei,si)=>updateSets(wi,ei,sets=>sets.length<=1?sets:sets.filter((_,k)=>k!==si))
+  const setSetField=(wi,ei,si,field,value)=>updateSets(wi,ei,sets=>sets.map((s,k)=>k===si?{...s,[field]:value}:s))
 
   const saveProgram=async()=>{
     // structure — массив тренировок {name, exercises:[{name,sets}]}, тот же
     // формат sets, что и в PROGRAMS_MAP (programs.js) — его парсит
     // parseTemplateSets, свой формат не придумываем.
     if(!Array.isArray(workouts)){console.error('Программа: structure не массив');setSaveMsg('error');return}
+    // Подходы обратно в строку. Без веса подход пишем одним числом повторений
+    // — parseTemplateSets понимает обе формы. Подход без повторений пустой,
+    // его отбрасываем.
+    const serializeSets=sets=>(Array.isArray(sets)?sets:[])
+      .filter(s=>String(s.reps??'').trim())
+      .map(s=>{
+        const reps=String(s.reps).trim()
+        const kg=String(s.kg??'').trim()
+        return kg?`${kg} кг × ${reps}`:reps
+      })
+      .join(', ')
     const structure=workouts.map(w=>({
       name:(w.name||'Тренировка').trim()||'Тренировка',
-      exercises:(w.exercises||[]).map(ex=>({name:ex.name,sets:ex.sets||''})),
+      exercises:(w.exercises||[]).map(ex=>({name:ex.name,sets:serializeSets(ex.sets)})),
     }))
     setSaving(true);setSaveMsg('')
     const{error}=await supabase.from('assigned_programs').upsert({
@@ -931,18 +966,36 @@ function ProgramEditor({ client, trainerId }) {
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
               {(w.exercises||[]).map((ex,ei)=>{
-                const parsed=ex.sets?parseTemplateSets(ex.sets):[]
-                const hint=!ex.sets?'':parsed.length?`${parsed.length} ${plural(parsed.length,'подход','подхода','подходов')} распознано`:'не распознано — проверь формат'
+                const sets=Array.isArray(ex.sets)?ex.sets:[]
                 return (
-                  <div key={ei} style={{ display:'flex', flexDirection:'column', gap:4, padding:'8px 10px', background:SURF2, borderRadius:8 }}>
+                  <div key={ei} style={{ display:'flex', flexDirection:'column', gap:6, padding:'8px 10px', background:SURF2, borderRadius:8 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                       <span style={{ fontSize:13, fontWeight:500, color:TXT, flex:1 }}>{ex.name}</span>
                       <button onClick={()=>removeExercise(wi,ei)} style={{ background:'none', border:'none', color:TXT3, fontSize:15, cursor:'pointer', lineHeight:1, padding:2, flexShrink:0 }}><GlassIcon name="close" size={26} /></button>
                     </div>
-                    <input value={ex.sets} onChange={e=>setExerciseSets(wi,ei,e.target.value)} placeholder="20 кг × 15, 25 кг × 12, 25 кг × 12"
-                      style={{ width:'100%', padding:'7px 10px', fontSize:12, borderRadius:7, border:`1px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT, background:SURF }}
-                      onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
-                    {hint&&<div style={{ fontSize:10, color:parsed.length?TXT3:'#ef4444' }}>{hint}</div>}
+                    {/* Подходы строками: вес первым, повторения вторыми — тот
+                        же порядок, что в сохраняемой строке «20 кг × 15».
+                        Повторения обязательны, вес — нет (упражнения с весом
+                        тела или резиной). */}
+                    {sets.map((s,si)=>(
+                      <div key={si} style={{ display:'flex', alignItems:'center', gap:6 }}>
+                        <span style={{ fontSize:11, color:TXT3, width:14, flexShrink:0, textAlign:'center' }}>{si+1}</span>
+                        <input value={s.kg} onChange={e=>setSetField(wi,ei,si,'kg',e.target.value)} placeholder="кг" inputMode="decimal"
+                          style={{ flex:1, minWidth:0, padding:'7px 8px', fontSize:12, borderRadius:7, border:`1px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT, background:SURF, textAlign:'center' }}
+                          onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
+                        <span style={{ fontSize:12, color:TXT3, flexShrink:0 }}>×</span>
+                        <input value={s.reps} onChange={e=>setSetField(wi,ei,si,'reps',e.target.value)} placeholder="повт." inputMode="numeric"
+                          style={{ flex:1, minWidth:0, padding:'7px 8px', fontSize:12, borderRadius:7, border:`1px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT, background:SURF, textAlign:'center' }}
+                          onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
+                        {sets.length>1&&(
+                          <button onClick={()=>removeSet(wi,ei,si)} style={{ background:'none', border:'none', color:TXT3, cursor:'pointer', lineHeight:1, padding:0, flexShrink:0, minHeight:'unset' }}><GlassIcon name="close" size={20} /></button>
+                        )}
+                      </div>
+                    ))}
+                    <button onClick={()=>addSet(wi,ei)}
+                      style={{ width:'100%', padding:'6px', fontSize:11, color:PUR, background:'none', border:`1px dashed ${PUR}55`, borderRadius:7, cursor:'pointer', fontWeight:600, minHeight:'unset' }}>
+                      + Добавить подход
+                    </button>
                   </div>
                 )
               })}
