@@ -347,7 +347,7 @@ const clientSubStatus=(plan,planUntil)=>{
   if(!(leftMs>0))return{text:'Подписка закончилась',color:DANGER}
   const days=Math.ceil(leftMs/86400000)
   return{
-    text:`${planByKey(plan)?.name} · осталось ${days} ${pluralizeDays(days)}`,
+    text:`осталось ${days} ${pluralizeDays(days)}`,
     color:days<=3?COR:TEA,   // оранжевый = вот-вот истечёт
   }
 }
@@ -488,7 +488,7 @@ function ClientsView({ setSC, setNav, userId }) {
   const loadRealClients=async()=>{
     if(!userId)return
     setRealClientsLoading(true);setRealClientsError(false)
-    const{data,error}=await supabase.from('profiles').select('id,name,tg_username,plan,plan_until').eq('coach_id',userId)
+    const{data,error}=await supabase.from('profiles').select('id,name,tg_username,plan,plan_until,goal,weight,height').eq('coach_id',userId)
     if(error){console.error('Ошибка загрузки клиентов тренера:',error);setRealClientsError(true);setRealClientsLoading(false);return}
     const clients=data||[]
     setRealClients(clients)
@@ -628,16 +628,25 @@ function ClientsView({ setSC, setNav, userId }) {
               const initials=label.split(' ').map(w=>w[0]?.toUpperCase()||'').join('').slice(0,2)||'КЛ'
               const activity=clientActivity[c.id]
               const sub=clientSubStatus(c.plan,c.plan_until)
+              // Цель, вес и рост — заполнены не у всех, поэтому собираем строку
+              // только из непустых полей и не показываем её вовсе, если пусты все.
+              const facts=[c.goal,c.weight&&`${c.weight} кг`,c.height&&`${c.height} см`].filter(Boolean).join(' · ')
               return (
                 <Card key={c.id} style={{ cursor:'pointer' }} onClick={()=>openRealClient(c)}>
                   <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                     <Av lbl={initials} sz={36} />
                     <div>
                       <div style={{ fontSize:14, fontWeight:500, color:TXT }}>{label}</div>
-                      <div style={{ fontSize:11, color:TXT3, marginTop:2 }}>
+                      {c.tg_username&&(
+                        <div style={{ fontSize:11, color:TXT3, marginTop:2 }}>@{c.tg_username}</div>
+                      )}
+                      <div style={{ fontSize:11, fontWeight:600, color:sub.color, marginTop:3 }}>{sub.text}</div>
+                      {facts&&(
+                        <div style={{ fontSize:11, color:TXT3, marginTop:3 }}>{facts}</div>
+                      )}
+                      <div style={{ fontSize:11, color:TXT3, marginTop:3 }}>
                         {activity?`Последняя: ${fmtDDMM(activity.lastDate)} · всего ${activity.count}`:'Пока нет тренировок'}
                       </div>
-                      <div style={{ fontSize:11, fontWeight:600, color:sub.color, marginTop:3 }}>{sub.text}</div>
                     </div>
                   </div>
                 </Card>
@@ -7541,6 +7550,16 @@ export default function App() {
   // лучше на миг не показать, чем показать тому, кто её не купил.
   const [access,setAccess]=useState(()=>effectiveAccess(null))
   const [nav,setNav]=useState('dashboard')
+  // Тренеру стартовое «Добро пожаловать» не нужно — его рабочий экран это
+  // «Клиенты». Уводим один раз за сессию, при первом определении роли, и
+  // только если тренер ещё не ушёл с dashboard сам. Ref гарантирует
+  // одноразовость: вернувшись на главную позже, он там и останется.
+  const trainerLandedRef=useRef(false)
+  useEffect(()=>{
+    if(trainerLandedRef.current||userRole!=='trainer')return
+    trainerLandedRef.current=true
+    if(nav==='dashboard')setNav('clients')
+  },[userRole,nav])
   // История переходов верхнего уровня — чтобы "назад" из экранов вроде деталей
   // клиента (открываются и с Главной, и со вкладки Клиенты) вело туда, откуда
   // реально пришли, а не на жёстко заданный экран.
