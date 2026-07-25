@@ -1235,7 +1235,7 @@ const makeDefaultFolderSlots=()=>{
 // приходит отдельно, в accessLevel.
 // accessLevel — уровень пакета: тренировки 4–12 в шаблонах требуют БАЗУ (1),
 // в СТАРТ (0) открыты только первые FREE_SLOTS.
-function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, hasTrainer, coachSubExpired = false, accessLevel = 0, openPlans }) {
+function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, hasTrainer, coachSubExpired = false, accessLevel = 0, openPlans, exerciseVideos = {} }) {
   // Подсказка «нужен пакет БАЗА» — показывается модалкой поверх списка слотов.
   const [showSlotLock,setShowSlotLock]=useState(false)
   // Заперт ли слот: платная часть шаблона начинается с FREE_SLOTS+1.
@@ -3078,23 +3078,22 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       )}
                     </div>
                   </div>
-                  <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${HAIR}` }}>
-                    {ex.videoId?(
-                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                        <span style={{ fontSize:18 }}>📹</span>
-                        <div style={{ flex:1, minWidth:0, fontSize:11, color:TXT3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ex.videoName}</div>
-                        <button onClick={()=>setPlayVideo({url:ex.videoUrl,name:ex.videoName})}
-                          style={{ width:36, height:36, borderRadius:9, background:`${PUR}18`, border:'none', cursor:'pointer', fontSize:16, color:PUR, display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset' }}>▶</button>
-                        <button onClick={()=>removeExerciseVideo(currentSlot.id,ex.id,ex.videoId)}
-                          style={{ width:36, height:36, borderRadius:9, background:'#fef2f2', border:'none', cursor:'pointer', color:'#ef4444', fontSize:16, display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset' }}><GlassIcon name="close" size={26} /></button>
-                      </div>
-                    ):(
-                      <button onClick={()=>{uploadTargetRef.current={slotId:currentSlot.id,exId:ex.id};videoInputRef.current.click()}}
-                        style={{ fontSize:12, color:PUR, background:'rgba(124,122,240,0.14)', border:'none', borderRadius:8, padding:'7px 14px', cursor:'pointer', fontWeight:600, minHeight:'unset' }}>
-                        📹 Добавить видео
+                  {/* Видео упражнения — из серверной карты exercise_videos по
+                      имени. Есть — постер-превью с ▶, тап открывает плеер. Нет
+                      — блок не рендерим. Старые локальные IndexedDB-кнопки для
+                      клиента убраны (редактор тренера — отдельный шаг). */}
+                  {exerciseVideos[ex.name]&&(
+                    <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${HAIR}` }}>
+                      <button onClick={()=>setPlayVideo({url:exerciseVideos[ex.name].video_url,name:ex.name})}
+                        style={{ position:'relative', display:'block', width:'100%', maxWidth:220, border:'none', padding:0, borderRadius:12, overflow:'hidden', cursor:'pointer', background:SURF2 }}>
+                        <img src={exerciseVideos[ex.name].poster_url} alt={ex.name} loading="lazy"
+                          style={{ width:'100%', display:'block', aspectRatio:'16/9', objectFit:'cover' }} />
+                        <span style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                          <span style={{ width:44, height:44, borderRadius:'50%', background:'rgba(0,0,0,0.55)', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20 }}>▶</span>
+                        </span>
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               )
               return groups.map((g,gi2)=>g.kind==='ss'?(
@@ -4124,15 +4123,30 @@ const EQ_TIPS={
   'Гиря':'Работай от бедра, держи спину нейтральной на протяжении всего движения.',
 }
 
-function LibraryView({ customExercises }) {
+function LibraryView({ customExercises, exerciseVideos = {} }) {
   const [filt,setFilt]=useState('Все')
   const [sel,setSel]=useState(null)
   const [query,setQuery]=useState('')
+  // Свой попап плеера (тот же вид, что в WorkoutsView — компонент отдельный).
+  const [playVideo,setPlayVideo]=useState(null)
   const all=[...EXERCISES,...(customExercises||[])]
   const muscles=['Все',...new Set(all.map(e=>e.m))]
   const fl=all.filter(e=>(filt==='Все'||e.m===filt)&&e.n.toLowerCase().includes(query.toLowerCase()))
 
   const history=(()=>{ try{ return JSON.parse(localStorage.getItem('fitpro_history')||'[]') }catch{ return [] } })()
+
+  // Тот же попап плеера, что в WorkoutsView. Один элемент на оба возврата.
+  const videoPopup = playVideo&&(
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.92)', zIndex:1200, display:'flex', alignItems:'center', justifyContent:'center' }}
+      onClick={()=>setPlayVideo(null)}>
+      <div style={{ position:'relative', maxWidth:860, width:'95%' }} onClick={e=>e.stopPropagation()}>
+        <button onClick={()=>setPlayVideo(null)}
+          style={{ position:'absolute', top:-42, right:0, background:'none', border:'none', color:'#fff', fontSize:26, cursor:'pointer', minHeight:'unset' }}><GlassIcon name="close" size={26} /></button>
+        <div style={{ fontSize:13, color:TXT3, marginBottom:8 }}>{playVideo.name}</div>
+        <video src={playVideo.url} controls autoPlay style={{ width:'100%', borderRadius:12, maxHeight:'75vh' }} />
+      </div>
+    </div>
+  )
 
   if(sel){
     const records=history.flatMap(w=>{
@@ -4156,6 +4170,16 @@ function LibraryView({ customExercises }) {
             <div style={{ fontSize:12,color:TXT3,marginTop:3 }}>{sel.m}{sel.eq?` · ${sel.eq}`:''}{sel.custom&&<span style={{ marginLeft:6,fontSize:10,padding:'1px 6px',borderRadius:4,background:'#EEEDFE',color:PUR }}>моё</span>}</div>
           </div>
         </div>
+        {exerciseVideos[sel.n]&&(
+          <button onClick={()=>setPlayVideo({url:exerciseVideos[sel.n].video_url,name:sel.n})}
+            style={{ position:'relative', display:'block', width:'100%', border:'none', padding:0, borderRadius:14, overflow:'hidden', cursor:'pointer', background:SURF2, marginBottom:12 }}>
+            <img src={exerciseVideos[sel.n].poster_url} alt={sel.n} loading="lazy"
+              style={{ width:'100%', display:'block', aspectRatio:'16/9', objectFit:'cover' }} />
+            <span style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <span style={{ width:54, height:54, borderRadius:'50%', background:'rgba(0,0,0,0.55)', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24 }}>▶</span>
+            </span>
+          </button>
+        )}
         <Card style={{ marginBottom:12,border:`1.5px solid ${PUR}22` }}>
           <div style={{ fontSize:11,fontWeight:700,color:PUR,marginBottom:6,textTransform:'uppercase',letterSpacing:'0.5px' }}><GlassIcon name="bulb" size={14} style={{verticalAlign:"-2px",marginRight:4}} />Техника</div>
           <div style={{ fontSize:13,color:TXT2,lineHeight:1.6 }}>{tip}</div>
@@ -4195,12 +4219,14 @@ function LibraryView({ customExercises }) {
             </div>
           </Card>
         )}
+        {videoPopup}
       </div>
     )
   }
 
   return (
     <div>
+      {videoPopup}
       <h2 style={{ fontSize:20, fontWeight:500, color:TXT, margin:'0 0 14px' }}>Библиотека упражнений</h2>
       <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Поиск упражнения..."
         style={{ width:'100%',padding:'9px 12px',fontSize:13,borderRadius:9,border:`1.5px solid ${HAIR}`,boxSizing:'border-box',outline:'none',marginBottom:10,color:TXT }}
@@ -4211,16 +4237,30 @@ function LibraryView({ customExercises }) {
         ))}
       </div>
       <div style={{ display:'flex', flexDirection:'column', gap:9 }}>
-        {fl.map((ex,i)=>(
+        {fl.map((ex,i)=>{
+          const vid=exerciseVideos[ex.n]
+          return (
           <Card key={i} onClick={()=>setSel(ex)} style={{ cursor:'pointer' }}>
-            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
-              <div style={{ textAlign:'center' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+              {/* Превью видео — если есть в карте. Тап по нему открывает плеер,
+                  а не карточку (stopPropagation). Нет видео — колонка не рисуется. */}
+              {vid&&(
+                <button onClick={e=>{e.stopPropagation();setPlayVideo({url:vid.video_url,name:ex.n})}}
+                  style={{ position:'relative', flexShrink:0, width:76, height:48, border:'none', padding:0, borderRadius:9, overflow:'hidden', cursor:'pointer', background:SURF2 }}>
+                  <img src={vid.poster_url} alt={ex.n} loading="lazy" style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
+                  <span style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <span style={{ width:24, height:24, borderRadius:'50%', background:'rgba(0,0,0,0.55)', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11 }}>▶</span>
+                  </span>
+                </button>
+              )}
+              <div style={{ flex:1, minWidth:0, textAlign:vid?'left':'center' }}>
                 <div style={{ fontSize:15, fontWeight:600, color:TXT }}>{ex.n}{ex.custom&&<span style={{ marginLeft:6, fontSize:10, padding:'1px 6px', borderRadius:4, background:'#EEEDFE', color:PUR }}>моё</span>}</div>
                 <div style={{ fontSize:12, color:TXT3, marginTop:2 }}>{ex.m}{ex.eq?` · ${ex.eq}`:''}</div>
               </div>
             </div>
           </Card>
-        ))}
+          )
+        })}
         {fl.length===0&&<div style={{ color:TXT3,fontSize:13,gridColumn:'1/-1',textAlign:'center',padding:'30px 0' }}>Ничего не найдено</div>}
       </div>
     </div>
@@ -7889,6 +7929,20 @@ export default function App() {
   const [customExercises,setCustomExercises]=useState(()=>{
     try{return JSON.parse(localStorage.getItem('fitpro_custom_ex')||'[]')}catch{return []}
   })
+  // Карта видео упражнений с сервера (exercise_videos): { имя → {video_url,
+  // poster_url} }. Публичное чтение (RLS select=true), грузим один раз на маунт
+  // независимо от входа. Показ — по имени упражнения в WorkoutsView/LibraryView.
+  const [exerciseVideos,setExerciseVideos]=useState({})
+  useEffect(()=>{
+    let cancelled=false
+    supabase.from('exercise_videos').select('exercise_name,video_url,poster_url').then(({data,error})=>{
+      if(cancelled||error||!data)return
+      const map={}
+      for(const r of data) map[r.exercise_name]={video_url:r.video_url,poster_url:r.poster_url}
+      setExerciseVideos(map)
+    })
+    return()=>{cancelled=true}
+  },[])
   const [userRole,setUserRole]=useState(()=>localStorage.getItem('fitpro_role')||'client')
   // Согласие на обработку ПДн (152-ФЗ). consentLoaded — «ответ из базы получен»,
   // до него приложение не рендерим вообще, иначе на секунду мелькнёт контент
@@ -8633,7 +8687,7 @@ export default function App() {
         : <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} accessLevel={access.level} openPlans={openPlans} />
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} userId={user?.id} />
       case 'nutrition': return <NutritionView userId={user?.id} />
-      case 'library':   return <LibraryView customExercises={customExercises} />
+      case 'library':   return <LibraryView customExercises={customExercises} exerciseVideos={exerciseVideos} />
       case 'progress':  return <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} accessLevel={access.level} openPlans={openPlans} />
       default:          return null
     }
@@ -8651,7 +8705,7 @@ export default function App() {
   const renderMain=()=>(
     <>
       <div style={{ display: nav==='workouts' ? 'block' : 'none' }}>
-        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} hasTrainer={hasCoach} coachSubExpired={coachSubExpired} accessLevel={access.level} openPlans={openPlans} />
+        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} hasTrainer={hasCoach} coachSubExpired={coachSubExpired} accessLevel={access.level} openPlans={openPlans} exerciseVideos={exerciseVideos} />
       </div>
       {nav!=='workouts'&&renderOther()}
     </>
