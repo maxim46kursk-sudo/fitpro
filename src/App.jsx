@@ -4188,7 +4188,7 @@ const EQ_TIPS={
 }
 
 function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client', setExerciseVideos }) {
-  const { exercises: catalogExercises } = useContext(CatalogContext)
+  const { exercises: catalogExercises, reloadCatalog } = useContext(CatalogContext)
   const [filt,setFilt]=useState('Все')
   const [sel,setSel]=useState(null)
   const [query,setQuery]=useState('')
@@ -4251,6 +4251,65 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
     }catch(e){console.error('Снятие видео:',e);flashVideoErr('Сбой сети, повтори')}
     finally{setBusy(false)}
   }
+
+  // ── Редактор каталога упражнений (только тренер) ──────────────────────────
+  const [exForm,setExForm]=useState(null)   // null | {mode:'add'|'edit', name, m, eq, type}
+  const [showHidden,setShowHidden]=useState(false)
+  const [hiddenRows,setHiddenRows]=useState(null) // скрытые из catalog_exercises
+  const [hiddenLoading,setHiddenLoading]=useState(false)
+
+  const postExercise=async payload=>{
+    // Общий вызов эндпоинта. Возвращает true при успехе. При успехе списки
+    // обновляем через reloadCatalog (каталог глобальный, перечитываем с сервера).
+    if(busy)return false
+    setBusy(true)
+    try{
+      const token=await authToken()
+      const res=await fetch('/api/set-exercise',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+        body:JSON.stringify(payload),
+      })
+      const body=await res.json().catch(()=>null)
+      if(!res.ok||!body?.ok){flashVideoErr(body?.error||'Не удалось сохранить');return false}
+      reloadCatalog?.()
+      return true
+    }catch(e){console.error('Каталог: ошибка запроса:',e);flashVideoErr('Сбой сети, повтори');return false}
+    finally{setBusy(false)}
+  }
+  const openAddForm=()=>setExForm({mode:'add',name:'',m:'',eq:'',type:'compound'})
+  const openEditForm=ex=>setExForm({mode:'edit',name:ex.n,m:ex.m||'',eq:ex.eq||'',type:ex.type||'compound'})
+  const saveExForm=async()=>{
+    const name=(exForm.name||'').trim()
+    if(!name)return
+    // name — ключ, при edit не меняется (поле заблокировано в форме).
+    const ok=await postExercise({name,action:'save',muscle_group:exForm.m.trim()||null,equipment:exForm.eq.trim()||null,type:exForm.type})
+    if(ok)setExForm(null)
+  }
+  // «Убрать из каталога». Зашитые (есть в EX_BY_NAME) прятать нельзя удалением —
+  // ставим hidden:true. Чисто добавленные (нет в зашитом) удаляем полностью.
+  const hideExercise=async name=>{
+    if(EX_BY_NAME.has(name)) await postExercise({name,action:'save',hidden:true})
+    else await postExercise({name,action:'delete'})
+    setHiddenRows(null) // список скрытых устарел — перечитать при след. открытии
+    if(sel?.n===name)setSel(null)
+  }
+  const returnExercise=async name=>{
+    const ok=await postExercise({name,action:'save',hidden:false})
+    if(ok)setHiddenRows(rows=>(rows||[]).filter(r=>r.name!==name))
+  }
+  const toggleHidden=async()=>{
+    const next=!showHidden
+    setShowHidden(next)
+    if(next&&hiddenRows===null){
+      setHiddenLoading(true)
+      const{data,error}=await supabase.from('catalog_exercises').select('name,muscle_group,equipment,type').eq('hidden',true)
+      setHiddenLoading(false)
+      if(error){console.error('Скрытые: ошибка загрузки:',error);flashVideoErr('Не удалось загрузить скрытые');return}
+      setHiddenRows(data||[])
+    }
+  }
+
   const all=[...catalogExercises,...(customExercises||[])]
   const muscles=['Все',...new Set(all.map(e=>e.m))]
   const fl=all.filter(e=>(filt==='Все'||e.m===filt)&&e.n.toLowerCase().includes(query.toLowerCase()))
@@ -4312,7 +4371,56 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
       </div>
     </div>
   )
-  const trainerOverlays = <>{videoErrToast}{videoPicker}</>
+  // Форма добавления/изменения упражнения каталога (только тренер).
+  const exFormModal = exForm&&(
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
+      onClick={()=>setExForm(null)}>
+      <div style={{ background:SURF, borderRadius:16, padding:'22px 20px', width:'100%', maxWidth:400, boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}
+        onClick={e=>e.stopPropagation()}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+          <span style={{ fontSize:16, fontWeight:700, color:TXT }}>{exForm.mode==='add'?'Новое упражнение':'Изменить упражнение'}</span>
+          <button onClick={()=>setExForm(null)} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer', color:TXT3, lineHeight:1 }}><GlassIcon name="close" size={26} /></button>
+        </div>
+        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+          <div>
+            <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Название *</div>
+            <input value={exForm.name} onChange={e=>setExForm(f=>({...f,name:e.target.value}))}
+              placeholder="Напр. Жим гантелей сидя" autoFocus={exForm.mode==='add'} disabled={exForm.mode==='edit'}
+              style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:exForm.mode==='edit'?TXT3:TXT, background:exForm.mode==='edit'?SURF2:SURF }}
+              onFocus={e=>{if(exForm.mode!=='edit')e.target.style.borderColor=PUR}} onBlur={e=>e.target.style.borderColor=HAIR} />
+            {exForm.mode==='edit'&&<div style={{ fontSize:10, color:TXT3, marginTop:3 }}>Название — ключ, менять нельзя</div>}
+          </div>
+          <div>
+            <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Группа мышц</div>
+            <input value={exForm.m} onChange={e=>setExForm(f=>({...f,m:e.target.value}))} placeholder="Напр. Плечи"
+              style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
+              onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
+          </div>
+          <div>
+            <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Снаряд</div>
+            <input value={exForm.eq} onChange={e=>setExForm(f=>({...f,eq:e.target.value}))} placeholder="Напр. Гантели"
+              style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
+              onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
+          </div>
+          <div>
+            <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Тип</div>
+            <div style={{ display:'flex', gap:8 }}>
+              {[['compound','Базовое'],['isolation','Изолирующее']].map(([v,l])=>(
+                <button key={v} onClick={()=>setExForm(f=>({...f,type:v}))}
+                  style={{ flex:1, padding:'9px', fontSize:13, fontWeight:600, borderRadius:9, cursor:'pointer', border:`1px solid ${exForm.type===v?PUR:HAIR}`, background:exForm.type===v?'#EEEDFE':'transparent', color:exForm.type===v?'#3C3489':TXT3 }}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ display:'flex', gap:8, marginTop:4 }}>
+            <button onClick={()=>setExForm(null)} style={{ flex:1, padding:'11px', fontSize:13, borderRadius:9, border:`1px solid ${HAIR}`, background:'none', color:TXT3, cursor:'pointer' }}>Отмена</button>
+            <button onClick={saveExForm} disabled={busy||!exForm.name.trim()}
+              style={{ flex:1, padding:'12px', fontSize:14, borderRadius:14, border:'none', background:(busy||!exForm.name.trim())?SURF2:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', fontWeight:800, cursor:(busy||!exForm.name.trim())?'default':'pointer' }}>Сохранить</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+  const trainerOverlays = <>{videoErrToast}{videoPicker}{exFormModal}</>
 
   if(sel){
     const records=history.flatMap(w=>{
@@ -4359,6 +4467,20 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
                 Убрать
               </button>
             )}
+          </div>
+        )}
+        {/* Управление записью каталога — только тренеру. «Убрать из каталога»
+            прячет упражнение (зашитое — hidden, добавленное — удаляет). */}
+        {isTrainer&&(
+          <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+            <button onClick={()=>openEditForm(sel)}
+              style={{ flex:1, padding:'10px', fontSize:13, fontWeight:600, borderRadius:9, border:`1px solid ${HAIR}`, background:'none', color:TXT, cursor:'pointer' }}>
+              Изменить
+            </button>
+            <button onClick={()=>hideExercise(sel.n)} disabled={busy}
+              style={{ flex:1, padding:'10px', fontSize:13, fontWeight:600, borderRadius:9, border:`1px solid ${HAIR}`, background:'none', color:'#ef4444', cursor:busy?'default':'pointer' }}>
+              Убрать из каталога
+            </button>
           </div>
         )}
         <Card style={{ marginBottom:12,border:`1.5px solid ${PUR}22` }}>
@@ -4410,7 +4532,39 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
     <div>
       {videoPopup}
       {trainerOverlays}
-      <h2 style={{ fontSize:20, fontWeight:500, color:TXT, margin:'0 0 14px' }}>Библиотека упражнений</h2>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+        <h2 style={{ fontSize:20, fontWeight:500, color:TXT, margin:0 }}>Библиотека упражнений</h2>
+        {isTrainer&&(
+          <button onClick={openAddForm} style={{ fontSize:13, padding:'7px 14px', background:PUR, color:'#fff', border:'none', borderRadius:8, cursor:'pointer', flexShrink:0 }}>+ Упражнение</button>
+        )}
+      </div>
+      {/* Скрытые из каталога — переключатель тренера. Показываем списком с
+          кнопкой «Вернуть» (hidden:false). */}
+      {isTrainer&&(
+        <div style={{ marginBottom:12 }}>
+          <button onClick={toggleHidden} style={{ fontSize:12, color:PUR, background:'none', border:`1px solid ${HAIR}`, borderRadius:8, padding:'6px 12px', cursor:'pointer' }}>
+            {showHidden?'Скрыть скрытые':'Показать скрытые'}
+          </button>
+          {showHidden&&(
+            <div style={{ marginTop:10, display:'flex', flexDirection:'column', gap:8 }}>
+              {hiddenLoading?(
+                <div style={{ fontSize:12, color:TXT3, padding:'4px 2px' }}>Загрузка...</div>
+              ):(hiddenRows||[]).length===0?(
+                <div style={{ fontSize:12, color:TXT3, padding:'4px 2px' }}>Скрытых упражнений нет</div>
+              ):(hiddenRows||[]).map(r=>(
+                <div key={r.name} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 12px', background:SURF2, borderRadius:9 }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, color:TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.name}</div>
+                    <div style={{ fontSize:11, color:TXT3, marginTop:1 }}>{[r.muscle_group,r.equipment].filter(Boolean).join(' · ')||'—'}</div>
+                  </div>
+                  <button onClick={()=>returnExercise(r.name)} disabled={busy}
+                    style={{ flexShrink:0, fontSize:12, fontWeight:600, color:PUR, background:'none', border:`1px solid ${PUR}`, borderRadius:8, padding:'6px 12px', cursor:busy?'default':'pointer' }}>Вернуть</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Поиск упражнения..."
         style={{ width:'100%',padding:'9px 12px',fontSize:13,borderRadius:9,border:`1.5px solid ${HAIR}`,boxSizing:'border-box',outline:'none',marginBottom:10,color:TXT }}
         onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
