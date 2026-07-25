@@ -61,6 +61,31 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: 'ИИ-ассистент доступен в пакете ПРОФИТ' })
   }
 
+  // ── Анти-абьюз: ручку нельзя использовать как безлимитный LLM-прокси.
+  // 1) Ограничение размера входа: суммарная длина content всех messages.
+  const msgsForSize = Array.isArray(req.body?.messages) ? req.body.messages : []
+  const inputChars = msgsForSize.reduce((sum, m) => {
+    const c = m?.content
+    if (typeof c === 'string') return sum + c.length
+    if (Array.isArray(c)) return sum + c.reduce((s, b) => s + (typeof b?.text === 'string' ? b.text.length : 0), 0)
+    return sum
+  }, 0)
+  if (inputChars > 16000) return res.status(400).json({ error: 'Слишком длинный запрос' })
+
+  // 2) Пер-юзер дневной лимит по дате МСК (UTC+3). Инкремент атомарный через
+  // security-definer RPC; считаем и отклонённые лимитом попытки.
+  const msk = new Date(Date.now() + 3 * 60 * 60 * 1000)
+  const pad = n => String(n).padStart(2, '0')
+  const today = `${msk.getUTCFullYear()}-${pad(msk.getUTCMonth() + 1)}-${pad(msk.getUTCDate())}`
+  const { data: usageCount, error: usageError } = await supabaseAdmin.rpc('incr_ai_usage', { uid: data.user.id, d: today })
+  if (usageError) {
+    console.error(`ИИ-ассистент ${data.user.id}: ошибка учёта лимита:`, usageError)
+    return res.status(500).json({ error: 'Не удалось проверить лимит' })
+  }
+  if (usageCount > 40) {
+    return res.status(429).json({ error: 'Достигнут дневной лимит запросов к ассистенту, попробуйте завтра' })
+  }
+
   // Тело клиента не прокидываем целиком — только system/messages, реально
   // нужные для ответа. model и max_tokens задаём/клампим сами (см. выше).
   const { system, messages } = req.body || {}
