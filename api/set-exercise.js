@@ -112,5 +112,24 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true })
   }
 
+  // Текст «Техника» на КАЖДОЕ упражнение. Отдельное действие, а НЕ поле в 'save':
+  // ветка 'save' upsert'ит всю строку и затёрла бы технику при обычном
+  // редактировании упражнения. Здесь пишем только name+technique. Пустая строка
+  // после trim = сброс на значение по умолчанию (EQ_TIPS на клиенте) → null.
+  if (action === 'save_technique') {
+    const technique = req.body?.technique != null ? String(req.body.technique).trim().slice(0, 2000) : ''
+    const { error } = await supabaseAdmin.from('catalog_exercises').upsert({
+      name,
+      technique: technique || null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'name' })
+    if (error) {
+      console.error(`set-exercise: ошибка сохранения техники «${name}»:`, error)
+      return res.status(500).json({ error: 'Не удалось сохранить технику' })
+    }
+    console.log(`set-exercise: тренер ${userId} обновил технику «${name}»`)
+    return res.status(200).json({ ok: true })
+  }
+
   return res.status(400).json({ error: 'Неизвестное действие' })
 }

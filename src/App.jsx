@@ -115,13 +115,13 @@ function mergeCatalog(rows) {
   for (const e of EXERCISES) {
     const c = byName.get(e.n)
     if (c?.hidden) { usedNames.add(e.n); continue }
-    if (c) out.push({ n: e.n, m: c.muscle_group || e.m, eq: c.equipment || e.eq, type: c.type || e.type })
-    else out.push(e)
+    if (c) out.push({ n: e.n, m: c.muscle_group || e.m, eq: c.equipment || e.eq, type: c.type || e.type, technique: c.technique || '' })
+    else out.push({ ...e, technique: '' })
     usedNames.add(e.n)
   }
   for (const r of rows || []) {
     if (usedNames.has(r.name) || r.hidden) continue
-    out.push({ n: r.name, m: r.muscle_group || '', eq: r.equipment || '', type: r.type || 'compound' })
+    out.push({ n: r.name, m: r.muscle_group || '', eq: r.equipment || '', type: r.type || 'compound', technique: r.technique || '' })
   }
   return out
 }
@@ -4514,6 +4514,13 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
   const [videoToast,setVideoToast]=useState('')
   const flashVideoErr=msg=>{setVideoToast(msg);setTimeout(()=>setVideoToast(''),3500)}
   const [busy,setBusy]=useState(false)
+  // Редактор блока «Техника» (только тренер).
+  const [techEdit,setTechEdit]=useState(false)
+  const [techDraft,setTechDraft]=useState('')
+  const [techSaving,setTechSaving]=useState(false)
+  // Смена выбранного упражнения выходит из режима правки — чтобы черновик не
+  // «перетёк» на другое упражнение.
+  useEffect(()=>{setTechEdit(false)},[sel?.n])
 
   const openPicker=async name=>{
     setPickerFor(name);setPoolQuery('')
@@ -4561,6 +4568,27 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
       setExerciseVideos?.(m=>{const n={...m};delete n[exName];return n})
     }catch(e){console.error('Снятие видео:',e);flashVideoErr('Сбой сети, повтори')}
     finally{setBusy(false)}
+  }
+  // Сохранение текста «Техника» текущего упражнения (только тренер).
+  const saveTechnique=async()=>{
+    if(techSaving||!sel)return
+    setTechSaving(true)
+    try{
+      const token=await authToken()
+      const res=await fetch('/api/set-exercise',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+        body:JSON.stringify({name:sel.n,action:'save_technique',technique:techDraft}),
+      })
+      const body=await res.json().catch(()=>null)
+      if(!res.ok||!body?.ok){flashVideoErr(body?.error||'Не удалось сохранить технику');return}
+      // Оптимистично обновляем открытую карточку (sel — снимок, reloadCatalog
+      // обновит глобальный список, но не этот объект) + перечитываем каталог.
+      setSel(s=>s?{...s,technique:(techDraft||'').trim()}:s)
+      reloadCatalog?.()
+      setTechEdit(false)
+    }catch(e){console.error('Техника:',e);flashVideoErr('Сбой сети, повтори')}
+    finally{setTechSaving(false)}
   }
 
   // ── Загрузка видео с устройства → сырьё → задача на серверное сжатие ──────
@@ -4793,7 +4821,7 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
       const maxKg=Math.max(0,...(found.sets||[]).map(s=>parseFloat(s.kg)||0))
       return[{date:w.date,workoutName:w.name,sets:found.sets||[],ton,maxKg}]
     }).sort((a,b)=>new Date(a.date)-new Date(b.date))
-    const tip=EQ_TIPS[sel.eq]||'Выполняй упражнение в полной амплитуде.'
+    const tip=(sel.technique||'').trim()||EQ_TIPS[sel.eq]||'Выполняй упражнение в полной амплитуде.'
     const best=records.length?Math.max(...records.map(r=>r.maxKg)):0
     return(
       <div>
@@ -4858,8 +4886,30 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
           </div>
         )}
         <Card style={{ marginBottom:12,border:`1.5px solid ${PUR}22` }}>
-          <div style={{ fontSize:11,fontWeight:700,color:PUR,marginBottom:6,textTransform:'uppercase',letterSpacing:'0.5px' }}><GlassIcon name="bulb" size={14} style={{verticalAlign:"-2px",marginRight:4}} />Техника</div>
-          <div style={{ fontSize:13,color:TXT2,lineHeight:1.6 }}>{tip}</div>
+          <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6 }}>
+            <div style={{ fontSize:11,fontWeight:700,color:PUR,textTransform:'uppercase',letterSpacing:'0.5px' }}><GlassIcon name="bulb" size={14} style={{verticalAlign:"-2px",marginRight:4}} />Техника</div>
+            {/* Правка — только тренеру; клиент кнопку не видит вообще. */}
+            {isTrainer&&!techEdit&&(
+              <button onClick={()=>{setTechDraft((sel.technique||'').trim());setTechEdit(true)}}
+                style={{ fontSize:11,fontWeight:600,color:PUR,background:'none',border:'none',cursor:'pointer',padding:0,minHeight:'unset' }}>Изменить</button>
+            )}
+          </div>
+          {techEdit?(
+            <>
+              <textarea value={techDraft} onChange={e=>setTechDraft(e.target.value)} rows={6} maxLength={2000}
+                placeholder="Опиши технику выполнения этого упражнения"
+                style={{ width:'100%',padding:'8px 10px',fontSize:13,borderRadius:8,border:`1.5px solid ${HAIR}`,boxSizing:'border-box',outline:'none',color:TXT,background:SURF2,resize:'vertical',fontFamily:'inherit',lineHeight:1.6 }}
+                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
+              <div style={{ display:'flex',gap:8,marginTop:8 }}>
+                <button onClick={()=>setTechEdit(false)} disabled={techSaving}
+                  style={{ flex:1,padding:'9px',fontSize:13,fontWeight:600,borderRadius:9,border:`1px solid ${HAIR}`,background:'none',color:TXT3,cursor:techSaving?'default':'pointer' }}>Отмена</button>
+                <button onClick={saveTechnique} disabled={techSaving}
+                  style={{ flex:1,padding:'9px',fontSize:13,fontWeight:700,borderRadius:9,border:'none',background:techSaving?SURF2:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',cursor:techSaving?'default':'pointer' }}>{techSaving?'Сохраняем…':'Сохранить'}</button>
+              </div>
+            </>
+          ):(
+            <div style={{ fontSize:13,color:TXT2,lineHeight:1.6 }}>{tip}</div>
+          )}
         </Card>
         {records.length===0?(
           <Card>
@@ -8659,7 +8709,7 @@ export default function App() {
   // зашитым EXERCISES. reloadCatalog — перечитать после правок тренером.
   const [catalogRows,setCatalogRows]=useState([])
   const reloadCatalog=()=>{
-    supabase.from('catalog_exercises').select('name,muscle_group,equipment,type,hidden').then(({data,error})=>{
+    supabase.from('catalog_exercises').select('name,muscle_group,equipment,type,hidden,technique').then(({data,error})=>{
       if(error||!data)return
       setCatalogRows(data)
     })
