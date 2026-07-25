@@ -3358,27 +3358,28 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           Не удалось загрузить программу от тренера
           <button onClick={loadAssignedProgram} style={{ fontSize:11, color:PUR, background:'none', border:`1px solid ${HAIR}`, borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>Повторить</button>
         </div>
-      ):assignedProgram&&(
-        // Свёрнута в карточку-папку — как шаблоны ниже (тот же шеврон и клик по
-        // всей карточке), но с фиолетовым акцентом программы. Содержимое — в
-        // модалке, чтобы длинная программа не оттесняла список папок вниз.
-        <Card style={{ marginBottom:14, cursor:'pointer', position:'relative', border:`1.5px solid ${PUR}33`, background:'rgba(124,122,240,0.14)' }}
+      ):assignedProgram&&(()=>{
+        // Карточка-папка в ТОЧНО таком же стиле, что и шаблонные папки ниже:
+        // иконка, одно название, подпись «N тренировок · M упр.», шеврон,
+        // галочка выбранного. Отличие только в акценте (фиолетовая рамка).
+        const wCount=assignedProgram.structure?.length||0
+        const exCount=(assignedProgram.structure||[]).reduce((s,w)=>s+(w.exercises?.length||0),0)
+        const isSel=selectedProgram===TRAINER_PROGRAM_KEY
+        return (
+        <Card style={{ marginBottom:14, cursor:'pointer', position:'relative', border:isSel?`1.5px solid ${PUR}`:`1.5px solid ${PUR}33`, background:isSel?'rgba(124,122,240,0.14)':SURF }}
           onClick={()=>setProgramOpen(true)}>
           <span style={{ position:'absolute', top:'50%', right:16, transform:'translateY(-50%)', fontSize:20, color:TXT3 }}>›</span>
-          {/* Отметка «выбрана» — как у шаблонных папок, но по сентинелу, а не
-              по имени папки: горит, когда клиент тренируется по программе тренера. */}
-          {selectedProgram===TRAINER_PROGRAM_KEY&&<span style={{ position:'absolute', top:10, right:38 }}><GlassIcon name="check" size={18} /></span>}
-          <div style={{ paddingRight:20 }}>
-            <div style={{ fontSize:12, fontWeight:700, color:PUR, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:6, display:'flex', alignItems:'center', gap:6 }}>
-              <GlassIcon name="template" size={18} />Программа от тренера
-            </div>
-            <div style={{ fontSize:15, fontWeight:700, color:TXT }}>{assignedProgram.title||'Программа'}</div>
-            <div style={{ fontSize:12, color:TXT3, marginTop:3 }}>
-              {assignedProgram.structure?.length||0} {pluralizeWorkouts(assignedProgram.structure?.length||0)}
+          {isSel&&<span style={{ position:'absolute', top:10, right:16 }}><GlassIcon name="check" size={18} /></span>}
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingRight:20 }}>
+            <div style={{ display:'flex',justifyContent:'center',marginBottom:6 }}><GlassIcon name="template" size={42} /></div>
+            <div style={{ fontSize:16, fontWeight:700, color:TXT, textAlign:'center' }}>{assignedProgram.title?.trim()||'Программа от тренера'}</div>
+            <div style={{ fontSize:12, color:TXT3, marginTop:3, textAlign:'center' }}>
+              {wCount} {pluralizeWorkouts(wCount)} · {exCount} упр.
             </div>
           </div>
         </Card>
-      )}
+        )
+      })()}
 
       {/* ── Модалка программы от тренера. Устройство то же, что у модалки
           папки-шаблона выше: полноэкранная панель с шапкой и «Назад».
@@ -3399,68 +3400,76 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               </div>
               <div style={{ fontSize:11, color:TXT3 }}>
                 {openProgramWorkoutIdx==null
-                  ?`Программа от тренера · ${assignedProgram.structure?.length||0} ${pluralizeWorkouts(assignedProgram.structure?.length||0)}`
-                  :(assignedProgram.title||'Программа')}
+                  ?`${assignedProgram.structure?.length||0} ${pluralizeWorkouts(assignedProgram.structure?.length||0)}`
+                  :`${assignedProgram.structure?.[openProgramWorkoutIdx]?.exercises?.length||0} ${plural(assignedProgram.structure?.[openProgramWorkoutIdx]?.exercises?.length||0,'упражнение','упражнения','упражнений')}`}
               </div>
             </div>
           </div>
           <div style={{ flex:1, overflowY:'auto', padding:'14px 16px 32px' }}>
             {openProgramWorkoutIdx==null?(
-              // Список тренировок — каждая открывается по клику.
-              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-                {(Array.isArray(assignedProgram.structure)?assignedProgram.structure:[]).map((w,wi)=>(
-                  <div key={wi} onClick={()=>setOpenProgramWorkoutIdx(wi)}
-                    style={{ background:SURF, borderRadius:10, padding:'10px 12px', cursor:'pointer', position:'relative' }}>
-                    <span style={{ position:'absolute', top:'50%', right:12, transform:'translateY(-50%)', fontSize:18, color:TXT3 }}>›</span>
-                    <div style={{ fontSize:13, fontWeight:600, color:TXT, marginBottom:6, paddingRight:18 }}>{w.name||`Тренировка ${wi+1}`}</div>
-                    <div style={{ display:'flex', flexDirection:'column', gap:3, paddingRight:18 }}>
-                      {(w.exercises||[]).map((ex,ei)=>(
-                        <div key={ei} style={{ fontSize:12, color:TXT2 }}>
-                          <span style={{ fontWeight:500 }}>{ex.name}</span>
-                          {ex.sets&&<span style={{ color:TXT3 }}>{': '}{ex.sets}</span>}
-                        </div>
-                      ))}
+              // Список тренировок — карточками-слотами, как в шаблонной папке.
+              <>
+                {(Array.isArray(assignedProgram.structure)?assignedProgram.structure:[]).map((w,wi)=>{
+                  const ec=w.exercises?.length||0
+                  return (
+                    <div key={wi} onClick={()=>setOpenProgramWorkoutIdx(wi)}
+                      style={{ background:SURF, borderRadius:20, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', marginBottom:10, display:'flex', flexDirection:'column', alignItems:'center', padding:'16px 16px 14px', cursor:'pointer', position:'relative' }}>
+                      <div style={{ position:'absolute', top:14, left:14, width:36, height:36, borderRadius:'50%', background:ec>0?PUR:SURF2, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:ec>0?'#fff':TXT3 }}>{wi+1}</div>
+                      <span style={{ position:'absolute', top:18, right:14, fontSize:18, color:TXT3 }}>›</span>
+                      <div style={{ textAlign:'center', paddingTop:6 }}>
+                        <div style={{ fontSize:16, fontWeight:700, color:TXT, marginBottom:4 }}>{w.name||`Тренировка ${wi+1}`}</div>
+                        <div style={{ fontSize:12, color:TXT3 }}>{ec===0?'Нет упражнений':`${ec} упр.`}</div>
+                      </div>
                     </div>
-                  </div>
-                ))}
-                {/* Выбор программы тренера активной — по образцу кнопки в
-                    модалке infoFolder у шаблонов. С отметкой, когда уже выбрана. */}
+                  )
+                })}
+                {/* Выбор программы тренера активной — с отметкой, когда выбрана. */}
                 <button onClick={selectTrainerProgram}
                   style={{ width:'100%', marginTop:4, padding:'13px', borderRadius:12, border:'none', background:selectedProgram===TRAINER_PROGRAM_KEY?SURF2:PUR, color:selectedProgram===TRAINER_PROGRAM_KEY?TXT3:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:7 }}>
                   {selectedProgram===TRAINER_PROGRAM_KEY&&<GlassIcon name="check" size={17} />}{selectedProgram===TRAINER_PROGRAM_KEY?'Эта программа выбрана':'Тренироваться по этой программе'}
                 </button>
-              </div>
+              </>
             ):(
-              // Одна тренировка: что делать и кнопка запуска. Веса и повторения
-              // ровно те, что задал тренер — без пересчёта прогрессией.
-              <div>
-                <div style={{ background:SURF, borderRadius:10, padding:'12px 14px', marginBottom:14, display:'flex', flexDirection:'column', gap:8 }}>
-                  {(assignedProgram.structure?.[openProgramWorkoutIdx]?.exercises||[]).map((ex,ei)=>(
-                    <div key={ei}>
-                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                        <div style={{ fontSize:13, color:TXT2, flex:1, minWidth:0 }}>
-                          <span style={{ fontWeight:500 }}>{ex.name}</span>
-                          {ex.sets&&<span style={{ color:TXT3 }}>{': '}{ex.sets}</span>}
-                        </div>
-                        {/* Видео техники — если по имени упражнения есть ролик. */}
-                        {exerciseVideos[ex.name]&&(
-                          <button onClick={()=>setPlayVideo({url:exerciseVideos[ex.name].video_url,name:ex.name})}
-                            title="Видео техники"
-                            style={{ width:26, height:26, borderRadius:'50%', border:'none', background:`${PUR}22`, color:PUR, cursor:'pointer', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, minHeight:'unset' }}>
-                            ▶
-                          </button>
-                        )}
-                      </div>
-                      {/* Комментарий тренера к упражнению — приглушённой строкой. */}
-                      {ex.note&&<div style={{ fontSize:11, color:TXT3, marginTop:2, lineHeight:1.4 }}>{ex.note}</div>}
-                    </div>
-                  ))}
-                </div>
+              // Одна тренировка — ТЕМ ЖЕ экраном, что шаблонный слот: «Начать»
+              // сверху, ниже карточки упражнений (бейдж, название, ExMeta,
+              // подходы, видео постером). Комментарий тренера — под упражнением.
+              <>
                 <button onClick={()=>startTrainerWorkout(assignedProgram.structure[openProgramWorkoutIdx])}
-                  style={{ display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',padding:'15px',borderRadius:12,border:'none',background:TEA,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',boxSizing:'border-box',minHeight:'unset' }}>
+                  style={{ display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',padding:'15px',marginBottom:14,borderRadius:12,border:'none',background:TEA,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',boxSizing:'border-box',minHeight:'unset' }}>
                   ▶ Начать тренировку
                 </button>
-              </div>
+                {(assignedProgram.structure?.[openProgramWorkoutIdx]?.exercises||[]).map((ex,ei)=>(
+                  <div key={ei} style={{ background:SURF, borderRadius:20, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', marginBottom:10 }}>
+                    <div style={{ padding:'14px 14px 12px' }}>
+                      <div style={{ display:'flex', alignItems:'flex-start', gap:12 }}>
+                        <div style={{ flexShrink:0, width:36, height:36, borderRadius:'50%', background:PUR, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:700, color:'#fff' }}>{ei+1}</div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:14, fontWeight:700, color:TXT, marginBottom:3 }}>{ex.name||'Упражнение'}</div>
+                          <ExMeta name={ex.name} style={{ marginTop:-2, marginBottom:3 }} />
+                          {ex.sets&&<div style={{ fontSize:12, color:TXT3, lineHeight:1.7 }}>{ex.sets}</div>}
+                          {ex.note&&(
+                            <div style={{ fontSize:12, color:TXT2, marginTop:6, lineHeight:1.45, paddingLeft:8, borderLeft:`2px solid ${PUR}` }}>
+                              <span style={{ color:PUR, fontWeight:700 }}>От тренера: </span>{ex.note}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {exerciseVideos[ex.name]&&(
+                        <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${HAIR}` }}>
+                          <button onClick={()=>setPlayVideo({url:exerciseVideos[ex.name].video_url,name:ex.name})}
+                            style={{ position:'relative', display:'block', width:'100%', maxWidth:220, border:'none', padding:0, borderRadius:12, overflow:'hidden', cursor:'pointer', background:SURF2 }}>
+                            <img src={exerciseVideos[ex.name].poster_url} alt={ex.name} loading="lazy"
+                              style={{ width:'100%', display:'block', aspectRatio:'16/9', objectFit:'cover' }} />
+                            <span style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                              <span style={{ width:44, height:44, borderRadius:'50%', background:'rgba(0,0,0,0.55)', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20 }}>▶</span>
+                            </span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </>
             )}
           </div>
         </div>
