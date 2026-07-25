@@ -36,3 +36,8 @@ dist-ssr
 # Дампы env (содержат service_role) — только локально, никогда в git
 vercel-env*.txt
 env-new*
+
+# Артефакты скриптов (сгенерированные иконки, кэш Python) — не код
+scripts/__pycache__/
+scripts/out/
+*.pyc
