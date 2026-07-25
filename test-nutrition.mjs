@@ -17,37 +17,38 @@ function assertEqual(label, actual, expected) {
   report(label, ok, ok ? '' : `ожидалось ${JSON.stringify(expected)}, получено ${JSON.stringify(actual)}`)
 }
 
-// Базовый профиль: рост 180, вес 90, мужчина. По методике базовый вес =
-// рабочая масса (180−100 = 80, т.к. реальный вес 90 больше). Норма считается
-// СТРОГО от массы тела, без коэффициента активности: p = 2×80 = 160,
-// f = 1×80 = 80, c(поддерж.) = 3×80 = 240.
-const base = { height: 180, weight: 90, gender: 'male' }
+// Базовый профиль: рост 180, вес 90, мужчина, малоподвижный. По методике
+// базовый вес = рабочая масса (180−100 = 80, т.к. реальный вес 90 больше),
+// коэффициент активности ×1.2 (малоподвижный по умолчанию). Активность
+// множит ТОЛЬКО углеводы: p = 2×80 = 160 (без активности), f = 1×80 = 80 (без
+// активности), c(поддерж.) = 3×80×1.2 = 288.
+const base = { height: 180, weight: 90, gender: 'male', activity_level: 'sedentary' }
 const cut  = calcMacroGoals({ ...base, goal: 'Похудение' })
 const rel  = calcMacroGoals({ ...base, goal: 'Рельеф' })
 const mnt  = calcMacroGoals({ ...base, goal: 'Поддержание' })
 const gain = calcMacroGoals({ ...base, goal: 'Набор массы' })
 
-console.log('── Дефицит: Похудение (норма поддержания 2320 − 15%) ──────────────')
-// Поддержание = 160×4 + 240×4 + 80×9 = 2320 ккал; 85% = 1972; углеводами
-// добираем до него при p=160/f=80 → c = round((1972 − 640 − 720)/4) = 153;
-// итоговые калории = 640 + 612 + 720 = 1972.
-assertEqual('Похудение: kcal = 1972', cut.kcal, 1972)
+console.log('── Дефицит: Похудение (норма поддержания 2512 − 15%) ──────────────')
+// Поддержание = 160×4 + 288×4 + 80×9 = 2512 ккал; 85% = 2135.2; углеводами
+// добираем до него при p=160/f=80 → c = round((2135.2 − 640 − 720)/4) = 194;
+// итоговые калории = 640 + 776 + 720 = 2136.
+assertEqual('Похудение: kcal = 2136', cut.kcal, 2136)
 assertEqual('Похудение: p = 160', cut.p, 160)
-assertEqual('Похудение: c = 153 (углеводы срезаны дефицитом)', cut.c, 153)
+assertEqual('Похудение: c = 194 (углеводы срезаны дефицитом)', cut.c, 194)
 assertEqual('Похудение: f = 80', cut.f, 80)
 assertEqual('Похудение: deficitApplied = true', cut.deficitApplied, true)
 assertEqual('Похудение: floored = false (порог не задет)', cut.floored, false)
 
 console.log('── Дефицит: Рельеф (тот же дефицит, что у Похудения) ──────────────')
-assertEqual('Рельеф: kcal = 1972', rel.kcal, 1972)
+assertEqual('Рельеф: kcal = 2136', rel.kcal, 2136)
 assertEqual('Рельеф: p = 160', rel.p, 160)
-assertEqual('Рельеф: c = 153', rel.c, 153)
+assertEqual('Рельеф: c = 194', rel.c, 194)
 assertEqual('Рельеф: f = 80', rel.f, 80)
 assertEqual('Рельеф: deficitApplied = true', rel.deficitApplied, true)
 
 console.log('── Без дефицита: Поддержание и Набор массы ────────────────────────')
-assertEqual('Поддержание: kcal = 2320', mnt.kcal, 2320)
-assertEqual('Поддержание: c = 240 (углеводы 3 г/кг × 80)', mnt.c, 240)
+assertEqual('Поддержание: kcal = 2512', mnt.kcal, 2512)
+assertEqual('Поддержание: c = 288 (углеводы 3 г/кг × 80 × 1.2)', mnt.c, 288)
 assertEqual('Поддержание: deficitApplied = false', mnt.deficitApplied, false)
 assertEqual('Набор массы: deficitApplied = false', gain.deficitApplied, false)
 report('Набор массы: kcal больше поддержания', gain.kcal > mnt.kcal,
@@ -60,31 +61,34 @@ assertEqual('Похудение p == Поддержание p (белок дер
 assertEqual('Похудение f == Поддержание f (жир держится)', cut.f, mnt.f)
 
 console.log('── Нижний порог калорий (calFloor) ───────────────────────────────')
-// Маленькая женщина (рост 140, вес 48): базовый вес 30. p=60 (2×30), f=30
-// (1×30), c=90 (3×30) → до защиты 60×4+90×4+30×9 = 870 ккал, ниже женского
-// порога 1200. Недобор 330 делим на 4 с округлением вверх (+83 г углеводов),
-// c=173, kcal = 240 + 692 + 270 = 1202 — чуть выше порога (округление вверх).
-const low = calcMacroGoals({ height: 140, weight: 48, gender: 'female', goal: 'Поддержание' })
+// Маленькая женщина (рост 140, вес 48): базовый вес 30. p=60 (2×30, без
+// активности), f=30 (1×30, без активности), c=108 (3×30×1.2) → до защиты
+// 60×4+108×4+30×9 = 942 ккал, ниже женского порога 1200. Недобор 258 делим
+// на 4 с округлением вверх (+65 г углеводов), c=173, kcal = 240+692+270 = 1202.
+const low = calcMacroGoals({ height: 140, weight: 48, gender: 'female', goal: 'Поддержание', activity_level: 'sedentary' })
 assertEqual('Порог: floored = true', low.floored, true)
 assertEqual('Порог: calFloor = 1200 (женский)', low.calFloor, 1200)
 assertEqual('Порог: kcal = 1202 (поднят до порога, округление вверх)', low.kcal, 1202)
 report('Порог: kcal не ниже calFloor', low.kcal >= low.calFloor,
   `kcal ${low.kcal} должен быть >= ${low.calFloor}`)
 
-console.log('── Инвариант: активность НЕ влияет на норму ──────────────────────')
-// Активность больше не входит в расчёт нормы КБЖУ (только в calcMifflin для
-// научного сравнения). Тот же профиль с разной активностью должен давать
-// одинаковые p, c, f — коэффициент игнорируется.
-const sed  = calcMacroGoals({ ...base, goal: 'Поддержание', activity_level: 'sedentary' })
-const high = calcMacroGoals({ ...base, goal: 'Поддержание', activity_level: 'high' })
-assertEqual('Белок одинаков при разной активности', sed.p, high.p)
-assertEqual('Углеводы одинаковы при разной активности', sed.c, high.c)
-assertEqual('Жир одинаков при разной активности', sed.f, high.f)
-assertEqual('Норма без activity_level = норме с ним', mnt.kcal, sed.kcal)
+console.log('── Активность множит ТОЛЬКО углеводы ─────────────────────────────')
+// Тот же базовый вес (h180/w90 → 80), одна цель (Поддержание), разная
+// активность: белок и жир должны совпадать (от массы тела, без активности),
+// а углеводы — различаться (энергия масштабируется активностью).
+const sed  = calcMacroGoals({ ...base, goal: 'Поддержание' })                          // ×1.2
+const high = calcMacroGoals({ ...base, goal: 'Поддержание', activity_level: 'high' })   // ×1.55
+assertEqual('Белок одинаков при разной активности (sed.p === high.p)', sed.p, high.p)
+assertEqual('Белок = 160 (2×80, без активности)', high.p, 160)
+assertEqual('Жир одинаков при разной активности (sed.f === high.f)', sed.f, high.f)
+assertEqual('Жир = 80 (1×80, без активности)', high.f, 80)
+report('Углеводы РАЗНЫЕ при разной активности (энергия ×активность)', sed.c !== high.c,
+  `sed.c=${sed.c}, high.c=${high.c} должны различаться`)
+assertEqual('Углеводы high = 372 (3×80×1.55)', high.c, 372)
 
 console.log('── Недобор массы (underweight, ИМТ < 18.5) ───────────────────────')
 // Рост 180 при весе 55 → ИМТ 17, ниже границы ВОЗ 18.5.
-const uw = calcMacroGoals({ height: 180, weight: 55, gender: 'male', goal: 'Поддержание' })
+const uw = calcMacroGoals({ height: 180, weight: 55, gender: 'male', goal: 'Поддержание', activity_level: 'sedentary' })
 assertEqual('Недобор: underweight = true', uw.underweight, true)
 report('Недобор: ИМТ < 18.5', uw.bmi < 18.5, `ИМТ ${uw.bmi} должен быть < 18.5`)
 
