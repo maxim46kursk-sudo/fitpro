@@ -3407,9 +3407,19 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                 <div style={{ background:SURF, borderRadius:10, padding:'12px 14px', marginBottom:14, display:'flex', flexDirection:'column', gap:8 }}>
                   {(assignedProgram.structure?.[openProgramWorkoutIdx]?.exercises||[]).map((ex,ei)=>(
                     <div key={ei}>
-                      <div style={{ fontSize:13, color:TXT2 }}>
-                        <span style={{ fontWeight:500 }}>{ex.name}</span>
-                        {ex.sets&&<span style={{ color:TXT3 }}>{': '}{ex.sets}</span>}
+                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                        <div style={{ fontSize:13, color:TXT2, flex:1, minWidth:0 }}>
+                          <span style={{ fontWeight:500 }}>{ex.name}</span>
+                          {ex.sets&&<span style={{ color:TXT3 }}>{': '}{ex.sets}</span>}
+                        </div>
+                        {/* Видео техники — если по имени упражнения есть ролик. */}
+                        {exerciseVideos[ex.name]&&(
+                          <button onClick={()=>setPlayVideo({url:exerciseVideos[ex.name].video_url,name:ex.name})}
+                            title="Видео техники"
+                            style={{ width:26, height:26, borderRadius:'50%', border:'none', background:`${PUR}22`, color:PUR, cursor:'pointer', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, minHeight:'unset' }}>
+                            ▶
+                          </button>
+                        )}
                       </div>
                       {/* Комментарий тренера к упражнению — приглушённой строкой. */}
                       {ex.note&&<div style={{ fontSize:11, color:TXT3, marginTop:2, lineHeight:1.4 }}>{ex.note}</div>}
