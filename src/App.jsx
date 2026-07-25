@@ -7386,9 +7386,11 @@ function PlansView({ user, onClose, hideBack, onChanged }) {
           ):null}
         </div>
 
-        {/* Отмена подписки — только при активной ПЛАТНОЙ подписке. Автосписаний
-            нет (оплата разовая на 30 дней), поэтому отмена = сброс на СТАРТ. */}
-        {hasActivePaid&&(
+        {/* Отмена подписки — только на пилюле ТЕКУЩЕГО оплаченного пакета
+            (isCurrent) и только при активной ПЛАТНОЙ подписке. На чужих пилюлях
+            и на бесплатном СТАРТЕ кнопки нет. Автосписаний нет — отмена =
+            сброс на СТАРТ. */}
+        {isCurrent&&hasActivePaid&&(
           <div style={{ marginBottom:18 }}>
             <button onClick={()=>setShowCancelConfirm(true)} disabled={cancelBusy}
               style={{ width:'100%', padding:'12px', borderRadius:12, border:`1px solid ${HAIR}`, background:'none', color:'#ef4444', fontSize:14, fontWeight:600, cursor:cancelBusy?'default':'pointer', minHeight:'unset' }}>
