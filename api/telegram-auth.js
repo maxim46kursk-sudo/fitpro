@@ -12,7 +12,7 @@ const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://api.fitproapp.ru'
 // Подписи Telegram initData старше суток не принимаем — даже валидная
 // подпись не должна работать бесконечно (initData мог быть перехвачен/
 // залогирован где-то по дороге).
-const AUTH_DATE_MAX_AGE_SEC = 86400
+const AUTH_DATE_MAX_AGE_SEC = 3600
 
 // Официальный алгоритм проверки initData (https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app):
 // data_check_string — все пары "ключ=значение" КРОМЕ hash, отсортированные
@@ -35,7 +35,12 @@ function verifyTelegramInitData(initData, botToken) {
 
   const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest()
   const calcHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex')
-  if (calcHash !== hash) return null
+  // Constant-time сравнение. Сначала проверяем непустоту и равную длину hex-строк
+  // (timingSafeEqual бросает на разной длине буферов), затем сравниваем байты.
+  if (!hash || calcHash.length !== hash.length) return null
+  const calcBuf = Buffer.from(calcHash, 'hex')
+  const hashBuf = Buffer.from(hash, 'hex')
+  if (calcBuf.length !== hashBuf.length || !crypto.timingSafeEqual(calcBuf, hashBuf)) return null
 
   const authDate = Number(params.get('auth_date'))
   if (!authDate || Date.now() / 1000 - authDate > AUTH_DATE_MAX_AGE_SEC) return null

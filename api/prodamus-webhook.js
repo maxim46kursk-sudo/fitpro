@@ -101,6 +101,16 @@ export default async function handler(req, res) {
   const paymentStatus = data.payment_status != null ? String(data.payment_status) : ''
   const sumNum = Number(data.sum)
 
+  // Без order_num нет ключа идемпотентности (UNIQUE(provider_order_num) —
+  // защита от replay), поэтому НЕ начисляем и не пишем в журнал: два таких
+  // уведомления с NULL прошли бы UNIQUE и могли начислить дважды. Боевые
+  // уведомления Prodamus всегда несут непустой order_num — реальный поток не
+  // затрагивается. Отвечаем 200, чтобы Prodamus не зациклил ретраи.
+  if (!orderNum || !orderNum.trim()) {
+    console.error('Prodamus webhook: уведомление без order_num — пропускаем без начисления')
+    return res.status(200).send('OK')
+  }
+
   // userId — часть до последнего '__'. Берём из customer_extra: наш order_id
   // Продамус подменяет своим номером, а customer_extra возвращает эхом. Если
   // customer_extra пуст — запасной разбор order_id (на случай старых ссылок).

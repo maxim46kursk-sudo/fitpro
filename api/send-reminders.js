@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 
 // Отправка напоминаний от бота по расписанию. Дёргается кроном, поэтому
@@ -51,7 +52,11 @@ export default async function handler(req, res) {
   // не задана, валидировать нечем — закрываемся (fail closed), а не пускаем.
   const cronSecret = process.env.REMINDERS_CRON_SECRET
   const provided = (req.query?.secret || req.headers['x-cron-secret'] || '').toString()
-  if (!cronSecret || provided !== cronSecret) {
+  // Constant-time сравнение: пустой/короткий/несовпадающий по длине — сразу отказ
+  // (timingSafeEqual бросает на разной длине), иначе побайтно.
+  const okSecret = !!cronSecret && !!provided && provided.length === cronSecret.length &&
+    crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(cronSecret))
+  if (!okSecret) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
