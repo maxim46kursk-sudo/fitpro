@@ -2585,6 +2585,15 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                     </div>
                     <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
                       {ex.done&&<span style={{ fontSize:11, color:'#4ade80', display:'inline-flex', alignItems:'center', gap:4 }}><GlassIcon name="check" size={13} />Выполнено</span>}
+                      {/* Видео техники — если по имени упражнения есть ролик в
+                          серверной карте. Тап открывает существующий плеер. */}
+                      {exerciseVideos[ex.n]&&(
+                        <button onClick={()=>setPlayVideo({url:exerciseVideos[ex.n].video_url,name:ex.n})}
+                          title="Видео техники"
+                          style={{ width:26, height:26, borderRadius:'50%', border:'none', background:`${PUR}22`, color:PUR, cursor:'pointer', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, minHeight:'unset' }}>
+                          ▶
+                        </button>
+                      )}
                       {/* Последнее оставшееся упражнение не удаляем — кнопку
                           просто не показываем (см. комментарий у removeExerciseConfirm). */}
                       {wExercises.length>1&&(
