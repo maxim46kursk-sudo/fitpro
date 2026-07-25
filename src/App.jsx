@@ -2247,6 +2247,21 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     return (
       <div style={{ display:'flex', flexDirection:'column', height:'calc(100vh - 88px - env(safe-area-inset-bottom, 0px))', background:BG, borderRadius:14, overflow:'hidden', color:'#fff', position:'relative' }}>
 
+        {/* Плеер видео техники — активный экран это отдельный return, поэтому
+            попап нужен и здесь (в основном return он свой, ниже). position:fixed
+            перекрывает overflow:hidden контейнера. */}
+        {playVideo&&(
+          <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.92)', zIndex:1200, display:'flex', alignItems:'center', justifyContent:'center' }}
+            onClick={()=>setPlayVideo(null)}>
+            <div style={{ position:'relative', maxWidth:860, width:'95%' }} onClick={e=>e.stopPropagation()}>
+              <button onClick={()=>setPlayVideo(null)}
+                style={{ position:'absolute', top:-42, right:0, background:'none', border:'none', color:'#fff', fontSize:26, cursor:'pointer', minHeight:'unset' }}><GlassIcon name="close" size={26} /></button>
+              <div style={{ fontSize:13, color:TXT3, marginBottom:8 }}>{playVideo.name}</div>
+              <video src={playVideo.url} controls autoPlay style={{ width:'100%', borderRadius:12, maxHeight:'75vh' }} />
+            </div>
+          </div>
+        )}
+
         {/* Тост ошибки сохранения — тренировка НЕ записалась в Supabase,
             остаёмся на экране (см. finishWorkout), клиент ничего не теряет
             и может повторить попытку кнопкой "Завершить"/"Сохранить". */}
