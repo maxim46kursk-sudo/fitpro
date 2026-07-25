@@ -1132,6 +1132,23 @@ function ProgramEditor({ client, trainerId }) {
     if(dirtyRef.current)persistProgram(latestRef.current.title,latestRef.current.workouts)
   },[])
 
+  // Флаш при закрытии/сворачивании мини-приложения. Размонтирование ловит уход в
+  // другой раздел, но не закрытие Telegram свайпом или сворачивание — компонент
+  // не размонтируется, страница просто умирает вместе с таймером автосохранения.
+  // pagehide и visibilitychange (hidden) — момент дописать последнюю правку.
+  useEffect(()=>{
+    const flush=()=>{
+      if(dirtyRef.current)persistProgram(latestRef.current.title,latestRef.current.workouts)
+    }
+    const onVis=()=>{if(document.visibilityState==='hidden')flush()}
+    window.addEventListener('pagehide',flush)
+    window.addEventListener('visibilitychange',onVis)
+    return()=>{
+      window.removeEventListener('pagehide',flush)
+      window.removeEventListener('visibilitychange',onVis)
+    }
+  },[])
+
   if(programLoading)return <div style={{ fontSize:13, color:TXT3, padding:'30px 0', textAlign:'center' }}>Загрузка...</div>
   if(programError)return (
     <div style={{ fontSize:13, color:'#ef4444', padding:'30px 0', textAlign:'center', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
