@@ -27,8 +27,6 @@ export function GlassDefs() {
   )
 }
 
-const S = (o) => <rect {...o} fill="url(#sheen)" opacity={o.opacity ?? 0.6} filter="url(#glassSoft)"/>
-
 // ── Иконки: name → { glow, svg }. glow — цвет мягкого свечения. ──
 const IC = {
   // HERO
@@ -175,5 +173,3 @@ export function GlassIcon({ name, size = 24, className, style, title }) {
     </svg>
   )
 }
-
-export const GLASS_ICON_NAMES = Object.keys(IC)

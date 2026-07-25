@@ -120,20 +120,3 @@ const RENDER = {
   cardio: () => heartFig(),
 }
 
-export const MUSCLE_GROUPS = ['chest', 'back', 'legs', 'shoulders', 'arms', 'abs', 'cardio']
-
-export function MuscleIcon({ group, size = 44, style, title }) {
-  const build = RENDER[group] || (() => frontFig(null)) // fallback: нейтральный силуэт
-  return (
-    <svg
-      viewBox="0 0 40 58"
-      width={size}
-      height={size}
-      preserveAspectRatio="xMidYMid meet"
-      style={style}
-      role="img"
-      aria-label={title || group || 'muscle'}
-      dangerouslySetInnerHTML={{ __html: (title ? `<title>${title}</title>` : '') + build() }}
-    />
-  )
-}

@@ -1,11 +1,6 @@
 // Формулы расчёта одноповторного максимума (1ПМ).
 // Переиспользуется калькулятором на главной и (в будущем) логикой прогрессии AI-тренера.
 
-export const ONE_RM_FORMULAS = {
-  epley: 'Эпли',
-  brzycki: 'Бржицки',
-}
-
 // 1ПМ по весу и числу повторений
 export function oneRepMax(weight, reps, formula = 'epley') {
   const w = Number(weight), r = Number(reps)

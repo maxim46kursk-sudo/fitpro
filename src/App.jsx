@@ -10,7 +10,7 @@ import { buildExerciseAggregates, computeTemplateScale, parseTemplateSets, compu
 import { MAX_TELEGRAM_URL, BOT_USERNAME } from './config.js'
 import { Ic } from './icons.jsx'
 import { GlassDefs, GlassIcon } from './glassIcons'
-import { MuscleDefs, MuscleIcon } from './muscleIcons'
+import { MuscleDefs } from './muscleIcons'
 import { muscleGroup, equipment } from './exerciseMeta'
 import { POLICY_VERSION, POLICY_SECTIONS, CONSENT_SECTIONS, CONSENT_CHECKBOX } from './legalText'
 import { PLANS, VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, effectiveAccess } from './plans'
@@ -4973,74 +4973,6 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
           )
         })}
         {fl.length===0&&<div style={{ color:TXT3,fontSize:13,gridColumn:'1/-1',textAlign:'center',padding:'30px 0' }}>Ничего не найдено</div>}
-      </div>
-    </div>
-  )
-}
-
-// ── Скроллер дат (тёмный, как на скрине)
-function DateScroller({ value, onChange }) {
-  const ref = useRef(null)
-  const today = new Date()
-  const toISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-  const todayISO = toISO(today)
-  const DAY_RU = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб']
-  const MONTH_RU = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек']
-
-  const days = Array.from({length:365},(_,i)=>{
-    const d = new Date(today)
-    d.setDate(today.getDate()-180+i)
-    return d
-  })
-
-  const ITEM_W = 46
-
-  useEffect(()=>{
-    const idx = days.findIndex(d=>toISO(d)===value)
-    if(idx>=0 && ref.current){
-      const el = ref.current
-      el.scrollLeft = idx*ITEM_W - el.clientWidth/2 + ITEM_W/2
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[value])
-
-  const selDate = new Date(value+'T00:00:00')
-  const isSelToday = value===todayISO
-  const isSelYesterday = (()=>{ const y=new Date(today); y.setDate(y.getDate()-1); return toISO(y)===value })()
-  const label = isSelToday ? 'Сегодня' : isSelYesterday ? 'Вчера' : `${selDate.getDate()} ${MONTH_RU[selDate.getMonth()]}`
-
-  return (
-    <div style={{ marginBottom:14, userSelect:'none' }}>
-      {/* Заголовок с текущей датой */}
-      <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 4px',marginBottom:8 }}>
-        <span style={{ fontSize:15,fontWeight:700,color:TXT }}>{label}</span>
-        <span style={{ fontSize:12,color:TXT3 }}>{selDate.toLocaleDateString('ru',{weekday:'long'})}</span>
-      </div>
-      {/* Скроллер */}
-      <div style={{ background:SURF2,borderRadius:16,padding:'10px 0',border:`1px solid ${HAIR}` }}>
-        <div ref={ref} style={{ display:'flex',overflowX:'auto',scrollbarWidth:'none',WebkitOverflowScrolling:'touch',padding:'0 10px' }}>
-          {days.map(d=>{
-            const iso = toISO(d)
-            const sel = iso===value
-            const isToday = iso===todayISO
-            return (
-              <div key={iso} onClick={()=>onChange(iso)}
-                style={{ display:'flex',flexDirection:'column',alignItems:'center',flexShrink:0,width:ITEM_W,cursor:'pointer',padding:'2px 0' }}>
-                <span style={{ fontSize:10,fontWeight:500,color:sel?PUR:isToday?PUR:TXT3,marginBottom:4,letterSpacing:'0.02em',textTransform:'uppercase' }}>
-                  {DAY_RU[d.getDay()]}
-                </span>
-                <div style={{ width:34,height:34,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',
-                  background: sel?PUR:isToday?`${PUR}15`:'transparent',
-                  fontSize:13,fontWeight:sel?700:isToday?600:400,
-                  color:sel?'#fff':isToday?PUR:TXT3,
-                  transition:'all 0.15s' }}>
-                  {d.getDate()}
-                </div>
-                {isToday&&!sel&&<div style={{ width:4,height:4,borderRadius:'50%',background:PUR,marginTop:3 }} />}
-              </div>
-            )
-          })}
-        </div>
       </div>
     </div>
   )
