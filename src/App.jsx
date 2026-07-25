@@ -4123,12 +4123,69 @@ const EQ_TIPS={
   'Гиря':'Работай от бедра, держи спину нейтральной на протяжении всего движения.',
 }
 
-function LibraryView({ customExercises, exerciseVideos = {} }) {
+function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client', setExerciseVideos }) {
   const [filt,setFilt]=useState('Все')
   const [sel,setSel]=useState(null)
   const [query,setQuery]=useState('')
   // Свой попап плеера (тот же вид, что в WorkoutsView — компонент отдельный).
   const [playVideo,setPlayVideo]=useState(null)
+  const isTrainer=userRole==='trainer'
+  // Редактор видео (только тренер): пикер ролика из пула + тост ошибки.
+  const [pickerFor,setPickerFor]=useState(null)   // имя упражнения или null
+  const [pool,setPool]=useState(null)             // null = ещё не грузили
+  const [poolLoading,setPoolLoading]=useState(false)
+  const [poolQuery,setPoolQuery]=useState('')
+  const [videoToast,setVideoToast]=useState('')
+  const flashVideoErr=msg=>{setVideoToast(msg);setTimeout(()=>setVideoToast(''),3500)}
+  const [busy,setBusy]=useState(false)
+
+  const openPicker=async name=>{
+    setPickerFor(name);setPoolQuery('')
+    if(pool===null){
+      setPoolLoading(true)
+      const{data,error}=await supabase.from('video_pool').select('key,title,folder,video_url,poster_url')
+      setPoolLoading(false)
+      if(error){console.error('Пул видео: ошибка загрузки:',error);flashVideoErr('Не удалось загрузить пул видео');return}
+      setPool(data||[])
+    }
+  }
+  const authToken=async()=>{
+    const{data}=await supabase.auth.getSession()
+    return data?.session?.access_token||null
+  }
+  const assignVideo=async(exName,clip)=>{
+    if(busy)return
+    setBusy(true)
+    try{
+      const token=await authToken()
+      const res=await fetch('/api/set-exercise-video',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+        body:JSON.stringify({exercise_name:exName,action:'assign',video_url:clip.video_url,poster_url:clip.poster_url}),
+      })
+      const body=await res.json().catch(()=>null)
+      if(!res.ok||!body?.ok){flashVideoErr(body?.error||'Не удалось назначить видео');return}
+      setExerciseVideos?.(m=>({...m,[exName]:{video_url:clip.video_url,poster_url:clip.poster_url}}))
+      setPickerFor(null)
+    }catch(e){console.error('Назначение видео:',e);flashVideoErr('Сбой сети, повтори')}
+    finally{setBusy(false)}
+  }
+  const clearVideo=async exName=>{
+    if(busy)return
+    setBusy(true)
+    try{
+      const token=await authToken()
+      const res=await fetch('/api/set-exercise-video',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+        body:JSON.stringify({exercise_name:exName,action:'clear'}),
+      })
+      const body=await res.json().catch(()=>null)
+      if(!res.ok||!body?.ok){flashVideoErr(body?.error||'Не удалось убрать видео');return}
+      setExerciseVideos?.(m=>{const n={...m};delete n[exName];return n})
+    }catch(e){console.error('Снятие видео:',e);flashVideoErr('Сбой сети, повтори')}
+    finally{setBusy(false)}
+  }
   const all=[...EXERCISES,...(customExercises||[])]
   const muscles=['Все',...new Set(all.map(e=>e.m))]
   const fl=all.filter(e=>(filt==='Все'||e.m===filt)&&e.n.toLowerCase().includes(query.toLowerCase()))
@@ -4147,6 +4204,50 @@ function LibraryView({ customExercises, exerciseVideos = {} }) {
       </div>
     </div>
   )
+
+  // Тост ошибки редактора видео (тот же паттерн, что showFoodSaveError).
+  const videoErrToast = videoToast&&(
+    <div style={{ position:'fixed', top:14, left:'50%', transform:'translateX(-50%)', zIndex:2400, padding:'10px 18px', borderRadius:24, maxWidth:340, textAlign:'center', background:'#dc2626', color:'#fff', fontSize:13, fontWeight:700, boxShadow:'0 6px 20px rgba(220,38,38,0.35)' }}>
+      {videoToast}
+    </div>
+  )
+
+  // Пикер ролика из пула (только тренер). Один элемент на оба возврата.
+  const poolFiltered=(pool||[]).filter(c=>c.title.toLowerCase().includes(poolQuery.toLowerCase()))
+  const videoPicker = pickerFor&&(
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
+      onClick={()=>setPickerFor(null)}>
+      <div style={{ background:SURF, borderRadius:16, padding:'20px 18px', width:'100%', maxWidth:440, maxHeight:'80vh', display:'flex', flexDirection:'column', boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}
+        onClick={e=>e.stopPropagation()}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+          <span style={{ fontSize:16, fontWeight:700, color:TXT }}>Видео для «{pickerFor}»</span>
+          <button onClick={()=>setPickerFor(null)} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer', color:TXT3, lineHeight:1 }}><GlassIcon name="close" size={26} /></button>
+        </div>
+        <input value={poolQuery} onChange={e=>setPoolQuery(e.target.value)} placeholder="Поиск ролика..." autoFocus
+          style={{ width:'100%', marginBottom:12, padding:'9px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
+          onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
+        <div style={{ overflowY:'auto', display:'flex', flexDirection:'column', gap:8 }}>
+          {poolLoading?(
+            <div style={{ fontSize:13, color:TXT3, padding:'10px 0', textAlign:'center' }}>Загрузка...</div>
+          ):poolFiltered.length===0?(
+            <div style={{ fontSize:13, color:TXT3, padding:'10px 0', textAlign:'center' }}>Ничего не найдено</div>
+          ):poolFiltered.map(c=>(
+            <button key={c.key} disabled={busy} onClick={()=>assignVideo(pickerFor,c)}
+              style={{ display:'flex', alignItems:'center', gap:10, width:'100%', padding:8, border:`1px solid ${HAIR}`, borderRadius:10, background:SURF2, cursor:busy?'default':'pointer', textAlign:'left' }}>
+              <div style={{ position:'relative', flexShrink:0, width:72, height:44, borderRadius:7, overflow:'hidden', background:'#000' }}>
+                <img src={c.poster_url} alt="" loading="lazy" style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:13, fontWeight:600, color:TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.title}</div>
+                <div style={{ fontSize:11, color:TXT3, marginTop:2 }}>{c.folder==='zal'?'Зал':'Дом'}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+  const trainerOverlays = <>{videoErrToast}{videoPicker}</>
 
   if(sel){
     const records=history.flatMap(w=>{
@@ -4179,6 +4280,21 @@ function LibraryView({ customExercises, exerciseVideos = {} }) {
               <span style={{ width:54, height:54, borderRadius:'50%', background:'rgba(0,0,0,0.55)', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24 }}>▶</span>
             </span>
           </button>
+        )}
+        {/* Управление видео — только тренеру. Клиент видит лишь постер+плей. */}
+        {isTrainer&&(
+          <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+            <button onClick={()=>openPicker(sel.n)}
+              style={{ flex:1, padding:'10px', fontSize:13, fontWeight:600, borderRadius:9, border:`1px solid ${PUR}`, background:'none', color:PUR, cursor:'pointer' }}>
+              {exerciseVideos[sel.n]?'Заменить видео':'Добавить видео'}
+            </button>
+            {exerciseVideos[sel.n]&&(
+              <button onClick={()=>clearVideo(sel.n)} disabled={busy}
+                style={{ padding:'10px 14px', fontSize:13, fontWeight:600, borderRadius:9, border:`1px solid ${HAIR}`, background:'none', color:'#ef4444', cursor:busy?'default':'pointer' }}>
+                Убрать
+              </button>
+            )}
+          </div>
         )}
         <Card style={{ marginBottom:12,border:`1.5px solid ${PUR}22` }}>
           <div style={{ fontSize:11,fontWeight:700,color:PUR,marginBottom:6,textTransform:'uppercase',letterSpacing:'0.5px' }}><GlassIcon name="bulb" size={14} style={{verticalAlign:"-2px",marginRight:4}} />Техника</div>
@@ -4220,6 +4336,7 @@ function LibraryView({ customExercises, exerciseVideos = {} }) {
           </Card>
         )}
         {videoPopup}
+        {trainerOverlays}
       </div>
     )
   }
@@ -4227,6 +4344,7 @@ function LibraryView({ customExercises, exerciseVideos = {} }) {
   return (
     <div>
       {videoPopup}
+      {trainerOverlays}
       <h2 style={{ fontSize:20, fontWeight:500, color:TXT, margin:'0 0 14px' }}>Библиотека упражнений</h2>
       <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Поиск упражнения..."
         style={{ width:'100%',padding:'9px 12px',fontSize:13,borderRadius:9,border:`1.5px solid ${HAIR}`,boxSizing:'border-box',outline:'none',marginBottom:10,color:TXT }}
@@ -8687,7 +8805,7 @@ export default function App() {
         : <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} accessLevel={access.level} openPlans={openPlans} />
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} userId={user?.id} />
       case 'nutrition': return <NutritionView userId={user?.id} />
-      case 'library':   return <LibraryView customExercises={customExercises} exerciseVideos={exerciseVideos} />
+      case 'library':   return <LibraryView customExercises={customExercises} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} />
       case 'progress':  return <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} accessLevel={access.level} openPlans={openPlans} />
       default:          return null
     }
