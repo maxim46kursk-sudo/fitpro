@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo, createContext, useContext } from 'react'
 import { createPortal } from 'react-dom'
 import AIAssistant from './AIAssistant'
 import { supabase, SUPABASE_AUTH_STORAGE_KEY } from './supabase.js'
@@ -97,6 +97,34 @@ const MUSCLE_LABELS = { chest:'Грудь', back:'Спина', legs:'Ноги', 
 // (см. сборку wExercises), а в EXERCISES они заполнены руками и точнее любой
 // эвристики — на 68 из 76 упражнений разбор по названию даёт другой ответ.
 const EX_BY_NAME = new Map(EXERCISES.map(e => [e.n, e]))
+
+// Эффективный каталог упражнений = зашитый EXERCISES + правки тренера из
+// глобального catalog_exercises. Раздаётся через контекст, чтобы все списки и
+// пикеры (LibraryView, WorkoutsView, ProgramEditor) брали один и тот же набор.
+// value: { exercises: [{n,m,eq,type}], reloadCatalog }.
+const CatalogContext = createContext({ exercises: EXERCISES, reloadCatalog: () => {} })
+
+// Сливает зашитый EXERCISES с записями catalog_exercises по имени:
+//  - hidden=true  → упражнение исключается;
+//  - hidden=false → мета из каталога переопределяет зашитую;
+//  - имени нет в EXERCISES → добавляется как новое.
+function mergeCatalog(rows) {
+  const byName = new Map((rows || []).map(r => [r.name, r]))
+  const out = []
+  const usedNames = new Set()
+  for (const e of EXERCISES) {
+    const c = byName.get(e.n)
+    if (c?.hidden) { usedNames.add(e.n); continue }
+    if (c) out.push({ n: e.n, m: c.muscle_group || e.m, eq: c.equipment || e.eq, type: c.type || e.type })
+    else out.push(e)
+    usedNames.add(e.n)
+  }
+  for (const r of rows || []) {
+    if (usedNames.has(r.name) || r.hidden) continue
+    out.push({ n: r.name, m: r.muscle_group || '', eq: r.equipment || '', type: r.type || 'compound' })
+  }
+  return out
+}
 
 // Мелкая строка под названием упражнения: группа мышц · снаряд.
 // Порядок источников — от точного к приблизительному: поля переданного
@@ -855,6 +883,7 @@ function RealClientDetail({ client, goBack, trainerId }) {
 // onConflict). Клиентская сторона (просмотр/выполнение программы) в этом
 // шаге не делается — только редактор.
 function ProgramEditor({ client, trainerId }) {
+  const { exercises: catalogExercises } = useContext(CatalogContext)
   const [programLoading,setProgramLoading]=useState(true)
   const [programError,setProgramError]=useState(false)
   const [editorOpen,setEditorOpen]=useState(false)
@@ -1126,7 +1155,7 @@ function ProgramEditor({ client, trainerId }) {
               style={{ width:'100%', marginBottom:12, padding:'9px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
               onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
             <div style={{ overflowY:'auto', display:'flex', flexDirection:'column', gap:2 }}>
-              {EXERCISES.filter(e=>e.n.toLowerCase().includes(pickerQuery.toLowerCase())).map(e=>(
+              {catalogExercises.filter(e=>e.n.toLowerCase().includes(pickerQuery.toLowerCase())).map(e=>(
                 <button key={e.n} onClick={()=>addExercise(pickerFor,e.n)}
                   style={{ display:'flex', flexDirection:'column', alignItems:'flex-start', width:'100%', padding:'9px 10px', border:'none', background:'transparent', cursor:'pointer', textAlign:'left', borderRadius:8 }}
                   onMouseEnter={ev=>ev.currentTarget.style.background='#f9fafb'} onMouseLeave={ev=>ev.currentTarget.style.background='transparent'}>
@@ -1236,6 +1265,7 @@ const makeDefaultFolderSlots=()=>{
 // accessLevel — уровень пакета: тренировки 4–12 в шаблонах требуют БАЗУ (1),
 // в СТАРТ (0) открыты только первые FREE_SLOTS.
 function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, hasTrainer, coachSubExpired = false, accessLevel = 0, openPlans, exerciseVideos = {} }) {
+  const { exercises: catalogExercises } = useContext(CatalogContext)
   // Подсказка «нужен пакет БАЗА» — показывается модалкой поверх списка слотов.
   const [showSlotLock,setShowSlotLock]=useState(false)
   // Заперт ли слот: платная часть шаблона начинается с FREE_SLOTS+1.
@@ -1819,7 +1849,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     runHandleAction(key)
   }
 
-  const allExercises=[...EXERCISES,...customExercises]
+  const allExercises=[...catalogExercises,...customExercises]
   const muscles=['Все',...new Set(allExercises.map(e=>e.m))]
   const filteredEx=allExercises.filter(e=>(pickMuscle==='Все'||e.m===pickMuscle)&&e.n.toLowerCase().includes(pickQ.toLowerCase()))
 
@@ -4158,6 +4188,7 @@ const EQ_TIPS={
 }
 
 function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client', setExerciseVideos }) {
+  const { exercises: catalogExercises } = useContext(CatalogContext)
   const [filt,setFilt]=useState('Все')
   const [sel,setSel]=useState(null)
   const [query,setQuery]=useState('')
@@ -4220,7 +4251,7 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
     }catch(e){console.error('Снятие видео:',e);flashVideoErr('Сбой сети, повтори')}
     finally{setBusy(false)}
   }
-  const all=[...EXERCISES,...(customExercises||[])]
+  const all=[...catalogExercises,...(customExercises||[])]
   const muscles=['Все',...new Set(all.map(e=>e.m))]
   const fl=all.filter(e=>(filt==='Все'||e.m===filt)&&e.n.toLowerCase().includes(query.toLowerCase()))
 
@@ -8095,6 +8126,18 @@ export default function App() {
     })
     return()=>{cancelled=true}
   },[])
+  // Глобальный каталог упражнений (правки тренера). Читаем публично, мержим с
+  // зашитым EXERCISES. reloadCatalog — перечитать после правок тренером.
+  const [catalogRows,setCatalogRows]=useState([])
+  const reloadCatalog=()=>{
+    supabase.from('catalog_exercises').select('name,muscle_group,equipment,type,hidden').then(({data,error})=>{
+      if(error||!data)return
+      setCatalogRows(data)
+    })
+  }
+  useEffect(()=>{reloadCatalog()},[])
+  const mergedExercises=useMemo(()=>mergeCatalog(catalogRows),[catalogRows])
+  const catalogValue=useMemo(()=>({exercises:mergedExercises,reloadCatalog}),[mergedExercises])
   const [userRole,setUserRole]=useState(()=>localStorage.getItem('fitpro_role')||'client')
   // Согласие на обработку ПДн (152-ФЗ). consentLoaded — «ответ из базы получен»,
   // до него приложение не рендерим вообще, иначе на секунду мелькнёт контент
@@ -8868,7 +8911,7 @@ export default function App() {
   const MINIMIZED_BAR_H = 56
 
   return (
-    <>
+    <CatalogContext.Provider value={catalogValue}>
       {/* Градиенты для стеклянных иконок — монтируются один раз на всё приложение */}
       <GlassDefs/>
       {/* Градиенты для иконок групп мышц. Сам <MuscleIcon> в рядах упражнений
@@ -9090,7 +9133,7 @@ export default function App() {
           высоту плашки (extraBottomOffset), чтобы плашка её не перекрыла
           (известный ранее z-index-баг, явно проверяем каждый раз). */}
       <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} hideButton={isWorkoutForeground} extraBottomOffset={workoutMinimized?MINIMIZED_BAR_H:0} accessLevel={access.level} openPlans={openPlans} />
-    </>
+    </CatalogContext.Provider>
   )
 }
 
