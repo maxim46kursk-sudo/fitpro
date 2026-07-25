@@ -31,6 +31,20 @@ export default async function handler(req, res) {
   }
   const supabaseAdmin = createClient(SUPABASE_URL, serviceRoleKey)
 
+  // Идемпотентность: если активной платной подписки нет (plan_until пуст или
+  // уже в прошлом), отменять нечего — не трогаем базу.
+  const { data: prof, error: readErr } = await supabaseAdmin
+    .from('profiles').select('plan, plan_until').eq('id', userId).maybeSingle()
+  if (readErr) {
+    console.error(`cancel-subscription: ошибка чтения ${userId}:`, readErr)
+    return res.status(500).json({ error: 'Не удалось отменить подписку' })
+  }
+  const until = prof?.plan_until ? Date.parse(prof.plan_until) : NaN
+  if (!Number.isFinite(until) || until <= Date.now()) {
+    console.log(`cancel-subscription: ${userId} — активной подписки нет, пропуск`)
+    return res.status(200).json({ ok: true, already: true })
+  }
+
   const { error } = await supabaseAdmin
     .from('profiles')
     .update({ plan: 'start', plan_until: null })

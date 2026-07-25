@@ -1,0 +1,448 @@
+{
+  "uploadedVideos": 85,
+  "uploadedPosters": 0,
+  "failures": [],
+  "catalog": [
+    {
+      "exercise": "Болгарские выпады с резиной",
+      "file": "Дом/Болгарские выпады с резиной .mp4",
+      "object": "dom-bolgarskie-vypady-s-rezinoy"
+    },
+    {
+      "exercise": "Выпады",
+      "file": "Дом/Выпады .mp4",
+      "object": "dom-vypady"
+    },
+    {
+      "exercise": "Мёртвый жук",
+      "file": "Дом/Мёртвый жук .mp4",
+      "object": "dom-mertvyy-zhuk"
+    },
+    {
+      "exercise": "Обратная лодочка",
+      "file": "Дом/Обратная лодочка .mp4",
+      "object": "dom-obratnaya-lodochka"
+    },
+    {
+      "exercise": "Отведение руки с резиной",
+      "file": "Дом/Отведение руки с резиной .mp4",
+      "object": "dom-otvedenie-ruki-s-rezinoy"
+    },
+    {
+      "exercise": "Отведение согнутой ноги стоя в наклоне с резиной",
+      "file": "Дом/отведение согнутой ноги стоя в наклоне с резиной  .mp4",
+      "object": "dom-otvedenie-sognutoy-nogi-stoya-v-naklone-s-rezinoy"
+    },
+    {
+      "exercise": "Отжимания от пола",
+      "file": "Дом/Отжимания от пола .mp4",
+      "object": "dom-otzhimaniya-ot-pola"
+    },
+    {
+      "exercise": "Приведение руки с резиной",
+      "file": "Дом/Приведение руки с резиной .mp4",
+      "object": "dom-privedenie-ruki-s-rezinoy"
+    },
+    {
+      "exercise": "Приседания с резиной",
+      "file": "Дом/Приседания с резиной .mp4",
+      "object": "dom-prisedaniya-s-rezinoy"
+    },
+    {
+      "exercise": "Протяжка резины",
+      "file": "Дом/Протяжка резины .mp4",
+      "object": "dom-protyazhka-reziny"
+    },
+    {
+      "exercise": "Тяга резины лёжа на полу",
+      "file": "Дом/тяга резины лёжа на полу .mp4",
+      "object": "dom-tyaga-reziny-lezha-na-polu"
+    },
+    {
+      "exercise": "Тяга резины сидя на полу",
+      "file": "Дом/Тяга резины сидя на полу .mp4",
+      "object": "dom-tyaga-reziny-sidya-na-polu"
+    },
+    {
+      "exercise": "Тяга стоя в наклоне резины",
+      "file": "Дом/тяга резины стоя в наклоне .mp4",
+      "object": "dom-tyaga-reziny-stoya-v-naklone"
+    },
+    {
+      "exercise": "Фроги",
+      "file": "Дом/Фроги.mp4",
+      "object": "dom-frogi"
+    },
+    {
+      "exercise": "Шаги в сторону с резиной на коленях",
+      "file": "Дом/Шаги в сторону с резиной на коленях .mp4",
+      "object": "dom-shagi-v-storonu-s-rezinoy-na-kolenyah"
+    },
+    {
+      "exercise": "Разводка",
+      "file": "Зал/010_Разводка.mp4",
+      "object": "zal-010-razvodka"
+    },
+    {
+      "exercise": "Жим гантелей сидя",
+      "file": "Зал/011_Жим гантелей сидя .mp4",
+      "object": "zal-011-zhim-ganteley-sidya"
+    },
+    {
+      "exercise": "Махи с гантелями стоя",
+      "file": "Зал/012_Махи гантелями стоя.mp4",
+      "object": "zal-012-mahi-gantelyami-stoya"
+    },
+    {
+      "exercise": "Спайдер",
+      "file": "Зал/014_Спайдер.mp4",
+      "object": "zal-014-spayder"
+    },
+    {
+      "exercise": "Складка",
+      "file": "Зал/015_Складка.mp4",
+      "object": "zal-015-skladka"
+    },
+    {
+      "exercise": "Скручивания лёжа на полу",
+      "file": "Зал/016_Скручивания лёжа на полу.mp4",
+      "object": "zal-016-skruchivaniya-lezha-na-polu"
+    },
+    {
+      "exercise": "Присед + мах гантелями вперёд",
+      "file": "Зал/021_Присед мах гантелями вперед.mp4",
+      "object": "zal-021-prised-mah-gantelyami-vpered"
+    },
+    {
+      "exercise": "Трастеры",
+      "file": "Зал/023_Трастеры.mp4",
+      "object": "zal-023-trastery"
+    },
+    {
+      "exercise": "Рывок гантели одной рукой",
+      "file": "Зал/024_Рывок гантели одной рукой.mp4",
+      "object": "zal-024-ryvok-ganteli-odnoy-rukoy"
+    },
+    {
+      "exercise": "Выпад + прыжок",
+      "file": "Зал/025_Выпад + прыжок .mp4",
+      "object": "zal-025-vypad-pryzhok"
+    },
+    {
+      "exercise": "Вращение корпуса сидя на ягодицах",
+      "file": "Зал/027_Вращение корпуса сидя на ягодицах.mp4",
+      "object": "zal-027-vraschenie-korpusa-sidya-na-yagoditsah"
+    },
+    {
+      "exercise": "Отведение рук назад сидя в наклоне",
+      "file": "Зал/028_Отведение рук назад сидя в наклоне .mp4",
+      "object": "zal-028-otvedenie-ruk-nazad-sidya-v-naklone"
+    },
+    {
+      "exercise": "Тяга верхнего блока широким хватом",
+      "file": "Зал/032_Тяга верхнего блока широким хватом.mp4",
+      "object": "zal-032-tyaga-verhnego-bloka-shirokim-hvatom"
+    },
+    {
+      "exercise": "Тяга горизонтальная к поясу по одной руке стоя в выпаде",
+      "file": "Зал/035_Тяга горизонтальная к поясу по одной руке стоя в выпаде.mp4",
+      "object": "zal-035-tyaga-gorizontalnaya-k-poyasu-po-odnoy-ruke-stoya-v-vypade"
+    },
+    {
+      "exercise": "Болгарские выпады",
+      "file": "Зал/03_Болгарские выпады .mp4",
+      "object": "zal-03-bolgarskie-vypady"
+    },
+    {
+      "exercise": "Молитва в кроссовере",
+      "file": "Зал/044_Молитва в кроссовере.mp4",
+      "object": "zal-044-molitva-v-krossovere"
+    },
+    {
+      "exercise": "Гиперэкстензия",
+      "file": "Зал/047_Гиперэкстензия .mp4",
+      "object": "zal-047-giperekstenziya"
+    },
+    {
+      "exercise": "Обратная бабочка",
+      "file": "Зал/048_Обратная бабочка .mp4",
+      "object": "zal-048-obratnaya-babochka"
+    },
+    {
+      "exercise": "Бабочка",
+      "file": "Зал/049_Бабочка.mp4",
+      "object": "zal-049-babochka"
+    },
+    {
+      "exercise": "Тяга нижнего блока с упором грудью",
+      "file": "Зал/050_Тяга нижнего блока с упором грудью.mp4",
+      "object": "zal-050-tyaga-nizhnego-bloka-s-uporom-grudyu"
+    },
+    {
+      "exercise": "Зашагивание на тумбу",
+      "file": "Зал/06_Зашагивание на тумбу.mp4",
+      "object": "zal-06-zashagivanie-na-tumbu"
+    },
+    {
+      "exercise": "Румынская тяга со штангой",
+      "file": "Зал/07_Румынская тяга со штангой .mp4",
+      "object": "zal-07-rumynskaya-tyaga-so-shtangoy"
+    },
+    {
+      "exercise": "Румынская тяга на одной ноге со штангой",
+      "file": "Зал/08_Румынская тяга со штангой на одной ноге.mp4",
+      "object": "zal-08-rumynskaya-tyaga-so-shtangoy-na-odnoy-noge"
+    },
+    {
+      "exercise": "Жим гантелей лёжа на наклонной скамье",
+      "file": "Зал/09_Жим гантелей лежа на наклонной скамье.mp4",
+      "object": "zal-09-zhim-ganteley-lezha-na-naklonnoy-skame"
+    },
+    {
+      "exercise": "Боковой выпад с подъёмом гантели над головой",
+      "file": "Зал/026_Боковой выпад с подьемом гантели над головой.mp4",
+      "object": "zal-026-bokovoy-vypad-s-podemom-ganteli-nad-golovoy"
+    },
+    {
+      "exercise": "Доползание до планки + становимся на локти",
+      "file": "Зал/017_Доползанме до планки становимся на локти.mp4",
+      "object": "zal-017-dopolzanme-do-planki-stanovimsya-na-lokti"
+    },
+    {
+      "exercise": "Отведения бёдер сидя в тренажёре",
+      "file": "Зал/045_Отведение бедер сидя в тренажере.mp4",
+      "object": "zal-045-otvedenie-beder-sidya-v-trenazhere"
+    },
+    {
+      "exercise": "Отведения бёдер сидя с резиной",
+      "file": "Дом/отведение бедер сидя с резиной .mp4",
+      "object": "dom-otvedenie-beder-sidya-s-rezinoy"
+    },
+    {
+      "exercise": "Румынская стоя на одной ноге с отведением второй ноги назад",
+      "file": "Зал/030_Румынская тяга стоя на одной ноге с отведением второй ноги назад .mp4",
+      "object": "zal-030-rumynskaya-tyaga-stoya-na-odnoy-noge-s-otvedeniem-vtoroy-nogi-nazad"
+    },
+    {
+      "exercise": "Разгибание рук с резиной",
+      "file": "Дом/Разгибания рук с резиной .mp4",
+      "object": "dom-razgibaniya-ruk-s-rezinoy"
+    },
+    {
+      "exercise": "Сгибание рук с резиной",
+      "file": "Дом/Сгибания рук с резиной.mp4",
+      "object": "dom-sgibaniya-ruk-s-rezinoy"
+    },
+    {
+      "exercise": "Румынская на одной ноге с упором другой ноги в стену",
+      "file": "Зал/031_Румынская тяга на одной ноге с упором другой ноги в стену.mp4",
+      "object": "zal-031-rumynskaya-tyaga-na-odnoy-noge-s-uporom-drugoy-nogi-v-stenu"
+    },
+    {
+      "exercise": "Тяга нижнего блока с V-образной рукоятью сидя",
+      "file": "Зал/036_Тяга нижнего блока сидя c V образной рукоятью.mp4",
+      "object": "zal-036-tyaga-nizhnego-bloka-sidya-c-v-obraznoy-rukoyatyu"
+    },
+    {
+      "exercise": "Тяга гантели в наклоне с опорой на скамью",
+      "file": "Зал/029_Тяга гантели в наклоне с упором на скамью .mp4",
+      "object": "zal-029-tyaga-ganteli-v-naklone-s-uporom-na-skamyu"
+    },
+    {
+      "exercise": "Махи в кроссовере по одной руке V-образной рукояткой",
+      "file": "Зал/043_Махи в кроссовере по одной руке V образной рукоятью.mp4",
+      "object": "zal-043-mahi-v-krossovere-po-odnoy-ruke-v-obraznoy-rukoyatyu"
+    },
+    {
+      "exercise": "Тяга верхнего блока с V-образной рукоятью",
+      "file": "Зал/033_Тяга верхнего блока с V образной рукояткой .mp4",
+      "object": "zal-033-tyaga-verhnego-bloka-s-v-obraznoy-rukoyatkoy"
+    },
+    {
+      "exercise": "Сгибание ног сидя/лёжа",
+      "file": "Зал/046_Сгибание ног сидя или лежа.mp4",
+      "object": "zal-046-sgibanie-nog-sidya-ili-lezha"
+    },
+    {
+      "exercise": "Разгибание рук (косичка)",
+      "file": "Зал/040_Разгибание рук с косичкой.mp4",
+      "object": "zal-040-razgibanie-ruk-s-kosichkoy"
+    },
+    {
+      "exercise": "Сгибание рук (косичка)",
+      "file": "Зал/041_Сгибание рук с косичкой.mp4",
+      "object": "zal-041-sgibanie-ruk-s-kosichkoy"
+    },
+    {
+      "exercise": "Махи ноги стоя с резиной",
+      "file": "Дом/Махи ноги стоя.mp4",
+      "object": "dom-mahi-nogi-stoya"
+    },
+    {
+      "exercise": "Выпады назад на месте с резиной",
+      "file": "Дом/выпады с резиной.mp4",
+      "object": "dom-vypady-s-rezinoy"
+    },
+    {
+      "exercise": "Жим резины сидя",
+      "file": "Дом/Жим резины .mp4",
+      "object": "dom-zhim-reziny"
+    },
+    {
+      "exercise": "Тяга к поясу резины с упором рукой в наклоне",
+      "file": "Дом/Тяга к поясу резины с упором.mp4",
+      "object": "dom-tyaga-k-poyasu-reziny-s-uporom"
+    },
+    {
+      "exercise": "Выпады назад на месте",
+      "file": "Зал/022_Выпады на месте .mp4",
+      "object": "zal-022-vypady-na-meste"
+    },
+    {
+      "exercise": "Ягодичный мост со штангой",
+      "file": "Зал/04_Ягодичный мост.mp4",
+      "object": "zal-04-yagodichnyy-most"
+    },
+    {
+      "exercise": "Румынская тяга на одной ноге отводя другую ногу назад с резиной",
+      "file": "Дом/Румыгская тяга на одной ноге с отведение другой ноги назад с резиной.mp4",
+      "object": "dom-rumygskaya-tyaga-na-odnoy-noge-s-otvedenie-drugoy-nogi-nazad-s-rezinoy"
+    },
+    {
+      "exercise": "Махи стоя в кроссовере",
+      "file": "Зал/042_Махи одной ноги стоя  в кроссовере.mp4",
+      "object": "zal-042-mahi-odnoy-nogi-stoya-v-krossovere"
+    },
+    {
+      "exercise": "Разгибание рук (прямая рукоять)",
+      "file": "Зал/039_Разгибание рук с прямой  рукояткой .mp4",
+      "object": "zal-039-razgibanie-ruk-s-pryamoy-rukoyatkoy"
+    },
+    {
+      "exercise": "Румынская на одной ноге с упором другой ноги в стену с резиной",
+      "file": "Дом/Румыгская тяга на одной ноге с упорои второй ноги в стену с резиной.mp4",
+      "object": "dom-rumygskaya-tyaga-na-odnoy-noge-s-uporoi-vtoroy-nogi-v-stenu-s-rezinoy"
+    },
+    {
+      "exercise": "Приседания",
+      "file": "Зал/01_Приседания со штангой .mp4",
+      "object": "zal-01-prisedaniya-so-shtangoy"
+    },
+    {
+      "exercise": "Подтягивания в гравитроне параллельный хват",
+      "file": "Зал/034_Подтягивания в гравитроне .mp4",
+      "object": "zal-034-podtyagivaniya-v-gravitrone"
+    },
+    {
+      "exercise": "Сгибание рук (прямая рукоять)",
+      "file": "Зал/038_Сгибания рук с прямой рукояткой.mp4",
+      "object": "zal-038-sgibaniya-ruk-s-pryamoy-rukoyatkoy"
+    },
+    {
+      "exercise": "Доползание до планки + касание рукой противоположного плеча",
+      "file": "Зал/019_Доползание до планки + касание противоположной рукой плеча.mp4",
+      "object": "zal-019-dopolzanie-do-planki-kasanie-protivopolozhnoy-rukoy-plecha"
+    },
+    {
+      "exercise": "Протяжка штанги широким хватом стоя",
+      "file": "Зал/013_Протяжка штанги.mp4",
+      "object": "zal-013-protyazhka-shtangi"
+    },
+    {
+      "exercise": "Выпад назад с гантелью в руке над головой",
+      "file": "Зал/020_Выпады назад с гантелей на головой.mp4",
+      "object": "zal-020-vypady-nazad-s-ganteley-na-golovoy"
+    },
+    {
+      "exercise": "В планке перетаскиваем гантель под собой",
+      "file": "Зал/018_В планке перетаскивание гантели.mp4",
+      "object": "zal-018-v-planke-peretaskivanie-ganteli"
+    }
+  ],
+  "skipped": [
+    {
+      "file": "Дом/Болгарские выпады .mp4",
+      "object": "dom-bolgarskie-vypady",
+      "video_url": "https://api.fitproapp.ru/storage/v1/object/public/exercise-videos/dom-bolgarskie-vypady.mp4",
+      "reason": "дубль к Зал/03"
+    },
+    {
+      "file": "Дом/Приседания .mp4",
+      "object": "dom-prisedaniya",
+      "video_url": "https://api.fitproapp.ru/storage/v1/object/public/exercise-videos/dom-prisedaniya.mp4",
+      "reason": "дубль к Зал/01 (дома без снаряда)"
+    },
+    {
+      "file": "Дом/Складка .mp4",
+      "object": "dom-skladka",
+      "video_url": "https://api.fitproapp.ru/storage/v1/object/public/exercise-videos/dom-skladka.mp4",
+      "reason": "дубль к Зал/015"
+    },
+    {
+      "file": "Дом/Скручивания лёжа на полу.mp4",
+      "object": "dom-skruchivaniya-lezha-na-polu",
+      "video_url": "https://api.fitproapp.ru/storage/v1/object/public/exercise-videos/dom-skruchivaniya-lezha-na-polu.mp4",
+      "reason": "дубль к Зал/016"
+    },
+    {
+      "file": "Дом/Спайдер.mp4",
+      "object": "dom-spayder",
+      "video_url": "https://api.fitproapp.ru/storage/v1/object/public/exercise-videos/dom-spayder.mp4",
+      "reason": "дубль к Зал/014"
+    },
+    {
+      "file": "Дом/Вращения корпуса сидя на ягодицах .mp4",
+      "object": "dom-vrascheniya-korpusa-sidya-na-yagoditsah",
+      "video_url": "https://api.fitproapp.ru/storage/v1/object/public/exercise-videos/dom-vrascheniya-korpusa-sidya-na-yagoditsah.mp4",
+      "reason": "дубль к Зал/027"
+    },
+    {
+      "file": "Дом/отведение согнутой ноги стоя в наклоне .mp4",
+      "object": "dom-otvedenie-sognutoy-nogi-stoya-v-naklone",
+      "video_url": "https://api.fitproapp.ru/storage/v1/object/public/exercise-videos/dom-otvedenie-sognutoy-nogi-stoya-v-naklone.mp4",
+      "reason": "нет версии без резины; дубль к «…с резиной» (Дом) — skip"
+    },
+    {
+      "file": "Дом/ягодичный мост .mp4",
+      "object": "dom-yagodichnyy-most",
+      "video_url": "https://api.fitproapp.ru/storage/v1/object/public/exercise-videos/dom-yagodichnyy-most.mp4",
+      "reason": "дубль к Зал/04 (дома без снаряда, каталог только «со штангой»)"
+    },
+    {
+      "file": "Зал/05_выпады на месте .mp4",
+      "object": "zal-05-vypady-na-meste",
+      "video_url": "https://api.fitproapp.ru/storage/v1/object/public/exercise-videos/zal-05-vypady-na-meste.mp4",
+      "reason": "дубль к Зал/022"
+    },
+    {
+      "file": "Дом/Румыгская тяга на одной ноге с отведение другой ноги назад.mp4",
+      "object": "dom-rumygskaya-tyaga-na-odnoy-noge-s-otvedenie-drugoy-nogi-nazad",
+      "video_url": "https://api.fitproapp.ru/storage/v1/object/public/exercise-videos/dom-rumygskaya-tyaga-na-odnoy-noge-s-otvedenie-drugoy-nogi-nazad.mp4",
+      "reason": "дубль к Зал/030 (в имени опечатка «Румыгская»)"
+    },
+    {
+      "file": "Зал/02_Приседания с гантелью.mp4",
+      "object": "zal-02-prisedaniya-s-gantelyu",
+      "video_url": "https://api.fitproapp.ru/storage/v1/object/public/exercise-videos/zal-02-prisedaniya-s-gantelyu.mp4",
+      "reason": "дубль к Зал/01 (снаряд гантель; каталог — только «Приседания»)"
+    },
+    {
+      "file": "Дом/Румыгская тяга на одной ноге с упорои второй ноги в стену.mp4",
+      "object": "dom-rumygskaya-tyaga-na-odnoy-noge-s-uporoi-vtoroy-nogi-v-stenu",
+      "video_url": "https://api.fitproapp.ru/storage/v1/object/public/exercise-videos/dom-rumygskaya-tyaga-na-odnoy-noge-s-uporoi-vtoroy-nogi-v-stenu.mp4",
+      "reason": "дубль к Зал/031"
+    },
+    {
+      "file": "Дом/ягодичный мост с резиной .mp4",
+      "object": "dom-yagodichnyy-most-s-rezinoy",
+      "video_url": "https://api.fitproapp.ru/storage/v1/object/public/exercise-videos/dom-yagodichnyy-most-s-rezinoy.mp4",
+      "reason": "нет двуногой резина-версии в каталоге — skip (есть только «на одной ноге с резиной»)"
+    },
+    {
+      "file": "Зал/037_Тяга нижнего блока широким хватом.mp4",
+      "object": "zal-037-tyaga-nizhnego-bloka-shirokim-hvatom",
+      "video_url": "https://api.fitproapp.ru/storage/v1/object/public/exercise-videos/zal-037-tyaga-nizhnego-bloka-shirokim-hvatom.mp4",
+      "reason": "в каталоге НЕТ 'нижнего широким'; ближайшее по движению 'Тяга нижнего блока с V-образной рукоятью сидя' — иначе skip"
+    }
+  ]
+}

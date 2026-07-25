@@ -48,7 +48,7 @@ export default async function handler(req, res) {
   }
   if (me?.role !== 'trainer') return res.status(403).json({ error: 'Доступно только тренеру' })
 
-  const name = req.body?.name != null ? String(req.body.name).trim() : ''
+  const name = req.body?.name != null ? String(req.body.name).trim().slice(0, 100) : ''
   const action = req.body?.action
   if (!name) return res.status(400).json({ error: 'Не указано название упражнения' })
 
@@ -63,11 +63,12 @@ export default async function handler(req, res) {
   }
 
   if (action === 'save') {
+    const rawType = req.body?.type != null ? String(req.body.type) : ''
     const row = {
       name,
-      muscle_group: req.body?.muscle_group != null ? String(req.body.muscle_group) : null,
-      equipment: req.body?.equipment != null ? String(req.body.equipment) : null,
-      type: req.body?.type != null ? String(req.body.type) : 'compound',
+      muscle_group: req.body?.muscle_group != null ? String(req.body.muscle_group).slice(0, 50) : null,
+      equipment: req.body?.equipment != null ? String(req.body.equipment).slice(0, 50) : null,
+      type: ['compound', 'isolation'].includes(rawType) ? rawType : 'compound',
       hidden: req.body?.hidden === true,
       updated_at: new Date().toISOString(),
     }

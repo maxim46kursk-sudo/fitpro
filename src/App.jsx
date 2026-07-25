@@ -4280,6 +4280,9 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
   }
   const uploadFromDevice=async(name,file)=>{
     if(!file||uploading||busy)return
+    // Проверки до подписи, чтобы гигантский/неподходящий файл не начинал заливаться.
+    if(!(file.type||'').startsWith('video/')){flashVideoErr('Нужен видеофайл');return}
+    if(file.size>300*1024*1024){flashVideoErr('Файл больше 300 МБ — сожми или сними короче');return}
     setUploading(true);setUploadMsg('Загрузка…')
     const prevUrl=exerciseVideos[name]?.video_url||null
     try{
@@ -4442,7 +4445,7 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <div>
             <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Название *</div>
-            <input value={exForm.name} onChange={e=>setExForm(f=>({...f,name:e.target.value}))}
+            <input value={exForm.name} onChange={e=>setExForm(f=>({...f,name:e.target.value}))} maxLength={100}
               placeholder="Напр. Жим гантелей сидя" autoFocus={exForm.mode==='add'} disabled={exForm.mode==='edit'}
               style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:exForm.mode==='edit'?TXT3:TXT, background:exForm.mode==='edit'?SURF2:SURF }}
               onFocus={e=>{if(exForm.mode!=='edit')e.target.style.borderColor=PUR}} onBlur={e=>e.target.style.borderColor=HAIR} />
@@ -4450,13 +4453,13 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
           </div>
           <div>
             <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Группа мышц</div>
-            <input value={exForm.m} onChange={e=>setExForm(f=>({...f,m:e.target.value}))} placeholder="Напр. Плечи"
+            <input value={exForm.m} onChange={e=>setExForm(f=>({...f,m:e.target.value}))} maxLength={50} placeholder="Напр. Плечи"
               style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
               onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
           </div>
           <div>
             <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Снаряд</div>
-            <input value={exForm.eq} onChange={e=>setExForm(f=>({...f,eq:e.target.value}))} placeholder="Напр. Гантели"
+            <input value={exForm.eq} onChange={e=>setExForm(f=>({...f,eq:e.target.value}))} maxLength={50} placeholder="Напр. Гантели"
               style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
               onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
           </div>
