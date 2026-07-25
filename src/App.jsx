@@ -890,14 +890,23 @@ function ProgramEditor({ client, trainerId }) {
   const [title,setTitle]=useState('Программа')
   const [workouts,setWorkouts]=useState([])
   const [saving,setSaving]=useState(false)
-  const [saveMsg,setSaveMsg]=useState('') // '' | 'saved' | 'error'
+  const [saveState,setSaveState]=useState('idle') // 'idle' | 'saving' | 'saved' | 'error'
   const [pickerFor,setPickerFor]=useState(null) // индекс тренировки, для которой открыт выбор упражнения
   const [pickerQuery,setPickerQuery]=useState('')
+  // Автосохранение. skipNextAutosaveRef гасит холостое сохранение сразу после
+  // загрузки (установка состояния из базы триггерит эффект, но писать нечего).
+  // latestRef держит актуальные title/workouts, чтобы сохранить их из cleanup
+  // при уходе с экрана. dirtyRef — есть ли несохранённые правки.
+  const skipNextAutosaveRef=useRef(true)
+  const latestRef=useRef({title,workouts})
+  const dirtyRef=useRef(false)
 
   const loadProgram=()=>{
     setProgramLoading(true);setProgramError(false)
     supabase.from('assigned_programs').select('*').eq('client_id',client.id).maybeSingle().then(({data,error})=>{
       if(error){console.error('Ошибка загрузки программы клиента:',error);setProgramError(true);setProgramLoading(false);return}
+      // Состояние приходит из базы — следующий прогон автосохранения холостой.
+      skipNextAutosaveRef.current=true
       setTitle(data?.title||'Программа')
       // В базе sets — строка того же формата, что в PROGRAMS_MAP. В редакторе
       // держим её разобранной на подходы и склеиваем обратно при сохранении,
@@ -982,11 +991,13 @@ function ProgramEditor({ client, trainerId }) {
   const setsTonnage=sets=>(Array.isArray(sets)?sets:[]).reduce((sum,s)=>sum+(parseFloat(s.kg)||0)*(parseInt(s.reps)||0),0)
   const workoutTonnage=w=>(w.exercises||[]).reduce((sum,ex)=>sum+setsTonnage(ex.sets),0)
 
-  const saveProgram=async()=>{
-    // structure — массив тренировок {name, exercises:[{name,sets}]}, тот же
-    // формат sets, что и в PROGRAMS_MAP (programs.js) — его парсит
-    // parseTemplateSets, свой формат не придумываем.
-    if(!Array.isArray(workouts)){console.error('Программа: structure не массив');setSaveMsg('error');return}
+  // Единая запись в базу. Принимает текущие title/workouts, чтобы её можно было
+  // звать и с актуальным состоянием (кнопка/таймер), и из cleanup при уходе с
+  // экрана (значения из latestRef). structure — массив тренировок
+  // {name, exercises:[{name,sets}]}, тот же формат sets, что и в PROGRAMS_MAP
+  // (programs.js) — его парсит parseTemplateSets, свой формат не придумываем.
+  const persistProgram=async(nextTitle,nextWorkouts)=>{
+    if(!Array.isArray(nextWorkouts)){console.error('Программа: structure не массив');setSaveState('error');return false}
     // Подходы обратно в строку. Без веса подход пишем одним числом повторений
     // — parseTemplateSets понимает обе формы. Подход без повторений пустой,
     // его отбрасываем.
@@ -998,23 +1009,44 @@ function ProgramEditor({ client, trainerId }) {
         return kg?`${kg} кг × ${reps}`:reps
       })
       .join(', ')
-    const structure=workouts.map(w=>({
+    const structure=nextWorkouts.map(w=>({
       name:(w.name||'Тренировка').trim()||'Тренировка',
       exercises:(w.exercises||[]).map(ex=>({name:ex.name,sets:serializeSets(ex.sets),note:(ex.note||'').trim()})),
     }))
-    setSaving(true);setSaveMsg('')
+    setSaving(true);setSaveState('saving')
     const{error}=await supabase.from('assigned_programs').upsert({
       client_id:client.id,
       trainer_id:trainerId,
-      title:title.trim()||'Программа',
+      title:(nextTitle||'').trim()||'Программа',
       structure,
       updated_at:new Date().toISOString(),
     },{onConflict:'client_id'})
     setSaving(false)
-    if(error){console.error('Ошибка сохранения программы:',error);setSaveMsg('error');setTimeout(()=>setSaveMsg(''),3500);return}
-    setSaveMsg('saved')
-    setTimeout(()=>setSaveMsg(''),2500)
+    if(error){console.error('Ошибка сохранения программы:',error);setSaveState('error');return false}
+    dirtyRef.current=false
+    setSaveState('saved')
+    return true
   }
+  // Кнопка «Сохранить программу» — немедленное сохранение текущего состояния.
+  const saveProgram=()=>persistProgram(title,workouts)
+
+  // Автосохранение с задержкой. latestRef обновляем на каждый прогон, чтобы
+  // cleanup при уходе с экрана взял самые свежие значения.
+  useEffect(()=>{
+    latestRef.current={title,workouts}
+    if(programLoading||programError)return
+    // Первый прогон после загрузки — холостой: состояние только пришло из базы.
+    if(skipNextAutosaveRef.current){skipNextAutosaveRef.current=false;return}
+    dirtyRef.current=true
+    const t=setTimeout(()=>{persistProgram(title,workouts)},1000)
+    return()=>clearTimeout(t)
+  },[title,workouts])
+
+  // Сохранение при размонтировании: быстрый уход сразу после правки убил бы
+  // таймер автосохранения вместе с компонентом. Дописываем из latestRef.
+  useEffect(()=>()=>{
+    if(dirtyRef.current)persistProgram(latestRef.current.title,latestRef.current.workouts)
+  },[])
 
   if(programLoading)return <div style={{ fontSize:13, color:TXT3, padding:'30px 0', textAlign:'center' }}>Загрузка...</div>
   if(programError)return (
@@ -1032,17 +1064,16 @@ function ProgramEditor({ client, trainerId }) {
 
   return (
     <div>
-      {saveMsg==='saved'&&(
-        <div style={{ marginBottom:12, padding:'9px 14px', borderRadius:9, background:'#E1F5EE', color:'#085041', fontSize:13, fontWeight:500, display:'flex', alignItems:'center', gap:6 }}><GlassIcon name="check" size={15} />Программа сохранена</div>
-      )}
-      {saveMsg==='error'&&(
-        <div style={{ marginBottom:12, padding:'9px 14px', borderRadius:9, background:'#fff5f5', color:'#ef4444', fontSize:13, fontWeight:500 }}>Не удалось сохранить — проверь связь и повтори</div>
-      )}
       <div style={{ marginBottom:14 }}>
         <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Название программы</div>
         <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Программа"
           style={{ width:'100%', padding:'9px 12px', fontSize:14, fontWeight:600, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
           onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
+        {/* Статус автосохранения. «Все изменения сохранены» держим постоянно —
+            тренер должен в любой момент видеть, что работа в базе. */}
+        {saveState==='saving'&&<div style={{ fontSize:11, color:TXT3, marginTop:4 }}>Сохраняем…</div>}
+        {saveState==='saved'&&<div style={{ fontSize:11, color:'#085041', marginTop:4 }}>Все изменения сохранены</div>}
+        {saveState==='error'&&<div style={{ fontSize:11, color:'#ef4444', marginTop:4 }}>Не сохранено — проверь связь</div>}
       </div>
 
       <div style={{ display:'flex', flexDirection:'column', gap:12, marginBottom:14 }}>
