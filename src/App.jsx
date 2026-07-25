@@ -7529,7 +7529,7 @@ function PlansView({ user, onClose, hideBack, onChanged }) {
   }
 
   // Пилюли переключателя: все пакеты + VIP отдельным псевдо-тарифом.
-  const planTabs=[...PLANS.map(p=>({key:p.key,name:p.name})),{key:'vip',name:VIP.name}]
+  const planTabs=[...PLANS.filter(p=>!p.hidden).map(p=>({key:p.key,name:p.name})),{key:'vip',name:VIP.name}]
   const isVip=selectedKey==='vip'
   const selectedPlan=isVip?null:planByKey(selectedKey)
   // Уровень для подсветки списка. У VIP горят все пункты (VIP_LEVEL выше всех).

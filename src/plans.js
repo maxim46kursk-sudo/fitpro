@@ -5,7 +5,11 @@ export const TRIAL_LEVEL = 2        // пробный открывает уро�
 export const PLANS = [
   { key:'start',  level:0, name:'СТАРТ',  price:0,    testPrice:0,  tagline:'Бесплатно',
     features:['Дневник тренировок','Рационы питания','Общий тоннаж','Аналитика питания за день и неделю','Первые 3 тренировки в каждом из 4 шаблонов','Полная база упражнений'] },
-  { key:'base',   level:1, name:'БАЗА',   price:1000, testPrice:50, tagline:'Всё из СТАРТ, плюс:',
+  // hidden:true — пакет снят с продажи, но запись НЕ удаляем: у ранее купивших
+  // (profiles.plan='base') planByKey('base') должен и дальше отдавать level:1, а
+  // не схлопываться в PLANS[0] (СТАРТ) и обнулять им доступ. Из продажи выведен
+  // фильтром по hidden на экране Тарифов (см. planTabs в App.jsx).
+  { key:'base',   level:1, name:'БАЗА',   price:1000, testPrice:50, hidden:true, tagline:'Всё из СТАРТ, плюс:',
     features:['Все тренировки во всех шаблонах','Прогресс по упражнениям'] },
   { key:'profit', level:2, name:'ПРОФИТ', price:2990, testPrice:60, highlight:true, tagline:'Всё из БАЗЫ, плюс:',
     features:['ИИ-ассистент по тренировкам и питанию'] },

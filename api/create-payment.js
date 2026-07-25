@@ -14,7 +14,9 @@ const PAYFORM_BASE = 'https://maximathlete.payform.ru/'
 // После успешной оплаты Продамус вернёт пользователя сюда.
 const URL_SUCCESS = 'https://t.me/maxim_fitpro_bot'
 
-const PAID_PLANS = new Set(['base', 'profit', 'premium'])
+// БАЗА снята с продажи — ручка отказывает на прямой запрос plan:'base', иначе
+// пакет остаётся покупаемым в обход спрятанной пилюли на экране Тарифов.
+const PAID_PLANS = new Set(['profit', 'premium'])
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')

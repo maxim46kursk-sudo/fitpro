@@ -6,8 +6,9 @@ import crypto from 'node:crypto'
 
 // Цены пакетов (рубли) и человекочитаемые имена. Сейчас это тестовые цены;
 // перед боевым запуском синхронизируй с src/plans.js (там TEST_MODE/price).
-export const PLAN_PRICE = { base: 50, profit: 60, premium: 70 }
-export const PLAN_NAME  = { base: 'БАЗА', profit: 'ПРОФИТ', premium: 'ПРЕМИУМ' }
+// БАЗА снята с продажи — ключ base убран: ссылку на неё больше не выписываем.
+export const PLAN_PRICE = { profit: 60, premium: 70 }
+export const PLAN_NAME  = { profit: 'ПРОФИТ', premium: 'ПРЕМИУМ' }
 
 // ── Подпись как в официальной библиотеке Prodamus\Hmac (PHP).
 // Нормализуем структуру: у объектов ключи сортируем по алфавиту (рекурсивно),
