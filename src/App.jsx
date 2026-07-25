@@ -9032,6 +9032,13 @@ export default function App() {
     try{
       tg.ready()
       tg.expand()
+      // Без этого Telegram трактует протяжку пальцем вниз внутри прокручиваемого
+      // контента как жест закрытия мини-приложения — особенно когда палец
+      // стартует на input или textarea: клиент не находит внешний скролл-
+      // контейнер и закрывает приложение вместо прокрутки. typeof обязателен —
+      // метод появился только в Bot API 7.7, на старых клиентах его нет и вызов
+      // без проверки бросил бы исключение, оборвав expand() и установку фона ниже.
+      if(typeof tg.disableVerticalSwipes==='function')tg.disableVerticalSwipes()
       // Фон из темы Telegram — чтобы не было белой рамки по краям на тёмной
       // теме клиента. Только цвет фона, саму вёрстку пока не переверстываем.
       if(tg.themeParams?.bg_color)document.body.style.background=tg.themeParams.bg_color
