@@ -4232,10 +4232,10 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
     setBusy(true)
     try{
       const token=await authToken()
-      const res=await fetch('/api/set-exercise-video',{
+      const res=await fetch('/api/set-exercise',{
         method:'POST',
         headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
-        body:JSON.stringify({exercise_name:exName,action:'assign',video_url:clip.video_url,poster_url:clip.poster_url}),
+        body:JSON.stringify({name:exName,action:'assign_video',video_url:clip.video_url,poster_url:clip.poster_url}),
       })
       const body=await res.json().catch(()=>null)
       if(!res.ok||!body?.ok){flashVideoErr(body?.error||'Не удалось назначить видео');return}
@@ -4249,10 +4249,10 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
     setBusy(true)
     try{
       const token=await authToken()
-      const res=await fetch('/api/set-exercise-video',{
+      const res=await fetch('/api/set-exercise',{
         method:'POST',
         headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
-        body:JSON.stringify({exercise_name:exName,action:'clear'}),
+        body:JSON.stringify({name:exName,action:'clear_video'}),
       })
       const body=await res.json().catch(()=>null)
       if(!res.ok||!body?.ok){flashVideoErr(body?.error||'Не удалось убрать видео');return}

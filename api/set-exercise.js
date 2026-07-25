@@ -10,6 +10,11 @@ const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://api.fitproapp.ru'
 const SUPABASE_KEY = process.env.VITE_SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg0NzE0NTM5LCJleHAiOjE5NDIzOTQ1Mzl9.fKJZOQkyBX7sa0n0lbJ7xxGRsn5hcEyaX5ijl9P5404'
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
+// Разрешённые префиксы для видео (действия assign_video/clear_video) — только
+// наши публичные бакеты, защита от подстановки чужих ссылок.
+const VIDEO_PREFIX = 'https://api.fitproapp.ru/storage/v1/object/public/exercise-videos/'
+const POSTER_PREFIX = 'https://api.fitproapp.ru/storage/v1/object/public/exercise-posters/'
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -72,6 +77,37 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Не удалось сохранить упражнение' })
     }
     console.log(`set-exercise: тренер ${userId} сохранил «${name}»`)
+    return res.status(200).json({ ok: true })
+  }
+
+  // Назначение/снятие видео упражнению (раньше отдельный set-exercise-video,
+  // слито сюда ради лимита serverless-функций Vercel). name = exercise_name.
+  if (action === 'clear_video') {
+    const { error } = await supabaseAdmin.from('exercise_videos').delete().eq('exercise_name', name)
+    if (error) {
+      console.error(`set-exercise: ошибка снятия видео (${name}):`, error)
+      return res.status(500).json({ error: 'Не удалось снять видео' })
+    }
+    console.log(`set-exercise: тренер ${userId} снял видео с «${name}»`)
+    return res.status(200).json({ ok: true })
+  }
+
+  if (action === 'assign_video') {
+    const videoUrl = req.body?.video_url != null ? String(req.body.video_url) : ''
+    const posterUrl = req.body?.poster_url != null ? String(req.body.poster_url) : ''
+    if (!videoUrl.startsWith(VIDEO_PREFIX)) return res.status(400).json({ error: 'Недопустимый video_url' })
+    if (posterUrl && !posterUrl.startsWith(POSTER_PREFIX)) return res.status(400).json({ error: 'Недопустимый poster_url' })
+    const { error } = await supabaseAdmin.from('exercise_videos').upsert({
+      exercise_name: name,
+      video_url: videoUrl,
+      poster_url: posterUrl || null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'exercise_name' })
+    if (error) {
+      console.error(`set-exercise: ошибка назначения видео (${name}):`, error)
+      return res.status(500).json({ error: 'Не удалось назначить видео' })
+    }
+    console.log(`set-exercise: тренер ${userId} назначил видео «${name}»`)
     return res.status(200).json({ ok: true })
   }
 
