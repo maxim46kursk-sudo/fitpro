@@ -1577,6 +1577,8 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const [programOpen,setProgramOpen]=useState(false)
   // Индекс открытой тренировки внутри модалки программы (null — список).
   const [openProgramWorkoutIdx,setOpenProgramWorkoutIdx]=useState(null)
+  // Секция «Раньше» (прошедшие даты) по умолчанию свёрнута.
+  const [showPastWorkouts,setShowPastWorkouts]=useState(false)
   const loadAssignedProgram=()=>{
     if(!userId){setAssignedProgramLoading(false);return}
     setAssignedProgramLoading(true);setAssignedProgramError(false)
@@ -1587,6 +1589,35 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     })
   }
   useEffect(()=>{loadAssignedProgram()},[userId])
+  // ── Даты программы от тренера ──────────────────────────────────────────────
+  const MONTHS_GEN=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря']
+  const DOW_SHORT=['вс','пн','вт','ср','чт','пт','сб'] // getDay(): 0=вс
+  // Дату 'ГГГГ-ММ-ДД' собираем по частям в МЕСТНУЮ дату — new Date(строка) дал
+  // бы UTC и уехал бы на день (см. localTodayISO выше, комментарий на стр. 44).
+  const parseLocalDate=key=>{const[y,m,d]=key.split('-').map(Number);return new Date(y,m-1,d)}
+  const dateShort=key=>{const d=parseLocalDate(key);return `${d.getDate()} ${MONTHS_GEN[d.getMonth()]}`}
+  const dayKeyOffset=(key,delta)=>{const d=parseLocalDate(key);d.setDate(d.getDate()+delta);const p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`}
+  // Подпись даты: сегодня/завтра/вчера словом, остальное — «27 июля, пн».
+  const dateLabel=key=>{
+    const today=localTodayISO()
+    if(key===today)return 'Сегодня'
+    if(key===dayKeyOffset(today,1))return 'Завтра'
+    if(key===dayKeyOffset(today,-1))return 'Вчера'
+    const d=parseLocalDate(key)
+    return `${d.getDate()} ${MONTHS_GEN[d.getMonth()]}, ${DOW_SHORT[d.getDay()]}`
+  }
+  // Тренировки по секциям с СОХРАНЁННЫМ исходным индексом i в structure —
+  // сортируем пары {w,i}, а не сам массив, иначе клиент запустит не ту.
+  const groupProgramWorkouts=structure=>{
+    const pairs=(Array.isArray(structure)?structure:[]).map((w,i)=>({w,i}))
+    const today=localTodayISO()
+    return {
+      todayList:pairs.filter(p=>p.w.date===today),
+      future:pairs.filter(p=>p.w.date&&p.w.date>today).sort((a,b)=>a.w.date<b.w.date?-1:1),
+      past:pairs.filter(p=>p.w.date&&p.w.date<today).sort((a,b)=>a.w.date>b.w.date?-1:1),
+      dateless:pairs.filter(p=>!p.w.date),
+    }
+  }
   const [wName,setWName]=useState('Новая тренировка')
   const [wColor,setWColor]=useState('#D85A30')
   const [wExercises,setWExercises]=useState([])
@@ -3608,9 +3639,14 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingRight:20 }}>
             <div style={{ display:'flex',justifyContent:'center',marginBottom:6 }}><GlassIcon name="template" size={42} /></div>
             <div style={{ fontSize:16, fontWeight:700, color:TXT, textAlign:'center' }}>{assignedProgram.title?.trim()||'Программа от тренера'}</div>
-            <div style={{ fontSize:12, color:TXT3, marginTop:3, textAlign:'center' }}>
-              {wCount} {pluralizeWorkouts(wCount)} · {exCount} упр.
-            </div>
+            {(()=>{
+              // Осмысленная подпись: сегодняшняя тренировка > ближайшая будущая >
+              // нынешний счётчик. Даты мягкие — прошедшие в подписи не «горят».
+              const {todayList,future}=groupProgramWorkouts(assignedProgram.structure)
+              if(todayList.length)return <div style={{ fontSize:13, color:PUR, fontWeight:700, marginTop:3, textAlign:'center' }}>Сегодня: {todayList[0].w.name||'Тренировка'}</div>
+              if(future.length)return <div style={{ fontSize:12, color:TXT3, marginTop:3, textAlign:'center' }}>Ближайшая: {dateShort(future[0].w.date)}</div>
+              return <div style={{ fontSize:12, color:TXT3, marginTop:3, textAlign:'center' }}>{wCount} {pluralizeWorkouts(wCount)} · {exCount} упр.</div>
+            })()}
           </div>
         </Card>
         )
@@ -3633,6 +3669,9 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   ?(assignedProgram.title||'Программа')
                   :(assignedProgram.structure?.[openProgramWorkoutIdx]?.name||`Тренировка ${openProgramWorkoutIdx+1}`)}
               </div>
+              {openProgramWorkoutIdx!=null&&assignedProgram.structure?.[openProgramWorkoutIdx]?.date&&(
+                <div style={{ fontSize:11, color:PUR, fontWeight:600 }}>{dateLabel(assignedProgram.structure[openProgramWorkoutIdx].date)}</div>
+              )}
               <div style={{ fontSize:11, color:TXT3 }}>
                 {openProgramWorkoutIdx==null
                   ?`${assignedProgram.structure?.length||0} ${pluralizeWorkouts(assignedProgram.structure?.length||0)}`
@@ -3641,30 +3680,58 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             </div>
           </div>
           <div style={{ flex:1, overflowY:'auto', padding:'14px 16px 32px' }}>
-            {openProgramWorkoutIdx==null?(
-              // Список тренировок — карточками-слотами, как в шаблонной папке.
-              <>
-                {(Array.isArray(assignedProgram.structure)?assignedProgram.structure:[]).map((w,wi)=>{
-                  const ec=w.exercises?.length||0
-                  return (
-                    <div key={wi} onClick={()=>setOpenProgramWorkoutIdx(wi)}
-                      style={{ background:SURF, borderRadius:20, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', marginBottom:10, display:'flex', flexDirection:'column', alignItems:'center', padding:'16px 16px 14px', cursor:'pointer', position:'relative' }}>
-                      <div style={{ position:'absolute', top:14, left:14, width:36, height:36, borderRadius:'50%', background:ec>0?PUR:SURF2, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:ec>0?'#fff':TXT3 }}>{wi+1}</div>
-                      <span style={{ position:'absolute', top:18, right:14, fontSize:18, color:TXT3 }}>›</span>
-                      <div style={{ textAlign:'center', paddingTop:6 }}>
-                        <div style={{ fontSize:16, fontWeight:700, color:TXT, marginBottom:4 }}>{w.name||`Тренировка ${wi+1}`}</div>
-                        <div style={{ fontSize:12, color:TXT3 }}>{ec===0?'Нет упражнений':`${ec} упр.`}</div>
-                      </div>
+            {openProgramWorkoutIdx==null?(()=>{
+              // Список по датам. i — ИСХОДНЫЙ индекс в structure: и переход в
+              // детали (setOpenProgramWorkoutIdx), и быстрый старт открывают ту
+              // самую тренировку. Сортируем пары {w,i}, а не сам массив.
+              const {todayList,future,past,dateless}=groupProgramWorkouts(assignedProgram.structure)
+              const today=localTodayISO()
+              // Карточка тренировки — прежняя вёрстка + число месяца в кружке,
+              // подпись даты и рамка для сегодняшней. Прошедшие — как обычные.
+              const card=({w,i})=>{
+                const ec=w.exercises?.length||0
+                const isToday=w.date===today
+                const circle=w.date?parseLocalDate(w.date).getDate():(i+1)
+                return (
+                  <div key={i} onClick={()=>setOpenProgramWorkoutIdx(i)}
+                    style={{ background:SURF, borderRadius:20, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', marginBottom:10, display:'flex', flexDirection:'column', alignItems:'center', padding:'16px 16px 14px', cursor:'pointer', position:'relative', border:isToday?`1.5px solid ${PUR}`:'1.5px solid transparent' }}>
+                    <div style={{ position:'absolute', top:14, left:14, width:36, height:36, borderRadius:'50%', background:ec>0?PUR:SURF2, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:ec>0?'#fff':TXT3 }}>{circle}</div>
+                    <span style={{ position:'absolute', top:18, right:14, fontSize:18, color:TXT3 }}>›</span>
+                    <div style={{ textAlign:'center', paddingTop:6 }}>
+                      <div style={{ fontSize:16, fontWeight:700, color:TXT, marginBottom:4 }}>{w.name||`Тренировка ${i+1}`}</div>
+                      {w.date&&<div style={{ fontSize:12, color:TXT3, marginBottom:2 }}>{dateLabel(w.date)}</div>}
+                      <div style={{ fontSize:12, color:TXT3 }}>{ec===0?'Нет упражнений':`${ec} упр.`}</div>
+                      {isToday&&(
+                        <button onClick={e=>{e.stopPropagation();startTrainerWorkout(assignedProgram.structure[i])}}
+                          style={{ marginTop:10, display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6, padding:'9px 18px', borderRadius:10, border:'none', background:TEA, color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', minHeight:'unset' }}>
+                          ▶ Начать
+                        </button>
+                      )}
                     </div>
-                  )
-                })}
+                  </div>
+                )
+              }
+              const head=t=>(<div key={`h-${t}`} style={{ fontSize:12, fontWeight:700, color:TXT3, margin:'6px 2px 8px' }}>{t}</div>)
+              return (
+              <>
+                {todayList.length>0&&<>{head('Сегодня')}{todayList.map(card)}</>}
+                {future.length>0&&<>{head('Дальше')}{future.map(card)}</>}
+                {past.length>0&&(showPastWorkouts
+                  ?<>{head('Раньше')}{past.map(card)}</>
+                  :<button onClick={()=>setShowPastWorkouts(true)}
+                     style={{ width:'100%', marginBottom:10, padding:'11px', borderRadius:12, border:`1px solid ${HAIR}`, background:SURF, color:TXT3, fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                     Показать предыдущие ({past.length})
+                   </button>
+                )}
+                {dateless.length>0&&<>{head('Без даты')}{dateless.map(card)}</>}
                 {/* Выбор программы тренера активной — с отметкой, когда выбрана. */}
                 <button onClick={selectTrainerProgram}
                   style={{ width:'100%', marginTop:4, padding:'13px', borderRadius:12, border:'none', background:selectedProgram===TRAINER_PROGRAM_KEY?SURF2:PUR, color:selectedProgram===TRAINER_PROGRAM_KEY?TXT3:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:7 }}>
                   {selectedProgram===TRAINER_PROGRAM_KEY&&<GlassIcon name="check" size={17} />}{selectedProgram===TRAINER_PROGRAM_KEY?'Эта программа выбрана':'Тренироваться по этой программе'}
                 </button>
               </>
-            ):(
+              )
+            })():(
               // Одна тренировка — ТЕМ ЖЕ экраном, что шаблонный слот: «Начать»
               // сверху, ниже карточки упражнений (бейдж, название, ExMeta,
               // подходы, видео постером). Комментарий тренера — под упражнением.
