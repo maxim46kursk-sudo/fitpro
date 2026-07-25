@@ -893,6 +893,16 @@ function ProgramEditor({ client, trainerId }) {
   const [saveState,setSaveState]=useState('idle') // 'idle' | 'saving' | 'saved' | 'error'
   const [pickerFor,setPickerFor]=useState(null) // индекс тренировки, для которой открыт выбор упражнения
   const [pickerQuery,setPickerQuery]=useState('')
+  // Календарь. viewMonth/selectedDate держим ОТДЕЛЬНО от workouts — иначе тап по
+  // дате или листание месяца дёргали бы автосохранение вхолостую.
+  const [viewMonth,setViewMonth]=useState(()=>{const d=new Date();return{y:d.getFullYear(),m:d.getMonth()}})
+  const [selectedDate,setSelectedDate]=useState(()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`})
+  // Модалка копирования (несколько дат) и назначения даты тренировке без даты.
+  const [copyWi,setCopyWi]=useState(null)
+  const [copySel,setCopySel]=useState([])
+  const [copyMonth,setCopyMonth]=useState(()=>{const d=new Date();return{y:d.getFullYear(),m:d.getMonth()}})
+  const [assignWi,setAssignWi]=useState(null)
+  const [assignMonth,setAssignMonth]=useState(()=>{const d=new Date();return{y:d.getFullYear(),m:d.getMonth()}})
   // Автосохранение. skipNextAutosaveRef гасит холостое сохранение сразу после
   // загрузки (установка состояния из базы триггерит эффект, но писать нечего).
   // latestRef держит актуальные title/workouts, чтобы сохранить их из cleanup
@@ -932,13 +942,6 @@ function ProgramEditor({ client, trainerId }) {
   }
   useEffect(()=>{loadProgram()},[client.id])
 
-  const addWorkout=()=>{
-    // Новую сразу разворачиваем — тренер начинает её наполнять.
-    setWorkouts(w=>[...w,{name:`Тренировка ${w.length+1}`,exercises:[],collapsed:false}])
-  }
-  const toggleWorkout=(wi)=>{
-    setWorkouts(w=>w.map((x,i)=>i===wi?{...x,collapsed:!x.collapsed}:x))
-  }
   const removeWorkout=(wi)=>{
     if(!window.confirm('Удалить тренировку из программы?'))return
     setWorkouts(w=>w.filter((_,i)=>i!==wi))
@@ -991,6 +994,86 @@ function ProgramEditor({ client, trainerId }) {
   const setsTonnage=sets=>(Array.isArray(sets)?sets:[]).reduce((sum,s)=>sum+(parseFloat(s.kg)||0)*(parseInt(s.reps)||0),0)
   const workoutTonnage=w=>(w.exercises||[]).reduce((sum,ex)=>sum+setsTonnage(ex.sets),0)
 
+  // ── Календарь ─────────────────────────────────────────────────────────────
+  const MONTHS_NOM=['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь']
+  const MONTHS_GEN=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря']
+  const DOW=['ПН','ВТ','СР','ЧТ','ПТ','СБ','ВС']
+  const pad2=n=>String(n).padStart(2,'0')
+  const mkKey=(y,m,d)=>`${y}-${pad2(m+1)}-${pad2(d)}`
+  const _today=new Date()
+  const todayKey=mkKey(_today.getFullYear(),_today.getMonth(),_today.getDate())
+  // «27 июля» — число + месяц в родительном падеже.
+  const dateWords=key=>{const[y,m,d]=key.split('-').map(Number);return `${d} ${MONTHS_GEN[m-1]}`}
+  // Кол-во дат словами после «на»: 1 дату, 2–4 даты, 5+ дат.
+  const dateCountWord=n=>{const a=n%100,b=n%10;if(a>=11&&a<=14)return 'дат';if(b===1)return 'дату';if(b>=2&&b<=4)return 'даты';return 'дат'}
+  // Сетка месяца, недели с понедельника; заполнители — null.
+  const monthMatrix=(y,m)=>{
+    const startOffset=(new Date(y,m,1).getDay()+6)%7 // getDay: 0=Вс → сдвигаем к Пн-первому
+    const days=new Date(y,m+1,0).getDate()
+    const cells=[]
+    for(let i=0;i<startOffset;i++)cells.push(null)
+    for(let d=1;d<=days;d++)cells.push(d)
+    while(cells.length%7)cells.push(null)
+    return cells
+  }
+  // Шапка со стрелками ‹ › и подписью «месяц год».
+  const monthHead=(view,setView)=>(
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+      <button onClick={()=>setView(v=>v.m>0?{y:v.y,m:v.m-1}:{y:v.y-1,m:11})} style={{ background:SURF2, border:`1px solid ${HAIR}`, borderRadius:8, width:30, height:30, cursor:'pointer', color:TXT, fontSize:16, lineHeight:1, padding:0 }}>‹</button>
+      <span style={{ fontSize:14, fontWeight:700, color:TXT, textTransform:'capitalize' }}>{MONTHS_NOM[view.m]} {view.y}</span>
+      <button onClick={()=>setView(v=>v.m<11?{y:v.y,m:v.m+1}:{y:v.y+1,m:0})} style={{ background:SURF2, border:`1px solid ${HAIR}`, borderRadius:8, width:30, height:30, cursor:'pointer', color:TXT, fontSize:16, lineHeight:1, padding:0 }}>›</button>
+    </div>
+  )
+  // Подписи дней + сетка; renderCell(key,day) рисует ячейку конкретной даты.
+  const monthGrid=(view,renderCell)=>(<>
+    <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:4, marginBottom:6 }}>
+      {DOW.map(d=><span key={d} style={{ fontSize:10, fontWeight:700, color:TXT3, textAlign:'center' }}>{d}</span>)}
+    </div>
+    <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:4 }}>
+      {monthMatrix(view.y,view.m).map((d,i)=>d==null?<span key={i} />:renderCell(mkKey(view.y,view.m,d),d))}
+    </div>
+  </>)
+
+  const addWorkoutForDate=dateKey=>{
+    setWorkouts(w=>[...w,{name:'Тренировка',exercises:[],date:dateKey}])
+  }
+  // Глубокая копия тренировки на другую дату — НОВЫЕ объекты подходов, не ссылки
+  // на те же массивы, иначе правки на одной дате поехали бы на все копии.
+  const cloneWorkout=(w,dateKey)=>({
+    name:w.name,date:dateKey,
+    exercises:(w.exercises||[]).map(ex=>({
+      name:ex.name,note:ex.note||'',
+      sets:(Array.isArray(ex.sets)?ex.sets:[]).map(s=>({reps:s.reps,kg:s.kg})),
+    })),
+  })
+  const toggleCopyDate=key=>setCopySel(s=>s.includes(key)?s.filter(k=>k!==key):[...s,key])
+  const applyCopy=()=>{
+    const src=workouts[copyWi]
+    if(!src||!copySel.length){setCopyWi(null);setCopySel([]);return}
+    const next=[...workouts]
+    for(const key of copySel){
+      const idx=next.findIndex(x=>x.date===key)
+      if(idx>=0){
+        if(!window.confirm(`На ${dateWords(key)} уже есть тренировка. Заменить её копией?`))continue
+        next[idx]=cloneWorkout(src,key)
+      }else next.push(cloneWorkout(src,key))
+    }
+    setWorkouts(next)
+    setCopyWi(null);setCopySel([])
+  }
+  // Назначить дату тренировке без даты (перенос старой программы в календарь).
+  const assignDate=key=>{
+    const wi=assignWi
+    const target=workouts[wi]
+    if(!target){setAssignWi(null);return}
+    const conflict=workouts.some((x,i)=>x.date===key&&i!==wi)
+    if(conflict&&!window.confirm(`На ${dateWords(key)} уже есть тренировка. Заменить её?`))return
+    setWorkouts(w=>w.filter((x,i)=>!(x.date===key&&i!==wi)).map(x=>x===target?{...x,date:key}:x))
+    setAssignWi(null)
+    setSelectedDate(key)
+    const[y,m]=key.split('-').map(Number);setViewMonth({y,m:m-1})
+  }
+
   // Единая запись в базу. Принимает текущие title/workouts, чтобы её можно было
   // звать и с актуальным состоянием (кнопка/таймер), и из cleanup при уходе с
   // экрана (значения из latestRef). structure — массив тренировок
@@ -1011,6 +1094,7 @@ function ProgramEditor({ client, trainerId }) {
       .join(', ')
     const structure=nextWorkouts.map(w=>({
       name:(w.name||'Тренировка').trim()||'Тренировка',
+      date:w.date||null, // дата плана внутри существующего jsonb; формат структуры не меняем
       exercises:(w.exercises||[]).map(ex=>({name:ex.name,sets:serializeSets(ex.sets),note:(ex.note||'').trim()})),
     }))
     setSaving(true);setSaveState('saving')
@@ -1062,6 +1146,12 @@ function ProgramEditor({ client, trainerId }) {
     </div>
   )
 
+  // Производные для календаря (после ранних возвратов — при загрузке не нужны).
+  const dayWi=workouts.findIndex(w=>w.date===selectedDate)
+  const viewPrefix=`${viewMonth.y}-${pad2(viewMonth.m+1)}`
+  const monthTon=workouts.filter(w=>w.date&&w.date.startsWith(viewPrefix)).reduce((s,w)=>s+workoutTonnage(w),0)
+  const datelessList=workouts.map((w,i)=>({w,i})).filter(o=>o.w.date==null)
+
   return (
     <div>
       <div style={{ marginBottom:14 }}>
@@ -1076,25 +1166,45 @@ function ProgramEditor({ client, trainerId }) {
         {saveState==='error'&&<div style={{ fontSize:11, color:'#ef4444', marginTop:4 }}>Не сохранено — проверь связь</div>}
       </div>
 
-      <div style={{ display:'flex', flexDirection:'column', gap:12, marginBottom:14 }}>
-        {workouts.map((w,wi)=>(
-          <Card key={wi}>
-            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:w.collapsed?0:10 }}>
-              {/* Шеврон сворачивает тренировку в одну строку с названием. */}
-              <button onClick={()=>toggleWorkout(wi)} style={{ background:'none', border:'none', color:TXT3, cursor:'pointer', lineHeight:1, padding:2, flexShrink:0, transform:w.collapsed?'none':'rotate(90deg)', transition:'transform .15s' }}>
-                <span style={{ fontSize:18 }}>›</span>
-              </button>
-              <input value={w.name} onChange={e=>renameWorkout(wi,e.target.value)} placeholder={`Тренировка ${wi+1}`}
+      {/* Календарь: тап по дню выбирает дату, ‹ › листают месяц. Даты мягкие —
+          прошедшие дни выглядят как обычные, без «просрочено» и без красного. */}
+      <Card>
+        {monthHead(viewMonth,setViewMonth)}
+        {monthGrid(viewMonth,(key,d)=>{
+          const has=workouts.some(w=>w.date===key)
+          const isSel=key===selectedDate
+          const isToday=key===todayKey
+          return (
+            <button key={key} onClick={()=>setSelectedDate(key)}
+              style={{ position:'relative', aspectRatio:'1', display:'flex', alignItems:'center', justifyContent:'center', borderRadius:10, cursor:'pointer', fontSize:13, fontWeight:600, padding:0, boxSizing:'border-box',
+                border:(isToday&&!isSel)?`1.5px solid ${PUR}`:'1.5px solid transparent', background:isSel?PUR:'transparent', color:isSel?'#fff':TXT }}>
+              {d}
+              {has&&<span style={{ position:'absolute', bottom:4, width:5, height:5, borderRadius:'50%', background:isSel?'#fff':PUR }} />}
+            </button>
+          )
+        })}
+        <div style={{ marginTop:12, paddingTop:10, borderTop:`1px solid ${HAIR}`, fontSize:15, fontWeight:800, color:TXT }}>
+          Тоннаж за {MONTHS_NOM[viewMonth.m]}: {monthTon} кг
+        </div>
+      </Card>
+
+      {/* Тренировка выбранного дня — всегда одна, свёртки/шеврона больше нет. */}
+      <div style={{ marginTop:14 }}>
+        {dayWi<0?(
+          <button onClick={()=>addWorkoutForDate(selectedDate)}
+            style={{ width:'100%', padding:'12px', fontSize:13, borderRadius:9, border:'1.5px dashed #d1d5db', background:'none', color:TXT3, cursor:'pointer', fontWeight:600 }}>
+            + Тренировка на {dateWords(selectedDate)}
+          </button>
+        ):(()=>{const w=workouts[dayWi],wi=dayWi;return (
+          <Card>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+              <input value={w.name} onChange={e=>renameWorkout(wi,e.target.value)} placeholder="Тренировка"
                 style={{ flex:1, padding:'7px 10px', fontSize:13, fontWeight:600, borderRadius:8, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
                 onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
+              <button onClick={()=>{setCopyWi(wi);setCopySel([]);setCopyMonth(viewMonth)}}
+                style={{ background:SURF2, border:`1px solid ${HAIR}`, borderRadius:8, padding:'7px 10px', fontSize:12, fontWeight:600, color:PUR, cursor:'pointer', flexShrink:0, whiteSpace:'nowrap' }}>Копировать</button>
               <button onClick={()=>removeWorkout(wi)} style={{ background:'none', border:'none', color:TXT3, fontSize:16, cursor:'pointer', lineHeight:1, padding:4, flexShrink:0 }}><GlassIcon name="close" size={26} /></button>
             </div>
-            {w.collapsed?(
-              // Свёрнуто: только строка тоннажа под названием, тело скрыто.
-              (w.exercises||[]).length>0&&(
-                <div style={{ marginTop:8, fontSize:13, fontWeight:700, color:TXT3 }}>Общий тоннаж: {workoutTonnage(w)} кг</div>
-              )
-            ):(<>
             {/* Упражнения и подходы — та же вёрстка, что на экране активной
                 тренировки (WorkoutsView, wMode==='start'): тренер собирает
                 программу ровно в том виде, в котором её увидит клиент.
@@ -1161,13 +1271,29 @@ function ProgramEditor({ client, trainerId }) {
                 Общий тоннаж: {workoutTonnage(w)} кг
               </div>
             )}
-            </>)}
           </Card>
-        ))}
+        )})()}
       </div>
 
-      <div style={{ display:'flex', gap:8 }}>
-        <button onClick={addWorkout} style={{ flex:1, padding:'11px', fontSize:13, borderRadius:9, border:'1.5px dashed #d1d5db', background:'none', color:TXT3, cursor:'pointer', fontWeight:600 }}>+ Тренировка</button>
+      {/* Без даты — старые тренировки, созданные до календаря. «Назначить дату»
+          переносит их в календарь, ничего не теряя. */}
+      {datelessList.length>0&&(
+        <div style={{ marginTop:16 }}>
+          <div style={{ fontSize:12, fontWeight:700, color:TXT3, marginBottom:8 }}>Без даты</div>
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {datelessList.map(({w,i})=>(
+              <div key={i} style={{ display:'flex', alignItems:'center', gap:8, background:SURF, border:`1px solid ${HAIR}`, borderRadius:12, padding:'10px 12px' }}>
+                <span style={{ flex:1, minWidth:0, fontSize:13, fontWeight:600, color:TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{w.name||'Тренировка'}</span>
+                <span style={{ fontSize:12, color:TXT3, flexShrink:0 }}>{workoutTonnage(w)} кг</span>
+                <button onClick={()=>{setAssignWi(i);setAssignMonth(viewMonth)}}
+                  style={{ background:SURF2, border:`1px solid ${HAIR}`, borderRadius:8, padding:'6px 10px', fontSize:12, fontWeight:600, color:PUR, cursor:'pointer', flexShrink:0, whiteSpace:'nowrap' }}>Назначить дату</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display:'flex', gap:8, marginTop:14 }}>
         <button onClick={saveProgram} disabled={saving} style={{ flex:1, padding:'12px', fontSize:14, borderRadius:14, border:'none', background:saving?SURF2:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', cursor:saving?'default':'pointer', fontWeight:800, boxShadow:'0 8px 22px rgba(124,122,240,.4)' }}>
           {saving?'Сохраняем...':'Сохранить программу'}
         </button>
@@ -1195,6 +1321,67 @@ function ProgramEditor({ client, trainerId }) {
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Копирование тренировки на несколько дат — та же месячная сетка,
+          тап переключает отметку. Если на дате уже есть тренировка — спросим. */}
+      {copyWi!=null&&(
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
+          onClick={()=>{setCopyWi(null);setCopySel([])}}>
+          <div style={{ background:SURF, borderRadius:16, padding:'20px 18px', width:'100%', maxWidth:400, maxHeight:'85vh', overflowY:'auto', boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+              <span style={{ fontSize:16, fontWeight:700, color:TXT }}>Копировать на даты</span>
+              <button onClick={()=>{setCopyWi(null);setCopySel([])}} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer', color:TXT3, lineHeight:1 }}><GlassIcon name="close" size={26} /></button>
+            </div>
+            <div style={{ fontSize:12, color:TXT3, marginBottom:12 }}>Отметь дни — тренировка скопируется на каждый.</div>
+            {monthHead(copyMonth,setCopyMonth)}
+            {monthGrid(copyMonth,(key,d)=>{
+              const has=workouts.some(w=>w.date===key)
+              const picked=copySel.includes(key)
+              return (
+                <button key={key} onClick={()=>toggleCopyDate(key)}
+                  style={{ position:'relative', aspectRatio:'1', display:'flex', alignItems:'center', justifyContent:'center', borderRadius:10, cursor:'pointer', fontSize:13, fontWeight:600, padding:0, boxSizing:'border-box',
+                    border:'1.5px solid transparent', background:picked?PUR:'transparent', color:picked?'#fff':TXT }}>
+                  {d}
+                  {has&&<span style={{ position:'absolute', bottom:4, width:5, height:5, borderRadius:'50%', background:picked?'#fff':PUR }} />}
+                </button>
+              )
+            })}
+            <button onClick={applyCopy} disabled={!copySel.length}
+              style={{ width:'100%', marginTop:14, padding:'12px', fontSize:14, borderRadius:12, border:'none', background:copySel.length?`linear-gradient(180deg, ${ACCENT2}, ${PUR})`:SURF2, color:copySel.length?'#fff':TXT3, fontWeight:800, cursor:copySel.length?'pointer':'default' }}>
+              Скопировать на {copySel.length} {dateCountWord(copySel.length)}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Назначить дату тренировке без даты — та же сетка, но одна дата. */}
+      {assignWi!=null&&(
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
+          onClick={()=>setAssignWi(null)}>
+          <div style={{ background:SURF, borderRadius:16, padding:'20px 18px', width:'100%', maxWidth:400, maxHeight:'85vh', overflowY:'auto', boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+              <span style={{ fontSize:16, fontWeight:700, color:TXT }}>Назначить дату</span>
+              <button onClick={()=>setAssignWi(null)} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer', color:TXT3, lineHeight:1 }}><GlassIcon name="close" size={26} /></button>
+            </div>
+            <div style={{ fontSize:12, color:TXT3, marginBottom:12 }}>Тап по дню перенесёт тренировку на эту дату.</div>
+            {monthHead(assignMonth,setAssignMonth)}
+            {monthGrid(assignMonth,(key,d)=>{
+              const has=workouts.some((w,i)=>w.date===key&&i!==assignWi)
+              const isToday=key===todayKey
+              return (
+                <button key={key} onClick={()=>assignDate(key)}
+                  style={{ position:'relative', aspectRatio:'1', display:'flex', alignItems:'center', justifyContent:'center', borderRadius:10, cursor:'pointer', fontSize:13, fontWeight:600, padding:0, boxSizing:'border-box',
+                    border:isToday?`1.5px solid ${PUR}`:'1.5px solid transparent', background:'transparent', color:TXT }}>
+                  {d}
+                  {has&&<span style={{ position:'absolute', bottom:4, width:5, height:5, borderRadius:'50%', background:PUR }} />}
+                </button>
+              )
+            })}
           </div>
         </div>
       )}
