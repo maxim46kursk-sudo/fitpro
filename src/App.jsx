@@ -4252,6 +4252,55 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
     finally{setBusy(false)}
   }
 
+  // ── Загрузка видео с устройства → сырьё → задача на серверное сжатие ──────
+  const fileInputRef=useRef(null)
+  const [uploading,setUploading]=useState(false)   // фаза sign→upload→enqueue
+  const [uploadMsg,setUploadMsg]=useState('')       // статус под кнопками
+  // Мягкий опрос exercise_videos: сервер сожмёт и обновит запись в течение
+  // ~минуты. Ждём появления/смены video_url (сервер добавляет ?v=<ts>).
+  const pollForVideo=(name,prevUrl,tries=0)=>{
+    supabase.from('exercise_videos').select('video_url,poster_url').eq('exercise_name',name).maybeSingle().then(({data})=>{
+      if(data?.video_url&&data.video_url!==prevUrl){
+        setExerciseVideos?.(m=>({...m,[name]:{video_url:data.video_url,poster_url:data.poster_url}}))
+        setUploadMsg('Готово ✓')
+        return
+      }
+      if(tries<15) setTimeout(()=>pollForVideo(name,prevUrl,tries+1),8000)
+      else setUploadMsg('Видео загружено, обрабатывается — обновится автоматически чуть позже')
+    })
+  }
+  const uploadFromDevice=async(name,file)=>{
+    if(!file||uploading||busy)return
+    setUploading(true);setUploadMsg('Загрузка…')
+    const prevUrl=exerciseVideos[name]?.video_url||null
+    try{
+      const token=await authToken()
+      // a) подписанный URL в raw-videos
+      const signRes=await fetch('/api/create-video-upload',{
+        method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+        body:JSON.stringify({action:'sign',exercise_name:name}),
+      })
+      const sign=await signRes.json().catch(()=>null)
+      if(!signRes.ok||!sign?.path){flashVideoErr(sign?.error||'Не удалось подготовить загрузку');return}
+      // b) заливаем файл в сырьё по подписи
+      const{error:upErr}=await supabase.storage.from('raw-videos').uploadToSignedUrl(sign.path,sign.token,file)
+      if(upErr){console.error('Загрузка сырья:',upErr);flashVideoErr('Не удалось загрузить файл');return}
+      // c) ставим задачу на сжатие
+      const enqRes=await fetch('/api/create-video-upload',{
+        method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+        body:JSON.stringify({action:'enqueue',exercise_name:name,raw_key:sign.raw_key}),
+      })
+      const enq=await enqRes.json().catch(()=>null)
+      if(!enqRes.ok||!enq?.ok){flashVideoErr(enq?.error||'Не удалось поставить задачу');return}
+      // d/e) сообщение + опрос
+      setUploadMsg('Видео загружено, обрабатывается — появится через минуту')
+      setTimeout(()=>pollForVideo(name,prevUrl,0),8000)
+    }catch(e){console.error('Загрузка с устройства:',e);flashVideoErr('Сбой сети, повтори')}
+    finally{setUploading(false)}
+  }
+  // Сброс статуса загрузки при переходе к другому упражнению.
+  useEffect(()=>{setUploadMsg('')},[sel?.n])
+
   // ── Редактор каталога упражнений (только тренер) ──────────────────────────
   const [exForm,setExForm]=useState(null)   // null | {mode:'add'|'edit', name, m, eq, type}
   const [showHidden,setShowHidden]=useState(false)
@@ -4454,19 +4503,30 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
             </span>
           </button>
         )}
-        {/* Управление видео — только тренеру. Клиент видит лишь постер+плей. */}
+        {/* Управление видео — только тренеру. Клиент видит лишь постер+плей.
+            Два способа задать видео: загрузить свой файл (сервер сожмёт) или
+            выбрать готовый ролик из пула. */}
         {isTrainer&&(
-          <div style={{ display:'flex', gap:8, marginBottom:12 }}>
-            <button onClick={()=>openPicker(sel.n)}
-              style={{ flex:1, padding:'10px', fontSize:13, fontWeight:600, borderRadius:9, border:`1px solid ${PUR}`, background:'none', color:PUR, cursor:'pointer' }}>
-              {exerciseVideos[sel.n]?'Заменить видео':'Добавить видео'}
-            </button>
-            {exerciseVideos[sel.n]&&(
-              <button onClick={()=>clearVideo(sel.n)} disabled={busy}
-                style={{ padding:'10px 14px', fontSize:13, fontWeight:600, borderRadius:9, border:`1px solid ${HAIR}`, background:'none', color:'#ef4444', cursor:busy?'default':'pointer' }}>
-                Убрать
+          <div style={{ marginBottom:12 }}>
+            <input ref={fileInputRef} type="file" accept="video/*" style={{ display:'none' }}
+              onChange={e=>{const f=e.target.files?.[0];e.target.value='';if(f)uploadFromDevice(sel.n,f)}} />
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+              <button onClick={()=>fileInputRef.current?.click()} disabled={uploading||busy}
+                style={{ flex:'1 1 100%', padding:'11px', fontSize:13, fontWeight:700, borderRadius:9, border:'none', background:(uploading||busy)?SURF2:PUR, color:'#fff', cursor:(uploading||busy)?'default':'pointer' }}>
+                {uploading?'Загрузка…':'📤 Загрузить с устройства'}
               </button>
-            )}
+              <button onClick={()=>openPicker(sel.n)} disabled={uploading||busy}
+                style={{ flex:1, padding:'10px', fontSize:13, fontWeight:600, borderRadius:9, border:`1px solid ${PUR}`, background:'none', color:PUR, cursor:(uploading||busy)?'default':'pointer' }}>
+                {exerciseVideos[sel.n]?'Выбрать из пула':'Из пула'}
+              </button>
+              {exerciseVideos[sel.n]&&(
+                <button onClick={()=>clearVideo(sel.n)} disabled={busy||uploading}
+                  style={{ padding:'10px 14px', fontSize:13, fontWeight:600, borderRadius:9, border:`1px solid ${HAIR}`, background:'none', color:'#ef4444', cursor:(busy||uploading)?'default':'pointer' }}>
+                  Убрать
+                </button>
+              )}
+            </div>
+            {uploadMsg&&<div style={{ fontSize:12, color:uploadMsg.startsWith('Готово')?TEA:TXT3, marginTop:8 }}>{uploadMsg}</div>}
           </div>
         )}
         {/* Управление записью каталога — только тренеру. «Убрать из каталога»
