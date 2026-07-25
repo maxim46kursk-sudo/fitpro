@@ -6594,7 +6594,7 @@ function ResetPasswordView({ onDone }) {
 // внутри Настроек, но кнопка «назад» живёт в шапке уровнем выше — без общего
 // состояния она не знала бы, что открыта под-страница, и уводила бы сразу на
 // Главную.
-function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPage }) {
+function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPage, onProfileChanged }) {
   const load=(k,def)=>{try{return JSON.parse(localStorage.getItem(k)??'null')??def}catch{return def}}
   const [notifs,setNotifs]=useState(()=>normalizeNotifs(load('fitpro_notifs',null)))
   const [units,setUnits]=useState(()=>load('fitpro_units',{weight:'kg',height:'cm'}))
@@ -6766,7 +6766,7 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
   // hideBack: у под-страницы уже есть шапка Настроек со стрелкой «назад» —
   // вторая кнопка внутри текста была бы дублем. В ConsentGate шапки нет, там
   // PolicyView по-прежнему рисует свою кнопку.
-  if(subPage==='plans') return <PlansView user={user} hideBack onClose={()=>setSubPage(null)} />
+  if(subPage==='plans') return <PlansView user={user} hideBack onClose={()=>setSubPage(null)} onChanged={onProfileChanged} />
   if(subPage==='policy') return <PolicyView hideBack onClose={()=>setSubPage(null)} />
   if(subPage==='consent') return <ConsentDocView user={user} hideBack onClose={()=>setSubPage(null)} />
 
@@ -7103,12 +7103,14 @@ const openExternal = url => {
   window.open(url,'_blank','noopener,noreferrer')
 }
 
-function PlansView({ user, onClose, hideBack }) {
+function PlansView({ user, onClose, hideBack, onChanged }) {
   const [profile,setProfile]=useState(null)
   const [loading,setLoading]=useState(true)
   const [loadError,setLoadError]=useState(false)
   const [trialBusy,setTrialBusy]=useState(false)
   const [payBusy,setPayBusy]=useState(false)
+  const [cancelBusy,setCancelBusy]=useState(false)
+  const [showCancelConfirm,setShowCancelConfirm]=useState(false)
   const [msg,setMsg]=useState('')
   const [msgError,setMsgError]=useState(false)
   // Выбранная пилюля тарифа. По умолчанию ПРОФИТ — он же «Хит».
@@ -7120,7 +7122,7 @@ function PlansView({ user, onClose, hideBack }) {
     if(!user?.id)return
     setLoading(true);setLoadError(false)
     const{data,error}=await supabase.from('profiles')
-      .select('plan,plan_until,trial_until,trial_used').eq('id',user.id).single()
+      .select('plan,plan_until,trial_until,trial_used,coach_id').eq('id',user.id).single()
     if(error){
       console.error('Не удалось загрузить статус подписки:',error)
       setLoadError(true)
@@ -7166,6 +7168,34 @@ function PlansView({ user, onClose, hideBack }) {
   // Пробный предлагаем, только если его ещё не брали и сейчас нет вообще
   // никакого активного доступа (ни платного, ни пробного).
   const canStartTrial=!!profile&&!profile.trial_used&&access.level===0
+  // Активная ПЛАТНАЯ подписка (не пробный) — для кнопки отмены.
+  const hasActivePaid=access.level>0&&!access.isTrial
+  const hasCoach=!!profile?.coach_id
+
+  const cancelSub=async()=>{
+    if(cancelBusy)return
+    setCancelBusy(true);setMsg('')
+    try{
+      const{data:{session}}=await supabase.auth.getSession()
+      const token=session?.access_token
+      if(!token)throw new Error('нет активной сессии, перезайди в приложение')
+      const res=await fetch('/api/cancel-subscription',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+      })
+      const body=await res.json().catch(()=>({}))
+      if(!res.ok||!body?.ok)throw new Error(body?.error||`сервер вернул ${res.status}`)
+      setShowCancelConfirm(false)
+      await loadProfile()      // экран Тарифов сразу показывает СТАРТ
+      onChanged?.()            // и обновляем access во всём приложении
+      flash('Подписка отменена')
+    }catch(e){
+      console.error('Ошибка отмены подписки:',e)
+      flash(`Не удалось отменить: ${e.message}`,true)
+    }finally{
+      setCancelBusy(false)
+    }
+  }
 
   // Ссылку оплаты строит сервер (api/create-payment.js): статические ссылки
   // Продамуса не могут нести наш userId, поэтому подписанную ссылку с userId в
@@ -7355,6 +7385,43 @@ function PlansView({ user, onClose, hideBack }) {
             }}>{payBusy?'Готовим оплату…':`Оформить ${selectedPlan.name} · ${priceOf(selectedPlan)} ₽`}</button>
           ):null}
         </div>
+
+        {/* Отмена подписки — только при активной ПЛАТНОЙ подписке. Автосписаний
+            нет (оплата разовая на 30 дней), поэтому отмена = сброс на СТАРТ. */}
+        {hasActivePaid&&(
+          <div style={{ marginBottom:18 }}>
+            <button onClick={()=>setShowCancelConfirm(true)} disabled={cancelBusy}
+              style={{ width:'100%', padding:'12px', borderRadius:12, border:`1px solid ${HAIR}`, background:'none', color:'#ef4444', fontSize:14, fontWeight:600, cursor:cancelBusy?'default':'pointer', minHeight:'unset' }}>
+              Отменить подписку
+            </button>
+            {hasCoach&&(
+              <button onClick={()=>openExternal(MAX_TELEGRAM_URL)}
+                style={{ width:'100%', marginTop:8, padding:'12px', borderRadius:12, border:`1px solid ${HAIR}`, background:SURF2, color:TXT, fontSize:14, fontWeight:600, cursor:'pointer', minHeight:'unset' }}>
+                Написать тренеру
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Подтверждение отмены */}
+        {showCancelConfirm&&createPortal(
+          <div onClick={()=>setShowCancelConfirm(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1400, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+            <div onClick={e=>e.stopPropagation()} style={{ background:SURF, borderRadius:16, padding:'22px 20px', maxWidth:360, width:'100%', boxSizing:'border-box' }}>
+              <div style={{ fontSize:15, fontWeight:700, color:TXT, textAlign:'center', marginBottom:10, lineHeight:1.4 }}>Отменить подписку?</div>
+              <div style={{ fontSize:13, color:TXT3, textAlign:'center', lineHeight:1.5, marginBottom:20 }}>
+                Доступ к платным функциям прекратится сразу. По возврату средств напишите тренеру.
+              </div>
+              <button onClick={cancelSub} disabled={cancelBusy}
+                style={{ width:'100%', padding:'13px', borderRadius:12, border:'none', background:'#ef4444', color:'#fff', fontSize:14, fontWeight:700, cursor:cancelBusy?'default':'pointer', marginBottom:8, opacity:cancelBusy?0.7:1 }}>
+                {cancelBusy?'Отменяем…':'Да, отменить'}
+              </button>
+              <button onClick={()=>setShowCancelConfirm(false)}
+                style={{ width:'100%', padding:'11px', borderRadius:12, border:'none', background:'none', color:TXT3, fontSize:13, cursor:'pointer' }}>
+                Оставить подписку
+              </button>
+            </div>
+          </div>
+        , document.body)}
 
         {/* 4. Единый список возможностей: гаснут те, что выше выбранного тарифа */}
         <div style={{
@@ -9255,10 +9322,14 @@ export default function App() {
                     background:SURF2, border:`1px solid ${HAIR}`,
                   }}>
                     <span style={{ textAlign:'right' }}>
-                      <span style={{ display:'block', fontSize:9.5, color:TXT3, lineHeight:1.2 }}>Тариф</span>
                       <span style={{ display:'block', fontSize:12.5, fontWeight:800, color:ACCENT2, lineHeight:1.25 }}>
                         {access.isTrial?'Пробный':planByKey(access.planKey).name}
                       </span>
+                      {/* Остаток дней — только у активной платной подписки. */}
+                      {!access.isTrial&&access.level>0&&access.until&&(()=>{
+                        const d=Math.max(0,Math.ceil((new Date(access.until).getTime()-Date.now())/86400000))
+                        return <span style={{ display:'block', fontSize:9.5, color:TXT3, lineHeight:1.2, marginTop:1 }}>осталось {d} {pluralizeDays(d)}</span>
+                      })()}
                     </span>
                     <span style={{ fontSize:14, color:TXT3, lineHeight:1 }}>›</span>
                   </button>
@@ -9336,7 +9407,7 @@ export default function App() {
             <span style={{fontSize:18,fontWeight:800,color:TXT,flex:1}}>{settingsSubPage?SETTINGS_SUBPAGE_TITLES[settingsSubPage]:'Настройки'}</span>
           </div>
           <div style={{flex:1,overflowY:'auto'}}>
-            <SettingsView user={user} performLogout={performLogout} onAccountDeleted={resetAfterAccountDelete} subPage={settingsSubPage} setSubPage={setSettingsSubPage} />
+            <SettingsView user={user} performLogout={performLogout} onAccountDeleted={resetAfterAccountDelete} subPage={settingsSubPage} setSubPage={setSettingsSubPage} onProfileChanged={()=>setProfileReloadToken(t=>t+1)} />
           </div>
         </div>
       )}
