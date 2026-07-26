@@ -1,8 +1,12 @@
 import { createClient } from '@supabase/supabase-js'
 
-// Управление глобальным каталогом упражнений (catalog_exercises) — ТОЛЬКО для
-// роли trainer. Кто действует, берём из подписанного токена; роль проверяем
-// service_role-ключом (клиент под RLS свою роль в теле подделать не может).
+// Ручка ТРЕНЕРСКОГО КОНТЕНТА — ТОЛЬКО для роли trainer. Ведёт и глобальный
+// каталог упражнений (catalog_exercises), и видео (exercise_videos), и ШАБЛОНЫ
+// ПРОГРАММ (program_templates). Отдельный эндпоинт под шаблоны не заводим:
+// у Vercel Hobby лимит 12 serverless-функций, мы ровно на нём — поэтому всё
+// тренерское складываем сюда, разделяя по полю action.
+// Кто действует, берём из подписанного токена; роль проверяем service_role-
+// ключом (клиент под RLS свою роль в теле подделать не может).
 //
 // Тот же env и безопасные fallback (URL и publishable-ключ несекретны), что и
 // у остальных функций api/.
@@ -48,8 +52,73 @@ export default async function handler(req, res) {
   }
   if (me?.role !== 'trainer') return res.status(403).json({ error: 'Доступно только тренеру' })
 
-  const name = req.body?.name != null ? String(req.body.name).trim().slice(0, 100) : ''
   const action = req.body?.action
+
+  // ── Шаблоны программ (program_templates). Работают по key, а НЕ по name,
+  //    поэтому идут ДО требования name ниже. Проверка роли trainer — выше. ──
+  if (action === 'save_template' || action === 'delete_template') {
+    const key = req.body?.key != null ? String(req.body.key).trim().slice(0, 100) : ''
+    if (!key) return res.status(400).json({ error: 'Не указан ключ программы' })
+
+    if (action === 'delete_template') {
+      // НЕ удаляем строку: profiles.program у выбравших её клиентов держится за
+      // key. Прячем (hidden), чтобы не оборвать им выбранную программу.
+      const { error } = await supabaseAdmin.from('program_templates')
+        .update({ hidden: true, updated_at: new Date().toISOString() }).eq('key', key)
+      if (error) {
+        console.error(`set-exercise: ошибка скрытия шаблона «${key}»:`, error)
+        return res.status(500).json({ error: 'Не удалось скрыть программу' })
+      }
+      console.log(`set-exercise: тренер ${userId} скрыл шаблон «${key}»`)
+      return res.status(200).json({ ok: true })
+    }
+
+    // save_template. structure уезжает ВСЕМ клиентам — валидируем строго на
+    // сервере, клиенту не доверяем. Строку sets НЕ разбираем и НЕ нормализуем:
+    // её понимает parseTemplateSets, любое «улучшение» сломает подходы во всех
+    // шаблонах сразу. Пишем ровно {num, name, sets}, лишние поля выбрасываем.
+    const rawStructure = req.body?.structure
+    if (!Array.isArray(rawStructure) || rawStructure.length < 1 || rawStructure.length > 30) {
+      return res.status(400).json({ error: 'Недопустимая структура программы' })
+    }
+    const structure = []
+    for (const rawSlot of rawStructure) {
+      if (!Array.isArray(rawSlot) || rawSlot.length > 30) {
+        return res.status(400).json({ error: 'Недопустимый слот программы' })
+      }
+      const slot = []
+      rawSlot.forEach((ex, i) => {
+        const exName = ex && ex.name != null ? String(ex.name).trim().slice(0, 100) : ''
+        if (!exName) return // упражнение без имени в базу не пишем
+        const numParsed = parseInt(ex && ex.num, 10)
+        const num = Number.isFinite(numParsed) ? numParsed : i + 1
+        const sets = ex && ex.sets != null ? String(ex.sets).trim().slice(0, 200) : ''
+        slot.push({ num, name: exName, sets })
+      })
+      structure.push(slot)
+    }
+    const displayName = req.body?.display_name != null ? (String(req.body.display_name).trim().slice(0, 100) || null) : null
+    const context = ['zal', 'dom'].includes(req.body?.context) ? req.body.context : 'zal'
+    const sortParsed = parseInt(req.body?.sort, 10)
+    const sort = Number.isFinite(sortParsed) ? sortParsed : 0
+    const { error } = await supabaseAdmin.from('program_templates').upsert({
+      key,
+      display_name: displayName,
+      context,
+      sort,
+      structure,
+      hidden: req.body?.hidden === true,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'key' })
+    if (error) {
+      console.error(`set-exercise: ошибка сохранения шаблона «${key}»:`, error)
+      return res.status(500).json({ error: 'Не удалось сохранить программу' })
+    }
+    console.log(`set-exercise: тренер ${userId} сохранил шаблон «${key}» (${structure.length} слотов)`)
+    return res.status(200).json({ ok: true })
+  }
+
+  const name = req.body?.name != null ? String(req.body.name).trim().slice(0, 100) : ''
   if (!name) return res.status(400).json({ error: 'Не указано название упражнения' })
 
   if (action === 'delete') {

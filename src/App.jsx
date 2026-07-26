@@ -133,7 +133,7 @@ function mergeTemplates(rows) {
     structures[r.key] = Array.isArray(r.structure) ? r.structure : []
   }
   folders.sort((a, b) => a.sort - b.sort)
-  return { folders: folders.map(({ key, label, context }) => ({ key, label, context })), structures }
+  return { folders: folders.map(({ key, label, context, sort }) => ({ key, label, context, sort })), structures }
 }
 
 // Сливает зашитый EXERCISES с записями catalog_exercises по имени:
@@ -1493,6 +1493,14 @@ async function idbDelete(id){
 }
 
 const FOLDER_ICONS={'Full Body':'dumbbell','Сплит':'lightning','Похудение':'runner','Домашние тренировки':'house'}
+// Иконка папки: у новых программ ключа в FOLDER_ICONS нет → дефолт, чтобы список
+// не падал на отсутствующей иконке.
+const folderIcon=key=>FOLDER_ICONS[key]||'dumbbell'
+// slugify ключа новой программы (латиница/цифры/дефис) — зеркало slugify в
+// api/create-video-upload. Ключ создаётся один раз и НЕ меняется (переименование
+// идёт через display_name).
+const KEY_TRANSLIT={ а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'e',ж:'zh',з:'z',и:'i',й:'y',к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'h',ц:'ts',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya' }
+const slugifyKey=s=>((s||'').toLowerCase().split('').map(c=>KEY_TRANSLIT[c]??c).join('').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').replace(/-+/g,'-'))||'program'
 // Описания программ для карточки-инфо ("?" на карточке в списке программ) —
 // словарь, а не хардкод в разметке, чтобы новые программы (обещано 7+)
 // добавлялись одной строкой здесь, без правки самого рендера.
@@ -1531,15 +1539,19 @@ const RATING_LABELS={1:'легко',2:'легковато',3:'в рабочем 
 
 // programsMap/folders по умолчанию — зашитые (запасной вариант, если база не
 // ответила). Приложение передаёт сюда структуры/ключи из program_templates.
-const makeDefaultSlots=(folder,programsMap=PROGRAMS_MAP)=>
-  Array.from({length:SLOT_COUNT},(_,i)=>{
+const makeDefaultSlots=(folder,programsMap=PROGRAMS_MAP)=>{
+  const prog=programsMap[folder]
+  // Длина — из самой программы (шаблоны бывают любой длины), запасной вариант
+  // SLOT_COUNT, если структуры нет.
+  const len=Array.isArray(prog)&&prog.length?prog.length:SLOT_COUNT
+  return Array.from({length:len},(_,i)=>{
     const slotId=`${folder.replace(/\s+/g,'_')}_${i+1}`
-    const prog=programsMap[folder]
     const exercises=prog&&prog[i]
       ?prog[i].map(ex=>({id:`${slotId}_ex${ex.num}`,num:ex.num,name:ex.name,sets:ex.sets,superset:ex.superset||null,videoId:null,videoUrl:null,videoName:null}))
       :[]
     return {id:slotId,slotNum:i+1,title:`Тренировка ${i+1}`,exercises}
   })
+}
 
 const makeDefaultFolderSlots=(folders=FOLDERS,programsMap=PROGRAMS_MAP)=>{
   const o={}; folders.forEach(f=>{o[f]=makeDefaultSlots(f,programsMap)}); return o
@@ -1555,9 +1567,31 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   // Шаблоны программ — из базы (program_templates) с запасным вариантом из кода.
   // folderKeys — КЛЮЧИ (profiles.program, префиксы workouts держатся за них),
   // folderLabel — как показать ключ на экране.
-  const { folders: templateFolders, structures: templateStructures } = useContext(TemplatesContext)
+  const { folders: templateFolders, structures: templateStructures, reload: reloadTemplates } = useContext(TemplatesContext)
   const folderKeys = templateFolders.map(f=>f.key)
   const folderLabel = key => (templateFolders.find(t=>t.key===key)||{}).label || key
+  // Редактор шаблона (тренер): {key,isNew,initialDisplayName,initialContext,initialSort} | null
+  const [templateEditor,setTemplateEditor]=useState(null)
+  // После публикации: перечитать шаблоны (метки/label/контекст/новые папки) и
+  // ПЕРЕСОБРАТЬ слоты папки из НОВОЙ структуры — иначе тренер не увидит правку,
+  // а удалённое упражнение воскресло бы из localStorage-кеша folderSlots.
+  // Отметки о выполнении слотов держатся в истории тренировок (не в folderSlots),
+  // поэтому не теряются. Эффект-писатель folderSlots сам обновит кеш.
+  const onTemplatePublished=(key,structure)=>{
+    reloadTemplates?.()
+    if(structure) setFolderSlots(prev=>({...prev,[key]:makeDefaultSlots(key,{[key]:structure})}))
+  }
+  // Новая программа: спрашиваем имя, key — slug из имени (уникальный среди
+  // видимых), sort — максимум+1, context — по умолчанию 'zal', структура —
+  // один пустой слот. key потом НЕ меняется, переименование через display_name.
+  const createProgram=()=>{
+    const name=(window.prompt('Название новой программы')||'').trim()
+    if(!name)return
+    let key=slugifyKey(name), n=2
+    while(folderKeys.includes(key)){key=`${slugifyKey(name)}-${n++}`}
+    const maxSort=templateFolders.reduce((m,f)=>Math.max(m,typeof f.sort==='number'?f.sort:0),-1)
+    setTemplateEditor({key,isNew:true,initialDisplayName:name.slice(0,100),initialContext:'zal',initialSort:maxSort+1})
+  }
   // Подсказка «нужен пакет БАЗА» — показывается модалкой поверх списка слотов.
   const [showSlotLock,setShowSlotLock]=useState(false)
   // Заперт ли слот: платная часть шаблона начинается с FREE_SLOTS+1.
@@ -3213,6 +3247,8 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     <div style={{ position:'relative' }}>
       {/* Редактор видео (тренер) — через портал, поверх шаблонов/программы. */}
       {videoPickerFor&&<VideoPicker exerciseName={videoPickerFor} exerciseVideos={exerciseVideos} setExerciseVideos={setExerciseVideos} onClose={()=>setVideoPickerFor(null)} />}
+      {/* Редактор шаблона программы (тренер) — через портал. */}
+      {templateEditor&&<TemplateEditor templateKey={templateEditor.key} isNew={templateEditor.isNew} initialDisplayName={templateEditor.initialDisplayName||''} initialContext={templateEditor.initialContext||'zal'} initialSort={templateEditor.initialSort||0} onClose={()=>setTemplateEditor(null)} onPublished={onTemplatePublished} />}
       {/* Черновик тренировки старше 24ч, найденный при загрузке приложения —
           через портал: WorkoutsView может быть скрыт (display:none, см.
           renderMain в App), если клиент открыл приложение не на вкладке
@@ -3565,8 +3601,8 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         <div onClick={()=>setShowSwitchProgramModal(null)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1400, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
           <div onClick={e=>e.stopPropagation()} style={{ background:SURF, borderRadius:16, padding:'22px 20px', maxWidth:360, width:'100%', boxSizing:'border-box' }}>
             <div style={{ fontSize:15, fontWeight:700, color:TXT, textAlign:'center', marginBottom:10, lineHeight:1.4 }}>
-              Ты тренируешься по программе «{showSwitchProgramModal.from}», выполнено {showSwitchProgramModal.count} из {SLOT_COUNT} тренировок.
-              <br />Перейти на «{showSwitchProgramModal.to}»?
+              Ты тренируешься по программе «{folderLabel(showSwitchProgramModal.from)}», выполнено {showSwitchProgramModal.count} из {(templateStructures[showSwitchProgramModal.from]||[]).length||SLOT_COUNT} тренировок.
+              <br />Перейти на «{folderLabel(showSwitchProgramModal.to)}»?
             </div>
             <div style={{ fontSize:12.5, color:TXT3, textAlign:'center', lineHeight:1.5, marginBottom:20 }}>
               Прогресс не потеряется: веса, которые ты набираешь в упражнениях, сохранятся и в новой программе.
@@ -3634,11 +3670,11 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           <div style={{ background:SURF, borderBottom:`1px solid ${HAIR}`, padding:'14px 18px', display:'flex', alignItems:'center', gap:14, flexShrink:0 }}>
             <button onClick={()=>setOpenFolder(null)}
               style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
-            <GlassIcon name={FOLDER_ICONS[openFolder]} size={34} />
+            <GlassIcon name={folderIcon(openFolder)} size={34} />
             <div>
               <div style={{ fontSize:17, fontWeight:700, color:TXT }}>{folderLabel(openFolder)}</div>
               <div style={{ fontSize:11, color:TXT3 }}>
-                {SLOT_COUNT} тренировок · {folderSlots[openFolder].reduce((s,sl)=>s+sl.exercises.filter(e=>e.videoId).length,0)} видео
+                {(folderSlots[openFolder]||[]).length} тренировок · {(folderSlots[openFolder]||[]).reduce((s,sl)=>s+sl.exercises.filter(e=>e.videoId).length,0)} видео
               </div>
             </div>
           </div>
@@ -3878,8 +3914,9 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       {/* ── Уровень 0: список папок ── */}
       {templateFolders.map(t=>{
         const folder=t.key
-        const totalEx=folderSlots[folder].reduce((s,sl)=>s+sl.exercises.length,0)
-        const totalVids=folderSlots[folder].reduce((s,sl)=>s+sl.exercises.filter(e=>e.videoId).length,0)
+        const slotsArr=folderSlots[folder]||[]
+        const totalEx=slotsArr.reduce((s,sl)=>s+sl.exercises.length,0)
+        const totalVids=slotsArr.reduce((s,sl)=>s+sl.exercises.filter(e=>e.videoId).length,0)
         const isSelected=selectedProgram===folder
         return (
           <Card key={folder} style={{ marginBottom:10, cursor:'pointer', position:'relative', border:isSelected?`1.5px solid ${PUR}`:'1.5px solid transparent', background:isSelected?'rgba(124,122,240,0.14)':SURF }}
@@ -3887,23 +3924,37 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             <span style={{ position:'absolute', top:'50%', right:16, transform:'translateY(-50%)', fontSize:20, color:TXT3 }}>›</span>
             <button onClick={e=>{e.stopPropagation();setInfoFolder(folder)}}
               style={{ position:'absolute', top:10, left:12, width:22, height:22, borderRadius:'50%', border:`1px solid ${HAIR}`, background:SURF2, color:TXT3, fontSize:12, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset', padding:0 }}>?</button>
+            {/* Редактор шаблона — только тренеру. Клиент кнопку не видит. */}
+            {isTrainer&&(
+              <button onClick={e=>{e.stopPropagation();setTemplateEditor({key:folder,isNew:false})}} title="Редактировать программу"
+                style={{ position:'absolute', top:8, right:44, width:26, height:26, borderRadius:'50%', border:'none', background:`${PUR}22`, color:PUR, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset', padding:0 }}>
+                <GlassIcon name="gear" size={15} />
+              </button>
+            )}
             {isSelected&&<span style={{ position:'absolute', top:10, right:16 }}><GlassIcon name="check" size={18} /></span>}
             <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingRight:20 }}>
-              <div style={{ display:'flex',justifyContent:'center',marginBottom:6 }}><GlassIcon name={FOLDER_ICONS[folder]} size={42} /></div>
+              <div style={{ display:'flex',justifyContent:'center',marginBottom:6 }}><GlassIcon name={folderIcon(folder)} size={42} /></div>
               <div style={{ fontSize:16, fontWeight:700, color:TXT, textAlign:'center' }}>{t.label}</div>
               <div style={{ fontSize:12, color:TXT3, marginTop:3, textAlign:'center' }}>
-                {SLOT_COUNT} тренировок · {totalEx} упр.{totalVids>0?` · ${totalVids} видео`:''}
+                {slotsArr.length} тренировок · {totalEx} упр.{totalVids>0?` · ${totalVids} видео`:''}
               </div>
             </div>
           </Card>
         )
       })}
+      {/* Новая программа — только тренеру. */}
+      {isTrainer&&(
+        <button onClick={createProgram}
+          style={{ width:'100%', marginBottom:10, padding:'12px', fontSize:13, borderRadius:12, border:`1.5px dashed ${PUR}66`, background:`${PUR}0d`, color:PUR, cursor:'pointer', fontWeight:700 }}>
+          + Программа
+        </button>
+      )}
 
       {/* ── Модалка описания программы ── */}
       {infoFolder&&createPortal(
         <div onClick={()=>setInfoFolder(null)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:1300, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
           <div onClick={e=>e.stopPropagation()} style={{ background:SURF, borderRadius:16, padding:'22px 20px', maxWidth:340, width:'100%', boxSizing:'border-box' }}>
-            <div style={{ display:'flex',justifyContent:'center',marginBottom:8 }}><GlassIcon name={FOLDER_ICONS[infoFolder]} size={42} /></div>
+            <div style={{ display:'flex',justifyContent:'center',marginBottom:8 }}><GlassIcon name={folderIcon(infoFolder)} size={42} /></div>
             <div style={{ fontSize:17, fontWeight:700, color:TXT, textAlign:'center', marginBottom:8 }}>{folderLabel(infoFolder)}</div>
             <div style={{ fontSize:13, color:TXT3, textAlign:'center', lineHeight:1.5, marginBottom:18 }}>{FOLDER_DESCRIPTIONS[infoFolder]||''}</div>
             <button onClick={()=>selectProgram(infoFolder)}
@@ -4595,6 +4646,230 @@ const EQ_TIPS={
   'Резина':'Держи резину в постоянном натяжении, не давай ей "отдыхать" в нижней точке.',
   'Гравитрон':'Настрой противовес под свой уровень — чем больше вес стека, тем больше помощь.',
   'Гиря':'Работай от бедра, держи спину нейтральной на протяжении всего движения.',
+}
+
+// Редактор шаблона программы (ТОЛЬКО тренер). Переиспользует вёрстку карточки
+// упражнения из ProgramEditor (сетка КГ/ПОВТ, «+ Подход», «+ Упражнение», пикер,
+// тоннаж). Формат подходов у шаблонов и программ клиента одинаков —
+// parseTemplateSets и сериализация в строку те же. Календаря НЕТ: слоты
+// нумерованные. Сохранение ЯВНОЕ (кнопка «Опубликовать»), автосейва нет.
+function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initialContext='zal', initialSort=0, onClose, onPublished }){
+  const { exercises: catalogExercises } = useContext(CatalogContext)
+  const [loading,setLoading]=useState(!isNew)
+  const [loadError,setLoadError]=useState(false)
+  const [displayName,setDisplayName]=useState(initialDisplayName)
+  const [context,setContext]=useState(initialContext==='dom'?'dom':'zal')
+  const [sort,setSort]=useState(initialSort)
+  // Слоты: [{exercises:[{name,sets:[{reps,kg}]}]}]. sets — разобранные подходы
+  // (как в ProgramEditor), склеиваем в строку при публикации.
+  const [slots,setSlots]=useState(isNew?[{exercises:[]}]:[])
+  const [openSlot,setOpenSlot]=useState(isNew?0:null)
+  const [pickerFor,setPickerFor]=useState(null)
+  const [pickerQuery,setPickerQuery]=useState('')
+  const [publishing,setPublishing]=useState(false)
+  const [pubState,setPubState]=useState('idle')
+  const [toast,setToast]=useState('')
+  const flashErr=m=>{setToast(m);setTimeout(()=>setToast(''),3500)}
+  const dirtyRef=useRef(false)
+  const skipDirtyRef=useRef(true)
+
+  useEffect(()=>{
+    if(isNew){setLoading(false);return}
+    let cancelled=false
+    supabase.from('program_templates').select('display_name,context,sort,structure').eq('key',templateKey).maybeSingle().then(({data,error})=>{
+      if(cancelled)return
+      if(error){console.error('Шаблон: ошибка загрузки:',error);setLoadError(true);setLoading(false);return}
+      skipDirtyRef.current=true
+      setDisplayName(data?.display_name||'')
+      setContext(data?.context==='dom'?'dom':'zal')
+      if(typeof data?.sort==='number')setSort(data.sort)
+      const raw=Array.isArray(data?.structure)?data.structure:[]
+      setSlots(raw.map(slot=>({
+        exercises:(Array.isArray(slot)?slot:[]).map(ex=>{
+          const parsed=(ex.sets?parseTemplateSets(ex.sets):[]).map(ts=>({reps:String(ts.reps),kg:ts.templateKg!=null?String(ts.templateKg):''}))
+          return {name:ex.name,sets:parsed.length?parsed:[{reps:'',kg:''}]}
+        })
+      })))
+      setLoading(false)
+    })
+    return()=>{cancelled=true}
+  },[])
+  // «Есть несохранённые правки» — кроме прогона сразу после загрузки.
+  useEffect(()=>{
+    if(skipDirtyRef.current){skipDirtyRef.current=false;return}
+    dirtyRef.current=true;setPubState('idle')
+  },[displayName,context,slots])
+
+  const addSlot=()=>setSlots(s=>{const n=[...s,{exercises:[]}];setOpenSlot(n.length-1);return n})
+  const removeSlot=si=>{
+    if(!window.confirm('Удалить тренировку из программы?'))return
+    setSlots(s=>s.filter((_,i)=>i!==si))
+    setOpenSlot(o=>o===si?null:(o!=null&&o>si?o-1:o))
+  }
+  const toggleSlot=si=>setOpenSlot(o=>o===si?null:si)
+  const addExercise=(si,exName)=>{
+    setSlots(s=>{
+      let carried=null
+      for(const sl of s)for(const ex of sl.exercises||[])if(ex.name===exName&&Array.isArray(ex.sets)&&ex.sets.some(x=>String(x.reps??'').trim()||String(x.kg??'').trim()))carried=ex.sets
+      const sets=carried?carried.map(x=>({reps:x.reps,kg:x.kg})):[{reps:'',kg:''}]
+      return s.map((sl,i)=>i===si?{...sl,exercises:[...(sl.exercises||[]),{name:exName,sets}]}:sl)
+    })
+    setPickerFor(null);setPickerQuery('')
+  }
+  const removeExercise=(si,ei)=>setSlots(s=>s.map((sl,i)=>i===si?{...sl,exercises:sl.exercises.filter((_,j)=>j!==ei)}:sl))
+  const updateSets=(si,ei,fn)=>setSlots(s=>s.map((sl,i)=>i!==si?sl:{...sl,exercises:sl.exercises.map((ex,j)=>j!==ei?ex:{...ex,sets:fn(Array.isArray(ex.sets)?ex.sets:[])})}))
+  const addSet=(si,ei)=>updateSets(si,ei,sets=>{const last=sets[sets.length-1];return[...sets,last?{...last}:{reps:'',kg:''}]})
+  const removeSet=(si,ei,k)=>updateSets(si,ei,sets=>sets.length<=1?sets:sets.filter((_,x)=>x!==k))
+  const setSetField=(si,ei,k,field,val)=>updateSets(si,ei,sets=>sets.map((s,x)=>x===k?{...s,[field]:val}:s))
+  const setsTonnage=sets=>(Array.isArray(sets)?sets:[]).reduce((sum,s)=>sum+(parseFloat(s.kg)||0)*(parseInt(s.reps)||0),0)
+  const slotTonnage=sl=>(sl.exercises||[]).reduce((sum,ex)=>sum+setsTonnage(ex.sets),0)
+  const authToken=async()=>{const{data}=await supabase.auth.getSession();return data?.session?.access_token||null}
+  const serializeSets=sets=>(Array.isArray(sets)?sets:[])
+    .filter(s=>String(s.reps??'').trim())
+    .map(s=>{const reps=String(s.reps).trim();const kg=String(s.kg??'').trim();return kg?`${kg} кг × ${reps}`:reps})
+    .join(', ')
+
+  const publish=async()=>{
+    if(publishing)return
+    const structure=slots.map(sl=>(sl.exercises||[]).filter(ex=>ex.name).map((ex,i)=>({num:i+1,name:ex.name,sets:serializeSets(ex.sets)})))
+    if(structure.length<1){flashErr('Нужна хотя бы одна тренировка');return}
+    if(!window.confirm('Программа изменится у всех клиентов, которые по ней тренируются. Опубликовать?'))return
+    setPublishing(true);setPubState('saving')
+    try{
+      const token=await authToken()
+      const res=await fetch('/api/set-exercise',{
+        method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+        body:JSON.stringify({action:'save_template',key:templateKey,display_name:displayName,context,sort,structure,hidden:false}),
+      })
+      const body=await res.json().catch(()=>null)
+      if(!res.ok||!body?.ok){flashErr(body?.error||'Не удалось опубликовать');setPubState('error');return}
+      dirtyRef.current=false;setPubState('saved')
+      onPublished?.(templateKey,structure)
+    }catch(e){console.error('Публикация шаблона:',e);flashErr('Сбой сети, повтори');setPubState('error')}
+    finally{setPublishing(false)}
+  }
+  const hideProgram=async()=>{
+    if(publishing)return
+    if(!window.confirm('Скрыть программу из приложения? Клиенты, которые её выбрали, останутся на ней, но новым она не показывается.'))return
+    setPublishing(true)
+    try{
+      const token=await authToken()
+      const res=await fetch('/api/set-exercise',{
+        method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+        body:JSON.stringify({action:'delete_template',key:templateKey}),
+      })
+      const body=await res.json().catch(()=>null)
+      if(!res.ok||!body?.ok){flashErr(body?.error||'Не удалось скрыть');return}
+      dirtyRef.current=false
+      onPublished?.(templateKey,null,{hidden:true});onClose?.()
+    }catch(e){console.error('Скрытие шаблона:',e);flashErr('Сбой сети, повтори')}
+    finally{setPublishing(false)}
+  }
+  const tryClose=()=>{
+    if(dirtyRef.current&&!window.confirm('Есть неопубликованные изменения. Уйти без сохранения?'))return
+    onClose?.()
+  }
+
+  return createPortal(<>
+    {toast&&(<div style={{ position:'fixed', top:14, left:'50%', transform:'translateX(-50%)', zIndex:2600, padding:'10px 18px', borderRadius:24, maxWidth:340, textAlign:'center', background:'#dc2626', color:'#fff', fontSize:13, fontWeight:700, boxShadow:'0 6px 20px rgba(220,38,38,0.35)' }}>{toast}</div>)}
+    <div style={{ position:'fixed', inset:0, background:SURF2, zIndex:2100, display:'flex', flexDirection:'column' }}>
+      <div style={{ background:SURF, borderBottom:`1px solid ${HAIR}`, padding:'14px 18px', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
+        <button onClick={tryClose} style={{ background:'none', border:'none', cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
+        <div style={{ fontSize:16, fontWeight:700, color:TXT }}>Редактор программы</div>
+      </div>
+      <div style={{ flex:1, overflowY:'auto', padding:'14px 16px 24px' }}>
+        {loading?(
+          <div style={{ fontSize:13, color:TXT3, textAlign:'center', padding:'30px 0' }}>Загрузка…</div>
+        ):loadError?(
+          <div style={{ fontSize:13, color:'#ef4444', textAlign:'center', padding:'30px 0' }}>Не удалось загрузить программу</div>
+        ):(<>
+          <div style={{ marginBottom:12 }}>
+            <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Название программы</div>
+            <input value={displayName} onChange={e=>setDisplayName(e.target.value)} maxLength={100} placeholder={templateKey}
+              style={{ width:'100%', padding:'9px 12px', fontSize:14, fontWeight:600, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
+              onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
+            <div style={{ fontSize:10, color:TXT3, marginTop:3 }}>Ключ «{templateKey}» не меняется — переименование только для экрана.</div>
+          </div>
+          <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+            {[['zal','Зал'],['dom','Дом']].map(([v,l])=>(
+              <button key={v} onClick={()=>setContext(v)} style={{ flex:1, padding:'9px', fontSize:13, fontWeight:600, borderRadius:9, cursor:'pointer', border:`1px solid ${context===v?PUR:HAIR}`, background:context===v?'#EEEDFE':'transparent', color:context===v?'#3C3489':TXT3 }}>{l}</button>
+            ))}
+          </div>
+          {!isNew&&(
+            <button onClick={hideProgram} disabled={publishing} style={{ width:'100%', marginBottom:14, padding:'9px', fontSize:12, fontWeight:600, borderRadius:9, border:`1px solid ${HAIR}`, background:'none', color:'#ef4444', cursor:publishing?'default':'pointer' }}>Скрыть программу</button>
+          )}
+          <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:12 }}>
+            {slots.map((sl,si)=>(
+              <Card key={si}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }} onClick={()=>toggleSlot(si)}>
+                  <span style={{ transform:openSlot===si?'rotate(90deg)':'none', transition:'transform .15s', color:TXT3, fontSize:18, lineHeight:1 }}>›</span>
+                  <span style={{ flex:1, fontSize:14, fontWeight:700, color:TXT }}>Тренировка {si+1}</span>
+                  <span style={{ fontSize:12, color:TXT3 }}>{slotTonnage(sl)} кг</span>
+                  <button onClick={e=>{e.stopPropagation();removeSlot(si)}} style={{ background:'none', border:'none', color:TXT3, cursor:'pointer', lineHeight:1, padding:4, flexShrink:0 }}><GlassIcon name="close" size={22} /></button>
+                </div>
+                {openSlot===si&&(<div style={{ marginTop:10 }}>
+                  {(sl.exercises||[]).map((ex,ei)=>{
+                    const sets=Array.isArray(ex.sets)?ex.sets:[]
+                    return (
+                      <div key={ei} style={{ marginBottom:14, background:SURF, borderRadius:20, padding:'12px 14px', border:`1px solid ${HAIR}` }}>
+                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, gap:8 }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:10, flex:1, minWidth:0 }}>
+                            <span style={{ width:30, height:30, borderRadius:10, background:`linear-gradient(135deg, ${PUR}, #5b56c9)`, color:'#fff', fontWeight:800, fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>{ei+1}</span>
+                            <div style={{ flex:1, minWidth:0 }}><div style={{ fontSize:16, fontWeight:700, color:TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{labelOf(catalogExercises,ex.name)}</div></div>
+                          </div>
+                          <button onClick={()=>removeExercise(si,ei)} style={{ width:26, height:26, borderRadius:6, border:'none', background:SURF2, color:TXT3, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>🗑</button>
+                        </div>
+                        <div style={{ display:'grid', gridTemplateColumns:'24px 1fr 1fr 20px', gap:5, marginBottom:5 }}>
+                          {['#','КГ','ПОВТ',''].map((h,i)=>(<span key={i} style={{ fontSize:11, fontWeight:700, color:TXT2, textAlign:'center', textTransform:'uppercase', letterSpacing:'.06em' }}>{h}</span>))}
+                        </div>
+                        {sets.map((s,k)=>(
+                          <div key={k} style={{ display:'grid', gridTemplateColumns:'24px 1fr 1fr 20px', gap:5, alignItems:'center', marginBottom:5 }}>
+                            <span style={{ fontSize:12, color:TXT3, textAlign:'center', fontWeight:700 }}>{k+1}</span>
+                            <input value={s.kg} inputMode="decimal" onChange={e=>setSetField(si,ei,k,'kg',e.target.value)} placeholder="0" style={{ background:SURF2, border:`1.5px solid ${HAIR}`, borderRadius:12, padding:'6px 6px', fontSize:17, fontWeight:700, fontVariantNumeric:'tabular-nums', color:TXT, textAlign:'center', width:'100%', boxSizing:'border-box' }} />
+                            <input value={s.reps} inputMode="numeric" onChange={e=>setSetField(si,ei,k,'reps',e.target.value)} placeholder="0" style={{ background:SURF2, border:`1.5px solid ${HAIR}`, borderRadius:12, padding:'6px 6px', fontSize:17, fontWeight:700, fontVariantNumeric:'tabular-nums', color:TXT, textAlign:'center', width:'100%', boxSizing:'border-box' }} />
+                            {sets.length>1?(<button onClick={()=>removeSet(si,ei,k)} style={{ background:'none', border:'none', color:TXT3, cursor:'pointer', fontSize:14, textAlign:'center' }}><GlassIcon name="close" size={26} /></button>):<span />}
+                          </div>
+                        ))}
+                        <button onClick={()=>addSet(si,ei)} style={{ fontSize:12, color:PUR, background:'none', border:'none', cursor:'pointer', fontWeight:600, padding:0, marginTop:6 }}>+ Добавить подход</button>
+                        <div style={{ fontSize:16, fontWeight:700, color:PUR, marginTop:8 }}>Тоннаж: {setsTonnage(ex.sets)} кг</div>
+                      </div>
+                    )
+                  })}
+                  <button onClick={()=>{setPickerFor(si);setPickerQuery('')}} style={{ width:'100%', padding:'8px', fontSize:12, color:PUR, background:`${PUR}10`, border:`1px dashed ${PUR}55`, borderRadius:8, cursor:'pointer', fontWeight:600 }}>+ Упражнение</button>
+                </div>)}
+              </Card>
+            ))}
+          </div>
+          <button onClick={addSlot} style={{ width:'100%', padding:'11px', fontSize:13, borderRadius:9, border:'1.5px dashed #d1d5db', background:'none', color:TXT3, cursor:'pointer', fontWeight:600 }}>+ Тренировка</button>
+        </>)}
+      </div>
+      {!loading&&!loadError&&(
+        <div style={{ flexShrink:0, borderTop:`1px solid ${HAIR}`, background:SURF, padding:'12px 16px', display:'flex', flexDirection:'column', gap:6 }}>
+          {pubState==='saved'&&<div style={{ fontSize:11, color:'#085041', textAlign:'center' }}>Опубликовано ✓</div>}
+          <button onClick={publish} disabled={publishing} style={{ width:'100%', padding:'13px', fontSize:14, borderRadius:14, border:'none', background:publishing?SURF2:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', fontWeight:800, cursor:publishing?'default':'pointer' }}>{publishing?'Публикуем…':'Опубликовать изменения'}</button>
+        </div>
+      )}
+      {pickerFor!=null&&(
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:2200, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }} onClick={()=>setPickerFor(null)}>
+          <div style={{ background:SURF, borderRadius:16, padding:'20px 18px', width:'100%', maxWidth:400, maxHeight:'75vh', display:'flex', flexDirection:'column', boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }} onClick={e=>e.stopPropagation()}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+              <span style={{ fontSize:16, fontWeight:700, color:TXT }}>Выбери упражнение</span>
+              <button onClick={()=>setPickerFor(null)} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer', color:TXT3, lineHeight:1 }}><GlassIcon name="close" size={26} /></button>
+            </div>
+            <input value={pickerQuery} onChange={e=>setPickerQuery(e.target.value)} placeholder="Поиск..." autoFocus style={{ width:'100%', marginBottom:12, padding:'9px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }} onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
+            <div style={{ overflowY:'auto', display:'flex', flexDirection:'column', gap:2 }}>
+              {catalogExercises.filter(e=>(e.label||e.n).toLowerCase().includes(pickerQuery.toLowerCase())||e.n.toLowerCase().includes(pickerQuery.toLowerCase())).map(e=>(
+                <button key={e.n} onClick={()=>addExercise(pickerFor,e.n)} style={{ display:'flex', flexDirection:'column', alignItems:'flex-start', width:'100%', padding:'9px 10px', border:'none', background:'transparent', cursor:'pointer', textAlign:'left', borderRadius:8 }}>
+                  <span style={{ fontSize:13, color:TXT }}>{e.label||e.n}</span>
+                  <span style={{ fontSize:11, color:TXT3 }}>{e.m}{e.eq?` · ${e.eq}`:''}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  </>, document.body)
 }
 
 // Пикер видео упражнения (ТОЛЬКО тренер): загрузка своего файла с устройства
@@ -8930,11 +9205,12 @@ export default function App() {
       setTemplateRows(data)
     })
   }
+  const reloadTemplates=()=>loadTemplates(0)
   useEffect(()=>{
     loadTemplates()
     return()=>{if(templatesRetryRef.current)clearTimeout(templatesRetryRef.current)}
   },[])
-  const templatesValue=useMemo(()=>mergeTemplates(templateRows),[templateRows])
+  const templatesValue=useMemo(()=>({...mergeTemplates(templateRows),reload:reloadTemplates}),[templateRows])
   const [userRole,setUserRole]=useState(()=>localStorage.getItem('fitpro_role')||'client')
   // Согласие на обработку ПДн (152-ФЗ). consentLoaded — «ответ из базы получен»,
   // до него приложение не рендерим вообще, иначе на секунду мелькнёт контент
