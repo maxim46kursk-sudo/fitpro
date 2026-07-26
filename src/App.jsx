@@ -1666,6 +1666,9 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   // активной тренировки папки уже нет под рукой. null = общий ролик (тренерская
   // программа / возобновление без известной папки).
   const [activeVideoCtx,setActiveVideoCtx]=useState(null)
+  // id запланированной тренировки, из которой запустили текущую (иначе null).
+  // По завершении сохранения — удаляем эту строку из planned_workouts.
+  const [startedFromPlanId,setStartedFromPlanId]=useState(null)
   // Персональная программа от тренера (assigned_programs, Фаза B, шаг 2) —
   // только показ. Запуск тренировки из неё через движок прогрессии — отдельный
   // следующий шаг, здесь его нет. Нет строки для этого клиента — обычный
@@ -1719,7 +1722,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     }
   }
   const [wName,setWName]=useState('Новая тренировка')
-  const [wColor,setWColor]=useState('#D85A30')
+  const [wColor,setWColor]=useState(WCOLORS[0])
   const [wExercises,setWExercises]=useState([])
   const [wMode,setWMode]=useState('start') // 'start' | 'log'
   const [wDate,setWDate]=useState('')
@@ -2113,7 +2116,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     if(editTarget&&!isEditMode){
       const w=editTarget.workout
       setWName(w.name||'Тренировка')
-      setWColor(w.color||'#D85A30')
+      setWColor(w.color||WCOLORS[0])
       setWExercises((w.exercises||[]).map(ex=>({...ex,sets:(ex.sets||[]).map(s=>({...s})),done:false})))
       const isLog=w.duration===null||w.duration===undefined
       setWMode(isLog?'log':'start')
@@ -2147,11 +2150,15 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   // так что оттуда конфликт по факту не возникает, но проверка оставлена
   // и там как явная защита, а не только в этом эффекте.
   useEffect(()=>{
-    if(pendingAction&&(pendingAction==='start'||pendingAction==='done')&&!isEditMode){
+    if(!pendingAction||isEditMode)return
+    // pendingAction — либо строка ('start'/'done'), либо {action, plan}.
+    const act=typeof pendingAction==='string'?pendingAction:pendingAction.action
+    const plan=typeof pendingAction==='string'?null:pendingAction.plan
+    if(act==='start'||act==='done'){
       if(step==='active'){
-        setPendingConflictStart(()=>()=>runHandleAction(pendingAction))
+        setPendingConflictStart(()=>()=>runHandleAction(act,plan))
       } else {
-        runHandleAction(pendingAction)
+        runHandleAction(act,plan)
       }
       if(onClearPendingAction)onClearPendingAction()
     }
@@ -2189,18 +2196,21 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   // step повторно — на момент вызова setStep(null) из exitWorkout ещё не
   // долетел до этого замыкания (тот же тик), проверка увидела бы старое
   // значение и ошибочно посчитала бы это новым конфликтом.
-  const runHandleAction=key=>{
+  const runHandleAction=(key,plan=null)=>{
     setMenuOpen(false)
     const today=localTodayISO()
     // Ручной старт/логирование — не слот программы, предупреждение про
     // повторения (wIsFromProgram) здесь не показываем.
     setWIsFromProgram(false)
     setRepsWarningShownThisWorkout(false)
+    // Запуск из плана — запоминаем его id (удалим после сохранения); дату из
+    // плана НЕ берём — тренировка пишется на день, когда её реально сделали.
+    setStartedFromPlanId(plan?.id||null)
     if(key==='start'){
-      setWName('Новая тренировка');setWColor('#D85A30');setWExercises([]);setStartedAt(Date.now());setSwAccumMs(0);setSwStartedAt(null);setWMode('start');setWDate(today);setStep('naming')
+      setWName(plan?.name||'Новая тренировка');setWColor(WCOLORS[0]);setWExercises([]);setStartedAt(Date.now());setSwAccumMs(0);setSwStartedAt(null);setWMode('start');setWDate(today);setStep('naming')
     }
     if(key==='done'){
-      setWName('Тренировка');setWColor('#1D9E75');setWExercises([]);setWMode('log');setWDate(today);setStep('naming')
+      setWName('Тренировка');setWColor(WCOLORS[2]);setWExercises([]);setWMode('log');setWDate(today);setStep('naming')
     }
   }
   // Точка входа с кнопок меню "Новая тренировка" — список программ (откуда
@@ -2256,6 +2266,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     setWComment('');setOpenSetNote(null);setShowSendModal(false)
     setShowExitConfirm(false);setShowDatePicker(false)
     setWIsFromProgram(false);setShowRepsWarning(false);setRepsWarningShownThisWorkout(false);setRepsWarningRevert(null)
+    setStartedFromPlanId(null)
     try{localStorage.removeItem('fitpro_active_workout')}catch{}
     if(onClearEdit)onClearEdit()
   }
@@ -2306,6 +2317,14 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         setShowSaveError(true)
         setTimeout(()=>setShowSaveError(false),3500)
         return
+      }
+      // Тренировка сохранена. Если запускали из запланированной — убираем план
+      // из базы (не при редактировании). Ошибку только логируем: сохранение
+      // тренировки из-за неё падать не должно. DiaryView перечитает список сам.
+      if(startedFromPlanId&&!(isEditMode&&editTarget)){
+        supabase.from('planned_workouts').delete().eq('id',startedFromPlanId)
+          .then(({error})=>{if(error)console.error('Удаление плана после запуска тренировки:',error)})
+        setStartedFromPlanId(null)
       }
       if(!(isEditMode&&editTarget)){
         setShowFinishToast(true)
@@ -2694,36 +2713,39 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
 
         {/* Мини-попап нового упражнения */}
         {customOpen&&(
-          <div style={{ position:'absolute', inset:0, zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.6)', borderRadius:14 }}
+          <div style={{ position:'absolute', inset:0, zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.45)', borderRadius:14, padding:16 }}
             onClick={()=>setCustomOpen(false)}>
-            <div style={{ background:SURF, borderRadius:14, padding:'22px 20px 18px', width:300, boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}
+            <div style={{ background:SURF, borderRadius:16, padding:'22px 20px', width:'100%', maxWidth:400, boxSizing:'border-box', boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}
               onClick={e=>e.stopPropagation()}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18 }}>
-                <span style={{ fontSize:15, fontWeight:700, color:'#fff' }}>Новое упражнение</span>
-                <button onClick={()=>setCustomOpen(false)} style={{ background:'none', border:'none', color:TXT3, fontSize:18, cursor:'pointer' }}><GlassIcon name="close" size={26} /></button>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+                <span style={{ fontSize:16, fontWeight:700, color:TXT }}>Новое упражнение</span>
+                <button onClick={()=>setCustomOpen(false)} style={{ background:'none', border:'none', color:TXT3, fontSize:18, cursor:'pointer', lineHeight:1 }}><GlassIcon name="close" size={26} /></button>
               </div>
-              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
                 <div>
-                  <div style={{ fontSize:11, color:TXT3, marginBottom:5 }}>Название *</div>
+                  <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Название *</div>
                   <input value={customForm.n} onChange={e=>setCustomForm(f=>({...f,n:e.target.value}))}
                     placeholder="Например: Жим гантелей лёжа" autoFocus
-                    style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:8, border:`1px solid ${HAIR}`, background:SURF2, color:'#fff', boxSizing:'border-box', outline:'none' }} />
+                    style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
+                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                 </div>
                 <div>
-                  <div style={{ fontSize:11, color:TXT3, marginBottom:5 }}>Группа мышц</div>
+                  <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Группа мышц</div>
                   <input value={customForm.m} onChange={e=>setCustomForm(f=>({...f,m:e.target.value}))}
                     placeholder="Например: Грудь, Ноги, Спина..."
-                    style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:8, border:`1px solid ${HAIR}`, background:SURF2, color:'#fff', boxSizing:'border-box', outline:'none' }} />
+                    style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
+                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                 </div>
                 <div>
-                  <div style={{ fontSize:11, color:TXT3, marginBottom:5 }}>Оборудование</div>
+                  <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Оборудование</div>
                   <input value={customForm.eq} onChange={e=>setCustomForm(f=>({...f,eq:e.target.value}))}
                     placeholder="Например: Гантели, Штанга..."
-                    style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:8, border:`1px solid ${HAIR}`, background:SURF2, color:'#fff', boxSizing:'border-box', outline:'none' }} />
+                    style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
+                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                 </div>
                 <div style={{ display:'flex', gap:8, marginTop:4 }}>
-                  <button onClick={()=>setCustomOpen(false)} style={{ flex:1, padding:'10px', fontSize:13, borderRadius:8, border:`1px solid ${HAIR}`, background:'none', color:TXT3, cursor:'pointer' }}>Отмена</button>
-                  <button onClick={saveCustomExercise} style={{ flex:1, padding:'10px', fontSize:13, borderRadius:8, border:'none', background:wColor, color:'#fff', fontWeight:600, cursor:'pointer' }}>Добавить</button>
+                  <button onClick={()=>setCustomOpen(false)} style={{ flex:1, padding:'11px', fontSize:13, fontWeight:600, borderRadius:9, border:`1px solid ${HAIR}`, background:'none', color:TXT3, cursor:'pointer' }}>Отмена</button>
+                  <button onClick={saveCustomExercise} style={{ flex:1, padding:'12px', fontSize:14, borderRadius:14, border:'none', background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', fontWeight:800, cursor:'pointer' }}>Добавить</button>
                 </div>
               </div>
             </div>
@@ -3318,7 +3340,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
 
       {step==='naming'&&(
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
-          onClick={()=>setStep(null)}>
+          onClick={()=>{setStep(null);setStartedFromPlanId(null)}}>
           <div style={{ background:SURF, borderRadius:16, padding:'22px 20px', width:'100%', maxWidth:400, boxSizing:'border-box', boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}
             onClick={e=>e.stopPropagation()}>
             <div style={{ fontSize:16, fontWeight:700, color:TXT, textAlign:'center', marginBottom:16 }}>
@@ -3349,7 +3371,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               </div>
             </div>
             <div style={{ display:'flex', gap:8, marginTop:18 }}>
-              <button onClick={()=>setStep(null)} style={{ flex:1, padding:'11px', fontSize:13, fontWeight:600, borderRadius:9, border:`1px solid ${HAIR}`, background:'none', color:TXT3, cursor:'pointer' }}>Отмена</button>
+              <button onClick={()=>{setStep(null);setStartedFromPlanId(null)}} style={{ flex:1, padding:'11px', fontSize:13, fontWeight:600, borderRadius:9, border:`1px solid ${HAIR}`, background:'none', color:TXT3, cursor:'pointer' }}>Отмена</button>
               <button onClick={()=>setStep('active')} style={{ flex:1, padding:'12px', fontSize:14, borderRadius:14, border:'none', background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', fontWeight:800, cursor:'pointer' }}>
                 {wMode==='log'?'Добавить':'Начать'}
               </button>
@@ -6274,7 +6296,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         </div>
 
         <div style={{ flex:1,overflowY:'auto',padding:'14px 16px 32px' }}>
-          {!readOnly&&templateMsg&&<div style={{ background:'#22c55e',color:'#fff',borderRadius:9,padding:'8px 14px',fontSize:13,marginBottom:12,textAlign:'center' }}>{templateMsg}</div>}
+          {!readOnly&&templateMsg&&<div style={{ background:TEA,color:'#fff',borderRadius:9,padding:'8px 14px',fontSize:13,marginBottom:12,textAlign:'center' }}>{templateMsg}</div>}
 
           {/* Форма планирования */}
           {!readOnly&&showScheduleForm&&(
@@ -6307,8 +6329,8 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
               </div>
               {!readOnly&&(
               <div style={{ display:'flex',gap:8,alignItems:'center' }}>
-                <button onClick={()=>{if(onWorkoutAction)onWorkoutAction('start')}}
-                  style={{ fontSize:11,padding:'5px 10px',borderRadius:7,border:`1px solid ${PUR}`,background:'#EEEDFE',color:PUR,cursor:'pointer',fontWeight:500 }}>▶ Начать</button>
+                <button onClick={()=>{if(onWorkoutAction)onWorkoutAction('start',{id:pw.id,name:pw.name})}}
+                  style={{ fontSize:11,padding:'5px 10px',borderRadius:7,border:`1px solid ${PUR}`,background:`${PUR}22`,color:PUR,cursor:'pointer',fontWeight:500 }}>▶ Начать</button>
                 <button onClick={()=>deletePlanned(pw.id)}
                   style={{ fontSize:14,padding:'4px 9px',borderRadius:7,border:`1px solid ${HAIR}`,background:'transparent',color:TXT3,cursor:'pointer',lineHeight:1 }}><GlassIcon name="close" size={26} /></button>
               </div>
@@ -9945,8 +9967,10 @@ export default function App() {
     handleWorkoutComplete({...workout,date:localTodayISO(),name:workout.name+' (копия)'})
   }
 
-  const handleWorkoutAction=(action)=>{
-    if(action==='start'||action==='done') setPendingWorkoutAction(action)
+  const handleWorkoutAction=(action,plan)=>{
+    // С планом кладём объект {action, plan}; без плана — строку, как раньше
+    // (обратная совместимость: обычные «Начать»/«Добавить выполненную»).
+    if(action==='start'||action==='done') setPendingWorkoutAction(plan?{action,plan}:action)
     if(nav!=='workouts'){borrowedNavRef.current=true;pendingSectionRestoreRef.current=diarySectionRef.current}
     handleNav('workouts')
   }
