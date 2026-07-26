@@ -104,6 +104,38 @@ const EX_BY_NAME = new Map(EXERCISES.map(e => [e.n, e]))
 // value: { exercises: [{n,m,eq,type}], reloadCatalog }.
 const CatalogContext = createContext({ exercises: EXERCISES, reloadCatalog: () => {} })
 
+// Контекст выбора видео по папке шаблона (зал/дом).
+const FOLDER_CTX_FALLBACK = key => key === 'Домашние тренировки' ? 'dom' : 'zal'
+
+// Шаблоны программ = зашитые FOLDERS/PROGRAMS_MAP + program_templates из базы.
+// Раздаётся через контекст: { folders:[{key,label,context}] (по sort),
+// structures:{key→structure} }. Ключ key НЕ меняется никогда — за него держатся
+// profiles.program, префикс названий workouts, localStorage. На экран — label.
+const TemplatesContext = createContext(mergeTemplates([]))
+
+// По образцу mergeCatalog: строка из базы перекрывает зашитое; hidden → папка
+// скрыта; ключа нет в базе → берём из кода (запасной вариант, если база молчит).
+function mergeTemplates(rows) {
+  const byKey = new Map((rows || []).map(r => [r.key, r]))
+  const folders = []
+  const structures = {}
+  const seen = new Set()
+  FOLDERS.forEach((key, i) => {
+    seen.add(key)
+    const r = byKey.get(key)
+    if (r?.hidden) return
+    folders.push({ key, label: (r && r.display_name) || key, context: (r && r.context) || FOLDER_CTX_FALLBACK(key), sort: r ? r.sort : i })
+    structures[key] = (r && Array.isArray(r.structure) && r.structure.length) ? r.structure : PROGRAMS_MAP[key]
+  })
+  for (const r of rows || []) {
+    if (seen.has(r.key) || r.hidden) continue
+    folders.push({ key: r.key, label: r.display_name || r.key, context: r.context || 'zal', sort: r.sort ?? 0 })
+    structures[r.key] = Array.isArray(r.structure) ? r.structure : []
+  }
+  folders.sort((a, b) => a.sort - b.sort)
+  return { folders: folders.map(({ key, label, context }) => ({ key, label, context })), structures }
+}
+
 // Сливает зашитый EXERCISES с записями catalog_exercises по имени:
 //  - hidden=true  → упражнение исключается;
 //  - hidden=false → мета из каталога переопределяет зашитую;
@@ -1497,18 +1529,20 @@ const plural=(n,one,few,many)=>{const m=Math.abs(n)%100,d=m%10;if(m>10&&m<20)ret
 // без этой оценки невозможно понять, почему движок прогрессии изменил вес.
 const RATING_LABELS={1:'легко',2:'легковато',3:'в рабочем режиме',4:'тяжело',5:'на пределе'}
 
-const makeDefaultSlots=folder=>
+// programsMap/folders по умолчанию — зашитые (запасной вариант, если база не
+// ответила). Приложение передаёт сюда структуры/ключи из program_templates.
+const makeDefaultSlots=(folder,programsMap=PROGRAMS_MAP)=>
   Array.from({length:SLOT_COUNT},(_,i)=>{
     const slotId=`${folder.replace(/\s+/g,'_')}_${i+1}`
-    const prog=PROGRAMS_MAP[folder]
+    const prog=programsMap[folder]
     const exercises=prog&&prog[i]
       ?prog[i].map(ex=>({id:`${slotId}_ex${ex.num}`,num:ex.num,name:ex.name,sets:ex.sets,superset:ex.superset||null,videoId:null,videoUrl:null,videoName:null}))
       :[]
     return {id:slotId,slotNum:i+1,title:`Тренировка ${i+1}`,exercises}
   })
 
-const makeDefaultFolderSlots=()=>{
-  const o={}; FOLDERS.forEach(f=>{o[f]=makeDefaultSlots(f)}); return o
+const makeDefaultFolderSlots=(folders=FOLDERS,programsMap=PROGRAMS_MAP)=>{
+  const o={}; folders.forEach(f=>{o[f]=makeDefaultSlots(f,programsMap)}); return o
 }
 
 // hasTrainer — «к клиенту прикреплён тренер» (profiles.coach_id). Раньше проп
@@ -1518,6 +1552,12 @@ const makeDefaultFolderSlots=()=>{
 // в СТАРТ (0) открыты только первые FREE_SLOTS.
 function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, hasTrainer, coachSubExpired = false, accessLevel = 0, openPlans, exerciseVideos = {}, userRole = 'client', setExerciseVideos }) {
   const { exercises: catalogExercises } = useContext(CatalogContext)
+  // Шаблоны программ — из базы (program_templates) с запасным вариантом из кода.
+  // folderKeys — КЛЮЧИ (profiles.program, префиксы workouts держатся за них),
+  // folderLabel — как показать ключ на экране.
+  const { folders: templateFolders, structures: templateStructures } = useContext(TemplatesContext)
+  const folderKeys = templateFolders.map(f=>f.key)
+  const folderLabel = key => (templateFolders.find(t=>t.key===key)||{}).label || key
   // Подсказка «нужен пакет БАЗА» — показывается модалкой поверх списка слотов.
   const [showSlotLock,setShowSlotLock]=useState(false)
   // Заперт ли слот: платная часть шаблона начинается с FREE_SLOTS+1.
@@ -1528,7 +1568,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const [openSlotId,setOpenSlotId]=useState(null)
   const [openSlotHeaderMenu,setOpenSlotHeaderMenu]=useState(false)
   const [openExMenu,setOpenExMenu]=useState(null)
-  const [folderSlots,setFolderSlots]=useState(makeDefaultFolderSlots)
+  const [folderSlots,setFolderSlots]=useState(()=>makeDefaultFolderSlots(folderKeys,templateStructures))
   const [playVideo,setPlayVideo]=useState(null)
   const [editingSlotTitle,setEditingSlotTitle]=useState(null) // {id,title}
   const [editingExercise,setEditingExercise]=useState(null)   // {slotId,exId,name,sets}
@@ -1543,7 +1583,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     idbLoadAll().then(items=>{
       const byId={}
       items.forEach(it=>{byId[it.id]=it})
-      const loaded=makeDefaultFolderSlots()
+      const loaded=makeDefaultFolderSlots(folderKeys,templateStructures)
       Object.keys(meta).forEach(folder=>{
         if(!loaded[folder])return
         meta[folder].forEach((saved,idx)=>{
@@ -1587,7 +1627,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const isTrainer=userRole==='trainer'
   const [videoPickerFor,setVideoPickerFor]=useState(null) // имя упражнения или null
   // Контекст видео по папке: домашние → 'dom', остальные шаблоны → 'zal'.
-  const folderToContext=folder=>folder==='Домашние тренировки'?'dom':'zal'
+  const folderToContext=folder=>(templateFolders.find(t=>t.key===folder)||{}).context||FOLDER_CTX_FALLBACK(folder)
   // Контекст активной тренировки — запоминаем в момент запуска: на экране
   // активной тренировки папки уже нет под рукой. null = общий ролик (тренерская
   // программа / возобновление без известной папки).
@@ -1956,11 +1996,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   // старт/лог) — savedName не матчит ни один "{X} — тренировка N", смотреть
   // нечего.
   const checkProgramCompletion=(savedName,freshLog)=>{
-    const programName=FOLDERS.find(f=>savedName&&savedName.startsWith(`${f} — тренировка `))
+    const programName=folderKeys.find(f=>savedName&&savedName.startsWith(`${f} — тренировка `))
     if(!programName)return
     const cycleStart=getCycleStart(programName)
     const relevant=cycleStart?freshLog.filter(w=>(w.date||'').slice(0,10)>=(cycleStart||'').slice(0,10)):freshLog
-    if(!isProgramFullyCompleted(relevant,programName))return
+    // Всего слотов — из базы (запасной вариант внутри самой функции, из PROGRAMS_MAP).
+    if(!isProgramFullyCompleted(relevant,programName,templateStructures[programName]?.length))return
     const flagKey=completedFlagKey(programName,cycleStart)
     let alreadyShown=false
     try{alreadyShown=localStorage.getItem(flagKey)==='1'}catch{}
@@ -3502,7 +3543,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         <div onClick={()=>setShowAdoptProgramModal(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1400, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
           <div onClick={e=>e.stopPropagation()} style={{ background:SURF, borderRadius:16, padding:'22px 20px', maxWidth:340, width:'100%', boxSizing:'border-box' }}>
             <div style={{ fontSize:16, fontWeight:700, color:TXT, textAlign:'center', marginBottom:20, lineHeight:1.4 }}>
-              Начать тренироваться по программе «{openFolder}»?
+              Начать тренироваться по программе «{folderLabel(openFolder)}»?
             </div>
             <button onClick={async()=>{const{ok}=await selectProgram(openFolder);if(ok){setShowAdoptProgramModal(false);startSlotWorkout()}}}
               style={{ width:'100%', padding:'13px', borderRadius:12, border:'none', background:PUR, color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', marginBottom:8 }}>
@@ -3595,7 +3636,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
             <GlassIcon name={FOLDER_ICONS[openFolder]} size={34} />
             <div>
-              <div style={{ fontSize:17, fontWeight:700, color:TXT }}>{openFolder}</div>
+              <div style={{ fontSize:17, fontWeight:700, color:TXT }}>{folderLabel(openFolder)}</div>
               <div style={{ fontSize:11, color:TXT3 }}>
                 {SLOT_COUNT} тренировок · {folderSlots[openFolder].reduce((s,sl)=>s+sl.exercises.filter(e=>e.videoId).length,0)} видео
               </div>
@@ -3835,7 +3876,8 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       , document.body)}
 
       {/* ── Уровень 0: список папок ── */}
-      {FOLDERS.map(folder=>{
+      {templateFolders.map(t=>{
+        const folder=t.key
         const totalEx=folderSlots[folder].reduce((s,sl)=>s+sl.exercises.length,0)
         const totalVids=folderSlots[folder].reduce((s,sl)=>s+sl.exercises.filter(e=>e.videoId).length,0)
         const isSelected=selectedProgram===folder
@@ -3848,7 +3890,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             {isSelected&&<span style={{ position:'absolute', top:10, right:16 }}><GlassIcon name="check" size={18} /></span>}
             <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingRight:20 }}>
               <div style={{ display:'flex',justifyContent:'center',marginBottom:6 }}><GlassIcon name={FOLDER_ICONS[folder]} size={42} /></div>
-              <div style={{ fontSize:16, fontWeight:700, color:TXT, textAlign:'center' }}>{folder}</div>
+              <div style={{ fontSize:16, fontWeight:700, color:TXT, textAlign:'center' }}>{t.label}</div>
               <div style={{ fontSize:12, color:TXT3, marginTop:3, textAlign:'center' }}>
                 {SLOT_COUNT} тренировок · {totalEx} упр.{totalVids>0?` · ${totalVids} видео`:''}
               </div>
@@ -3862,7 +3904,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         <div onClick={()=>setInfoFolder(null)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:1300, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
           <div onClick={e=>e.stopPropagation()} style={{ background:SURF, borderRadius:16, padding:'22px 20px', maxWidth:340, width:'100%', boxSizing:'border-box' }}>
             <div style={{ display:'flex',justifyContent:'center',marginBottom:8 }}><GlassIcon name={FOLDER_ICONS[infoFolder]} size={42} /></div>
-            <div style={{ fontSize:17, fontWeight:700, color:TXT, textAlign:'center', marginBottom:8 }}>{infoFolder}</div>
+            <div style={{ fontSize:17, fontWeight:700, color:TXT, textAlign:'center', marginBottom:8 }}>{folderLabel(infoFolder)}</div>
             <div style={{ fontSize:13, color:TXT3, textAlign:'center', lineHeight:1.5, marginBottom:18 }}>{FOLDER_DESCRIPTIONS[infoFolder]||''}</div>
             <button onClick={()=>selectProgram(infoFolder)}
               style={{ width:'100%', padding:'13px', borderRadius:12, border:'none', background:selectedProgram===infoFolder?SURF2:PUR, color:selectedProgram===infoFolder?TXT3:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', marginBottom:8, display:'flex', alignItems:'center', justifyContent:'center', gap:7 }}>
@@ -8871,6 +8913,28 @@ export default function App() {
   },[])
   const mergedExercises=useMemo(()=>mergeCatalog(catalogRows),[catalogRows])
   const catalogValue=useMemo(()=>({exercises:mergedExercises,reloadCatalog}),[mergedExercises])
+  // Шаблоны программ из базы (program_templates) — публичное чтение с теми же
+  // повторами при сетевой ошибке, что у каталога. Пустой массив = запасной
+  // вариант из кода (mergeTemplates отдаст FOLDERS/PROGRAMS_MAP).
+  const [templateRows,setTemplateRows]=useState([])
+  const templatesRetryRef=useRef(null)
+  const loadTemplates=(attempt=0)=>{
+    if(templatesRetryRef.current){clearTimeout(templatesRetryRef.current);templatesRetryRef.current=null}
+    supabase.from('program_templates').select('key,display_name,sort,context,structure,hidden').then(({data,error})=>{
+      if(error||data==null){
+        console.error('Шаблоны: ошибка загрузки program_templates'+(error?`: ${error.message||error}`:' — пустой ответ'))
+        const DELAYS=[1500,4000,9000]
+        if(attempt<DELAYS.length) templatesRetryRef.current=setTimeout(()=>loadTemplates(attempt+1),DELAYS[attempt])
+        return
+      }
+      setTemplateRows(data)
+    })
+  }
+  useEffect(()=>{
+    loadTemplates()
+    return()=>{if(templatesRetryRef.current)clearTimeout(templatesRetryRef.current)}
+  },[])
+  const templatesValue=useMemo(()=>mergeTemplates(templateRows),[templateRows])
   const [userRole,setUserRole]=useState(()=>localStorage.getItem('fitpro_role')||'client')
   // Согласие на обработку ПДн (152-ФЗ). consentLoaded — «ответ из базы получен»,
   // до него приложение не рендерим вообще, иначе на секунду мелькнёт контент
@@ -9652,6 +9716,7 @@ export default function App() {
 
   return (
     <CatalogContext.Provider value={catalogValue}>
+     <TemplatesContext.Provider value={templatesValue}>
       {/* Градиенты для стеклянных иконок — монтируются один раз на всё приложение */}
       <GlassDefs/>
       {/* Градиенты для иконок групп мышц. Сам <MuscleIcon> в рядах упражнений
@@ -9877,6 +9942,7 @@ export default function App() {
           высоту плашки (extraBottomOffset), чтобы плашка её не перекрыла
           (известный ранее z-index-баг, явно проверяем каждый раз). */}
       <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} hideButton={isWorkoutForeground} extraBottomOffset={workoutMinimized?MINIMIZED_BAR_H:0} accessLevel={access.level} openPlans={openPlans} />
+     </TemplatesContext.Provider>
     </CatalogContext.Provider>
   )
 }

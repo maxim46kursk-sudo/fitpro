@@ -227,8 +227,14 @@ export function countCompletedProgramSlots(workoutsLog, programName) {
 // Строго: пройдены ВСЕ слоты шаблона программы (столько, сколько тренировок
 // в PROGRAMS_MAP[programName] — сейчас везде 12, но не хардкодим число).
 // Порядок прохождения не важен, пропусков быть не должно.
-export function isProgramFullyCompleted(workoutsLog, programName) {
-  const total = PROGRAMS_MAP[programName]?.length || 0
+// totalSlots — необязательный: сколько всего слотов у программы. Приложение
+// передаёт число из базы (program_templates). Не передали → прежнее поведение,
+// из PROGRAMS_MAP. Сигнатура расширена только хвостовым опциональным параметром,
+// существующие вызовы и тесты не затрагиваются.
+export function isProgramFullyCompleted(workoutsLog, programName, totalSlots) {
+  const total = (typeof totalSlots === 'number' && totalSlots > 0)
+    ? totalSlots
+    : (PROGRAMS_MAP[programName]?.length || 0)
   if (!total) return false
   return countCompletedProgramSlots(workoutsLog, programName) >= total
 }
