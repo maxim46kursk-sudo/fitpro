@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { rateLimit } from './_ratelimit.js'
 
 // Отмена подписки: сбрасывает ЭТОГО пользователя на СТАРТ (plan='start',
 // plan_until=null). Автосписаний нет — оплата разовая на 30 дней, поэтому
@@ -15,6 +16,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!rateLimit(req, res, { name: 'cancel-subscription', limit: 5 })) return
 
   const authHeader = req.headers.authorization || ''
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null

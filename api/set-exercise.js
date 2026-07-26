@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { rateLimit } from './_ratelimit.js'
 
 // Ручка ТРЕНЕРСКОГО КОНТЕНТА — ТОЛЬКО для роли trainer. Ведёт и глобальный
 // каталог упражнений (catalog_exercises), и видео (exercise_videos), и ШАБЛОНЫ
@@ -25,6 +26,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!rateLimit(req, res, { name: 'set-exercise', limit: 30 })) return
 
   // Личность — только из подписанного токена.
   const authHeader = req.headers.authorization || ''

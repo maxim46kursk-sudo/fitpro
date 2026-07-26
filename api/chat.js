@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { effectiveLevel, AI_MIN_LEVEL } from './_access.js'
+import { rateLimit } from './_ratelimit.js'
 
 // Серверный клиент Supabase — проверка токена (auth.getUser) и, ниже, чтение
 // пакета пользователя service_role-ключом. Тот же env и те же безопасные
@@ -22,6 +23,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
   if (req.method === 'OPTIONS') return res.status(200).end()
+  if (!rateLimit(req, res, { name: 'chat', limit: 12 })) return
 
   // Без валидного Supabase-токена — эндпоинт был открытым анонимным прокси
   // к Anthropic на нашем ключе (любой посторонний мог гонять запросы за наш

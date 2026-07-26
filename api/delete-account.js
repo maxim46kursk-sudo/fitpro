@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { USER_TABLES, TWO_SIDED_TABLES, PROFILE_TABLE, twoSidedFilter } from './_userTables.js'
+import { rateLimit } from './_ratelimit.js'
 
 // URL несекретен, тот же безопасный fallback, что и в api/chat.js и
 // api/telegram-auth.js. SUPABASE_SERVICE_ROLE_KEY (полный доступ, обходит RLS)
@@ -13,6 +14,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!rateLimit(req, res, { name: 'delete-account', limit: 3 })) return
 
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!serviceRoleKey) {

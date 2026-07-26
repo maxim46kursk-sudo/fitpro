@@ -1,6 +1,7 @@
 import qs from 'qs'
 import { createClient } from '@supabase/supabase-js'
 import { createSignature, PLAN_PRICE, PLAN_NAME } from './_prodamus.js'
+import { rateLimit } from './_ratelimit.js'
 
 // Статические ссылки Продамуса не могут нести наш идентификатор пользователя
 // (Продамус подменяет order_id своим номером). Поэтому ссылку строим здесь:
@@ -24,6 +25,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!rateLimit(req, res, { name: 'create-payment', limit: 10 })) return
 
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   const secret = process.env.PRODAMUS_SECRET_KEY

@@ -7069,7 +7069,11 @@ function LandingPage({ onEnter, isTelegram }) {
     if(!form.email.trim()||!form.password.trim()){setAuthError('Введи почту и пароль');return}
     setAuthBusy(true);setAuthError('')
     const{error}=await supabase.auth.signInWithPassword({email:form.email.trim(),password:form.password})
-    if(error){setAuthError('Неверная почта или пароль');setAuthBusy(false);return}
+    // Блокировку от перебора (Auth Hook, sql/2026-07-26_login_bruteforce.sql) показываем
+    // текстом из базы: иначе человек видел бы «неверная почта или пароль» при верном пароле
+    // и не понимал, что нужно просто подождать. Остальные ошибки по-прежнему схлопываем в
+    // общий текст, чтобы не подсказывать, существует ли аккаунт.
+    if(error){setAuthError(error.message?.includes('попыток входа')?error.message:'Неверная почта или пароль');setAuthBusy(false);return}
     setAuthBusy(false)
     // onAuthStateChange в App() автоматически установит пользователя
   }

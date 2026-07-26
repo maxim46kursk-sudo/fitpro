@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
+import { rateLimit } from './_ratelimit.js'
 
 // URL несекретен, тот же безопасный fallback, что и в api/chat.js.
 // SUPABASE_SERVICE_ROLE_KEY (полный доступ, обходит RLS) — секретен,
@@ -60,6 +61,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!rateLimit(req, res, { name: 'telegram-auth', limit: 20 })) return
 
   const botToken = process.env.TELEGRAM_BOT_TOKEN
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
