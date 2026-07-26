@@ -2154,7 +2154,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     // pendingAction — либо строка ('start'/'done'), либо {action, plan}.
     const act=typeof pendingAction==='string'?pendingAction:pendingAction.action
     const plan=typeof pendingAction==='string'?null:pendingAction.plan
-    if(act==='start'||act==='done'){
+    if(act==='start'||act==='done'||act==='template'){
       if(step==='active'){
         setPendingConflictStart(()=>()=>runHandleAction(act,plan))
       } else {
@@ -2211,6 +2211,14 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     }
     if(key==='done'){
       setWName('Тренировка');setWColor(WCOLORS[2]);setWExercises([]);setWMode('log');setWDate(today);setStep('naming')
+    }
+    if(key==='template'){
+      // Запуск по сохранённому шаблону. Состав уже известен — модалку с
+      // названием не показываем, сразу на активный экран. Упражнения приводим
+      // к рабочему виду ТОЧНО как pickExercise. startedFromPlanId=null (выше):
+      // шаблон не план, удалять после сохранения нечего.
+      const exs=(plan?.exercises||[]).map(ex=>({...ex,sets:[{kg:'',reps:'',recKg:'',rating:''}],done:false}))
+      setWName(plan?.name||'Тренировка');setWColor(WCOLORS[0]);setWExercises(exs);setStartedAt(Date.now());setSwAccumMs(0);setSwStartedAt(null);setWMode('start');setWDate(today);setStep('active')
     }
   }
   // Точка входа с кнопок меню "Новая тренировка" — список программ (откуда
@@ -5534,6 +5542,10 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const [scheduleForm,setScheduleForm]=useState({name:'',date:''})
   const [plannedWorkouts,setPlannedWorkouts]=useState(()=>{try{return JSON.parse(localStorage.getItem('fitpro_planned')||'[]')}catch{return[]}})
   const [templateMsg,setTemplateMsg]=useState('')
+  // Пикер сохранённых шаблонов (пункт «Шаблон тренировки»).
+  const [showTemplatePicker,setShowTemplatePicker]=useState(false)
+  const [userTemplates,setUserTemplates]=useState(null) // null = ещё не грузили
+  const [templatesLoading,setTemplatesLoading]=useState(false)
   // калькулятор 1ПМ
   const [rmMode,setRmMode]=useState('direct') // direct | reverse | table
   const [rmWeight,setRmWeight]=useState('')
@@ -6243,6 +6255,40 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
       setTemplateMsg(`Шаблон «${workout.name}» сохранён`)
       setTimeout(()=>setTemplateMsg(''),2500)
     }
+    // Открыть пикер шаблонов и лениво подгрузить список (как пул видео).
+    const openTemplatePicker=async()=>{
+      setShowTemplatePicker(true)
+      setTemplatesLoading(true)
+      let list=null
+      if(userId){
+        const{data,error}=await supabase.from('workout_templates').select('id,name,exercises').eq('user_id',userId).order('created_at',{ascending:false})
+        if(!error&&data)list=data
+      }
+      // Сеть упала или нет userId → зеркало localStorage, чтобы список не был
+      // пустым по сетевой причине.
+      if(!list){try{list=JSON.parse(localStorage.getItem('fitpro_user_templates')||'[]')}catch{list=[]}}
+      setUserTemplates(list||[])
+      setTemplatesLoading(false)
+    }
+    const deleteTemplate=async(tpl)=>{
+      if(!window.confirm(`Удалить шаблон «${tpl.name}»?`))return
+      if(userId&&tpl.id!=null){
+        const{error}=await supabase.from('workout_templates').delete().eq('id',tpl.id)
+        if(error){console.error('Ошибка удаления шаблона:',error);flashFoodSaveError();return} // список не меняем
+      }
+      // Убрать из зеркала localStorage. id БД (bigint) и локальный (Date.now)
+      // лежат в разных пространствах, поэтому чистим и по id, и по имени — best-effort.
+      try{
+        const mirror=JSON.parse(localStorage.getItem('fitpro_user_templates')||'[]')
+        localStorage.setItem('fitpro_user_templates',JSON.stringify(mirror.filter(t=>t.id!==tpl.id&&t.name!==tpl.name)))
+      }catch{}
+      setUserTemplates(list=>(list||[]).filter(t=>t!==tpl))
+    }
+    // Запуск по шаблону — как запланированная: передаём name+exercises, App/WorkoutsView соберут тренировку.
+    const launchTemplate=(tpl)=>{
+      if(onWorkoutAction)onWorkoutAction('template',{name:tpl.name,exercises:tpl.exercises||[]})
+      setShowTemplatePicker(false)
+    }
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:BG,zIndex:1000,display:'flex',flexDirection:'column' }}>
         {/* Тост ошибки записи — тот же showFoodSaveError, что и в секции
@@ -6256,6 +6302,34 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
             boxShadow:'0 6px 20px rgba(220,38,38,0.35)',
           }}>
             Не удалось сохранить — проверь связь и повтори
+          </div>
+        )}
+        {/* Пикер сохранённых шаблонов — стиль как у videoPicker/exFormModal. */}
+        {showTemplatePicker&&(
+          <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:1400, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
+            onClick={()=>setShowTemplatePicker(false)}>
+            <div style={{ background:SURF, borderRadius:16, padding:'20px 18px', width:'100%', maxWidth:400, maxHeight:'80vh', display:'flex', flexDirection:'column', boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}
+              onClick={e=>e.stopPropagation()}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+                <span style={{ fontSize:16, fontWeight:700, color:TXT }}>Шаблоны тренировок</span>
+                <button onClick={()=>setShowTemplatePicker(false)} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer', color:TXT3, lineHeight:1 }}><GlassIcon name="close" size={26} /></button>
+              </div>
+              <div style={{ overflowY:'auto', display:'flex', flexDirection:'column', gap:8 }}>
+                {templatesLoading?(
+                  <div style={{ fontSize:13, color:TXT3, padding:'10px 0', textAlign:'center' }}>Загрузка…</div>
+                ):(userTemplates&&userTemplates.length>0)?userTemplates.map((tpl,i)=>(
+                  <div key={tpl.id??i} style={{ display:'flex', alignItems:'center', gap:8, background:SURF2, border:`1px solid ${HAIR}`, borderRadius:10, padding:'10px 12px' }}>
+                    <button onClick={()=>launchTemplate(tpl)} style={{ flex:1, minWidth:0, background:'none', border:'none', textAlign:'left', cursor:'pointer', padding:0 }}>
+                      <div style={{ fontSize:14, fontWeight:600, color:TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{tpl.name||'Тренировка'}</div>
+                      <div style={{ fontSize:11, color:TXT3, marginTop:2 }}>{(tpl.exercises||[]).length} {plural((tpl.exercises||[]).length,'упражнение','упражнения','упражнений')}</div>
+                    </button>
+                    <button onClick={()=>deleteTemplate(tpl)} title="Удалить шаблон" style={{ background:'none', border:'none', color:TXT3, cursor:'pointer', lineHeight:1, padding:4, flexShrink:0 }}><GlassIcon name="close" size={22} /></button>
+                  </div>
+                )):(
+                  <div style={{ fontSize:13, color:TXT3, padding:'14px 6px', textAlign:'center', lineHeight:1.5 }}>Шаблонов пока нет. Сохрани тренировку как шаблон через ⋯ на её карточке в дневнике.</div>
+                )}
+              </div>
+            </div>
           </div>
         )}
         {/* ─ Шапка с кнопкой + */}
@@ -6279,7 +6353,8 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                   ].map((item,idx)=>(
                     <button key={idx} onClick={()=>{
                       setShowWorkoutMenu(false)
-                      if(item.key){if(onWorkoutAction)onWorkoutAction(item.key)}
+                      if(item.key==='template'){openTemplatePicker()}
+                      else if(item.key){if(onWorkoutAction)onWorkoutAction(item.key)}
                       else{setShowScheduleForm(true)}
                     }} style={{ display:'flex',alignItems:'center',gap:11,width:'100%',padding:'11px 15px',border:'none',borderTop:idx>0?`1px solid ${HAIR}`:'none',background:'transparent',cursor:'pointer',textAlign:'left' }}>
                       <GlassIcon name={item.ic} size={26} />
@@ -9970,7 +10045,7 @@ export default function App() {
   const handleWorkoutAction=(action,plan)=>{
     // С планом кладём объект {action, plan}; без плана — строку, как раньше
     // (обратная совместимость: обычные «Начать»/«Добавить выполненную»).
-    if(action==='start'||action==='done') setPendingWorkoutAction(plan?{action,plan}:action)
+    if(action==='start'||action==='done'||action==='template') setPendingWorkoutAction(plan?{action,plan}:action)
     if(nav!=='workouts'){borrowedNavRef.current=true;pendingSectionRestoreRef.current=diarySectionRef.current}
     handleNav('workouts')
   }
