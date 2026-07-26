@@ -115,15 +115,23 @@ function mergeCatalog(rows) {
   for (const e of EXERCISES) {
     const c = byName.get(e.n)
     if (c?.hidden) { usedNames.add(e.n); continue }
-    if (c) out.push({ n: e.n, m: c.muscle_group || e.m, eq: c.equipment || e.eq, type: c.type || e.type, technique: c.technique || '' })
-    else out.push({ ...e, technique: '' })
+    // n — КЛЮЧ (не меняется никогда), label — что показываем пользователю.
+    if (c) out.push({ n: e.n, m: c.muscle_group || e.m, eq: c.equipment || e.eq, type: c.type || e.type, technique: c.technique || '', label: c.display_name || e.n })
+    else out.push({ ...e, technique: '', label: e.n })
     usedNames.add(e.n)
   }
   for (const r of rows || []) {
     if (usedNames.has(r.name) || r.hidden) continue
-    out.push({ n: r.name, m: r.muscle_group || '', eq: r.equipment || '', type: r.type || 'compound', technique: r.technique || '' })
+    out.push({ n: r.name, m: r.muscle_group || '', eq: r.equipment || '', type: r.type || 'compound', technique: r.technique || '', label: r.display_name || r.name })
   }
   return out
+}
+
+// Отображаемое имя по ключу. Нужно там, где на руках только ключ (история,
+// дневник): если упражнения нет в каталоге — возвращаем сам ключ.
+function labelOf(catalogExercises, name){
+  const e = (catalogExercises || []).find(x => x.n === name)
+  return (e && e.label) || name
 }
 
 // Выбор ролика из двухуровневой карты видео { имя → { контекст → {…} } }.
@@ -1246,7 +1254,7 @@ function ProgramEditor({ client, trainerId }) {
                       <div style={{ display:'flex', alignItems:'center', gap:10, flex:1, minWidth:0 }}>
                         <span style={{ width:30, height:30, borderRadius:10, background:`linear-gradient(135deg, ${PUR}, #5b56c9)`, color:'#fff', fontWeight:800, fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>{ei+1}</span>
                         <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:16, fontWeight:700, color:TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ex.name}</div>
+                          <div style={{ fontSize:16, fontWeight:700, color:TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{labelOf(catalogExercises,ex.name)}</div>
                         </div>
                       </div>
                       <button onClick={()=>removeExercise(wi,ei)}
@@ -1338,11 +1346,11 @@ function ProgramEditor({ client, trainerId }) {
               style={{ width:'100%', marginBottom:12, padding:'9px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
               onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
             <div style={{ overflowY:'auto', display:'flex', flexDirection:'column', gap:2 }}>
-              {catalogExercises.filter(e=>e.n.toLowerCase().includes(pickerQuery.toLowerCase())).map(e=>(
+              {catalogExercises.filter(e=>(e.label||e.n).toLowerCase().includes(pickerQuery.toLowerCase())||e.n.toLowerCase().includes(pickerQuery.toLowerCase())).map(e=>(
                 <button key={e.n} onClick={()=>addExercise(pickerFor,e.n)}
                   style={{ display:'flex', flexDirection:'column', alignItems:'flex-start', width:'100%', padding:'9px 10px', border:'none', background:'transparent', cursor:'pointer', textAlign:'left', borderRadius:8 }}
                   onMouseEnter={ev=>ev.currentTarget.style.background='#f9fafb'} onMouseLeave={ev=>ev.currentTarget.style.background='transparent'}>
-                  <span style={{ fontSize:13, color:TXT }}>{e.n}</span>
+                  <span style={{ fontSize:13, color:TXT }}>{e.label||e.n}</span>
                   <span style={{ fontSize:11, color:TXT3 }}>{e.m}{e.eq?` · ${e.eq}`:''}</span>
                 </button>
               ))}
@@ -2135,7 +2143,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
 
   const allExercises=[...catalogExercises,...customExercises]
   const muscles=['Все',...new Set(allExercises.map(e=>e.m))]
-  const filteredEx=allExercises.filter(e=>(pickMuscle==='Все'||e.m===pickMuscle)&&e.n.toLowerCase().includes(pickQ.toLowerCase()))
+  const filteredEx=allExercises.filter(e=>(pickMuscle==='Все'||e.m===pickMuscle)&&((e.label||e.n).toLowerCase().includes(pickQ.toLowerCase())||e.n.toLowerCase().includes(pickQ.toLowerCase())))
 
   const pickExercise=ex=>{
     setWExercises(p=>[...p,{...ex,sets:[{kg:'',reps:'',recKg:'',rating:''}],done:false}])
@@ -2243,7 +2251,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const formatWorkoutReport=()=>{
     const lines=[`🏋️ ${wName}`,`📅 ${new Date().toLocaleDateString('ru',{day:'numeric',month:'long',year:'numeric'})}`,'']
     wExercises.forEach((ex,ei)=>{
-      lines.push(`${ei+1}. ${ex.n}`)
+      lines.push(`${ei+1}. ${labelOf(catalogExercises,ex.n)}`)
       ex.sets.forEach((s,si)=>{
         const w=[]
         if(s.kg)w.push(`${s.kg} кг`)
@@ -2678,7 +2686,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   onMouseLeave={e=>e.currentTarget.style.background='none'}>
                   <div>
                     <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                      <span style={{ fontSize:14, fontWeight:500, color:'#fff' }}>{ex.n}</span>
+                      <span style={{ fontSize:14, fontWeight:500, color:'#fff' }}>{ex.label||ex.n}</span>
                       {ex.custom&&<span style={{ fontSize:10, padding:'2px 6px', borderRadius:6, background:wColor+'33', color:wColor }}>моё</span>}
                     </div>
                     <div style={{ fontSize:11, color:TXT3, marginTop:2 }}>{ex.m}{ex.eq?` · ${ex.eq}`:''}</div>
@@ -2912,7 +2920,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                     <div style={{ display:'flex', alignItems:'center', gap:10, flex:1, minWidth:0 }}>
                       <span style={{ width:30, height:30, borderRadius:10, background:`linear-gradient(135deg, ${PUR}, #5b56c9)`, color:'#fff', fontWeight:800, fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>{ei+1}</span>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:16, fontWeight:700, color:ex.done?'#4ade80':TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ex.n}</div>
+                        <div style={{ fontSize:16, fontWeight:700, color:ex.done?'#4ade80':TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{labelOf(catalogExercises,ex.n)}</div>
                         <ExMeta name={ex.n} m={ex.m} eq={ex.eq} />
                       </div>
                     </div>
@@ -2921,7 +2929,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       {/* Видео техники — если по имени упражнения есть ролик в
                           серверной карте. Тап открывает существующий плеер. */}
                       {pickVideo(exerciseVideos,ex.n,activeVideoCtx)&&(
-                        <button onClick={()=>setPlayVideo({url:pickVideo(exerciseVideos,ex.n,activeVideoCtx).video_url,name:ex.n})}
+                        <button onClick={()=>setPlayVideo({url:pickVideo(exerciseVideos,ex.n,activeVideoCtx).video_url,name:labelOf(catalogExercises,ex.n)})}
                           title="Видео техники"
                           style={{ width:26, height:26, borderRadius:'50%', border:'none', background:`${PUR}22`, color:PUR, cursor:'pointer', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, minHeight:'unset' }}>
                           ▶
@@ -3409,7 +3417,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   <div style={{ display:'flex', alignItems:'flex-start', gap:12 }}>
                     <div style={{ flexShrink:0, width:36, height:36, borderRadius:'50%', background:PUR, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:700, color:'#fff' }}>{ex.num}</div>
                     <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:14, fontWeight:700, color:TXT, marginBottom:3 }}>{ex.name||'Упражнение'}</div>
+                      <div style={{ fontSize:14, fontWeight:700, color:TXT, marginBottom:3 }}>{labelOf(catalogExercises,ex.name)||'Упражнение'}</div>
                       <ExMeta name={ex.name} style={{ marginTop:-2, marginBottom:3 }} />
                       {ex.sets&&<div style={{ fontSize:12, color:TXT3, lineHeight:1.7 }}>{ex.sets}</div>}
                     </div>
@@ -3436,7 +3444,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   {(pickVideo(exerciseVideos,ex.name,folderToContext(openFolder))||isTrainer)&&(
                     <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${HAIR}`, display:'flex', alignItems:'flex-start', gap:8 }}>
                       {pickVideo(exerciseVideos,ex.name,folderToContext(openFolder))&&(
-                        <button onClick={()=>setPlayVideo({url:pickVideo(exerciseVideos,ex.name,folderToContext(openFolder)).video_url,name:ex.name})}
+                        <button onClick={()=>setPlayVideo({url:pickVideo(exerciseVideos,ex.name,folderToContext(openFolder)).video_url,name:labelOf(catalogExercises,ex.name)})}
                           style={{ position:'relative', display:'block', width:'100%', maxWidth:220, border:'none', padding:0, borderRadius:12, overflow:'hidden', cursor:'pointer', background:SURF2 }}>
                           <img src={pickVideo(exerciseVideos,ex.name,folderToContext(openFolder)).poster_url} alt={ex.name} loading="lazy"
                             style={{ width:'100%', display:'block', aspectRatio:'16/9', objectFit:'cover' }} />
@@ -3786,7 +3794,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       <div style={{ display:'flex', alignItems:'flex-start', gap:12 }}>
                         <div style={{ flexShrink:0, width:36, height:36, borderRadius:'50%', background:PUR, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:700, color:'#fff' }}>{ei+1}</div>
                         <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:14, fontWeight:700, color:TXT, marginBottom:3 }}>{ex.name||'Упражнение'}</div>
+                          <div style={{ fontSize:14, fontWeight:700, color:TXT, marginBottom:3 }}>{labelOf(catalogExercises,ex.name)||'Упражнение'}</div>
                           <ExMeta name={ex.name} style={{ marginTop:-2, marginBottom:3 }} />
                           {ex.sets&&<div style={{ fontSize:12, color:TXT3, lineHeight:1.7 }}>{ex.sets}</div>}
                           {ex.note&&(
@@ -3799,7 +3807,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       {(pickVideo(exerciseVideos,ex.name,null)||isTrainer)&&(
                         <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${HAIR}`, display:'flex', alignItems:'flex-start', gap:8 }}>
                           {pickVideo(exerciseVideos,ex.name,null)&&(
-                            <button onClick={()=>setPlayVideo({url:pickVideo(exerciseVideos,ex.name,null).video_url,name:ex.name})}
+                            <button onClick={()=>setPlayVideo({url:pickVideo(exerciseVideos,ex.name,null).video_url,name:labelOf(catalogExercises,ex.name)})}
                               style={{ position:'relative', display:'block', width:'100%', maxWidth:220, border:'none', padding:0, borderRadius:12, overflow:'hidden', cursor:'pointer', background:SURF2 }}>
                               <img src={pickVideo(exerciseVideos,ex.name,null).poster_url} alt={ex.name} loading="lazy"
                                 style={{ width:'100%', display:'block', aspectRatio:'16/9', objectFit:'cover' }} />
@@ -4828,12 +4836,16 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
     finally{setBusy(false)}
   }
   const openAddForm=()=>setExForm({mode:'add',name:'',m:'',eq:'',type:'compound'})
-  const openEditForm=ex=>setExForm({mode:'edit',name:ex.n,m:ex.m||'',eq:ex.eq||'',type:ex.type||'compound'})
+  // display — черновик отображаемого имени (при edit). Пусто, если display_name
+  // не задан (тогда показываем ключ). name всегда остаётся ключом.
+  const openEditForm=ex=>setExForm({mode:'edit',name:ex.n,display:(ex.label&&ex.label!==ex.n)?ex.label:'',m:ex.m||'',eq:ex.eq||'',type:ex.type||'compound'})
   const saveExForm=async()=>{
     const name=(exForm.name||'').trim()
     if(!name)return
-    // name — ключ, при edit не меняется (поле заблокировано в форме).
-    const ok=await postExercise({name,action:'save',muscle_group:exForm.m.trim()||null,equipment:exForm.eq.trim()||null,type:exForm.type})
+    // name — ключ (при edit не меняется). display_name — отображаемое имя: при add
+    // его нет (имя = ключ, покажем name), при edit берём из поля (пустое → null).
+    const displayName=exForm.mode==='edit'?(exForm.display||'').trim():''
+    const ok=await postExercise({name,action:'save',display_name:displayName,muscle_group:exForm.m.trim()||null,equipment:exForm.eq.trim()||null,type:exForm.type})
     if(ok)setExForm(null)
   }
   // «Убрать из каталога». Зашитые (есть в EX_BY_NAME) прятать нельзя удалением —
@@ -4862,7 +4874,7 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
 
   const all=[...catalogExercises,...(customExercises||[])]
   const muscles=['Все',...new Set(all.map(e=>e.m))]
-  const fl=all.filter(e=>(filt==='Все'||e.m===filt)&&e.n.toLowerCase().includes(query.toLowerCase()))
+  const fl=all.filter(e=>(filt==='Все'||e.m===filt)&&((e.label||e.n).toLowerCase().includes(query.toLowerCase())||e.n.toLowerCase().includes(query.toLowerCase())))
 
   const history=(()=>{ try{ return JSON.parse(localStorage.getItem('fitpro_history')||'[]') }catch{ return [] } })()
 
@@ -4899,11 +4911,12 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <div>
             <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Название *</div>
-            <input value={exForm.name} onChange={e=>setExForm(f=>({...f,name:e.target.value}))} maxLength={100}
-              placeholder="Напр. Жим гантелей сидя" autoFocus={exForm.mode==='add'} disabled={exForm.mode==='edit'}
-              style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:exForm.mode==='edit'?TXT3:TXT, background:exForm.mode==='edit'?SURF2:SURF }}
-              onFocus={e=>{if(exForm.mode!=='edit')e.target.style.borderColor=PUR}} onBlur={e=>e.target.style.borderColor=HAIR} />
-            {exForm.mode==='edit'&&<div style={{ fontSize:10, color:TXT3, marginTop:3 }}>Название — ключ, менять нельзя</div>}
+            <input value={exForm.mode==='edit'?exForm.display:exForm.name}
+              onChange={e=>setExForm(f=>f.mode==='edit'?{...f,display:e.target.value}:{...f,name:e.target.value})} maxLength={100}
+              placeholder={exForm.mode==='edit'?exForm.name:'Напр. Жим гантелей сидя'} autoFocus={exForm.mode==='add'}
+              style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT, background:SURF }}
+              onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
+            {exForm.mode==='edit'&&<div style={{ fontSize:10, color:TXT3, marginTop:3 }}>Так упражнение называется на экране. История тренировок и видео останутся привязанными.</div>}
           </div>
           <div>
             <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Группа мышц</div>
@@ -4955,12 +4968,12 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
             <GlassIcon name="dumbbell" size={38} />
           </div>
           <div>
-            <h2 style={{ fontSize:20,fontWeight:700,color:TXT,margin:0 }}>{sel.n}</h2>
+            <h2 style={{ fontSize:20,fontWeight:700,color:TXT,margin:0 }}>{sel.label||sel.n}</h2>
             <div style={{ fontSize:12,color:TXT3,marginTop:3 }}>{sel.m}{sel.eq?` · ${sel.eq}`:''}{sel.custom&&<span style={{ marginLeft:6,fontSize:10,padding:'1px 6px',borderRadius:4,background:'#EEEDFE',color:PUR }}>моё</span>}</div>
           </div>
         </div>
         {pickVideo(exerciseVideos,sel.n,null)&&(
-          <button onClick={()=>setPlayVideo({url:pickVideo(exerciseVideos,sel.n,null).video_url,name:sel.n})}
+          <button onClick={()=>setPlayVideo({url:pickVideo(exerciseVideos,sel.n,null).video_url,name:sel.label||sel.n})}
             style={{ position:'relative', display:'block', width:'100%', border:'none', padding:0, borderRadius:14, overflow:'hidden', cursor:'pointer', background:SURF2, marginBottom:12 }}>
             <img src={pickVideo(exerciseVideos,sel.n,null).poster_url} alt={sel.n} loading="lazy"
               style={{ width:'100%', display:'block', aspectRatio:'16/9', objectFit:'cover' }} />
@@ -4985,9 +4998,9 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
               style={{ flex:1, padding:'10px', fontSize:13, fontWeight:600, borderRadius:9, border:`1px solid ${HAIR}`, background:'none', color:TXT, cursor:'pointer' }}>
               Изменить
             </button>
-            <button onClick={()=>hideExercise(sel.n)} disabled={busy}
+            <button onClick={()=>{if(window.confirm('Упражнение исчезнет из библиотеки и из всех списков выбора. Записи в дневнике клиентов останутся. Удалить?'))hideExercise(sel.n)}} disabled={busy}
               style={{ flex:1, padding:'10px', fontSize:13, fontWeight:600, borderRadius:9, border:`1px solid ${HAIR}`, background:'none', color:'#ef4444', cursor:busy?'default':'pointer' }}>
-              Убрать из каталога
+              Удалить из приложения
             </button>
           </div>
         )}
@@ -5112,7 +5125,7 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
               {/* Превью видео — если есть в карте. Тап по нему открывает плеер,
                   а не карточку (stopPropagation). Нет видео — колонка не рисуется. */}
               {vid&&(
-                <button onClick={e=>{e.stopPropagation();setPlayVideo({url:vid.video_url,name:ex.n})}}
+                <button onClick={e=>{e.stopPropagation();setPlayVideo({url:vid.video_url,name:ex.label||ex.n})}}
                   style={{ position:'relative', flexShrink:0, width:76, height:48, border:'none', padding:0, borderRadius:9, overflow:'hidden', cursor:'pointer', background:SURF2 }}>
                   <img src={vid.poster_url} alt={ex.n} loading="lazy" style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
                   <span style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -5121,7 +5134,7 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
                 </button>
               )}
               <div style={{ flex:1, minWidth:0, textAlign:vid?'left':'center' }}>
-                <div style={{ fontSize:15, fontWeight:600, color:TXT }}>{ex.n}{ex.custom&&<span style={{ marginLeft:6, fontSize:10, padding:'1px 6px', borderRadius:4, background:'#EEEDFE', color:PUR }}>моё</span>}</div>
+                <div style={{ fontSize:15, fontWeight:600, color:TXT }}>{ex.label||ex.n}{ex.custom&&<span style={{ marginLeft:6, fontSize:10, padding:'1px 6px', borderRadius:4, background:'#EEEDFE', color:PUR }}>моё</span>}</div>
                 <div style={{ fontSize:12, color:TXT3, marginTop:2 }}>{ex.m}{ex.eq?` · ${ex.eq}`:''}</div>
               </div>
             </div>
@@ -5139,6 +5152,7 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
 // Остальные разделы Дневника (тоннаж, тренировки, питание, 1ПМ) бесплатны.
 // readOnly — просмотр чужого дневника тренером, там гейт не применяем.
 function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, onOpenAI, userId, initialSection, diaryJumpToken, onSectionChange, historyLoading, historyLoadError, onRetryHistory, readOnly=false, readOnlyName='', accessLevel = 0, openPlans }) {
+  const { exercises: catalogExercises } = useContext(CatalogContext) // для labelOf (имена в истории — ключи)
   const exercisesLocked=!readOnly&&accessLevel<SLOTS_MIN_LEVEL
   const [showExLock,setShowExLock]=useState(false)
   const [section, setSection] = useState(()=>initialSection??null)
@@ -5596,7 +5610,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 return(
                   <div key={ei} style={{ paddingTop:ei>0?10:0,borderTop:ei>0?`1px solid ${HAIR}`:'' }}>
                     <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5 }}>
-                      <span style={{ fontSize:13,fontWeight:500,color:TXT }}>{ex.n}</span>
+                      <span style={{ fontSize:13,fontWeight:500,color:TXT }}>{labelOf(catalogExercises,ex.n)}</span>
                       {exTon>0&&<span style={{ fontSize:11,color:PUR,fontWeight:600 }}>{exTon} кг</span>}
                     </div>
                     <div style={{ display:'flex',gap:5,flexWrap:'wrap' }}>
@@ -6048,7 +6062,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                     return(
                       <div key={ei} style={{ paddingTop:ei>0?10:0,borderTop:ei>0?`1px solid ${HAIR}`:'' }}>
                         <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4 }}>
-                          <span style={{ fontSize:13,fontWeight:500,color:TXT }}>{ex.n}</span>
+                          <span style={{ fontSize:13,fontWeight:500,color:TXT }}>{labelOf(catalogExercises,ex.n)}</span>
                           {exTon>0&&<span style={{ fontSize:11,color:PUR,fontWeight:600 }}>{exTon} кг</span>}
                         </div>
                         <div style={{ display:'flex',gap:5,flexWrap:'wrap' }}>
@@ -8840,7 +8854,7 @@ export default function App() {
   const catalogRetryRef=useRef(null)
   const loadCatalog=(attempt=0)=>{
     if(catalogRetryRef.current){clearTimeout(catalogRetryRef.current);catalogRetryRef.current=null}
-    supabase.from('catalog_exercises').select('name,muscle_group,equipment,type,hidden,technique').then(({data,error})=>{
+    supabase.from('catalog_exercises').select('name,muscle_group,equipment,type,hidden,technique,display_name').then(({data,error})=>{
       if(error||data==null){
         console.error('Каталог: ошибка загрузки catalog_exercises'+(error?`: ${error.message||error}`:' — пустой ответ'))
         const DELAYS=[1500,4000,9000]

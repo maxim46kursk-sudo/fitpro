@@ -69,6 +69,9 @@ export default async function handler(req, res) {
       muscle_group: req.body?.muscle_group != null ? String(req.body.muscle_group).slice(0, 50) : null,
       equipment: req.body?.equipment != null ? String(req.body.equipment).slice(0, 50) : null,
       type: ['compound', 'isolation'].includes(rawType) ? rawType : 'compound',
+      // Отображаемое имя (переименование тренером). Пустое → null: показываем
+      // исходное имя. Ключ name НЕ трогаем — за него держатся история/видео/программы.
+      display_name: req.body?.display_name != null ? (String(req.body.display_name).trim().slice(0, 100) || null) : null,
       hidden: req.body?.hidden === true,
       updated_at: new Date().toISOString(),
     }
