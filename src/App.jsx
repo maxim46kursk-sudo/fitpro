@@ -126,6 +126,15 @@ function mergeCatalog(rows) {
   return out
 }
 
+// Выбор ролика из двухуровневой карты видео { имя → { контекст → {…} } }.
+// Порядок: точный контекст → общий (default) → любой имеющийся (zal/dom). Так
+// видео не пропадает, если для нужного контекста ролик ещё не снят.
+function pickVideo(map, name, ctx){
+  const e = map?.[name]
+  if(!e) return null
+  return (ctx && e[ctx]) || e.default || e.zal || e.dom || null
+}
+
 // Мелкая строка под названием упражнения: группа мышц · снаряд.
 // Порядок источников — от точного к приблизительному: поля переданного
 // упражнения, затем справочник EXERCISES, и только потом эвристика
@@ -1569,6 +1578,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   // Редактор видео упражнения — тренеру, прямо из шаблонов/активной тренировки.
   const isTrainer=userRole==='trainer'
   const [videoPickerFor,setVideoPickerFor]=useState(null) // имя упражнения или null
+  // Контекст видео по папке: домашние → 'dom', остальные шаблоны → 'zal'.
+  const folderToContext=folder=>folder==='Домашние тренировки'?'dom':'zal'
+  // Контекст активной тренировки — запоминаем в момент запуска: на экране
+  // активной тренировки папки уже нет под рукой. null = общий ролик (тренерская
+  // программа / возобновление без известной папки).
+  const [activeVideoCtx,setActiveVideoCtx]=useState(null)
   // Персональная программа от тренера (assigned_programs, Фаза B, шаг 2) —
   // только показ. Запуск тренировки из неё через движок прогрессии — отдельный
   // следующий шаг, здесь его нет. Нет строки для этого клиента — обычный
@@ -2446,6 +2461,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     // правку повторений (handleRepsChange) действует именно для неё.
     setWIsFromProgram(true)
     setRepsWarningShownThisWorkout(false)
+    setActiveVideoCtx(folderToContext(openFolder)) // зал/дом по папке слота
     setStep('active')
     setOpenSlotId(null)
   }
@@ -2497,6 +2513,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     // ни кнопки «?» с объяснением прогрессии здесь быть не должно.
     setWIsFromProgram(false)
     setRepsWarningShownThisWorkout(false)
+    setActiveVideoCtx(null) // программа тренера → общий ролик
     setStep('active')
     setProgramOpen(false)
     setOpenProgramWorkoutIdx(null)
@@ -2903,8 +2920,8 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       {ex.done&&<span style={{ fontSize:11, color:'#4ade80', display:'inline-flex', alignItems:'center', gap:4 }}><GlassIcon name="check" size={13} />Выполнено</span>}
                       {/* Видео техники — если по имени упражнения есть ролик в
                           серверной карте. Тап открывает существующий плеер. */}
-                      {exerciseVideos[ex.n]&&(
-                        <button onClick={()=>setPlayVideo({url:exerciseVideos[ex.n].video_url,name:ex.n})}
+                      {pickVideo(exerciseVideos,ex.n,activeVideoCtx)&&(
+                        <button onClick={()=>setPlayVideo({url:pickVideo(exerciseVideos,ex.n,activeVideoCtx).video_url,name:ex.n})}
                           title="Видео техники"
                           style={{ width:26, height:26, borderRadius:'50%', border:'none', background:`${PUR}22`, color:PUR, cursor:'pointer', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, minHeight:'unset' }}>
                           ▶
@@ -3416,12 +3433,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       имени. Есть — постер-превью с ▶, тап открывает плеер. Нет
                       — блок не рендерим. Старые локальные IndexedDB-кнопки для
                       клиента убраны (редактор тренера — отдельный шаг). */}
-                  {(exerciseVideos[ex.name]||isTrainer)&&(
+                  {(pickVideo(exerciseVideos,ex.name,folderToContext(openFolder))||isTrainer)&&(
                     <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${HAIR}`, display:'flex', alignItems:'flex-start', gap:8 }}>
-                      {exerciseVideos[ex.name]&&(
-                        <button onClick={()=>setPlayVideo({url:exerciseVideos[ex.name].video_url,name:ex.name})}
+                      {pickVideo(exerciseVideos,ex.name,folderToContext(openFolder))&&(
+                        <button onClick={()=>setPlayVideo({url:pickVideo(exerciseVideos,ex.name,folderToContext(openFolder)).video_url,name:ex.name})}
                           style={{ position:'relative', display:'block', width:'100%', maxWidth:220, border:'none', padding:0, borderRadius:12, overflow:'hidden', cursor:'pointer', background:SURF2 }}>
-                          <img src={exerciseVideos[ex.name].poster_url} alt={ex.name} loading="lazy"
+                          <img src={pickVideo(exerciseVideos,ex.name,folderToContext(openFolder)).poster_url} alt={ex.name} loading="lazy"
                             style={{ width:'100%', display:'block', aspectRatio:'16/9', objectFit:'cover' }} />
                           <span style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
                             <span style={{ width:44, height:44, borderRadius:'50%', background:'rgba(0,0,0,0.55)', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20 }}>▶</span>
@@ -3779,12 +3796,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                           )}
                         </div>
                       </div>
-                      {(exerciseVideos[ex.name]||isTrainer)&&(
+                      {(pickVideo(exerciseVideos,ex.name,null)||isTrainer)&&(
                         <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${HAIR}`, display:'flex', alignItems:'flex-start', gap:8 }}>
-                          {exerciseVideos[ex.name]&&(
-                            <button onClick={()=>setPlayVideo({url:exerciseVideos[ex.name].video_url,name:ex.name})}
+                          {pickVideo(exerciseVideos,ex.name,null)&&(
+                            <button onClick={()=>setPlayVideo({url:pickVideo(exerciseVideos,ex.name,null).video_url,name:ex.name})}
                               style={{ position:'relative', display:'block', width:'100%', maxWidth:220, border:'none', padding:0, borderRadius:12, overflow:'hidden', cursor:'pointer', background:SURF2 }}>
-                              <img src={exerciseVideos[ex.name].poster_url} alt={ex.name} loading="lazy"
+                              <img src={pickVideo(exerciseVideos,ex.name,null).poster_url} alt={ex.name} loading="lazy"
                                 style={{ width:'100%', display:'block', aspectRatio:'16/9', objectFit:'cover' }} />
                               <span style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
                                 <span style={{ width:44, height:44, borderRadius:'50%', background:'rgba(0,0,0,0.55)', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20 }}>▶</span>
@@ -4545,6 +4562,9 @@ function VideoPicker({ exerciseName, exerciseVideos = {}, setExerciseVideos, onC
   const [videoToast,setVideoToast]=useState('')
   const flashVideoErr=msg=>{setVideoToast(msg);setTimeout(()=>setVideoToast(''),3500)}
   const fileInputRef=useRef(null)
+  // Контекст, к которому применяются назначение/снятие/загрузка: общий/зал/дом.
+  const [ctx,setCtx]=useState('default')
+  const [showAllPool,setShowAllPool]=useState(false) // снять фильтр пула по контексту
 
   // Пул грузим один раз при открытии пикера.
   useEffect(()=>{
@@ -4571,12 +4591,14 @@ function VideoPicker({ exerciseName, exerciseVideos = {}, setExerciseVideos, onC
       const res=await fetch('/api/set-exercise',{
         method:'POST',
         headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
-        body:JSON.stringify({name:exerciseName,action:'assign_video',video_url:clip.video_url,poster_url:clip.poster_url}),
+        body:JSON.stringify({name:exerciseName,action:'assign_video',context:ctx,video_url:clip.video_url,poster_url:clip.poster_url}),
       })
       const body=await res.json().catch(()=>null)
       if(!res.ok||!body?.ok){flashVideoErr(body?.error||'Не удалось назначить видео');return}
-      setExerciseVideos?.(m=>({...m,[exerciseName]:{video_url:clip.video_url,poster_url:clip.poster_url}}))
-      onClose?.()
+      // Обновляем ТОЛЬКО выбранный контекст, остальные не трогаем (иначе назначение
+      // зального ролика снесло бы домашний в локальном состоянии). Пикер не
+      // закрываем — тренер может тут же переключить контекст и назначить второй.
+      setExerciseVideos?.(m=>({...m,[exerciseName]:{...(m[exerciseName]||{}),[ctx]:{video_url:clip.video_url,poster_url:clip.poster_url}}}))
     }catch(e){console.error('Назначение видео:',e);flashVideoErr('Сбой сети, повтори')}
     finally{setBusy(false)}
   }
@@ -4588,23 +4610,29 @@ function VideoPicker({ exerciseName, exerciseVideos = {}, setExerciseVideos, onC
       const res=await fetch('/api/set-exercise',{
         method:'POST',
         headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
-        body:JSON.stringify({name:exerciseName,action:'clear_video'}),
+        body:JSON.stringify({name:exerciseName,action:'clear_video',context:ctx}),
       })
       const body=await res.json().catch(()=>null)
       if(!res.ok||!body?.ok){flashVideoErr(body?.error||'Не удалось убрать видео');return}
-      setExerciseVideos?.(m=>{const n={...m};delete n[exerciseName];return n})
+      // Удаляем только выбранный контекст; если у имени не осталось контекстов — убираем имя.
+      setExerciseVideos?.(m=>{
+        const cur={...(m[exerciseName]||{})}; delete cur[ctx]
+        const n={...m}
+        if(Object.keys(cur).length) n[exerciseName]=cur; else delete n[exerciseName]
+        return n
+      })
     }catch(e){console.error('Снятие видео:',e);flashVideoErr('Сбой сети, повтори')}
     finally{setBusy(false)}
   }
   // Мягкий опрос exercise_videos: сервер сожмёт и обновит запись за ~минуту.
-  const pollForVideo=(prevUrl,tries=0)=>{
-    supabase.from('exercise_videos').select('video_url,poster_url').eq('exercise_name',exerciseName).maybeSingle().then(({data})=>{
+  const pollForVideo=(pollCtx,prevUrl,tries=0)=>{
+    supabase.from('exercise_videos').select('video_url,poster_url').eq('exercise_name',exerciseName).eq('context',pollCtx).maybeSingle().then(({data})=>{
       if(data?.video_url&&data.video_url!==prevUrl){
-        setExerciseVideos?.(m=>({...m,[exerciseName]:{video_url:data.video_url,poster_url:data.poster_url}}))
+        setExerciseVideos?.(m=>({...m,[exerciseName]:{...(m[exerciseName]||{}),[pollCtx]:{video_url:data.video_url,poster_url:data.poster_url}}}))
         setUploadMsg('Готово ✓')
         return
       }
-      if(tries<15) setTimeout(()=>pollForVideo(prevUrl,tries+1),8000)
+      if(tries<15) setTimeout(()=>pollForVideo(pollCtx,prevUrl,tries+1),8000)
       else setUploadMsg('Видео загружено, обрабатывается — обновится автоматически чуть позже')
     })
   }
@@ -4614,7 +4642,8 @@ function VideoPicker({ exerciseName, exerciseVideos = {}, setExerciseVideos, onC
     if(!(file.type||'').startsWith('video/')){flashVideoErr('Нужен видеофайл');return}
     if(file.size>300*1024*1024){flashVideoErr('Файл больше 300 МБ — сожми или сними короче');return}
     setUploading(true);setUploadMsg('Загрузка…')
-    const prevUrl=exerciseVideos[exerciseName]?.video_url||null
+    const uploadCtx=ctx // фиксируем контекст на момент старта загрузки
+    const prevUrl=exerciseVideos[exerciseName]?.[uploadCtx]?.video_url||null
     try{
       const token=await authToken()
       // a) подписанный URL в raw-videos
@@ -4630,19 +4659,27 @@ function VideoPicker({ exerciseName, exerciseVideos = {}, setExerciseVideos, onC
       // c) ставим задачу на сжатие
       const enqRes=await fetch('/api/create-video-upload',{
         method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
-        body:JSON.stringify({action:'enqueue',exercise_name:exerciseName,raw_key:sign.raw_key}),
+        body:JSON.stringify({action:'enqueue',exercise_name:exerciseName,raw_key:sign.raw_key,context:uploadCtx}),
       })
       const enq=await enqRes.json().catch(()=>null)
       if(!enqRes.ok||!enq?.ok){flashVideoErr(enq?.error||'Не удалось поставить задачу');return}
       // d/e) сообщение + опрос
       setUploadMsg('Видео загружено, обрабатывается — появится через минуту')
-      setTimeout(()=>pollForVideo(prevUrl,0),8000)
+      setTimeout(()=>pollForVideo(uploadCtx,prevUrl,0),8000)
     }catch(e){console.error('Загрузка с устройства:',e);flashVideoErr('Сбой сети, повтори')}
     finally{setUploading(false)}
   }
 
-  const poolFiltered=(pool||[]).filter(c=>c.title.toLowerCase().includes(poolQuery.toLowerCase()))
-  const hasVideo=!!exerciseVideos[exerciseName]
+  // Фильтр пула по контексту: «Зал» → folder='zal', «Дом» → 'dom', «Общее» →
+  // все. Галочка «показать все» снимает фильтр для любого контекста.
+  const poolFiltered=(pool||[]).filter(c=>{
+    if(!c.title.toLowerCase().includes(poolQuery.toLowerCase())) return false
+    if(showAllPool||ctx==='default') return true
+    return c.folder===ctx
+  })
+  const entry=exerciseVideos[exerciseName]||{} // { default?, zal?, dom? }
+  const hasVideo=!!entry[ctx]                   // есть ли ролик у ВЫБРАННОГО контекста
+  const CTX_TABS=[['default','Общее'],['zal','Зал'],['dom','Дом']]
 
   return createPortal(<>
     {videoToast&&(
@@ -4655,6 +4692,17 @@ function VideoPicker({ exerciseName, exerciseVideos = {}, setExerciseVideos, onC
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
           <span style={{ fontSize:16, fontWeight:700, color:TXT }}>Видео для «{exerciseName}»</span>
           <button onClick={onClose} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer', color:TXT3, lineHeight:1 }}><GlassIcon name="close" size={26} /></button>
+        </div>
+        {/* Контекст: назначение/снятие/загрузка идут в выбранный. Точка — у того,
+            для кого ролик уже назначен. */}
+        <div style={{ display:'flex', gap:6, marginBottom:12 }}>
+          {CTX_TABS.map(([v,l])=>(
+            <button key={v} onClick={()=>setCtx(v)}
+              style={{ flex:1, position:'relative', padding:'8px', fontSize:13, fontWeight:600, borderRadius:9, cursor:'pointer', border:`1px solid ${ctx===v?PUR:HAIR}`, background:ctx===v?'#EEEDFE':'transparent', color:ctx===v?'#3C3489':TXT3 }}>
+              {l}
+              {entry[v]&&<span style={{ position:'absolute', top:5, right:7, width:6, height:6, borderRadius:'50%', background:TEA }} />}
+            </button>
+          ))}
         </div>
         {/* Свой файл или готовый ролик из пула — как в старом редакторе Библиотеки. */}
         <input ref={fileInputRef} type="file" accept="video/*" style={{ display:'none' }}
@@ -4672,7 +4720,15 @@ function VideoPicker({ exerciseName, exerciseVideos = {}, setExerciseVideos, onC
           )}
         </div>
         {uploadMsg&&<div style={{ fontSize:12, color:uploadMsg.startsWith('Готово')?TEA:TXT3, marginBottom:10 }}>{uploadMsg}</div>}
-        <div style={{ fontSize:12, color:TXT3, marginBottom:6 }}>Или выбери ролик из пула:</div>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6, gap:8 }}>
+          <span style={{ fontSize:12, color:TXT3 }}>Или выбери ролик из пула:</span>
+          {ctx!=='default'&&(
+            <label style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, color:TXT3, cursor:'pointer', flexShrink:0 }}>
+              <input type="checkbox" checked={showAllPool} onChange={e=>setShowAllPool(e.target.checked)} />
+              показать все
+            </label>
+          )}
+        </div>
         <input value={poolQuery} onChange={e=>setPoolQuery(e.target.value)} placeholder="Поиск ролика..."
           style={{ width:'100%', marginBottom:12, padding:'9px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
           onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
@@ -4903,10 +4959,10 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
             <div style={{ fontSize:12,color:TXT3,marginTop:3 }}>{sel.m}{sel.eq?` · ${sel.eq}`:''}{sel.custom&&<span style={{ marginLeft:6,fontSize:10,padding:'1px 6px',borderRadius:4,background:'#EEEDFE',color:PUR }}>моё</span>}</div>
           </div>
         </div>
-        {exerciseVideos[sel.n]&&(
-          <button onClick={()=>setPlayVideo({url:exerciseVideos[sel.n].video_url,name:sel.n})}
+        {pickVideo(exerciseVideos,sel.n,null)&&(
+          <button onClick={()=>setPlayVideo({url:pickVideo(exerciseVideos,sel.n,null).video_url,name:sel.n})}
             style={{ position:'relative', display:'block', width:'100%', border:'none', padding:0, borderRadius:14, overflow:'hidden', cursor:'pointer', background:SURF2, marginBottom:12 }}>
-            <img src={exerciseVideos[sel.n].poster_url} alt={sel.n} loading="lazy"
+            <img src={pickVideo(exerciseVideos,sel.n,null).poster_url} alt={sel.n} loading="lazy"
               style={{ width:'100%', display:'block', aspectRatio:'16/9', objectFit:'cover' }} />
             <span style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
               <span style={{ width:54, height:54, borderRadius:'50%', background:'rgba(0,0,0,0.55)', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24 }}>▶</span>
@@ -4918,7 +4974,7 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
         {isTrainer&&(
           <button onClick={()=>setVideoPickerFor(sel.n)}
             style={{ width:'100%', marginBottom:12, padding:'11px', fontSize:13, fontWeight:600, borderRadius:9, border:`1px solid ${PUR}`, background:'none', color:PUR, cursor:'pointer' }}>
-            {exerciseVideos[sel.n]?'Изменить видео':'Добавить видео'}
+            {pickVideo(exerciseVideos,sel.n,null)?'Изменить видео':'Добавить видео'}
           </button>
         )}
         {/* Управление записью каталога — только тренеру. «Убрать из каталога»
@@ -5049,7 +5105,7 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
       </div>
       <div style={{ display:'flex', flexDirection:'column', gap:9 }}>
         {fl.map((ex,i)=>{
-          const vid=exerciseVideos[ex.n]
+          const vid=pickVideo(exerciseVideos,ex.n,null)
           return (
           <Card key={i} onClick={()=>setSel(ex)} style={{ cursor:'pointer' }}>
             <div style={{ display:'flex', alignItems:'center', gap:12 }}>
@@ -8752,7 +8808,7 @@ export default function App() {
     // приложение без видео до перезапуска. Не больше трёх повторов.
     const DELAYS=[1500,4000,9000]
     const load=(attempt=0)=>{
-      supabase.from('exercise_videos').select('exercise_name,video_url,poster_url').then(({data,error})=>{
+      supabase.from('exercise_videos').select('exercise_name,context,video_url,poster_url').then(({data,error})=>{
         if(cancelled)return
         // Ретраим только при ошибке или отсутствии ответа. Пустой массив —
         // законный результат (в базе может не быть ни одного видео), не ретраим.
@@ -8761,8 +8817,13 @@ export default function App() {
           if(attempt<DELAYS.length) timer=setTimeout(()=>load(attempt+1),DELAYS[attempt])
           return
         }
+        // Двухуровневая карта: { имя → { контекст → {video_url,poster_url} } }.
+        // Отсутствующие контексты просто отсутствуют, пустых объектов не создаём.
         const map={}
-        for(const r of data) map[r.exercise_name]={video_url:r.video_url,poster_url:r.poster_url}
+        for(const r of data){
+          const ctx=r.context||'default'
+          ;(map[r.exercise_name]||(map[r.exercise_name]={}))[ctx]={video_url:r.video_url,poster_url:r.poster_url}
+        }
         setExerciseVideos(map) // успех — новых повторов не планируем, счётчик сброшен
       })
     }
