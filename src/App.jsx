@@ -74,7 +74,6 @@ const WORKOUT_ACTIONS = [
   { key:'done',  icon:'check', label:'Добавить выполненную', desc:'Записать уже проведённую тренировку' },
 ]
 
-const WCOLORS = ['#D85A30','#7F77DD','#1D9E75','#378ADD','#E53935','#F59E0B']
 
 // ── UI компоненты
 function Av({ lbl, sz=36, bg=PUR, photo, gender }) {
@@ -164,6 +163,14 @@ function mergeCatalog(rows) {
 function labelOf(catalogExercises, name){
   const e = (catalogExercises || []).find(x => x.n === name)
   return (e && e.label) || name
+}
+
+// Подпись персональной программы клиенту. Пусто ИЛИ старое дефолтное 'Программа'
+// (у уже созданных программ в базе лежит именно оно) → «Персональная программа»,
+// иначе то, что написал тренер.
+function programTitle(title){
+  const t = (title || '').trim()
+  return (!t || t === 'Программа') ? 'Персональная программа' : t
 }
 
 // Выбор ролика из двухуровневой карты видео { имя → { контекст → {…} } }.
@@ -936,7 +943,7 @@ function ProgramEditor({ client, trainerId }) {
   const [programLoading,setProgramLoading]=useState(true)
   const [programError,setProgramError]=useState(false)
   const [editorOpen,setEditorOpen]=useState(false)
-  const [title,setTitle]=useState('Программа')
+  const [title,setTitle]=useState('Персональная программа')
   const [workouts,setWorkouts]=useState([])
   const [saving,setSaving]=useState(false)
   const [saveState,setSaveState]=useState('idle') // 'idle' | 'saving' | 'saved' | 'error'
@@ -966,7 +973,7 @@ function ProgramEditor({ client, trainerId }) {
       if(error){console.error('Ошибка загрузки программы клиента:',error);setProgramError(true);setProgramLoading(false);return}
       // Состояние приходит из базы — следующий прогон автосохранения холостой.
       skipNextAutosaveRef.current=true
-      setTitle(data?.title||'Программа')
+      setTitle(data?.title||'Персональная программа')
       // В базе sets — строка того же формата, что в PROGRAMS_MAP. В редакторе
       // держим её разобранной на подходы и склеиваем обратно при сохранении,
       // чтобы формат хранения не менялся.
@@ -1150,7 +1157,7 @@ function ProgramEditor({ client, trainerId }) {
     const{error}=await supabase.from('assigned_programs').upsert({
       client_id:client.id,
       trainer_id:trainerId,
-      title:(nextTitle||'').trim()||'Программа',
+      title:(nextTitle||'').trim()||'Персональная программа',
       structure,
       updated_at:new Date().toISOString(),
     },{onConflict:'client_id'})
@@ -1722,7 +1729,9 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     }
   }
   const [wName,setWName]=useState('Новая тренировка')
-  const [wColor,setWColor]=useState(WCOLORS[0])
+  // Цвет тренировки убран из интерфейса — всегда фиолетовый. Все места, что его
+  // читают (шапка, кнопки, чипы, бейджи, галочка), подхватывают PUR сами.
+  const wColor = PUR
   const [wExercises,setWExercises]=useState([])
   const [wMode,setWMode]=useState('start') // 'start' | 'log'
   const [wDate,setWDate]=useState('')
@@ -1877,7 +1886,6 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
 
   const applyDraft=(draft)=>{
     setWName(draft.wName||'Тренировка')
-    setWColor(draft.wColor||PUR)
     setWExercises(draft.wExercises||[])
     setWMode(draft.wMode||'start')
     setWDate(draft.wDate||'')
@@ -2116,7 +2124,6 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     if(editTarget&&!isEditMode){
       const w=editTarget.workout
       setWName(w.name||'Тренировка')
-      setWColor(w.color||WCOLORS[0])
       setWExercises((w.exercises||[]).map(ex=>({...ex,sets:(ex.sets||[]).map(s=>({...s})),done:false})))
       const isLog=w.duration===null||w.duration===undefined
       setWMode(isLog?'log':'start')
@@ -2207,10 +2214,10 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     // плана НЕ берём — тренировка пишется на день, когда её реально сделали.
     setStartedFromPlanId(plan?.id||null)
     if(key==='start'){
-      setWName(plan?.name||'Новая тренировка');setWColor(WCOLORS[0]);setWExercises([]);setStartedAt(Date.now());setSwAccumMs(0);setSwStartedAt(null);setWMode('start');setWDate(today);setStep('naming')
+      setWName(plan?.name||'Новая тренировка');setWExercises([]);setStartedAt(Date.now());setSwAccumMs(0);setSwStartedAt(null);setWMode('start');setWDate(today);setStep('naming')
     }
     if(key==='done'){
-      setWName('Тренировка');setWColor(WCOLORS[2]);setWExercises([]);setWMode('log');setWDate(today);setStep('naming')
+      setWName('Тренировка');setWExercises([]);setWMode('log');setWDate(today);setStep('naming')
     }
     if(key==='template'){
       // Запуск по сохранённому шаблону. Состав уже известен — модалку с
@@ -2218,7 +2225,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       // к рабочему виду ТОЧНО как pickExercise. startedFromPlanId=null (выше):
       // шаблон не план, удалять после сохранения нечего.
       const exs=(plan?.exercises||[]).map(ex=>({...ex,sets:[{kg:'',reps:'',recKg:'',rating:''}],done:false}))
-      setWName(plan?.name||'Тренировка');setWColor(WCOLORS[0]);setWExercises(exs);setStartedAt(Date.now());setSwAccumMs(0);setSwStartedAt(null);setWMode('start');setWDate(today);setStep('active')
+      setWName(plan?.name||'Тренировка');setWExercises(exs);setStartedAt(Date.now());setSwAccumMs(0);setSwStartedAt(null);setWMode('start');setWDate(today);setStep('active')
     }
   }
   // Точка входа с кнопок меню "Новая тренировка" — список программ (откуда
@@ -2462,7 +2469,6 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     const exs=currentSlot.exercises.filter(e=>e.name)
     if(exs.length===0)return
     setWName(`${openFolder} — тренировка ${currentSlot.slotNum}`)
-    setWColor(PUR)
     // Движок прогрессии (1ПМ, workoutPrompt.js) — та же математика,
     // что использует test-progression-personas.js. ПОВТОРЕНИЯ
     // ВСЕГДА берутся из шаблона программы (parseTemplateSets),
@@ -2614,7 +2620,6 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     // Имя уезжает в дневник как есть (workouts.name, см. handleWorkoutComplete)
     // — по нему потом видно, что тренировка была из программы тренера.
     setWName(`Программа от тренера · ${workout.name||'Тренировка'}`)
-    setWColor(PUR)
     setWExercises(builtExercises)
     setWMode('start')
     setWDate('')
@@ -3369,14 +3374,6 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                     onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
                 </div>
               )}
-              <div>
-                <div style={{ fontSize:11, color:TXT3, marginBottom:6 }}>Цвет</div>
-                <div style={{ display:'flex', gap:10, justifyContent:'center' }}>
-                  {WCOLORS.map(c=>(
-                    <button key={c} onClick={()=>setWColor(c)} style={{ width:32, height:32, borderRadius:'50%', background:c, border:wColor===c?'3px solid #fff':'3px solid transparent', cursor:'pointer', outline:wColor===c?`2px solid ${c}`:'none', outlineOffset:1 }} />
-                  ))}
-                </div>
-              </div>
             </div>
             <div style={{ display:'flex', gap:8, marginTop:18 }}>
               <button onClick={()=>{setStep(null);setStartedFromPlanId(null)}} style={{ flex:1, padding:'11px', fontSize:13, fontWeight:600, borderRadius:9, border:`1px solid ${HAIR}`, background:'none', color:TXT3, cursor:'pointer' }}>Отмена</button>
@@ -3794,7 +3791,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           {isSel&&<span style={{ position:'absolute', top:10, right:16 }}><GlassIcon name="check" size={18} /></span>}
           <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingRight:20 }}>
             <div style={{ display:'flex',justifyContent:'center',marginBottom:6 }}><GlassIcon name="template" size={42} /></div>
-            <div style={{ fontSize:16, fontWeight:700, color:TXT, textAlign:'center' }}>{assignedProgram.title?.trim()||'Программа от тренера'}</div>
+            <div style={{ fontSize:16, fontWeight:700, color:TXT, textAlign:'center' }}>{programTitle(assignedProgram.title)}</div>
             {(()=>{
               // Осмысленная подпись: сегодняшняя тренировка > ближайшая будущая >
               // нынешний счётчик. Даты мягкие — прошедшие в подписи не «горят».
@@ -3822,7 +3819,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             <div>
               <div style={{ fontSize:17, fontWeight:700, color:TXT }}>
                 {openProgramWorkoutIdx==null
-                  ?(assignedProgram.title||'Программа')
+                  ?(programTitle(assignedProgram.title))
                   :(assignedProgram.structure?.[openProgramWorkoutIdx]?.name||`Тренировка ${openProgramWorkoutIdx+1}`)}
               </div>
               {openProgramWorkoutIdx!=null&&assignedProgram.structure?.[openProgramWorkoutIdx]?.date&&(
