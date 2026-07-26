@@ -8747,24 +8747,53 @@ export default function App() {
   const [exerciseVideos,setExerciseVideos]=useState({})
   useEffect(()=>{
     let cancelled=false
-    supabase.from('exercise_videos').select('exercise_name,video_url,poster_url').then(({data,error})=>{
-      if(cancelled||error||!data)return
-      const map={}
-      for(const r of data) map[r.exercise_name]={video_url:r.video_url,poster_url:r.poster_url}
-      setExerciseVideos(map)
-    })
-    return()=>{cancelled=true}
+    let timer=null
+    // Повтор с нарастающей задержкой: без него сетевой сбой на маунте оставлял
+    // приложение без видео до перезапуска. Не больше трёх повторов.
+    const DELAYS=[1500,4000,9000]
+    const load=(attempt=0)=>{
+      supabase.from('exercise_videos').select('exercise_name,video_url,poster_url').then(({data,error})=>{
+        if(cancelled)return
+        // Ретраим только при ошибке или отсутствии ответа. Пустой массив —
+        // законный результат (в базе может не быть ни одного видео), не ретраим.
+        if(error||data==null){
+          console.error('Карта видео: ошибка загрузки exercise_videos'+(error?`: ${error.message||error}`:' — пустой ответ'))
+          if(attempt<DELAYS.length) timer=setTimeout(()=>load(attempt+1),DELAYS[attempt])
+          return
+        }
+        const map={}
+        for(const r of data) map[r.exercise_name]={video_url:r.video_url,poster_url:r.poster_url}
+        setExerciseVideos(map) // успех — новых повторов не планируем, счётчик сброшен
+      })
+    }
+    load()
+    return()=>{cancelled=true;if(timer)clearTimeout(timer)}
   },[])
   // Глобальный каталог упражнений (правки тренера). Читаем публично, мержим с
   // зашитым EXERCISES. reloadCatalog — перечитать после правок тренером.
   const [catalogRows,setCatalogRows]=useState([])
-  const reloadCatalog=()=>{
+  // Та же схема повторов, что у карты видео: тихий сбой оставлял каталог
+  // незагруженным. reloadCatalog() (публичный, зовётся и после правок тренера)
+  // всегда стартует новую цепочку с нуля; ref держит отложенный повтор, чтобы
+  // его можно было отменить при размонтировании и не плодить параллельные.
+  const catalogRetryRef=useRef(null)
+  const loadCatalog=(attempt=0)=>{
+    if(catalogRetryRef.current){clearTimeout(catalogRetryRef.current);catalogRetryRef.current=null}
     supabase.from('catalog_exercises').select('name,muscle_group,equipment,type,hidden,technique').then(({data,error})=>{
-      if(error||!data)return
-      setCatalogRows(data)
+      if(error||data==null){
+        console.error('Каталог: ошибка загрузки catalog_exercises'+(error?`: ${error.message||error}`:' — пустой ответ'))
+        const DELAYS=[1500,4000,9000]
+        if(attempt<DELAYS.length) catalogRetryRef.current=setTimeout(()=>loadCatalog(attempt+1),DELAYS[attempt])
+        return
+      }
+      setCatalogRows(data) // успех — счётчик сброшен, отложенных повторов нет
     })
   }
-  useEffect(()=>{reloadCatalog()},[])
+  const reloadCatalog=()=>loadCatalog(0)
+  useEffect(()=>{
+    reloadCatalog()
+    return()=>{if(catalogRetryRef.current)clearTimeout(catalogRetryRef.current)}
+  },[])
   const mergedExercises=useMemo(()=>mergeCatalog(catalogRows),[catalogRows])
   const catalogValue=useMemo(()=>({exercises:mergedExercises,reloadCatalog}),[mergedExercises])
   const [userRole,setUserRole]=useState(()=>localStorage.getItem('fitpro_role')||'client')
