@@ -3317,39 +3317,40 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       )}
 
       {step==='naming'&&(
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center' }}
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
           onClick={()=>setStep(null)}>
-          <div style={{ background:SURF, borderRadius:16, padding:'22px 22px 18px', width:340, boxShadow:'0 16px 48px rgba(0,0,0,0.5)' }}
+          <div style={{ background:SURF, borderRadius:16, padding:'22px 20px', width:'100%', maxWidth:400, boxSizing:'border-box', boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}
             onClick={e=>e.stopPropagation()}>
-            <h3 style={{ margin:'0 0 18px', fontSize:16, fontWeight:700, color:'#fff', textAlign:'center' }}>
+            <div style={{ fontSize:16, fontWeight:700, color:TXT, textAlign:'center', marginBottom:16 }}>
               {wMode==='log'?'Добавить тренировку':'Новая тренировка'}
-            </h3>
-            <div style={{ borderBottom:'1px solid #2c2c2e', paddingBottom:14, marginBottom:14, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-              <span style={{ fontSize:15, color:'#fff' }}>Название</span>
-              <input value={wName} onChange={e=>setWName(e.target.value)} onFocus={e=>e.target.select()}
-                style={{ background:'none', border:'none', outline:'none', fontSize:15, color:TXT3, textAlign:'right', width:170 }} />
             </div>
-            {wMode==='log'&&(
-              <div style={{ borderBottom:'1px solid #2c2c2e', paddingBottom:14, marginBottom:14, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                <span style={{ fontSize:15, color:'#fff' }}>Дата</span>
-                <input type="date" value={wDate} onChange={e=>setWDate(e.target.value)}
-                  style={{ background:'none', border:'none', outline:'none', fontSize:15, color:TXT3, textAlign:'right', colorScheme:'dark', cursor:'pointer' }} />
+            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              <div>
+                <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Название</div>
+                <input value={wName} onChange={e=>setWName(e.target.value)}
+                  style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
+                  onFocus={e=>{e.target.select();e.target.style.borderColor=PUR}} onBlur={e=>e.target.style.borderColor=HAIR} />
               </div>
-            )}
-            <div style={{ borderBottom:'1px solid #2c2c2e', paddingBottom:14, marginBottom:18 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
-                <span style={{ fontSize:15, color:'#fff' }}>Цвет</span>
-                <div style={{ width:26, height:26, borderRadius:'50%', background:wColor }} />
-              </div>
-              <div style={{ display:'flex', gap:10, justifyContent:'center' }}>
-                {WCOLORS.map(c=>(
-                  <button key={c} onClick={()=>setWColor(c)} style={{ width:32, height:32, borderRadius:'50%', background:c, border:wColor===c?'3px solid #fff':'3px solid transparent', cursor:'pointer', outline:wColor===c?`2px solid ${c}`:'none', outlineOffset:1 }} />
-                ))}
+              {wMode==='log'&&(
+                <div>
+                  <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Дата</div>
+                  <input type="date" value={wDate} onChange={e=>setWDate(e.target.value)}
+                    style={{ width:'100%', padding:'10px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT, colorScheme:'dark', cursor:'pointer' }}
+                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
+                </div>
+              )}
+              <div>
+                <div style={{ fontSize:11, color:TXT3, marginBottom:6 }}>Цвет</div>
+                <div style={{ display:'flex', gap:10, justifyContent:'center' }}>
+                  {WCOLORS.map(c=>(
+                    <button key={c} onClick={()=>setWColor(c)} style={{ width:32, height:32, borderRadius:'50%', background:c, border:wColor===c?'3px solid #fff':'3px solid transparent', cursor:'pointer', outline:wColor===c?`2px solid ${c}`:'none', outlineOffset:1 }} />
+                  ))}
+                </div>
               </div>
             </div>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-              <button onClick={()=>setStep(null)} style={{ background:'none', border:'none', color:wColor, fontSize:15, fontWeight:500, cursor:'pointer' }}>Отменить</button>
-              <button onClick={()=>setStep('active')} style={{ padding:'11px 28px', borderRadius:24, border:'none', background:wColor, color:'#fff', fontSize:15, fontWeight:700, cursor:'pointer' }}>
+            <div style={{ display:'flex', gap:8, marginTop:18 }}>
+              <button onClick={()=>setStep(null)} style={{ flex:1, padding:'11px', fontSize:13, fontWeight:600, borderRadius:9, border:`1px solid ${HAIR}`, background:'none', color:TXT3, cursor:'pointer' }}>Отмена</button>
+              <button onClick={()=>setStep('active')} style={{ flex:1, padding:'12px', fontSize:14, borderRadius:14, border:'none', background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', fontWeight:800, cursor:'pointer' }}>
                 {wMode==='log'?'Добавить':'Начать'}
               </button>
             </div>
