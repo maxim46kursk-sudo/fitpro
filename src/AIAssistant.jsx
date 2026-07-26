@@ -122,7 +122,7 @@ const stripMd = (t) => t
 // показать её тому, кто пакет не покупал.
 const AI_MIN_LEVEL = 2
 
-const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWorkoutsDiary, onGoToFoodDiary, hideButton = false, extraBottomOffset = 0, accessLevel = 0, openPlans }, ref) {
+const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWorkoutsDiary, onGoToFoodDiary, hideButton = false, extraBottomOffset = 0, accessLevel = 0, openPlans, programLabelOf }, ref) {
   const locked = accessLevel < AI_MIN_LEVEL
   const [isOpen, setIsOpen]     = useState(false)
   const [mode, setMode]         = useState('nutrition')
@@ -294,7 +294,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
       setCtx(fresh)
 
       const system = mode === 'workout'
-        ? buildWorkoutSystemPrompt({ profile: fresh.profile })
+        ? buildWorkoutSystemPrompt({ profile: fresh.profile, programLabel: programLabelOf?.(fresh.profile?.program) })
         : buildSystemPrompt(fresh)
 
       // Модели отправляем не всю историю чата целиком, а только последние

@@ -9211,6 +9211,11 @@ export default function App() {
     return()=>{if(templatesRetryRef.current)clearTimeout(templatesRetryRef.current)}
   },[])
   const templatesValue=useMemo(()=>({...mergeTemplates(templateRows),reload:reloadTemplates}),[templateRows])
+  // Отображаемое имя назначенной программы по её ключу — из того же источника
+  // шаблонов, что и список папок (label по key). Сентинел «программа тренера»
+  // → человекочитаемая строка. Не выбрана (пусто) → null (в промте прежний
+  // запасной вариант). Для ИИ-ассистента, чтобы он называл программу как на экране.
+  const programLabelOf=key=>!key?null:(key===TRAINER_PROGRAM_KEY?'Персональная программа от тренера':((templatesValue.folders.find(f=>f.key===key)||{}).label||key))
   const [userRole,setUserRole]=useState(()=>localStorage.getItem('fitpro_role')||'client')
   // Согласие на обработку ПДн (152-ФЗ). consentLoaded — «ответ из базы получен»,
   // до него приложение не рендерим вообще, иначе на секунду мелькнёт контент
@@ -10217,7 +10222,7 @@ export default function App() {
           просто свёрнута: тогда кнопка возвращается, но приподнятая на
           высоту плашки (extraBottomOffset), чтобы плашка её не перекрыла
           (известный ранее z-index-баг, явно проверяем каждый раз). */}
-      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} hideButton={isWorkoutForeground} extraBottomOffset={workoutMinimized?MINIMIZED_BAR_H:0} accessLevel={access.level} openPlans={openPlans} />
+      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} hideButton={isWorkoutForeground} extraBottomOffset={workoutMinimized?MINIMIZED_BAR_H:0} accessLevel={access.level} openPlans={openPlans} programLabelOf={programLabelOf} />
      </TemplatesContext.Provider>
     </CatalogContext.Provider>
   )
