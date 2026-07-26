@@ -70,8 +70,11 @@ export default async function handler(req, res) {
     const rawKey = req.body?.raw_key != null ? String(req.body.raw_key).trim() : ''
     if (!rawKey) return res.status(400).json({ error: 'Не указан raw_key' })
     if (!RAW_KEY_RE.test(rawKey)) return res.status(400).json({ error: 'Недопустимый raw_key' })
+    // Контекст ролика (зал/дом/общий). Чужое значение → 'default'. Воркер
+    // возьмёт его из задачи и запишет в exercise_videos (PK exercise_name+context).
+    const context = ['default', 'zal', 'dom'].includes(req.body?.context) ? req.body.context : 'default'
     const { error } = await supabaseAdmin.from('transcode_jobs')
-      .insert({ exercise_name: exerciseName, raw_key: rawKey, status: 'pending' })
+      .insert({ exercise_name: exerciseName, raw_key: rawKey, status: 'pending', context })
     if (error) {
       console.error(`create-video-upload: ошибка постановки задачи (${exerciseName}):`, error)
       return res.status(500).json({ error: 'Не удалось поставить задачу' })

@@ -84,26 +84,32 @@ export default async function handler(req, res) {
   // Назначение/снятие видео упражнению (раньше отдельный set-exercise-video,
   // слито сюда ради лимита serverless-функций Vercel). name = exercise_name.
   if (action === 'clear_video') {
-    const { error } = await supabaseAdmin.from('exercise_videos').delete().eq('exercise_name', name)
+    // Снимаем ролик ТОЛЬКО выбранного контекста (пара exercise_name+context),
+    // иначе снятие зального видео снесло бы и домашнее. context не передан → 'default'.
+    const context = ['default', 'zal', 'dom'].includes(req.body?.context) ? req.body.context : 'default'
+    const { error } = await supabaseAdmin.from('exercise_videos').delete().eq('exercise_name', name).eq('context', context)
     if (error) {
-      console.error(`set-exercise: ошибка снятия видео (${name}):`, error)
+      console.error(`set-exercise: ошибка снятия видео (${name}/${context}):`, error)
       return res.status(500).json({ error: 'Не удалось снять видео' })
     }
-    console.log(`set-exercise: тренер ${userId} снял видео с «${name}»`)
+    console.log(`set-exercise: тренер ${userId} снял видео с «${name}» (${context})`)
     return res.status(200).json({ ok: true })
   }
 
   if (action === 'assign_video') {
+    // Контекст ролика (зал/дом/общий). Чужое/пустое → 'default'.
+    const context = ['default', 'zal', 'dom'].includes(req.body?.context) ? req.body.context : 'default'
     const videoUrl = req.body?.video_url != null ? String(req.body.video_url) : ''
     const posterUrl = req.body?.poster_url != null ? String(req.body.poster_url) : ''
     if (!videoUrl.startsWith(VIDEO_PREFIX)) return res.status(400).json({ error: 'Недопустимый video_url' })
     if (posterUrl && !posterUrl.startsWith(POSTER_PREFIX)) return res.status(400).json({ error: 'Недопустимый poster_url' })
     const { error } = await supabaseAdmin.from('exercise_videos').upsert({
       exercise_name: name,
+      context,
       video_url: videoUrl,
       poster_url: posterUrl || null,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'exercise_name' })
+    }, { onConflict: 'exercise_name,context' })
     if (error) {
       console.error(`set-exercise: ошибка назначения видео (${name}):`, error)
       return res.status(500).json({ error: 'Не удалось назначить видео' })
