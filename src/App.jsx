@@ -7408,12 +7408,183 @@ function ResetPasswordView({ onDone }) {
   )
 }
 
+// ── AnalyticsView ────────────────────────────────────────────────────────────
+// Экран тренера: только просмотр. Два запроса при открытии (профили + даты
+// тренировок), сводка плитками и список пользователей. Никаких рассылок и
+// действий — читаем и показываем. RLS открывает эти два запроса тренеру
+// (политики trainer_reads_all_*), у остальных они вернут пусто; на всякий
+// случай компонент всё равно рисуется только при userRole==='trainer'.
+function AnalyticsView({ userRole }) {
+  const [rows,setRows]=useState(null)        // профили (без тренера)
+  const [wDates,setWDates]=useState({})       // id → дата последней тренировки (ISO)
+  const [loading,setLoading]=useState(true)
+  const [loadError,setLoadError]=useState(false)
+  const [tileFilter,setTileFilter]=useState(null)
+  const [planFilter,setPlanFilter]=useState('all')
+  const [q,setQ]=useState('')
+  const [expanded,setExpanded]=useState(null)
+  const retryRef=useRef(null)
+
+  // Загрузка с повторами как у каталога: сетевой сбой не оставляет пустой экран.
+  const load=(attempt=0)=>{
+    if(retryRef.current){clearTimeout(retryRef.current);retryRef.current=null}
+    setLoading(true);setLoadError(false)
+    Promise.all([
+      supabase.from('profiles')
+        .select('id,name,tg_username,created_at,last_seen,plan,plan_until,trial_until,trial_used,role,goal,weight,height')
+        .order('created_at',{ascending:false}).limit(2000),
+      supabase.from('workouts').select('user_id,date').limit(20000),
+    ]).then(([pr,wr])=>{
+      const DELAYS=[1500,4000,9000]
+      if(pr.error||pr.data==null||wr.error||wr.data==null){
+        console.error('Аналитика: ошибка загрузки'+((pr.error||wr.error)?`: ${(pr.error||wr.error).message||''}`:' — пустой ответ'))
+        if(attempt<DELAYS.length){retryRef.current=setTimeout(()=>load(attempt+1),DELAYS[attempt]);return}
+        setLoading(false);setLoadError(true);return
+      }
+      // Последняя тренировка на пользователя — максимальная дата.
+      const last={}
+      for(const w of wr.data){ if(!w.user_id||!w.date)continue; if(!last[w.user_id]||w.date>last[w.user_id])last[w.user_id]=w.date }
+      // Тренера из цифр и списка исключаем.
+      setRows(pr.data.filter(p=>p.role!=='trainer'))
+      setWDates(last)
+      setLoading(false);setLoadError(false)
+    })
+  }
+  useEffect(()=>{ load(0); return()=>{if(retryRef.current)clearTimeout(retryRef.current)} },[]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const now=Date.now()
+  const ts=d=>{const t=d?new Date(d).getTime():NaN;return Number.isFinite(t)?t:null}
+  const paidActive=p=>{const t=ts(p.plan_until);return t!=null&&t>now}
+  const paidExpired=p=>{const t=ts(p.plan_until);return t!=null&&t<=now}
+  const trialActive=p=>{const t=ts(p.trial_until);return t!=null&&t>now}
+  // Пробный закончился и не купил: брал пробный, срок пробного в прошлом и нет
+  // активной платной подписки. Это главная цифра — тёплые лиды на дожатие.
+  const trialEndedNoBuy=p=>{const t=ts(p.trial_until);return !!p.trial_used && t!=null && t<=now && !paidActive(p)}
+  const within=(p,days)=>{const t=ts(p.created_at);return t!=null && t>=now-days*864e5}
+  const noWorkout=p=>!wDates[p.id]
+
+  const TILES=[
+    { key:'all',    label:'Всего зарегистрировано', pred:()=>true },
+    { key:'d7',     label:'За 7 дней',             pred:p=>within(p,7) },
+    { key:'d30',    label:'За 30 дней',            pred:p=>within(p,30) },
+    { key:'paid',   label:'Платная активна',       pred:paidActive },
+    { key:'trial',  label:'В пробном',             pred:trialActive },
+    { key:'lead',   label:'Пробный кончился, не купил', pred:trialEndedNoBuy, highlight:true },
+    { key:'exp',    label:'Подписка закончилась',  pred:p=>paidExpired(p)&&!paidActive(p) },
+    { key:'nowk',   label:'Ни одной тренировки',   pred:noWorkout },
+  ]
+
+  // Пакет для строки/фильтра: активная платная — по её plan, иначе СТАРТ.
+  const pkgKey=p=>paidActive(p)?(p.plan||'start'):'start'
+  const subName=p=>{
+    if(paidActive(p))return (planByKey(p.plan)?.name)||'СТАРТ'
+    if(trialActive(p))return 'Пробный'
+    return 'СТАРТ'
+  }
+  // Дата окончания активной подписки (для остатка дней): пробный приоритетнее,
+  // если он активен и не ниже платного — как в effectiveAccess.
+  const subUntil=p=>{ if(trialActive(p))return p.trial_until; if(paidActive(p))return p.plan_until; return null }
+  // Остаток дней: число по активной подписке; прочерк, если бессрочно/истекло.
+  const daysLeft=p=>{const u=subUntil(p);const t=ts(u);if(t==null||t<=now)return null;return Math.ceil((t-now)/864e5)}
+  const fmtDate=d=>{const t=ts(d);return t==null?'—':new Date(t).toLocaleDateString('ru',{day:'numeric',month:'long',year:'numeric'})}
+  const openTg=nick=>{const url='https://t.me/'+nick;if(window.Telegram?.WebApp)window.Telegram.WebApp.openTelegramLink(url);else window.open(url,'_blank')}
+
+  const list=useMemo(()=>{
+    let r=rows||[]
+    const tile=TILES.find(t=>t.key===tileFilter)
+    if(tile)r=r.filter(tile.pred)
+    if(planFilter!=='all')r=r.filter(p=>pkgKey(p)===planFilter)
+    const s=q.trim().toLowerCase()
+    if(s)r=r.filter(p=>(p.name||'').toLowerCase().includes(s)||(p.tg_username||'').toLowerCase().includes(s))
+    return r
+  },[rows,wDates,tileFilter,planFilter,q]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if(userRole!=='trainer')return null
+
+  const pill=(k,l)=>{
+    const on=planFilter===k
+    return <button key={k} onClick={()=>setPlanFilter(k)} style={{ fontSize:12, padding:'5px 12px', borderRadius:20, cursor:'pointer', whiteSpace:'nowrap', border:`1px solid ${on?PUR:HAIR}`, background:on?'#EEEDFE':'transparent', color:on?'#3C3489':TXT3 }}>{l}</button>
+  }
+
+  return (
+    <div style={{ padding:'14px 16px 40px' }}>
+      {loading&&!rows&&<div style={{ color:TXT3, fontSize:13, padding:'20px 0', textAlign:'center' }}>Загрузка…</div>}
+      {loadError&&!rows&&(
+        <div style={{ textAlign:'center', padding:'20px 0' }}>
+          <div style={{ color:TXT2, fontSize:13, marginBottom:10 }}>Не удалось загрузить данные</div>
+          <button onClick={()=>load(0)} style={{ fontSize:13, padding:'8px 16px', borderRadius:12, border:`1px solid ${HAIR}`, background:SURF2, color:TXT, cursor:'pointer' }}>Повторить</button>
+        </div>
+      )}
+      {rows&&(<>
+        {/* Плитки-сводка. Тап — фильтр списка, повторный тап — снять. */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:8, marginBottom:14 }}>
+          {TILES.map(t=>{
+            const active=tileFilter===t.key
+            const count=rows.filter(t.pred).length
+            return (
+              <div key={t.key} onClick={()=>setTileFilter(active?null:t.key)}
+                style={{ cursor:'pointer', borderRadius:16, border:`2px solid ${active?PUR:(t.highlight?'#ef4444':'transparent')}` }}>
+                <Metric label={t.label} value={count} color={t.highlight?'#ef4444':PUR} />
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Фильтр по пакету. */}
+        <div style={{ display:'flex', gap:8, overflowX:'auto', marginBottom:12, paddingBottom:2 }}>
+          {pill('all','Все')}{pill('start','СТАРТ')}{pill('profit','ПРОФИТ')}{pill('premium','ПРЕМИУМ')}
+        </div>
+
+        {/* Поиск по имени и нику. */}
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Поиск по имени или нику"
+          style={{ width:'100%', boxSizing:'border-box', fontSize:14, padding:'10px 12px', borderRadius:12, border:`1px solid ${HAIR}`, background:SURF2, color:TXT, marginBottom:12, outline:'none' }} />
+
+        <div style={{ fontSize:11, color:TXT3, marginBottom:8 }}>{list.length} {plural(list.length,'человек','человека','человек')}</div>
+
+        {list.length===0&&<div style={{ color:TXT3, fontSize:13, padding:'16px 0', textAlign:'center' }}>Никого не найдено</div>}
+
+        {list.map(p=>{
+          const open=expanded===p.id
+          const nick=p.tg_username?('@'+p.tg_username):(p.name||'Без имени')
+          const dl=daysLeft(p)
+          const su=subUntil(p)
+          return (
+            <div key={p.id} style={{ background:SURF, border:`1px solid ${HAIR}`, borderRadius:12, marginBottom:8, overflow:'hidden' }}>
+              {/* Свёрнутая строка: ник/имя · пакет · остаток дней · метка пробного. */}
+              <div onClick={()=>setExpanded(open?null:p.id)} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', cursor:'pointer' }}>
+                <span style={{ flex:1, minWidth:0, fontSize:13, fontWeight:600, color:TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{nick}</span>
+                <span style={{ fontSize:12, color:TXT3, flexShrink:0 }}>{subName(p)}</span>
+                <span style={{ fontSize:13, fontWeight:700, color:TXT, flexShrink:0, minWidth:20, textAlign:'right' }}>{dl!=null?dl:'—'}</span>
+                <span title={p.trial_used?'Пробный использован':'Пробный не брал'} style={{ fontSize:13, fontWeight:800, color:p.trial_used?TEA:'#ef4444', flexShrink:0, width:12, textAlign:'center' }}>П</span>
+              </div>
+              {open&&(
+                <div style={{ borderTop:`1px solid ${HAIR}`, padding:'10px 12px', display:'flex', flexDirection:'column', gap:5, fontSize:12, color:TXT2 }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:TXT }}>{p.name||'Без имени'}</div>
+                  {p.tg_username&&(
+                    <div onClick={()=>openTg(p.tg_username)} style={{ color:TEA, cursor:'pointer', width:'fit-content' }}>@{p.tg_username}</div>
+                  )}
+                  <div>Подписка: {subName(p)}{su?` · до ${fmtDate(su)}`:''}{dl!=null?` · осталось ${dl} ${plural(dl,'день','дня','дней')}`:''}</div>
+                  <div>Цель: {p.goal||'—'} · Вес: {p.weight??'—'} · Рост: {p.height??'—'}</div>
+                  <div>Пробный: {p.trial_used?`брал${p.trial_until?`, закончился ${fmtDate(p.trial_until)}`:''}`:'не брал'}</div>
+                  <div>Регистрация: {fmtDate(p.created_at)}</div>
+                  <div>Последний вход: {p.last_seen?fmtDate(p.last_seen):'не заходил после обновления'}</div>
+                  <div>Последняя тренировка: {wDates[p.id]?fmtDate(wDates[p.id]):'не тренировался'}</div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </>)}
+    </div>
+  )
+}
+
 // ── SettingsView ─────────────────────────────────────────────────────────────
 // subPage/setSubPage подняты в App: под-страницы (Политика, Оферта) рисуются
 // внутри Настроек, но кнопка «назад» живёт в шапке уровнем выше — без общего
 // состояния она не знала бы, что открыта под-страница, и уводила бы сразу на
 // Главную.
-function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPage, onProfileChanged }) {
+function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPage, onProfileChanged, userRole }) {
   const load=(k,def)=>{try{return JSON.parse(localStorage.getItem(k)??'null')??def}catch{return def}}
   const [notifs,setNotifs]=useState(()=>normalizeNotifs(load('fitpro_notifs',null)))
   const [units,setUnits]=useState(()=>load('fitpro_units',{weight:'kg',height:'cm'}))
@@ -7585,6 +7756,9 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
   // hideBack: у под-страницы уже есть шапка Настроек со стрелкой «назад» —
   // вторая кнопка внутри текста была бы дублем. В ConsentGate шапки нет, там
   // PolicyView по-прежнему рисует свою кнопку.
+  // Аналитика — только тренеру. Двойная защита: пункт скрыт ниже, и здесь при
+  // не-тренере подстраница не открывается.
+  if(subPage==='analytics') return userRole==='trainer' ? <AnalyticsView userRole={userRole} trainerId={user?.id} /> : null
   if(subPage==='plans') return <PlansView user={user} hideBack onClose={()=>setSubPage(null)} onChanged={onProfileChanged} />
   if(subPage==='policy') return <PolicyView hideBack onClose={()=>setSubPage(null)} />
   if(subPage==='consent') return <ConsentDocView user={user} hideBack onClose={()=>setSubPage(null)} />
@@ -7612,6 +7786,19 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
                right={<span style={{fontSize:16,color:TXT3}}>›</span>}/>
         </button>
       </Section>
+
+      {/* Аналитика — только тренеру. Клиент этого пункта не видит. */}
+      {userRole==='trainer'&&(
+        <Section title="Тренеру">
+          <button onClick={()=>setSubPage('analytics')} style={{
+            display:'block',width:'100%',padding:0,border:'none',background:'none',
+            textAlign:'left',cursor:'pointer',minHeight:'unset',
+          }}>
+            <Row label="Аналитика" sub="Сводка и список пользователей"
+                 right={<span style={{fontSize:16,color:TXT3}}>›</span>}/>
+          </button>
+        </Section>
+      )}
 
       {/* Уведомления */}
       <Section title="Уведомления">
@@ -7814,6 +8001,7 @@ const SETTINGS_SUBPAGE_TITLES = {
   plans: 'Тарифы и подписка',
   policy: 'Политика конфиденциальности',
   consent: 'Согласие на обработку данных',
+  analytics: 'Аналитика',
 }
 
 // ── Правовые тексты (Политика 152-ФЗ, Оферта). Сами формулировки живут в
@@ -9829,6 +10017,11 @@ export default function App() {
       // false.
       setCoachSubExpired(!!data.coach_id&&!!data.plan_until&&new Date(data.plan_until).getTime()<=Date.now())
       setAccess(effectiveAccess(data))
+      // Отметка посещения — один раз за загрузку (и клиент, и тренер). last_seen
+      // не привилегированное поле, guard-триггер его не трогает. Ошибка не влияет
+      // на работу приложения — только в консоль.
+      supabase.from('profiles').update({last_seen:new Date().toISOString()}).eq('id',user.id)
+        .then(({error})=>{if(error)console.error('last_seen: не удалось обновить:',error)})
       // Ссылка-приглашение (см. pendingInviteRef выше). Решаем именно здесь:
       // до загрузки профиля роль и coach_id неизвестны. Тренера не привязываем
       // (он ничей не клиент), уже привязанного — тоже, чужую связь не рвём.
@@ -10300,7 +10493,7 @@ export default function App() {
             <span style={{fontSize:18,fontWeight:800,color:TXT,flex:1}}>{settingsSubPage?SETTINGS_SUBPAGE_TITLES[settingsSubPage]:'Настройки'}</span>
           </div>
           <div style={{flex:1,overflowY:'auto'}}>
-            <SettingsView user={user} performLogout={performLogout} onAccountDeleted={resetAfterAccountDelete} subPage={settingsSubPage} setSubPage={setSettingsSubPage} onProfileChanged={()=>setProfileReloadToken(t=>t+1)} />
+            <SettingsView user={user} performLogout={performLogout} onAccountDeleted={resetAfterAccountDelete} subPage={settingsSubPage} setSubPage={setSettingsSubPage} onProfileChanged={()=>setProfileReloadToken(t=>t+1)} userRole={userRole} />
           </div>
         </div>
       )}
