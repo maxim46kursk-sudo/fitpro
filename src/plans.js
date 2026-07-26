@@ -1,4 +1,4 @@
-export const TEST_MODE = true       // true → показываем тестовые цены
+export const TEST_MODE = false      // true → показываем тестовые цены
 export const TRIAL_DAYS = 5
 export const TRIAL_LEVEL = 2        // пробный открывает уровень ПРОФИТ
 
@@ -11,9 +11,9 @@ export const PLANS = [
   // фильтром по hidden на экране Тарифов (см. planTabs в App.jsx).
   { key:'base',   level:1, name:'БАЗА',   price:1000, testPrice:50, hidden:true, tagline:'Всё из СТАРТ, плюс:',
     features:['Все тренировки во всех шаблонах','Прогресс по упражнениям'] },
-  { key:'profit', level:2, name:'ПРОФИТ', price:2990, testPrice:60, highlight:true, tagline:'Всё из БАЗЫ, плюс:',
+  { key:'profit', level:2, name:'ПРОФИТ', price:2990, oldPrice:4990, testPrice:60, highlight:true, tagline:'Всё из БАЗЫ, плюс:',
     features:['ИИ-ассистент по тренировкам и питанию'] },
-  { key:'premium',level:3, name:'ПРЕМИУМ',price:9990, testPrice:70, tagline:'Всё из ПРОФИТ, плюс:',
+  { key:'premium',level:3, name:'ПРЕМИУМ',price:9990, oldPrice:14990, testPrice:70, tagline:'Всё из ПРОФИТ, плюс:',
     features:['Персональная программа под тебя','Разбор и корректировка питания','Ежедневная проверка отчётов (видео подходов и питание)'] },
 ]
 export const VIP = { name:'VIP', desc:'Индивидуальные условия. Подробности — в личных сообщениях.' }

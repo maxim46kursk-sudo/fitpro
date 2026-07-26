@@ -8172,8 +8172,8 @@ function PlansView({ user, onClose, hideBack, onChanged }) {
           ):(
             <div style={{marginBottom:14}}>
               <div style={{display:'flex',alignItems:'baseline',gap:10,flexWrap:'wrap'}}>
-                {TEST_MODE&&(
-                  <span style={{fontSize:16,color:TXT3,textDecoration:'line-through'}}>{selectedPlan.price} ₽</span>
+                {(TEST_MODE||selectedPlan.oldPrice)&&(
+                  <span style={{fontSize:16,color:TXT3,textDecoration:'line-through'}}>{TEST_MODE?selectedPlan.price:selectedPlan.oldPrice} ₽</span>
                 )}
                 <span style={{fontSize:26,fontWeight:800,color:TXT}}>{priceOf(selectedPlan)} ₽</span>
                 <span style={{fontSize:13,color:TXT3}}>/ мес</span>
