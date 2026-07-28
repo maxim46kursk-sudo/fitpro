@@ -22,6 +22,12 @@ export const USER_TABLES = [
   // ключа на auth.users нет, удалению аккаунта он не мешает, но это данные
   // пользователя — чистим вместе с остальным.
   { table: 'notification_log',      column: 'user_id' },
+  // Технический журнал ошибок приложения (src/logError.js). Персональных данных
+  // не содержит, но user_id есть — значит это данные пользователя. Внешний ключ
+  // на auth.users здесь NO ACTION, поэтому строка обязана удаляться до
+  // auth.admin.deleteUser(): весь USER_TABLES чистится раньше profiles и раньше
+  // самого auth-пользователя, так что место в списке подходит любое.
+  { table: 'error_log',             column: 'user_id' },
   { table: 'planned_workouts',      column: 'user_id' },
   { table: 'chat_messages',         column: 'user_id' },
   { table: 'food_diary',            column: 'user_id' },

@@ -65,6 +65,7 @@ function removeMarkerRanges(text, markers) {
   result += text.slice(cursor)
   return result
 }
+import { logError } from './logError'
 import { MAX_TELEGRAM_URL } from './config.js'
 import { GlassIcon } from './glassIcons'
 
@@ -90,6 +91,15 @@ const HINTS_WORKOUT = ['Правда, что от приседаний ноги 
 const getFriendlyErrorMessage = (err, status, serverError) => {
   const rawMessage = typeof serverError === 'string' ? serverError : serverError?.message
   console.error('Ошибка AI-чата:', err || rawMessage, status != null ? `(status ${status})` : '')
+  // В журнал — только техническая суть сбоя. Ни реплики клиента, ни ответа
+  // модели, ни фото тут нет и быть не должно (см. src/logError.js). Эта функция
+  // — единственная точка, через которую проходят ОБА пути ошибки чата (ответ без
+  // content и catch в send), поэтому одного вызова хватает на оба, без дублей.
+  logError('ai_chat', {
+    message: rawMessage || err?.message || err?.name,
+    status,
+    details: { kind: err ? 'exception' : 'response' },
+  })
   if (err?.name === 'AbortError' || err instanceof TypeError) {
     return 'Не удалось связаться с сервером. Проверь связь и повтори.'
   }
@@ -434,7 +444,9 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
               c: clampNum(entry.c, MACRO_MIN, MACRO_MAX),
               f: clampNum(entry.f, MACRO_MIN, MACRO_MAX),
             })
-            if (error) { console.error('Ошибка записи в дневник:', error); writeFailed = true }
+            // Названия еды и цифры КБЖУ в журнал не идут — только код и текст
+            // ошибки Postgres, этого хватает, чтобы понять причину сбоя.
+            if (error) { console.error('Ошибка записи в дневник:', error); writeFailed = true; logError('food_diary_write', { message: error.message, details: { table: 'food_diary', action: 'insert', code: error.code } }) }
             else added = true
           }
           text = removeMarkerRanges(text, addMarkers)
@@ -464,7 +476,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
             for (const del of parsedDels) {
               const { error } = await supabase.from('food_diary').delete()
                 .eq('id', del.id).eq('user_id', fresh.user.id).eq('date', del.date || fresh.today)
-              if (error) { console.error('Ошибка удаления записи:', error); writeFailed = true }
+              if (error) { console.error('Ошибка удаления записи:', error); writeFailed = true; logError('food_diary_write', { message: error.message, details: { table: 'food_diary', action: 'delete', code: error.code } }) }
               else deleted = true
             }
           } else {
@@ -497,7 +509,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
               for (const clear of parsedClears) {
                 const { error } = await supabase.from('food_diary').delete()
                   .eq('user_id', fresh.user.id).eq('date', clear.date || fresh.today)
-                if (error) { console.error('Ошибка очистки дневника:', error); writeFailed = true }
+                if (error) { console.error('Ошибка очистки дневника:', error); writeFailed = true; logError('food_diary_write', { message: error.message, details: { table: 'food_diary', action: 'clear', code: error.code } }) }
                 else cleared = true
               }
             } else {
@@ -529,7 +541,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
               f: clampNum(goal.f, MACRO_MIN, MACRO_MAX),
               updated_at: new Date().toISOString(),
             })
-            if (error) { console.error('Ошибка обновления нормы:', error); writeFailed = true }
+            if (error) { console.error('Ошибка обновления нормы:', error); writeFailed = true; logError('food_diary_write', { message: error.message, details: { table: 'food_goals', action: 'upsert', code: error.code } }) }
             window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
           } else {
             console.warn('AI-ассистент по питанию прислал битый маркер GOAL — пропущен')

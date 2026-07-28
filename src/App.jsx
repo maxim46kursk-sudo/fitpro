@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, createContext, useContext } from 
 import { createPortal } from 'react-dom'
 import AIAssistant from './AIAssistant'
 import { supabase, SUPABASE_AUTH_STORAGE_KEY } from './supabase.js'
+import { logError } from './logError'
 import { FOLDERS, PROGRAMS_MAP, EXERCISES, isOneSidedExercise, countCompletedProgramSlots, isProgramFullyCompleted } from './programs.js'
 import { oneRepMax, weightForReps, roundToPlate, percentTable, plateStep } from './oneRepMax.js'
 // Движок прогрессии (1ПМ) — врезан в кнопку "▶ Начать тренировку" внутри
@@ -1162,7 +1163,7 @@ function ProgramEditor({ client, trainerId }) {
       updated_at:new Date().toISOString(),
     },{onConflict:'client_id'})
     setSaving(false)
-    if(error){console.error('Ошибка сохранения программы:',error);setSaveState('error');return false}
+    if(error){console.error('Ошибка сохранения программы:',error);logError('assigned_program_save',{message:error.message,details:{table:'assigned_programs',action:'upsert',code:error.code}});setSaveState('error');return false}
     dirtyRef.current=false
     setSaveState('saved')
     return true
@@ -10104,7 +10105,7 @@ export default function App() {
       user_id:user.id, name:workout.name||null, color:workout.color||null,
       date:workout.date, duration:workout.duration!=null?workout.duration:null, comment:workout.comment||null,
     }).select('id').single()
-    if(error){console.error('Ошибка создания тренировки в Supabase:',error);return{id:null,error}}
+    if(error){console.error('Ошибка создания тренировки в Supabase:',error);logError('workout_save',{message:error.message,details:{table:'workouts',action:'insert',code:error.code}});return{id:null,error}}
     return{id:data?.id??null,error:null}
   }
 
@@ -10120,7 +10121,7 @@ export default function App() {
     }
     if(!rows.length)return{ids:[],error:null}
     const{data,error}=await supabase.from('workout_sets').insert(rows).select('id')
-    if(error){console.error('Ошибка синхронизации тренировки с Supabase:',error);return{ids:[],error}}
+    if(error){console.error('Ошибка синхронизации тренировки с Supabase:',error);logError('workout_sets_save',{message:error.message,details:{table:'workout_sets',action:'insert',code:error.code,rows:rows.length}});return{ids:[],error}}
     return{ids:(data||[]).map(r=>r.id),error:null}
   }
 
