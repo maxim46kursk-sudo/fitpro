@@ -7413,6 +7413,143 @@ function ResetPasswordView({ onDone }) {
   )
 }
 
+// ── ErrorLogBlock ────────────────────────────────────────────────────────────
+// «Последние ошибки» на экране аналитики: техжурнал сбоев у реальных
+// пользователей (таблица error_log, пишется из src/logError.js).
+//
+// Ленивый по умолчанию: свёрнут и НИЧЕГО не грузит, пока тренер не тапнет по
+// заголовку. Аналитика и без того делает два тяжёлых запроса при открытии —
+// добавлять к ним третий ради блока, в который заглядывают раз в неделю, значит
+// замедлять основной экран всем и всегда.
+//
+// Читать error_log вправе только тренер (политика error_log_trainer_reads,
+// sql/2026-07-28_error_log.sql); у клиента запрос вернёт пусто. Компонент
+// всё равно рисуется только при userRole==='trainer' — как и AnalyticsView.
+//
+// Внутри НЕ вызываем logError: сбой чтения журнала, записанный в тот же журнал,
+// в плохом случае превращается в самоподдерживающийся поток строк.
+function ErrorLogBlock({ userRole }) {
+  const [open,setOpen]=useState(false)
+  const [rows,setRows]=useState(null)
+  const [names,setNames]=useState({})       // user_id → имя из profiles
+  const [counts,setCounts]=useState({d1:null,d7:null})
+  const [loading,setLoading]=useState(false)
+  const [failed,setFailed]=useState(false)
+  const [expanded,setExpanded]=useState(null)
+
+  const load=async()=>{
+    setLoading(true);setFailed(false)
+    try{
+      const since=h=>new Date(Date.now()-h*3600e3).toISOString()
+      // Счётчики считаем отдельными запросами с head+count: по списку из 50
+      // строк их не получить — при полусотне ошибок за час обе цифры упёрлись
+      // бы в лимит и врали.
+      const [list,c1,c7]=await Promise.all([
+        supabase.from('error_log').select('id,created_at,context,status,message,user_id')
+          .order('created_at',{ascending:false}).limit(50),
+        supabase.from('error_log').select('id',{count:'exact',head:true}).gte('created_at',since(24)),
+        supabase.from('error_log').select('id',{count:'exact',head:true}).gte('created_at',since(24*7)),
+      ])
+      if(list.error||list.data==null)throw list.error||new Error('пустой ответ')
+      setRows(list.data)
+      setCounts({d1:c1.error?null:(c1.count??null),d7:c7.error?null:(c7.count??null)})
+      // Имена — ОДНИМ запросом по набору id из уже полученных строк, а не по
+      // запросу на строку: полсотни последовательных запросов с телефона это
+      // секунды ожидания на ровном месте.
+      const ids=[...new Set(list.data.map(r=>r.user_id).filter(Boolean))]
+      if(ids.length){
+        const {data:profs}=await supabase.from('profiles').select('id,name').in('id',ids)
+        const map={};for(const p of profs||[])if(p.name)map[p.id]=p.name
+        setNames(map)
+      }
+    }catch(e){
+      // Только в консоль. Экран аналитики продолжает работать: блок независим
+      // от остальных данных и рисуется отдельно от них.
+      console.error('Журнал ошибок: не удалось загрузить:',e)
+      setFailed(true)
+    }finally{
+      setLoading(false)
+    }
+  }
+
+  const toggle=()=>{
+    const next=!open
+    setOpen(next)
+    if(next&&rows==null&&!loading)load()
+  }
+
+  // Время по МСК независимо от часового пояса устройства: сдвигаем на +3 и
+  // читаем UTC-полями (тот же приём, что в api/chat.js для дневного лимита).
+  const fmtMsk=iso=>{
+    const t=iso?new Date(iso).getTime():NaN
+    if(!Number.isFinite(t))return '—'
+    const d=new Date(t+3*3600e3)
+    const p=n=>String(n).padStart(2,'0')
+    return `${p(d.getUTCDate())}.${p(d.getUTCMonth()+1)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`
+  }
+  // Имя, если удалось сопоставить; иначе огрызок id — по нему хотя бы видно,
+  // что ошибки у разных людей, а не у одного.
+  const who=r=>names[r.user_id]||(r.user_id?r.user_id.slice(0,8):'—')
+
+  if(userRole!=='trainer')return null
+
+  return (
+    <div style={{ background:SURF, border:`1px solid ${HAIR}`, borderRadius:12, marginBottom:14, overflow:'hidden' }}>
+      <div onClick={toggle} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', cursor:'pointer' }}>
+        <span style={{ flex:1, minWidth:0, fontSize:13, fontWeight:600, color:TXT }}>Последние ошибки</span>
+        {loading&&<span style={{ fontSize:11, color:TXT3, flexShrink:0 }}>загрузка…</span>}
+        <span style={{ fontSize:16, color:TXT3, flexShrink:0 }}>{open?'▾':'›'}</span>
+      </div>
+
+      {open&&(
+        <div style={{ borderTop:`1px solid ${HAIR}`, padding:'10px 12px 4px' }}>
+          {failed&&(
+            <div onClick={load} style={{ fontSize:12, color:TXT2, cursor:'pointer', padding:'4px 0 10px' }}>
+              Не удалось загрузить журнал · <span style={{ color:TEA }}>повторить</span>
+            </div>
+          )}
+
+          {rows&&(<>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:8, marginBottom:10 }}>
+              <Metric label="Ошибок за 24 часа" value={counts.d1??'—'} color={counts.d1?'#ef4444':PUR} />
+              <Metric label="Ошибок за 7 дней"  value={counts.d7??'—'} color={counts.d7?'#ef4444':PUR} />
+            </div>
+
+            {rows.length===0
+              ? <div style={{ color:TXT3, fontSize:13, padding:'10px 0 14px', textAlign:'center' }}>Ошибок нет</div>
+              : <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Последние {rows.length}, новые сверху</div>}
+
+            {rows.map(r=>{
+              const rowOpen=expanded===r.id
+              return (
+                <div key={r.id} onClick={()=>setExpanded(rowOpen?null:r.id)}
+                  style={{ borderTop:`1px solid ${HAIR}`, padding:'8px 0', cursor:'pointer' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:r.message?3:0 }}>
+                    <span style={{ fontSize:11, color:TXT3, flexShrink:0 }}>{fmtMsk(r.created_at)}</span>
+                    <span style={{ fontSize:12, fontWeight:600, color:TXT, flexShrink:0 }}>{r.context}</span>
+                    {r.status!=null&&(
+                      <span style={{ fontSize:11, fontWeight:700, color:'#ef4444', flexShrink:0 }}>{r.status}</span>
+                    )}
+                    <span style={{ flex:1, minWidth:0, fontSize:11, color:TXT3, textAlign:'right', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{who(r)}</span>
+                  </div>
+                  {/* Свёрнуто — две строки, тап разворачивает целиком: длинные
+                      тексты ошибок Postgres иначе занимают пол-экрана. */}
+                  {r.message&&(
+                    <div style={{
+                      fontSize:11.5, color:TXT2, lineHeight:1.45, wordBreak:'break-word',
+                      ...(rowOpen?{}:{ display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }),
+                    }}>{r.message}</div>
+                  )}
+                </div>
+              )
+            })}
+          </>)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── AnalyticsView ────────────────────────────────────────────────────────────
 // Экран тренера: только просмотр. Два запроса при открытии (профили + даты
 // тренировок), сводка плитками и список пользователей. Никаких рассылок и
@@ -7513,6 +7650,11 @@ function AnalyticsView({ userRole }) {
 
   return (
     <div style={{ padding:'14px 16px 40px' }}>
+      {/* Свёрнутый блок ошибок — сверху и НАМЕРЕННО вне ветки rows&&: он ничего
+          не грузит до тапа и не должен пропадать, если основная аналитика не
+          загрузилась. Внизу экрана он был бы недосягаем — под ним список на
+          сотни человек. */}
+      <ErrorLogBlock userRole={userRole} />
       {loading&&!rows&&<div style={{ color:TXT3, fontSize:13, padding:'20px 0', textAlign:'center' }}>Загрузка…</div>}
       {loadError&&!rows&&(
         <div style={{ textAlign:'center', padding:'20px 0' }}>
