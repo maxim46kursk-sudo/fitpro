@@ -2,6 +2,11 @@ import { createClient } from '@supabase/supabase-js'
 import { effectiveLevel, AI_MIN_LEVEL } from './_access.js'
 import { rateLimit } from './_ratelimit.js'
 
+// Потолок времени выполнения функции. Без него Vercel рубит ответ по короткому
+// дефолту, и длинные ответы модели просто обрываются на полуслове. 60 секунд —
+// максимум плана Hobby.
+export const maxDuration = 60
+
 // Серверный клиент Supabase — проверка токена (auth.getUser) и, ниже, чтение
 // пакета пользователя service_role-ключом. Тот же env и те же безопасные
 // fallback-значения (URL и publishable-ключ несекретны), что и у клиента
@@ -17,6 +22,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 // шлёт клиент (3000 для тренировок, 1000 для питания, см. AIAssistant.jsx).
 const MODEL = 'claude-sonnet-4-6'
 const MAX_TOKENS_CEILING = 4096
+
+// На 5 секунд меньше maxDuration — чтобы успеть отдать клиенту осмысленный 503,
+// а не быть убитыми платформой посреди ответа.
+const ANTHROPIC_TIMEOUT_MS = 55_000
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -93,15 +102,28 @@ export default async function handler(req, res) {
   const { system, messages } = req.body || {}
   const maxTokens = Math.min(Number(req.body?.max_tokens) || 2048, MAX_TOKENS_CEILING)
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages })
-  })
-  const responseData = await response.json()
-  res.status(response.status).json(responseData)
+  // Свой таймаут чуть меньше maxDuration: если Anthropic отвечает слишком долго
+  // или сеть залипла, лучше вернуть внятную ошибку самим, чем дать платформе
+  // прибить функцию и отдать клиенту пустой обрыв соединения.
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), ANTHROPIC_TIMEOUT_MS)
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages }),
+      signal: controller.signal
+    })
+    const responseData = await response.json()
+    res.status(response.status).json(responseData)
+  } catch (err) {
+    console.error(`ИИ-ассистент ${data.user.id}: запрос к Anthropic не удался:`, err)
+    res.status(503).json({ error: 'ИИ-ассистент сейчас перегружен, попробуй ещё раз через минуту' })
+  } finally {
+    clearTimeout(timeoutId)
+  }
 }
