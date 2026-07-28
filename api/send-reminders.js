@@ -43,6 +43,132 @@ function extractChatId(user) {
   return m ? m[1] : null
 }
 
+// ── Сводка новых ошибок тренеру ──────────────────────────────────────────────
+// Журнал error_log (src/logError.js) сам по себе никого не зовёт: чтобы увидеть
+// сбой, тренер должен зайти в аналитику. Этот крон и так ходит каждые 15 минут,
+// поэтому сводку вешаем сюда — новых serverless-функций не заводим (лимит
+// Vercel в 12 штук исчерпан).
+//
+// Окно 16 минут при шаге крона в 15 — намеренный нахлёст: иначе запись,
+// сделанная в стык между запусками, не попала бы ни в одну сводку. Обратная
+// сторона нахлёста — пограничная ошибка может попасть в две соседние сводки.
+// Дедуп через notification_log не подходит: там PRIMARY KEY с sent_date, то
+// есть суточная гранулярность, а нам нужна четвертьчасовая.
+const ERROR_WINDOW_MIN = 16
+const ERROR_LIST_LIMIT = 20   // больше — не перечисляем, а зовём в аналитику
+const ERROR_TOP_CONTEXTS = 3
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Тот же порядок, что в resolveTrainerId (api/prodamus-webhook.js): сначала
+// переменная окружения, иначе профиль с role='trainer'. Хелпер там не
+// экспортирован, а импортировать сам вебхук нельзя — вместе с ним приедет его
+// `export const config` (пофункциональная настройка Vercel). Функция крошечная,
+// дублируем — как и остальные мелкие хелперы в api/.
+async function resolveTrainerId(supabaseAdmin) {
+  const fromEnv = (process.env.TRAINER_USER_ID || '').trim()
+  if (fromEnv) {
+    if (UUID_RE.test(fromEnv)) return fromEnv
+    console.warn('send-reminders: TRAINER_USER_ID задан, но это не UUID — игнорируем')
+  }
+  const { data, error } = await supabaseAdmin
+    .from('profiles').select('id').eq('role', 'trainer').limit(1).maybeSingle()
+  if (error) {
+    console.error('send-reminders: ошибка поиска тренера:', error)
+    return null
+  }
+  return data?.id || null
+}
+
+const pluralErrors = n => {
+  const m = Math.abs(n) % 100, d = m % 10
+  if (m > 10 && m < 20) return 'ошибок'
+  if (d > 1 && d < 5) return 'ошибки'
+  if (d === 1) return 'ошибка'
+  return 'ошибок'
+}
+
+// Возвращает число ошибок, о которых сообщили (0 — если сообщать было нечего
+// или отправить не удалось). Наружу не бросает по своей воле: вызывающий код
+// всё равно оборачивает вызов в try/catch, но и здесь все ветки закрыты.
+async function alertTrainerAboutErrors(supabaseAdmin, botToken) {
+  const since = new Date(Date.now() - ERROR_WINDOW_MIN * 60 * 1000).toISOString()
+
+  // Один запрос закрывает обе задачи: count даёт ТОЧНОЕ число за окно, а data —
+  // до 20 строк на разбивку. Если ошибок больше 20, разбивка и не нужна, и
+  // усечённый список нас не смущает.
+  const { data, count, error } = await supabaseAdmin
+    .from('error_log')
+    .select('context', { count: 'exact' })
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(ERROR_LIST_LIMIT)
+  if (error) {
+    console.error('send-reminders: ошибка чтения журнала ошибок:', error)
+    return 0
+  }
+
+  const total = count ?? (data?.length || 0)
+  if (!total) return 0   // тихо: молчание и есть «всё хорошо»
+
+  const trainerId = await resolveTrainerId(supabaseAdmin)
+  if (!trainerId) {
+    console.warn('send-reminders: тренер не найден, сводка ошибок не отправлена')
+    return 0
+  }
+  const { data: userData, error: userErr } = await supabaseAdmin.auth.admin.getUserById(trainerId)
+  if (userErr) {
+    console.warn('send-reminders: не удалось прочитать auth-пользователя тренера:', userErr)
+    return 0
+  }
+  const chatId = extractChatId(userData?.user)
+  if (!chatId) {
+    console.warn('send-reminders: у тренера нет chat_id, сводка ошибок не отправлена')
+    return 0
+  }
+
+  // В текст идут ТОЛЬКО количества и имена context. Ни message, ни user_id, ни
+  // тем более пользовательских текстов — сообщение уходит во внешний сервис
+  // (Telegram), и персональным данным там делать нечего.
+  let text
+  if (total > ERROR_LIST_LIMIT) {
+    text = `⚠️ FitPro: более ${ERROR_LIST_LIMIT} ошибок за 15 минут (${total}), посмотри аналитику.`
+  } else {
+    const byContext = new Map()
+    for (const row of data || []) {
+      const key = row?.context || 'unknown'
+      byContext.set(key, (byContext.get(key) || 0) + 1)
+    }
+    const top = [...byContext.entries()].sort((a, b) => b[1] - a[1])
+    const shown = top.slice(0, ERROR_TOP_CONTEXTS).map(([ctx, n]) => `${ctx} — ${n}`).join(', ')
+    const rest = top.length - ERROR_TOP_CONTEXTS
+    text = `⚠️ FitPro: ${total} ${pluralErrors(total)} за 15 минут\n${shown}${rest > 0 ? `, и ещё ${rest} вида` : ''}`
+  }
+
+  try {
+    const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        reply_markup: { inline_keyboard: [[{ text: 'Открыть FitPro', url: BOT_URL }]] },
+      }),
+    })
+    if (!tgRes.ok) {
+      let desc = ''
+      try { desc = (await tgRes.json())?.description || '' } catch {}
+      console.error(`send-reminders: Telegram вернул ${tgRes.status} на сводку ошибок: ${desc}`)
+      return 0
+    }
+  } catch (e) {
+    console.error('send-reminders: сетевая ошибка отправки сводки ошибок:', e)
+    return 0
+  }
+
+  return total
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
@@ -164,5 +290,16 @@ export default async function handler(req, res) {
     }
   }
 
-  return res.status(200).json({ checked, sent })
+  // Сводка ошибок — ПОСЛЕ напоминаний и полностью изолированно. Напоминания
+  // важнее: что бы тут ни случилось (нет таблицы на стенде, отвалился Telegram,
+  // сломался запрос), ручка обязана вернуть тот же ответ, что и раньше.
+  // checked/sent не трогаем — на них могут смотреть глазами и в мониторинге.
+  let errorsAlerted = 0
+  try {
+    errorsAlerted = await alertTrainerAboutErrors(supabaseAdmin, botToken)
+  } catch (e) {
+    console.error('send-reminders: сбой сводки ошибок (на напоминания не влияет):', e)
+  }
+
+  return res.status(200).json({ checked, sent, errorsAlerted })
 }
