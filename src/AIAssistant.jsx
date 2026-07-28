@@ -85,11 +85,19 @@ const HINTS_WORKOUT = ['Правда, что от приседаний ноги 
 // Сырые тексты ошибок (Overloaded, сетевые сбои, таймауты) клиенту показывать
 // нельзя — непонятно и пугает. Переводим в человеческие сообщения, техническая
 // причина остаётся только в консоли для отладки.
-const getFriendlyErrorMessage = (err, status, rawMessage) => {
+// serverError — поле error из тела ответа. Наши ручки (api/chat.js) отдают
+// строку, Anthropic — объект { type, message }; отсюда две ветки ниже.
+const getFriendlyErrorMessage = (err, status, serverError) => {
+  const rawMessage = typeof serverError === 'string' ? serverError : serverError?.message
   console.error('Ошибка AI-чата:', err || rawMessage, status != null ? `(status ${status})` : '')
   if (err?.name === 'AbortError' || err instanceof TypeError) {
     return 'Не удалось связаться с сервером. Проверь связь и повтори.'
   }
+  // Строка от наших ручек — это уже готовый текст для клиента (403 «доступен в
+  // пакете ПРОФИТ», 429 дневной лимит, 503 перегрузка). Раньше он терялся,
+  // потому что читали только .message, и реальная причина превращалась в
+  // бесполезное «Что-то пошло не так» — показываем как есть.
+  if (typeof serverError === 'string' && serverError.trim()) return serverError.trim()
   const text = `${rawMessage || ''} ${err?.message || ''}`.toLowerCase()
   if (status === 529 || text.includes('overloaded')) {
     return 'Сервис сейчас загружен, попробуй ещё раз через минуту 🙏'
@@ -344,13 +352,21 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
               if (m.content) blocks.push({ type: 'text', text: m.content })
               return { role: m.role, content: blocks }
             }
-            return { role: m.role, content: m.content }
+            // Anthropic отклоняет пустой content ошибкой 400. Так падал каждый
+            // следующий запрос после фото без подписи: сама реплика с фото
+            // хранится с content:'' и в мультимодальный блок выше попадает
+            // только на своём ходу — а дальше уходит плоской пустой строкой и
+            // роняет весь чат до переоткрытия. Подставляем непустой текст.
+            const content = typeof m.content === 'string' && !m.content.trim()
+              ? (m.image ? '[фото]' : '.')
+              : m.content
+            return { role: m.role, content }
           }),
         }),
       })
       const data = await res.json()
       if (!data.content?.[0]?.text) {
-        setMessages(prev => [...prev, { role: 'assistant', content: getFriendlyErrorMessage(null, res.status, data.error?.message) }])
+        setMessages(prev => [...prev, { role: 'assistant', content: getFriendlyErrorMessage(null, res.status, data.error) }])
         setInput(userMsg.content)
         if (hasImage) setAttachedImage(sentImage)
         return
@@ -544,6 +560,13 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
       if (writeFailed) {
         text += '\n\n⚠️ Не удалось сохранить это в дневник — похоже, пропало соединение. Проверь связь и повтори.'
       }
+
+      // Ответ мог целиком состоять из маркеров — после их вырезания текст
+      // пустой. Пустая реплика ассистента уйдёт в историю и на следующем ходе
+      // вызовет ту же 400-ю от Anthropic, что и пустое сообщение клиента выше,
+      // поэтому подставляем непустой запасной текст и в UI, и в chat_messages.
+      text = text.trim()
+      if (!text) text = 'Готово.'
 
       setMessages(prev => [...prev, { role: 'assistant', content: text, added, contactMax }])
 
