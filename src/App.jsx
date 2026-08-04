@@ -1074,6 +1074,13 @@ function ProgramEditor({ client, trainerId }) {
   const [workouts,setWorkouts]=useState([])
   const [saving,setSaving]=useState(false)
   const [saveState,setSaveState]=useState('idle') // 'idle' | 'saving' | 'saved' | 'error'
+  // Текст последнего сбоя сохранения. Держим отдельно от saveState: причины
+  // разные (нет тренера в пропсах, отказ базы, сеть), и тренеру нужно знать
+  // ИМЕННО свою — «проверь связь» при отказе RLS только сбивает с толку.
+  const [saveError,setSaveError]=useState('')
+  // Календарь свёрнут/развёрнут (см. ниже): в развёрнутом виде сетка месяца
+  // занимает пол-экрана и мешает вводить подходы.
+  const [calOpen,setCalOpen]=useState(true)
   const [pickerFor,setPickerFor]=useState(null) // индекс тренировки, для которой открыт выбор упражнения
   const [pickerQuery,setPickerQuery]=useState('')
   // Календарь. viewMonth/selectedDate держим ОТДЕЛЬНО от workouts — иначе тап по
@@ -1120,6 +1127,11 @@ function ProgramEditor({ client, trainerId }) {
         collapsed:true,
       })))
       setEditorOpen(!!data)
+      // Календарь сворачиваем сразу, если в программе уже есть хоть одна
+      // тренировка с датой: тренер пришёл править упражнения, а не выбирать
+      // день, и сетка месяца ему только мешает. У пустой программы оставляем
+      // развёрнутым — первый шаг там как раз выбрать дату.
+      setCalOpen(!raw.some(w=>w?.date))
       setProgramLoading(false)
     })
   }
@@ -1263,7 +1275,19 @@ function ProgramEditor({ client, trainerId }) {
   // {name, exercises:[{name,sets}]}, тот же формат sets, что и в PROGRAMS_MAP
   // (programs.js) — его парсит parseTemplateSets, свой формат не придумываем.
   const persistProgram=async(nextTitle,nextWorkouts)=>{
-    if(!Array.isArray(nextWorkouts)){console.error('Программа: structure не массив');setSaveState('error');return false}
+    if(!Array.isArray(nextWorkouts)){console.error('Программа: structure не массив');setSaveError('Внутренняя ошибка редактора — обнови страницу');setSaveState('error');return false}
+    // Без id тренера или клиента писать нельзя. Политика trainer_manages_programs
+    // требует trainer_id = auth.uid() И чтобы у клиента был этот coach_id;
+    // запрос без trainer_id база отклоняет с 42501 «new row violates row-level
+    // security policy» — сообщение, из которого тренер ничего не поймёт.
+    // Поэтому ловим случай здесь и говорим по-человечески.
+    if(!trainerId||!client?.id){
+      console.error('Программа: нет id тренера или клиента — сохранение отменено')
+      logError('assigned_program_save',{message:'нет trainerId или client.id',details:{table:'assigned_programs',action:'guard'}})
+      setSaveError('Не удалось определить тренера — вернись в «Клиенты» и открой карточку заново')
+      setSaveState('error')
+      return false
+    }
     // Подходы обратно в строку. Без веса подход пишем одним числом повторений
     // — parseTemplateSets понимает обе формы. Подход без повторений пустой,
     // его отбрасываем.
@@ -1289,8 +1313,19 @@ function ProgramEditor({ client, trainerId }) {
       updated_at:new Date().toISOString(),
     },{onConflict:'client_id'})
     setSaving(false)
-    if(error){console.error('Ошибка сохранения программы:',error);logError('assigned_program_save',{message:error.message,details:{table:'assigned_programs',action:'upsert',code:error.code}});setSaveState('error');return false}
+    if(error){
+      console.error('Ошибка сохранения программы:',error)
+      logError('assigned_program_save',{message:error.message,details:{table:'assigned_programs',action:'upsert',code:error.code}})
+      // 42501 — отказ RLS: строка ушла, но политика её не пропустила. Это НЕ
+      // «проверь связь», и предлагать тренеру ждать сеть бессмысленно.
+      setSaveError(error.code==='42501'
+        ? 'База отклонила запись: клиент числится не за тобой. Открой карточку клиента заново'
+        : 'Не сохранено — проверь связь и нажми «Повторить»')
+      setSaveState('error')
+      return false
+    }
     dirtyRef.current=false
+    setSaveError('')
     setSaveState('saved')
     return true
   }
@@ -1354,6 +1389,26 @@ function ProgramEditor({ client, trainerId }) {
 
   return (
     <div>
+      {/* Неудачное сохранение обязано быть ЗАМЕТНЫМ. Прежний единственный
+          признак — строка 11px под названием программы — при вводе подходов
+          уходит за верх экрана, и тренер продолжал работать, считая, что всё
+          записано. Плашка закреплена поверх экрана и не исчезает сама: пока
+          она висит, изменения в базу не ушли. */}
+      {saveState==='error'&&(
+        <div style={{
+          position:'fixed', top:10, left:'50%', transform:'translateX(-50%)',
+          zIndex:2500, width:'calc(100% - 24px)', maxWidth:420, boxSizing:'border-box',
+          padding:'12px 14px', borderRadius:14, background:'#dc2626', color:'#fff',
+          boxShadow:'0 10px 30px rgba(220,38,38,0.4)',
+        }}>
+          <div style={{ fontSize:13, fontWeight:800, marginBottom:2 }}>Программа НЕ сохранена</div>
+          <div style={{ fontSize:12, lineHeight:1.4, opacity:0.95 }}>{saveError||'Не сохранено — проверь связь и нажми «Повторить»'}</div>
+          <button onClick={saveProgram} disabled={saving}
+            style={{ marginTop:8, padding:'7px 14px', fontSize:12, fontWeight:700, borderRadius:9, border:'1px solid rgba(255,255,255,0.6)', background:'rgba(255,255,255,0.15)', color:'#fff', cursor:saving?'default':'pointer' }}>
+            {saving?'Сохраняем…':'Повторить'}
+          </button>
+        </div>
+      )}
       <div style={{ marginBottom:14 }}>
         <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Название программы</div>
         <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Программа"
@@ -1363,29 +1418,48 @@ function ProgramEditor({ client, trainerId }) {
             тренер должен в любой момент видеть, что работа в базе. */}
         {saveState==='saving'&&<div style={{ fontSize:11, color:TXT3, marginTop:4 }}>Сохраняем…</div>}
         {saveState==='saved'&&<div style={{ fontSize:11, color:'#085041', marginTop:4 }}>Все изменения сохранены</div>}
-        {saveState==='error'&&<div style={{ fontSize:11, color:'#ef4444', marginTop:4 }}>Не сохранено — проверь связь</div>}
+        {saveState==='error'&&<div style={{ fontSize:11, color:'#ef4444', marginTop:4 }}>Не сохранено</div>}
       </div>
 
       {/* Календарь: тап по дню выбирает дату, ‹ › листают месяц. Даты мягкие —
-          прошедшие дни выглядят как обычные, без «просрочено» и без красного. */}
+          прошедшие дни выглядят как обычные, без «просрочено» и без красного.
+          Сворачиваемый: развёрнутая сетка месяца занимала пол-экрана и мешала
+          вводить подходы. Свёрнутый вид — строка с выбранной датой; после
+          выбора дня схлопывается обратно. Календари копирования и назначения
+          даты (модалки ниже) к этому не относятся и работают как раньше. */}
       <Card>
-        {monthHead(viewMonth,setViewMonth)}
-        {monthGrid(viewMonth,(key,d)=>{
-          const has=workouts.some(w=>w.date===key)
-          const isSel=key===selectedDate
-          const isToday=key===todayKey
-          return (
-            <button key={key} onClick={()=>setSelectedDate(key)}
-              style={{ position:'relative', aspectRatio:'1', display:'flex', alignItems:'center', justifyContent:'center', borderRadius:10, cursor:'pointer', fontSize:13, fontWeight:600, padding:0, boxSizing:'border-box',
-                border:(isToday&&!isSel)?`1.5px solid ${PUR}`:'1.5px solid transparent', background:isSel?PUR:'transparent', color:isSel?'#fff':TXT }}>
-              {d}
-              {has&&<span style={{ position:'absolute', bottom:4, width:5, height:5, borderRadius:'50%', background:isSel?'#fff':PUR }} />}
-            </button>
-          )
-        })}
-        <div style={{ marginTop:12, paddingTop:10, borderTop:`1px solid ${HAIR}`, fontSize:15, fontWeight:800, color:TXT }}>
-          Тоннаж за {MONTHS_NOM[viewMonth.m]}: {monthTon} кг
+        <div onClick={()=>setCalOpen(o=>!o)}
+          style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, cursor:'pointer' }}>
+          <div style={{ minWidth:0 }}>
+            <div style={{ fontSize:15, fontWeight:800, color:TXT }}>
+              {dateWords(selectedDate)}{selectedDate===todayKey?' · сегодня':''}
+            </div>
+            <div style={{ fontSize:11, color:TXT3, marginTop:2 }}>
+              {dayWi>=0?'тренировка назначена':'тренировки нет'} · тоннаж за {MONTHS_NOM[viewMonth.m]}: {monthTon} кг
+            </div>
+          </div>
+          <span style={{ fontSize:12, fontWeight:700, color:PUR, flexShrink:0, whiteSpace:'nowrap' }}>
+            {calOpen?'Свернуть':'Календарь'}
+          </span>
         </div>
+        {calOpen&&(
+          <div style={{ marginTop:12, paddingTop:10, borderTop:`1px solid ${HAIR}` }}>
+            {monthHead(viewMonth,setViewMonth)}
+            {monthGrid(viewMonth,(key,d)=>{
+              const has=workouts.some(w=>w.date===key)
+              const isSel=key===selectedDate
+              const isToday=key===todayKey
+              return (
+                <button key={key} onClick={()=>{setSelectedDate(key);setCalOpen(false)}}
+                  style={{ position:'relative', aspectRatio:'1', display:'flex', alignItems:'center', justifyContent:'center', borderRadius:10, cursor:'pointer', fontSize:13, fontWeight:600, padding:0, boxSizing:'border-box',
+                    border:(isToday&&!isSel)?`1.5px solid ${PUR}`:'1.5px solid transparent', background:isSel?PUR:'transparent', color:isSel?'#fff':TXT }}>
+                  {d}
+                  {has&&<span style={{ position:'absolute', bottom:4, width:5, height:5, borderRadius:'50%', background:isSel?'#fff':PUR }} />}
+                </button>
+              )
+            })}
+          </div>
+        )}
       </Card>
 
       {/* Тренировка выбранного дня — всегда одна, свёртки/шеврона больше нет. */}
