@@ -63,6 +63,77 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   if (!rateLimit(req, res, { name: 'telegram-auth', limit: 20 })) return
 
+  // ── Вход по ссылке доступа (клиент, которого завёл тренер сам — см.
+  //    api/link-client.js, action='create_client'). Ветка идёт ПЕРВОЙ и не
+  //    зависит от TELEGRAM_BOT_TOKEN: initData здесь не при чём, общее у двух
+  //    веток только одно — обе выдают сессию без пароля. Отдельного эндпоинта
+  //    нет из-за лимита 12 serverless-функций у Vercel Hobby. ──
+  if (req.body?.action === 'redeem_access') {
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!serviceKey) {
+      console.error('SUPABASE_SERVICE_ROLE_KEY не настроен — вход по ссылке невозможен')
+      return res.status(500).json({ error: 'Сервер не настроен' })
+    }
+    // Один нейтральный текст на все причины отказа: по разнице ответов иначе
+    // можно было бы отличить «токен есть, но протух» от «такого токена нет».
+    const denied = { error: 'Ссылка недействительна или устарела' }
+
+    const accessToken = req.body?.token != null ? String(req.body.token) : ''
+    if (!accessToken) return res.status(401).json(denied)
+
+    const admin = createClient(SUPABASE_URL, serviceKey)
+    // В базе лежит только sha256-хэш. Сравнение обычное, по индексу: значения
+    // случайные (32 байта), подбирать нечего, а rate-limit выше и так стоит.
+    const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex')
+    const { data: row, error: rowErr } = await admin
+      .from('client_access_tokens')
+      .select('id, user_id, expires_at, used_at')
+      .eq('token_hash', tokenHash)
+      .maybeSingle()
+    if (rowErr) {
+      console.error('Ошибка поиска ссылки доступа:', rowErr)
+      return res.status(500).json({ error: 'Не удалось проверить ссылку' })
+    }
+    if (!row) return res.status(401).json(denied)
+    if (new Date(row.expires_at).getTime() <= Date.now()) {
+      console.log(`redeem_access: ссылка клиента ${row.user_id} просрочена`)
+      return res.status(401).json(denied)
+    }
+
+    // Почту берём из auth.users по user_id — в теле запроса её нет и быть не
+    // должно, иначе ссылка стала бы входом в произвольный аккаунт.
+    const { data: userData, error: userErr } = await admin.auth.admin.getUserById(row.user_id)
+    const clientEmail = userData?.user?.email
+    if (userErr || !clientEmail) {
+      console.error(`redeem_access: пользователь ${row.user_id} не найден:`, userErr)
+      return res.status(401).json(denied)
+    }
+
+    // Сессию выдаём тем же способом, что и телеграм-вход ниже: одноразовый код
+    // magiclink, клиент меняет его на сессию через verifyOtp.
+    const { data: link, error: linkErr } = await admin.auth.admin.generateLink({ type: 'magiclink', email: clientEmail })
+    if (linkErr || !link?.properties?.email_otp) {
+      console.error('redeem_access: ошибка выдачи одноразового кода:', linkErr)
+      return res.status(500).json({ error: 'Не удалось выдать сессию' })
+    }
+
+    // used_at — ТОЛЬКО отметка о первом использовании, не защёлка: ссылку
+    // разрешаем открывать многократно до истечения срока. Мессенджеры открывают
+    // ссылки во встроенном браузере, и одноразовая ссылка сгорела бы там же,
+    // оставив клиента без доступа. Ошибку отметки только логируем — вход из-за
+    // неё падать не должен.
+    if (!row.used_at) {
+      const { error: usedErr } = await admin
+        .from('client_access_tokens')
+        .update({ used_at: new Date().toISOString() })
+        .eq('id', row.id)
+      if (usedErr) console.error('redeem_access: не удалось отметить used_at:', usedErr)
+    }
+
+    console.log(`redeem_access: выдан вход клиенту ${row.user_id}`)
+    return res.status(200).json({ email: clientEmail, otp: link.properties.email_otp })
+  }
+
   const botToken = process.env.TELEGRAM_BOT_TOKEN
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!botToken || !serviceRoleKey) {

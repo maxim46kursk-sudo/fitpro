@@ -28,6 +28,13 @@ export const USER_TABLES = [
   // auth.admin.deleteUser(): весь USER_TABLES чистится раньше profiles и раньше
   // самого auth-пользователя, так что место в списке подходит любое.
   { table: 'error_log',             column: 'user_id' },
+  // Ссылки доступа клиента, которого завёл тренер (sql/2026-08-04_client_access.sql).
+  // Открытых токенов тут нет, только sha256-хэши, но строки привязаны к user_id —
+  // значит это данные пользователя. Внешний ключ user_id → auth.users объявлен
+  // с ON DELETE CASCADE, то есть удалению аккаунта он не мешает; чистим явно,
+  // чтобы выгрузка и удаление знали про таблицу одинаково. Столбец trainer_id
+  // (NO ACTION) закрывается тем же удалением строк клиента.
+  { table: 'client_access_tokens',  column: 'user_id' },
   { table: 'planned_workouts',      column: 'user_id' },
   { table: 'chat_messages',         column: 'user_id' },
   { table: 'food_diary',            column: 'user_id' },
