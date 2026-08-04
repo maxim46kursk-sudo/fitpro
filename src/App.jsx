@@ -7746,6 +7746,24 @@ function ResetPasswordView({ onDone }) {
   )
 }
 
+// Открыть личный чат с пользователем по @нику. Внутри Mini App обычный
+// window.open внешнюю ссылку открывает не всегда, поэтому там своя команда SDK.
+// Функция общая: ею пользуются и список пользователей в аналитике, и журнал
+// ошибок — иначе две копии логики разъезжаются при первой же правке.
+const openTg=nick=>{const url='https://t.me/'+nick;if(window.Telegram?.WebApp)window.Telegram.WebApp.openTelegramLink(url);else window.open(url,'_blank')}
+
+// Расшифровка context из error_log: в базе лежит технический ключ, а тренеру
+// нужно понимать, ЧТО сломалось. Незнакомый ключ показываем как есть — так
+// новый context из свежего кода виден сразу, а не прячется за «прочее».
+const ERROR_CONTEXT_LABELS={
+  ai_chat:'ИИ-ассистент',
+  food_diary_write:'Дневник питания',
+  workout_save:'Сохранение тренировки',
+  workout_sets_save:'Сохранение тренировки',
+  assigned_program_save:'Программа клиента',
+}
+const errorContextLabel=ctx=>ERROR_CONTEXT_LABELS[ctx]||ctx||'—'
+
 // ── ErrorLogBlock ────────────────────────────────────────────────────────────
 // «Последние ошибки» на экране аналитики: техжурнал сбоев у реальных
 // пользователей (таблица error_log, пишется из src/logError.js).
@@ -7764,7 +7782,10 @@ function ResetPasswordView({ onDone }) {
 function ErrorLogBlock({ userRole }) {
   const [open,setOpen]=useState(false)
   const [rows,setRows]=useState(null)
-  const [names,setNames]=useState({})       // user_id → имя из profiles
+  // user_id → {name, tg_username}. Ник нужен, чтобы владелец мог написать
+  // человеку прямо отсюда: журнал без контакта показывает, ЧТО сломалось, но не
+  // даёт связаться с тем, У КОГО сломалось.
+  const [people,setPeople]=useState({})
   const [counts,setCounts]=useState({d1:null,d7:null})
   const [loading,setLoading]=useState(false)
   const [failed,setFailed]=useState(false)
@@ -7786,14 +7807,14 @@ function ErrorLogBlock({ userRole }) {
       if(list.error||list.data==null)throw list.error||new Error('пустой ответ')
       setRows(list.data)
       setCounts({d1:c1.error?null:(c1.count??null),d7:c7.error?null:(c7.count??null)})
-      // Имена — ОДНИМ запросом по набору id из уже полученных строк, а не по
-      // запросу на строку: полсотни последовательных запросов с телефона это
+      // Имена и ники — ОДНИМ запросом по набору id из уже полученных строк, а не
+      // по запросу на строку: полсотни последовательных запросов с телефона это
       // секунды ожидания на ровном месте.
       const ids=[...new Set(list.data.map(r=>r.user_id).filter(Boolean))]
       if(ids.length){
-        const {data:profs}=await supabase.from('profiles').select('id,name').in('id',ids)
-        const map={};for(const p of profs||[])if(p.name)map[p.id]=p.name
-        setNames(map)
+        const {data:profs}=await supabase.from('profiles').select('id,name,tg_username').in('id',ids)
+        const map={};for(const p of profs||[])map[p.id]={name:p.name||null,tg_username:p.tg_username||null}
+        setPeople(map)
       }
     }catch(e){
       // Только в консоль. Экран аналитики продолжает работать: блок независим
@@ -7822,7 +7843,7 @@ function ErrorLogBlock({ userRole }) {
   }
   // Имя, если удалось сопоставить; иначе огрызок id — по нему хотя бы видно,
   // что ошибки у разных людей, а не у одного.
-  const who=r=>names[r.user_id]||(r.user_id?r.user_id.slice(0,8):'—')
+  const whoName=r=>people[r.user_id]?.name||(r.user_id?r.user_id.slice(0,8):'—')
 
   if(userRole!=='trainer')return null
 
@@ -7859,11 +7880,24 @@ function ErrorLogBlock({ userRole }) {
                   style={{ borderTop:`1px solid ${HAIR}`, padding:'8px 0', cursor:'pointer' }}>
                   <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:r.message?3:0 }}>
                     <span style={{ fontSize:11, color:TXT3, flexShrink:0 }}>{fmtMsk(r.created_at)}</span>
-                    <span style={{ fontSize:12, fontWeight:600, color:TXT, flexShrink:0 }}>{r.context}</span>
+                    <span style={{ fontSize:12, fontWeight:600, color:TXT, flexShrink:0 }}>{errorContextLabel(r.context)}</span>
                     {r.status!=null&&(
                       <span style={{ fontSize:11, fontWeight:700, color:'#ef4444', flexShrink:0 }}>{r.status}</span>
                     )}
-                    <span style={{ flex:1, minWidth:0, fontSize:11, color:TXT3, textAlign:'right', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{who(r)}</span>
+                    {/* Контакт. Есть ник — он и показывается, тапом открывается
+                        чат; stopPropagation обязателен, иначе тот же тап ещё и
+                        развернул бы текст ошибки, а это другое действие.
+                        Ника нет (клиент заведён тренером по ссылке доступа) —
+                        показываем имя и прямо говорим, что написать некуда. */}
+                    <span style={{ flex:1, minWidth:0, fontSize:11, color:TXT3, textAlign:'right', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                      {people[r.user_id]?.tg_username?(
+                        <span onClick={e=>{e.stopPropagation();openTg(people[r.user_id].tg_username)}}
+                          style={{ color:TEA, cursor:'pointer' }}>@{people[r.user_id].tg_username}</span>
+                      ):(<>
+                        {whoName(r)}
+                        {r.user_id&&<span style={{ opacity:0.75 }}> · нет Telegram</span>}
+                      </>)}
+                    </span>
                   </div>
                   {/* Свёрнуто — две строки, тап разворачивает целиком: длинные
                       тексты ошибок Postgres иначе занимают пол-экрана. */}
@@ -7962,7 +7996,6 @@ function AnalyticsView({ userRole }) {
   // Остаток дней: число по активной подписке; прочерк, если бессрочно/истекло.
   const daysLeft=p=>{const u=subUntil(p);const t=ts(u);if(t==null||t<=now)return null;return Math.ceil((t-now)/864e5)}
   const fmtDate=d=>{const t=ts(d);return t==null?'—':new Date(t).toLocaleDateString('ru',{day:'numeric',month:'long',year:'numeric'})}
-  const openTg=nick=>{const url='https://t.me/'+nick;if(window.Telegram?.WebApp)window.Telegram.WebApp.openTelegramLink(url);else window.open(url,'_blank')}
 
   const list=useMemo(()=>{
     let r=rows||[]

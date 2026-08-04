@@ -57,6 +57,10 @@ function extractChatId(user) {
 const ERROR_WINDOW_MIN = 16
 const ERROR_LIST_LIMIT = 20   // больше — не перечисляем, а зовём в аналитику
 const ERROR_TOP_CONTEXTS = 3
+// До скольких РАЗНЫХ пользователей называем поимённо. Смысл сводки — чтобы
+// владелец мог сразу написать тому, у кого сломалось; когда людей много, список
+// имён превращается в простыню и всё равно бесполезен — тогда только количества.
+const ERROR_NAMES_MAX_USERS = 5
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -99,7 +103,7 @@ async function alertTrainerAboutErrors(supabaseAdmin, botToken) {
   // усечённый список нас не смущает.
   const { data, count, error } = await supabaseAdmin
     .from('error_log')
-    .select('context', { count: 'exact' })
+    .select('context, user_id', { count: 'exact' })
     .gte('created_at', since)
     .order('created_at', { ascending: false })
     .limit(ERROR_LIST_LIMIT)
@@ -127,20 +131,51 @@ async function alertTrainerAboutErrors(supabaseAdmin, botToken) {
     return 0
   }
 
-  // В текст идут ТОЛЬКО количества и имена context. Ни message, ни user_id, ни
-  // тем более пользовательских текстов — сообщение уходит во внешний сервис
-  // (Telegram), и персональным данным там делать нечего.
+  // Что уходит в текст: количества, имена context и — когда людей мало — ИМЯ и
+  // @ник тех, у кого сломалось. Имя с ником добавлены осознанно: без них сводка
+  // сообщает о сбое, но не даёт с человеком связаться, а весь её смысл в этом.
+  // Получатель один и тот же — сам владелец, себе же в личку.
+  //
+  // Чего в тексте по-прежнему НЕТ и быть не должно: message ошибки, user_id,
+  // details и любые пользовательские данные (переписка, еда, замеры). Сообщение
+  // уходит во внешний сервис, и объём того, что туда утекает, ограничиваем
+  // ровно тем, без чего нельзя написать человеку.
   let text
   if (total > ERROR_LIST_LIMIT) {
     text = `⚠️ FitPro: более ${ERROR_LIST_LIMIT} ошибок за 15 минут (${total}), посмотри аналитику.`
   } else {
-    const byContext = new Map()
+    const byContext = new Map()   // context → { n, users:Set<user_id> }
     for (const row of data || []) {
       const key = row?.context || 'unknown'
-      byContext.set(key, (byContext.get(key) || 0) + 1)
+      const entry = byContext.get(key) || { n: 0, users: new Set() }
+      entry.n++
+      if (row?.user_id) entry.users.add(row.user_id)
+      byContext.set(key, entry)
     }
-    const top = [...byContext.entries()].sort((a, b) => b[1] - a[1])
-    const shown = top.slice(0, ERROR_TOP_CONTEXTS).map(([ctx, n]) => `${ctx} — ${n}`).join(', ')
+
+    // Подписи людей тянем ОДНИМ запросом и только если разных пользователей
+    // немного. Сбой чтения профилей не отменяет сводку — уходит без имён.
+    const allUsers = new Set()
+    for (const entry of byContext.values()) for (const id of entry.users) allUsers.add(id)
+    const labels = new Map()   // user_id → «Имя @ник»
+    if (allUsers.size && allUsers.size <= ERROR_NAMES_MAX_USERS) {
+      const { data: profs, error: profErr } = await supabaseAdmin
+        .from('profiles').select('id, name, tg_username').in('id', [...allUsers])
+      if (profErr) {
+        console.warn('send-reminders: не удалось прочитать профили для сводки ошибок:', profErr)
+      } else {
+        for (const p of profs || []) {
+          const label = [p.name || null, p.tg_username ? `@${p.tg_username}` : null].filter(Boolean).join(' ')
+          if (label) labels.set(p.id, label)
+        }
+      }
+    }
+
+    const top = [...byContext.entries()].sort((a, b) => b[1].n - a[1].n)
+    const shown = top.slice(0, ERROR_TOP_CONTEXTS).map(([ctx, entry]) => {
+      const who = [...entry.users].map(id => labels.get(id)).filter(Boolean)
+      return who.length ? `${ctx} — ${entry.n} (${who.join(', ')})` : `${ctx} — ${entry.n}`
+    }).join(', ')
     const rest = top.length - ERROR_TOP_CONTEXTS
     text = `⚠️ FitPro: ${total} ${pluralErrors(total)} за 15 минут\n${shown}${rest > 0 ? `, и ещё ${rest} вида` : ''}`
   }
