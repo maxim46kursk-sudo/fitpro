@@ -628,8 +628,7 @@ function ClientsView({ setSC, setNav, userId }) {
       const res=await fetch('/api/link-client',{
         method:'POST',
         headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
-        // goal сервер сейчас не читает (см. api/link-client.js) — цель просто
-        // не доедет до профиля, пока серверная ветка её не примет.
+        // goal сервер кладёт в profiles.goal того же нового клиента.
         body:JSON.stringify({action:'create_client',name,goal:addForm.goal||null}),
       })
       const body=await res.json().catch(()=>null)

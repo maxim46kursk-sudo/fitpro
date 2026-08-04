@@ -131,6 +131,12 @@ export default async function handler(req, res) {
     const name = req.body?.name != null ? String(req.body.name).trim().slice(0, 100) : ''
     if (!name) return res.status(400).json({ error: 'Не указано имя клиента' })
 
+    // Цель — необязательное поле формы (список на клиенте: «Похудение», «Набор
+    // массы» и т.д.). Список НЕ проверяем: profiles.goal — свободный текст,
+    // который сам клиент потом правит у себя в профиле. Пустое после trim → null,
+    // чтобы в базе не заводить строку-пустышку.
+    const goal = req.body?.goal != null ? (String(req.body.goal).trim().slice(0, 50) || null) : null
+
     // Почта техническая и не используется для писем — вход только по ссылке.
     // Случайная локальная часть, чтобы адрес нельзя было угадать по имени.
     // email_confirm: true — тот же приём, что в api/telegram-auth.js: без
@@ -157,15 +163,15 @@ export default async function handler(req, res) {
     }
 
     // Строку profiles уже завёл триггер on_auth_user_created (id, name, email),
-    // поэтому не insert, а upsert: дописываем coach_id. Роль не задаём — в базе
-    // умолчание 'client'.
+    // поэтому не insert, а upsert: дописываем coach_id и цель. Роль не задаём —
+    // в базе умолчание 'client'.
     //
     // .select() возвращает строку ПОСЛЕ триггеров: guard_profile_privileged
     // умеет срезать coach_id молча, без ошибки, — поэтому проверяем фактом
     // (тот же приём, что при обычной привязке ниже).
     const { data: profile, error: profileErr } = await supabaseAdmin
       .from('profiles')
-      .upsert({ id: newUserId, name, coach_id: userId }, { onConflict: 'id' })
+      .upsert({ id: newUserId, name, goal, coach_id: userId }, { onConflict: 'id' })
       .select('coach_id')
       .maybeSingle()
     if (profileErr || profile?.coach_id !== userId) {
