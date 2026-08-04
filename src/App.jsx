@@ -473,10 +473,85 @@ const clientSubStatus=(plan,planUntil)=>{
   }
 }
 
+// Модалка со ссылкой доступа клиента: показывается после заведения клиента
+// (ClientsView) и после перевыпуска ссылки (RealClientDetail). Вёрстка — копия
+// модалки «Пригласить клиента» ниже, чтобы два похожих окна не выглядели
+// по-разному.
+//
+// Ссылка содержит открытый токен, поэтому она НИГДЕ не логируется: ни в
+// console.log, ни в журнал ошибок. Показать её повторно нельзя — в базе только
+// sha256-хэш; если тренер потерял ссылку, он выпускает новую.
+function AccessLinkModal({ link, clientName, onClose }) {
+  const [copied,setCopied]=useState(false)
+  const [copyFailed,setCopyFailed]=useState(false)
+  const copy=async()=>{
+    try{
+      await navigator.clipboard.writeText(link)
+      setCopied(true);setTimeout(()=>setCopied(false),2000)
+    }catch(e){
+      // Сообщение ошибки печатаем без самой ссылки.
+      console.error('Не удалось скопировать ссылку доступа:',e?.message||e)
+      setCopyFailed(true);setTimeout(()=>setCopyFailed(false),3500)
+    }
+  }
+  return (
+    <>
+      {copied&&(
+        <div style={{
+          position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
+          zIndex:2400, padding:'10px 18px', borderRadius:24, maxWidth:320, textAlign:'center',
+          background:TEA, color:'#fff', fontSize:13, fontWeight:700,
+          boxShadow:'0 6px 20px rgba(48,209,88,0.35)',
+        }}>
+          Скопировано
+        </div>
+      )}
+      {copyFailed&&(
+        <div style={{
+          position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
+          zIndex:2400, padding:'10px 18px', borderRadius:24, maxWidth:320, textAlign:'center',
+          background:'#dc2626', color:'#fff', fontSize:13, fontWeight:700,
+          boxShadow:'0 6px 20px rgba(220,38,38,0.35)',
+        }}>
+          Не удалось скопировать — выдели ссылку и скопируй вручную
+        </div>
+      )}
+      <div style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:2000,display:'flex',alignItems:'center',justifyContent:'center',padding:16 }}
+        onClick={onClose}>
+        <div style={{ background:SURF,borderRadius:16,padding:'24px 22px',width:'100%',maxWidth:380,boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}
+          onClick={e=>e.stopPropagation()}>
+          <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14 }}>
+            <span style={{ fontSize:16,fontWeight:700,color:TXT }}>Ссылка для входа</span>
+            <button onClick={onClose} style={{ background:'none',border:'none',fontSize:20,cursor:'pointer',color:TXT3,lineHeight:1 }}><GlassIcon name="close" size={26} /></button>
+          </div>
+          <div style={{ fontSize:13,color:TXT2,lineHeight:1.45,marginBottom:10 }}>
+            Отправь эту ссылку{clientName?<> клиенту <b style={{color:TXT}}>{clientName}</b></>:' клиенту'} любым мессенджером или СМС.
+            Регистрироваться ему не нужно — он просто откроет ссылку и окажется в приложении.
+          </div>
+          <div style={{ fontSize:12,color:TXT3,lineHeight:1.45,marginBottom:14 }}>
+            Ссылка действует 7 дней, открыть её можно несколько раз. Когда срок выйдет — выдай новую
+            в карточке клиента.
+          </div>
+          <input value={link} readOnly onFocus={e=>e.target.select()} onClick={e=>e.target.select()}
+            style={{ width:'100%',padding:'10px 12px',fontSize:12,borderRadius:9,border:`1.5px solid ${HAIR}`,boxSizing:'border-box',outline:'none',color:TXT,background:SURF2,marginBottom:12 }} />
+          <button onClick={copy} style={{ width:'100%',padding:'12px',fontSize:14,borderRadius:14,border:'none',background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontWeight:800,cursor:'pointer',boxShadow:'0 8px 22px rgba(124,122,240,.4)' }}>Копировать</button>
+        </div>
+      </div>
+    </>
+  )
+}
+
 function ClientsView({ setSC, setNav, userId }) {
   const [q,setQ]=useState('')
   const [showAdd,setShowAdd]=useState(false)
-  const [addForm,setAddForm]=useState({name:'',goal:'Похудение',program:''})
+  // Программы в форме нет намеренно: у настоящего клиента она задаётся в его
+  // карточке (ProgramEditor), а не при заведении.
+  const [addForm,setAddForm]=useState({name:'',goal:'Похудение'})
+  const [creating,setCreating]=useState(false)
+  // Ссылка доступа только что заведённого клиента — показывается модалкой один
+  // раз: сервер отдаёт открытый токен единственный раз в ответе, в базе лежит
+  // только его хэш, и достать ссылку заново нельзя — можно лишь перевыпустить.
+  const [accessLink,setAccessLink]=useState(null)   // {url,name} | null
   const [localClients,setLocalClients]=useState(()=>{
     try{ return JSON.parse(localStorage.getItem('fitpro_local_clients')||'[]') }catch{ return [] }
   })
@@ -508,11 +583,6 @@ function ClientsView({ setSC, setNav, userId }) {
     if(window.Telegram?.WebApp)window.Telegram.WebApp.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(inviteLink)}`)
   }
 
-  const saveLocal=(list)=>{
-    setLocalClients(list)
-    localStorage.setItem('fitpro_local_clients',JSON.stringify(list))
-  }
-
   // Клиенты, добавленные тренером вручную — подтягиваются из Supabase (единый
   // список на любом устройстве); локальные без supabaseId переносятся один раз.
   useEffect(()=>{
@@ -540,41 +610,47 @@ function ClientsView({ setSC, setNav, userId }) {
     return()=>{cancelled=true}
   },[userId])
 
-  const addClient=()=>{
-    if(!addForm.name.trim())return
-    const initials=addForm.name.trim().split(' ').map(w=>w[0]?.toUpperCase()||'').join('').slice(0,2)||'КЛ'
-    const newC={
-      id:Date.now(),
-      name:addForm.name.trim(),
-      goal:addForm.goal,
-      program:addForm.program.trim()||'Без программы',
-      progress:0,
-      av:initials,
-      cal:0,wk:0,wts:[],
-      isLocal:true,
-    }
-    saveLocal([...localClients,newC])
-    setAddForm({name:'',goal:'Похудение',program:''})
-    setShowAdd(false)
-    if(userId){
-      supabase.from('trainer_clients').insert({trainer_id:userId,name:newC.name,goal:newC.goal||null,program:newC.program||null,progress:0}).select('id').single().then(({data,error})=>{
-        if(error){
-          console.error('Ошибка синхронизации клиента с Supabase:',error)
-          // Откат оптимистичной вставки — сервер её не принял.
-          setLocalClients(list=>{
-            const rolledBack=list.filter(c=>c!==newC)
-            localStorage.setItem('fitpro_local_clients',JSON.stringify(rolledBack))
-            return rolledBack
-          })
-          flashClientSaveError()
-          return
-        }
-        setLocalClients(list=>{
-          const updated=list.map(c=>c===newC?{...c,supabaseId:data?.id}:c)
-          localStorage.setItem('fitpro_local_clients',JSON.stringify(updated))
-          return updated
-        })
+  // «+ Добавить» заводит НАСТОЯЩЕГО клиента: сервер создаёт ему аккаунт и
+  // отдаёт ссылку доступа (api/link-client.js, action='create_client'). Клиент
+  // ничего не регистрирует — просто открывает ссылку.
+  //
+  // Раньше эта кнопка создавала карточку-заметку в trainer_clients («очный
+  // клиент»). Ни таблица, ни блок «Очные клиенты» не тронуты — там остаются
+  // старые карточки, просто новые туда больше не добавляются.
+  const createRealClient=async()=>{
+    const name=addForm.name.trim()
+    if(!name||creating)return
+    setCreating(true)
+    try{
+      const{data:sessionData}=await supabase.auth.getSession()
+      const token=sessionData?.session?.access_token
+      if(!token){console.error('Создание клиента: нет access-токена тренера');flashClientSaveError();return}
+      const res=await fetch('/api/link-client',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+        // goal сервер сейчас не читает (см. api/link-client.js) — цель просто
+        // не доедет до профиля, пока серверная ветка её не примет.
+        body:JSON.stringify({action:'create_client',name,goal:addForm.goal||null}),
       })
+      const body=await res.json().catch(()=>null)
+      if(!res.ok||!body?.ok||!body.token){
+        // В консоль и в журнал уходит только статус и текст ошибки — сам токен
+        // не логируется нигде: он равносилен паролю клиента.
+        console.error('Создание клиента: сервер отказал',res.status,body?.error||'')
+        logError('create_client',{message:body?.error||'нет токена в ответе',status:res.status})
+        flashClientSaveError()
+        return
+      }
+      setAddForm({name:'',goal:'Похудение'})
+      setShowAdd(false)
+      loadRealClients()
+      setAccessLink({url:`${window.location.origin}/?access=${body.token}`,name})
+    }catch(e){
+      console.error('Создание клиента: сетевая ошибка:',e)
+      logError('create_client',{message:e?.message})
+      flashClientSaveError()
+    }finally{
+      setCreating(false)
     }
   }
 
@@ -690,6 +766,10 @@ function ClientsView({ setSC, setNav, userId }) {
         </div>
       )}
 
+      {accessLink&&(
+        <AccessLinkModal link={accessLink.url} clientName={accessLink.name} onClose={()=>setAccessLink(null)} />
+      )}
+
       {showAdd&&(
         <div style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:2000,display:'flex',alignItems:'center',justifyContent:'center',padding:16 }}
           onClick={()=>setShowAdd(false)}>
@@ -700,13 +780,16 @@ function ClientsView({ setSC, setNav, userId }) {
               <button onClick={()=>setShowAdd(false)} style={{ background:'none',border:'none',fontSize:20,cursor:'pointer',color:TXT3,lineHeight:1 }}><GlassIcon name="close" size={26} /></button>
             </div>
             <div style={{ display:'flex',flexDirection:'column',gap:12 }}>
+              <div style={{ fontSize:12,color:TXT3,lineHeight:1.45 }}>
+                Клиенту не нужно регистрироваться — после сохранения ты получишь ссылку и отправишь её ему.
+              </div>
               <div>
                 <div style={{ fontSize:11,color:TXT3,marginBottom:4 }}>Имя и фамилия *</div>
                 <input value={addForm.name} onChange={e=>setAddForm(f=>({...f,name:e.target.value}))}
                   placeholder="Анна Иванова" autoFocus
                   style={{ width:'100%',padding:'10px 12px',fontSize:13,borderRadius:9,border:`1.5px solid ${HAIR}`,boxSizing:'border-box',outline:'none',color:TXT }}
                   onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR}
-                  onKeyDown={e=>e.key==='Enter'&&addClient()} />
+                  onKeyDown={e=>e.key==='Enter'&&createRealClient()} />
               </div>
               <div>
                 <div style={{ fontSize:11,color:TXT3,marginBottom:4 }}>Цель</div>
@@ -715,16 +798,12 @@ function ClientsView({ setSC, setNav, userId }) {
                   {['Похудение','Набор массы','Выносливость','Тонус','Реабилитация'].map(g=><option key={g}>{g}</option>)}
                 </select>
               </div>
-              <div>
-                <div style={{ fontSize:11,color:TXT3,marginBottom:4 }}>Программа</div>
-                <input value={addForm.program} onChange={e=>setAddForm(f=>({...f,program:e.target.value}))}
-                  placeholder="Кардио + Сила"
-                  style={{ width:'100%',padding:'10px 12px',fontSize:13,borderRadius:9,border:`1.5px solid ${HAIR}`,boxSizing:'border-box',outline:'none',color:TXT }}
-                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
-              </div>
               <div style={{ display:'flex',gap:8,marginTop:4 }}>
                 <button onClick={()=>setShowAdd(false)} style={{ flex:1,padding:'11px',fontSize:13,borderRadius:9,border:`1px solid ${HAIR}`,background:'none',color:TXT3,cursor:'pointer' }}>Отмена</button>
-                <button onClick={addClient} style={{ flex:1,padding:'12px',fontSize:14,borderRadius:14,border:'none',background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontWeight:800,cursor:'pointer',boxShadow:'0 8px 22px rgba(124,122,240,.4)' }}>Добавить</button>
+                <button onClick={createRealClient} disabled={creating||!addForm.name.trim()}
+                  style={{ flex:1,padding:'12px',fontSize:14,borderRadius:14,border:'none',background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontWeight:800,cursor:creating||!addForm.name.trim()?'default':'pointer',opacity:creating||!addForm.name.trim()?0.6:1,boxShadow:'0 8px 22px rgba(124,122,240,.4)' }}>
+                  {creating?'Создаём…':'Добавить'}
+                </button>
               </div>
             </div>
           </div>
@@ -871,6 +950,42 @@ function RealClientDetail({ client, goBack, trainerId }) {
   const [history,setHistory]=useState([])
   const [loading,setLoading]=useState(true)
   const [error,setError]=useState(false)
+  // Перевыпуск ссылки доступа (api/link-client.js, action='reissue_access').
+  // Нужен, когда клиент потерял ссылку или у неё вышел срок: показать старую
+  // невозможно — в базе только хэш.
+  const [accessLink,setAccessLink]=useState(null)   // url | null
+  const [issuing,setIssuing]=useState(false)
+  const [issueError,setIssueError]=useState('')
+  const issueAccess=async()=>{
+    if(issuing)return
+    if(!window.confirm('Выдать новую ссылку для входа?\n\nСтарая ссылка сразу перестанет работать — если клиент уже пользуется ей, отправь ему новую.'))return
+    setIssuing(true);setIssueError('')
+    try{
+      const{data:sessionData}=await supabase.auth.getSession()
+      const token=sessionData?.session?.access_token
+      if(!token){setIssueError('Нужно перезайти в приложение');return}
+      const res=await fetch('/api/link-client',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+        body:JSON.stringify({action:'reissue_access',clientId:client.id}),
+      })
+      const body=await res.json().catch(()=>null)
+      if(!res.ok||!body?.ok||!body.token){
+        // Ни ссылка, ни токен в логи не попадают — только статус и текст сервера.
+        console.error('Перевыпуск ссылки: сервер отказал',res.status,body?.error||'')
+        logError('reissue_access',{message:body?.error||'нет токена в ответе',status:res.status})
+        setIssueError('Не удалось выдать ссылку — попробуй ещё раз')
+        return
+      }
+      setAccessLink(`${window.location.origin}/?access=${body.token}`)
+    }catch(e){
+      console.error('Перевыпуск ссылки: сетевая ошибка:',e)
+      logError('reissue_access',{message:e?.message})
+      setIssueError('Не удалось выдать ссылку — проверь связь')
+    }finally{
+      setIssuing(false)
+    }
+  }
   const load=()=>{
     setLoading(true);setError(false)
     loadWorkoutHistoryFromSupabase(client.id).then(({history,error})=>{
@@ -905,6 +1020,18 @@ function RealClientDetail({ client, goBack, trainerId }) {
             </div>
           )}
         </div>
+      </div>
+      {accessLink&&(
+        <AccessLinkModal link={accessLink} clientName={client.name||''} onClose={()=>setAccessLink(null)} />
+      )}
+      <div style={{ marginBottom:18 }}>
+        <button onClick={issueAccess} disabled={issuing}
+          style={{ fontSize:13, padding:'8px 14px', background:'none', color:PUR, border:`1px solid ${PUR}`, borderRadius:8, cursor:issuing?'default':'pointer', opacity:issuing?0.6:1 }}>
+          {issuing?'Выдаём…':'Выдать ссылку для входа'}
+        </button>
+        {issueError&&(
+          <div style={{ fontSize:12, color:'#ef4444', marginTop:6 }}>{issueError}</div>
+        )}
       </div>
       <div style={{ display:'flex', gap:0, marginBottom:18, background:SURF2, borderRadius:10, padding:3, width:'fit-content', flexWrap:'wrap' }}>
         {[['diary','Дневник'],['program','Программа']].map(([id,label])=>(
@@ -7025,7 +7152,11 @@ function PasswordInput({ value, onChange, placeholder, onKeyDown }) {
   )
 }
 
-function LandingPage({ onEnter, isTelegram }) {
+// accessError — сообщение о неудачном входе по ссылке доступа (?access=,
+// см. App). Показывается плашкой в шапке: клиент, которого завёл тренер, попал
+// сюда не по своей воле, и обычная форма входа ему ничего не говорит — у него
+// нет ни пароля, ни почты, только ссылка.
+function LandingPage({ onEnter, isTelegram, accessError }) {
   const [view,setView]=useState('hero')
   const [authTab,setAuthTab]=useState('login')
   const [form,setForm]=useState({name:'',email:'',password:'',confirm:''})
@@ -7107,6 +7238,14 @@ function LandingPage({ onEnter, isTelegram }) {
           </button>
         </div>
       </div>
+
+      {accessError&&(
+        <div style={{ maxWidth:900,margin:'0 auto',padding:mobile?'16px 18px 0':'16px 28px 0' }}>
+          <div style={{ padding:'13px 16px',borderRadius:12,background:'rgba(239,68,68,0.12)',border:'1px solid rgba(239,68,68,0.45)',color:'#fca5a5',fontSize:13,lineHeight:1.45,textAlign:'center' }}>
+            {accessError}
+          </div>
+        </div>
+      )}
 
       {view==='hero'?(
         <div style={{ maxWidth:900,margin:'0 auto',padding:mobile?'0 18px':'0 28px' }}>
@@ -9729,6 +9868,16 @@ export default function App() {
   // обычный email-вход, а не тупик.
   const [telegramAuthPending,setTelegramAuthPending]=useState(false)
   const telegramAuthTriedRef=useRef(false)
+  // ── Вход по ссылке доступа (?access=<токен>) ─────────────────────────────
+  // Клиент, которого тренер завёл сам: аккаунт у него уже есть, пароля нет,
+  // Telegram не обязателен — ссылка меняется на сессию тем же способом, что и
+  // телеграм-вход. Токен держим в ref: из адресной строки он стирается сразу,
+  // а обменивать его нужно позже — когда станет известно, что сохранённой
+  // сессии нет (authLoading===false и user пуст).
+  const pendingAccessRef=useRef(null)
+  const accessAuthTriedRef=useRef(false)
+  const [accessAuthPending,setAccessAuthPending]=useState(false)
+  const [accessAuthError,setAccessAuthError]=useState('')
   const [pendingWorkoutAction,setPendingWorkoutAction]=useState(null)
   const [showProfileView,setShowProfileView]=useState(false)
   const [showProfileSheet,setShowProfileSheet]=useState(false)
@@ -9798,6 +9947,22 @@ export default function App() {
       const newUrl=window.location.pathname+(params.toString()?'?'+params.toString():'')
       window.history.replaceState({},'',newUrl)
     }
+  },[])
+
+  // Захват ссылки доступа при загрузке. Токен из адресной строки убираем
+  // НЕМЕДЛЕННО — до любых сетевых запросов и независимо от того, будем ли мы
+  // его вообще обменивать: иначе он осядет в истории браузера, в заголовке
+  // вкладки и уедет вместе со случайно отправленным адресом страницы. Обмен
+  // делает эффект ниже, здесь только достаём и прячем — тот же приём, что у
+  // ?coach= и ?trainer=1.
+  useEffect(()=>{
+    const params=new URLSearchParams(window.location.search)
+    const access=params.get('access')
+    if(!access)return
+    pendingAccessRef.current=access
+    params.delete('access')
+    const newUrl=window.location.pathname+(params.toString()?'?'+params.toString():'')
+    window.history.replaceState({},'',newUrl)
   },[])
 
   // ── Ссылка-приглашение от тренера ────────────────────────────────────────
@@ -10019,6 +10184,44 @@ export default function App() {
       }
     })()
   },[authLoading,user,isTelegram])
+
+  // Обмен ссылки доступа на сессию. Условие запуска то же, что у телеграм-входа
+  // выше: сохранённая сессия уже проверена (authLoading===false), пользователя
+  // нет, попытка ещё не делалась. От isTelegram НЕ зависит — ссылку открывают и
+  // в обычном браузере, и во встроенном браузере мессенджера.
+  //
+  // Если пользователь УЖЕ залогинен, обмена не происходит вовсе: молча менять
+  // текущий аккаунт на другой по ссылке из чата нельзя. Токен при этом всё
+  // равно уже стёрт из адресной строки эффектом выше.
+  useEffect(()=>{
+    if(authLoading||user||accessAuthTriedRef.current)return
+    const accessToken=pendingAccessRef.current
+    if(!accessToken)return
+    accessAuthTriedRef.current=true
+    pendingAccessRef.current=null
+    setAccessAuthPending(true)
+    ;(async()=>{
+      try{
+        const res=await fetch('/api/telegram-auth',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({action:'redeem_access',token:accessToken}),
+        })
+        if(!res.ok)throw new Error(`redeem_access: ${res.status}`)
+        const{email,otp}=await res.json()
+        const{error}=await supabase.auth.verifyOtp({email,token:otp,type:'email'})
+        if(error)throw error
+        // Успех дальше подхватывает onAuthStateChange/applySession — user здесь
+        // не устанавливаем, как и в телеграм-входе.
+      }catch(e){
+        // В сообщении нет ни токена, ни ссылки — только статус/текст ошибки.
+        console.error('Вход по ссылке не удался:',e?.message||e)
+        setAccessAuthError('Ссылка недействительна или устарела — попроси у тренера новую')
+      }finally{
+        setAccessAuthPending(false)
+      }
+    })()
+  },[authLoading,user])
 
   // Счётчик версии истории тренировок — растёт на 1 при КАЖДОМ подтверждённом
   // изменении workouts/workout_sets (завершение, правка, удаление, копия),
@@ -10389,8 +10592,8 @@ export default function App() {
 
   if(recoveryMode) return <ResetPasswordView onDone={()=>setRecoveryMode(false)} />
   if(authLoading) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:BG,color:TXT3,fontSize:14}}>Загрузка...</div>
-  if(!user&&telegramAuthPending) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:BG,color:TXT3,fontSize:14}}>Входим…</div>
-  if(!user) return <LandingPage onEnter={setUser} isTelegram={isTelegram} />
+  if(!user&&(telegramAuthPending||accessAuthPending)) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:BG,color:TXT3,fontSize:14}}>Входим…</div>
+  if(!user) return <LandingPage onEnter={setUser} isTelegram={isTelegram} accessError={accessAuthError} />
   if(!consentLoaded) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:BG,color:TXT3,fontSize:14}}>Загрузка…</div>
   if(!consentGiven) return <ConsentGate user={user} onAccepted={()=>setConsentGiven(true)} onDecline={performLogout} />
 
