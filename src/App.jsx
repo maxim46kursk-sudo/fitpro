@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, createContext, useContext } from 'react'
 import { createPortal } from 'react-dom'
 import AIAssistant from './AIAssistant'
-import { supabase, SUPABASE_AUTH_STORAGE_KEY } from './supabase.js'
+import { supabase, SUPABASE_AUTH_STORAGE_KEY, SUPABASE_URL, SUPABASE_KEY } from './supabase.js'
 import { logError } from './logError'
 import { FOLDERS, PROGRAMS_MAP, EXERCISES, isOneSidedExercise, countCompletedProgramSlots, isProgramFullyCompleted } from './programs.js'
 import { oneRepMax, weightForReps, roundToPlate, percentTable, plateStep } from './oneRepMax.js'
@@ -1100,6 +1100,24 @@ function ProgramEditor({ client, trainerId }) {
   const skipNextAutosaveRef=useRef(true)
   const latestRef=useRef({title,workouts})
   const dirtyRef=useRef(false)
+  // Ссылка на отложенное сохранение — чтобы дискретное действие (blur, кнопка)
+  // могло отменить его и записать сразу, не дожидаясь секунды.
+  const autosaveTimerRef=useRef(null)
+  // Флаг «следующее сохранение — без задержки». Ставится ПЕРЕД изменением
+  // состояния: сам записать нельзя, пока setWorkouts не отработал, а читать
+  // свежие workouts из обработчика поздно.
+  const saveNowRef=useRef(false)
+  const markImmediate=()=>{saveNowRef.current=true}
+  // Access-токен для keepalive-запроса (см. flushKeepalive). Держим в ref и
+  // обновляем заранее: в момент pagehide спрашивать сессию асинхронно уже
+  // поздно — страница успевает умереть раньше, чем промис разрешится.
+  const tokenRef=useRef(null)
+  useEffect(()=>{
+    let cancelled=false
+    supabase.auth.getSession().then(({data})=>{if(!cancelled)tokenRef.current=data?.session?.access_token||null})
+    const{data:{subscription}}=supabase.auth.onAuthStateChange((_e,session)=>{tokenRef.current=session?.access_token||null})
+    return()=>{cancelled=true;subscription?.unsubscribe()}
+  },[])
 
   const loadProgram=()=>{
     setProgramLoading(true);setProgramError(false)
@@ -1137,14 +1155,19 @@ function ProgramEditor({ client, trainerId }) {
   }
   useEffect(()=>{loadProgram()},[client.id])
 
+  // markImmediate перед каждым дискретным изменением: ввод закончен, ждать
+  // секунду нечего. Сам вызов сохранения делает эффект автосохранения — он
+  // увидит флаг и запишет без задержки.
   const removeWorkout=(wi)=>{
     if(!window.confirm('Удалить тренировку из программы?'))return
+    markImmediate()
     setWorkouts(w=>w.filter((_,i)=>i!==wi))
   }
   const renameWorkout=(wi,name)=>{
     setWorkouts(w=>w.map((x,i)=>i===wi?{...x,name}:x))
   }
   const addExercise=(wi,exerciseName)=>{
+    markImmediate()
     setWorkouts(w=>{
       // Если это же упражнение уже где-то заведено с заполненными подходами —
       // переносим их копией: тренер часто повторяет упражнение с той же
@@ -1163,6 +1186,7 @@ function ProgramEditor({ client, trainerId }) {
     setPickerFor(null);setPickerQuery('')
   }
   const removeExercise=(wi,ei)=>{
+    markImmediate()
     setWorkouts(w=>w.map((x,i)=>i===wi?{...x,exercises:x.exercises.filter((_,j)=>j!==ei)}:x))
   }
   // Общая обёртка для правок подходов — чтобы три обработчика ниже не
@@ -1172,12 +1196,18 @@ function ProgramEditor({ client, trainerId }) {
   }
   // Новый подход копирует последний: тренер обычно задаёт несколько
   // одинаковых, и «ещё такой же» экономит ввод.
-  const addSet=(wi,ei)=>updateSets(wi,ei,sets=>{
-    const last=sets[sets.length-1]
-    return[...sets,last?{...last}:{reps:'',kg:''}]
-  })
+  const addSet=(wi,ei)=>{
+    markImmediate()
+    updateSets(wi,ei,sets=>{
+      const last=sets[sets.length-1]
+      return[...sets,last?{...last}:{reps:'',kg:''}]
+    })
+  }
   // Последний подход не удаляем — упражнение без подходов не имеет смысла.
-  const removeSet=(wi,ei,si)=>updateSets(wi,ei,sets=>sets.length<=1?sets:sets.filter((_,k)=>k!==si))
+  const removeSet=(wi,ei,si)=>{
+    markImmediate()
+    updateSets(wi,ei,sets=>sets.length<=1?sets:sets.filter((_,k)=>k!==si))
+  }
   const setSetField=(wi,ei,si,field,value)=>updateSets(wi,ei,sets=>sets.map((s,k)=>k===si?{...s,[field]:value}:s))
   const setExerciseNote=(wi,ei,note)=>{
     setWorkouts(w=>w.map((x,i)=>i!==wi?x:{...x,exercises:x.exercises.map((ex,j)=>j!==ei?ex:{...ex,note})}))
@@ -1230,6 +1260,7 @@ function ProgramEditor({ client, trainerId }) {
   </>)
 
   const addWorkoutForDate=dateKey=>{
+    markImmediate()
     setWorkouts(w=>[...w,{name:'Тренировка',exercises:[],date:dateKey}])
   }
   // Глубокая копия тренировки на другую дату — НОВЫЕ объекты подходов, не ссылки
@@ -1253,6 +1284,7 @@ function ProgramEditor({ client, trainerId }) {
         next[idx]=cloneWorkout(src,key)
       }else next.push(cloneWorkout(src,key))
     }
+    markImmediate()
     setWorkouts(next)
     setCopyWi(null);setCopySel([])
   }
@@ -1263,17 +1295,47 @@ function ProgramEditor({ client, trainerId }) {
     if(!target){setAssignWi(null);return}
     const conflict=workouts.some((x,i)=>x.date===key&&i!==wi)
     if(conflict&&!window.confirm(`На ${dateWords(key)} уже есть тренировка. Заменить её?`))return
+    markImmediate()
     setWorkouts(w=>w.filter((x,i)=>!(x.date===key&&i!==wi)).map(x=>x===target?{...x,date:key}:x))
     setAssignWi(null)
     setSelectedDate(key)
     const[y,m]=key.split('-').map(Number);setViewMonth({y,m:m-1})
   }
 
+  // Строка для базы. Вынесена отдельно, потому что её собирают ДВА пути записи:
+  // обычный (supabase-js, ниже) и аварийный keepalive-запрос при закрытии
+  // страницы. Оба обязаны писать байт в байт одно и то же — формат structure
+  // (массив тренировок {name, date, exercises:[{name,sets,note}]}, где sets —
+  // строка того же вида, что в PROGRAMS_MAP из programs.js, её парсит
+  // parseTemplateSets) НЕ меняем ни в одном из них.
+  const buildRow=(nextTitle,nextWorkouts)=>{
+    // Подходы обратно в строку. Без веса подход пишем одним числом повторений
+    // — parseTemplateSets понимает обе формы. Подход без повторений пустой,
+    // его отбрасываем.
+    const serializeSets=sets=>(Array.isArray(sets)?sets:[])
+      .filter(s=>String(s.reps??'').trim())
+      .map(s=>{
+        const reps=String(s.reps).trim()
+        const kg=String(s.kg??'').trim()
+        return kg?`${kg} кг × ${reps}`:reps
+      })
+      .join(', ')
+    return{
+      client_id:client.id,
+      trainer_id:trainerId,
+      title:(nextTitle||'').trim()||'Персональная программа',
+      structure:nextWorkouts.map(w=>({
+        name:(w.name||'Тренировка').trim()||'Тренировка',
+        date:w.date||null, // дата плана внутри существующего jsonb; формат структуры не меняем
+        exercises:(w.exercises||[]).map(ex=>({name:ex.name,sets:serializeSets(ex.sets),note:(ex.note||'').trim()})),
+      })),
+      updated_at:new Date().toISOString(),
+    }
+  }
+
   // Единая запись в базу. Принимает текущие title/workouts, чтобы её можно было
   // звать и с актуальным состоянием (кнопка/таймер), и из cleanup при уходе с
-  // экрана (значения из latestRef). structure — массив тренировок
-  // {name, exercises:[{name,sets}]}, тот же формат sets, что и в PROGRAMS_MAP
-  // (programs.js) — его парсит parseTemplateSets, свой формат не придумываем.
+  // экрана (значения из latestRef).
   const persistProgram=async(nextTitle,nextWorkouts)=>{
     if(!Array.isArray(nextWorkouts)){console.error('Программа: structure не массив');setSaveError('Внутренняя ошибка редактора — обнови страницу');setSaveState('error');return false}
     // Без id тренера или клиента писать нельзя. Политика trainer_manages_programs
@@ -1288,30 +1350,9 @@ function ProgramEditor({ client, trainerId }) {
       setSaveState('error')
       return false
     }
-    // Подходы обратно в строку. Без веса подход пишем одним числом повторений
-    // — parseTemplateSets понимает обе формы. Подход без повторений пустой,
-    // его отбрасываем.
-    const serializeSets=sets=>(Array.isArray(sets)?sets:[])
-      .filter(s=>String(s.reps??'').trim())
-      .map(s=>{
-        const reps=String(s.reps).trim()
-        const kg=String(s.kg??'').trim()
-        return kg?`${kg} кг × ${reps}`:reps
-      })
-      .join(', ')
-    const structure=nextWorkouts.map(w=>({
-      name:(w.name||'Тренировка').trim()||'Тренировка',
-      date:w.date||null, // дата плана внутри существующего jsonb; формат структуры не меняем
-      exercises:(w.exercises||[]).map(ex=>({name:ex.name,sets:serializeSets(ex.sets),note:(ex.note||'').trim()})),
-    }))
     setSaving(true);setSaveState('saving')
-    const{error}=await supabase.from('assigned_programs').upsert({
-      client_id:client.id,
-      trainer_id:trainerId,
-      title:(nextTitle||'').trim()||'Персональная программа',
-      structure,
-      updated_at:new Date().toISOString(),
-    },{onConflict:'client_id'})
+    const{error}=await supabase.from('assigned_programs')
+      .upsert(buildRow(nextTitle,nextWorkouts),{onConflict:'client_id'})
     setSaving(false)
     if(error){
       console.error('Ошибка сохранения программы:',error)
@@ -1332,6 +1373,71 @@ function ProgramEditor({ client, trainerId }) {
   // Кнопка «Сохранить программу» — немедленное сохранение текущего состояния.
   const saveProgram=()=>persistProgram(title,workouts)
 
+  // Досохранение при уходе с экрана и при закрытии страницы.
+  //
+  // Почему не обычный supabase-js: внутри Telegram свайп закрытия убивает
+  // страницу вместе с незавершённым fetch — правка терялась молча, ни ошибки на
+  // экране, ни строки в журнале (запрос просто не доходил). fetch с
+  // keepalive:true браузер обязан довести до конца даже после смерти страницы,
+  // но supabase-js такой опции не даёт — поэтому здесь единственное место, где
+  // запрос к PostgREST собирается руками. Адрес и публичный ключ — те же, из
+  // src/supabase.js; токен берём из tokenRef (спрашивать сессию асинхронно в
+  // этот момент уже поздно). Тело — buildRow, то же самое, что и в обычном пути.
+  //
+  // Функция СИНХРОННАЯ и ничего не ждёт: любое await здесь означало бы, что
+  // страница может умереть раньше отправки.
+  const flushKeepalive=()=>{
+    if(!dirtyRef.current)return false
+    if(!trainerId||!client?.id)return false
+    const token=tokenRef.current
+    const{title:t,workouts:w}=latestRef.current
+    if(!Array.isArray(w))return false
+    // Токен ещё не доехал (правка в первые миллисекунды после открытия) —
+    // лучше обычный путь, чем не сохранить вовсе.
+    if(!token){persistProgram(t,w);return false}
+    let body
+    try{ body=JSON.stringify(buildRow(t,w)) }catch(e){ console.error('Программа: не удалось собрать тело запроса:',e); return false }
+    // keepalive не принимает тело больше ~64 КБ (лимит спецификации fetch).
+    // Программа такого размера — это сотни упражнений, но если это всё же
+    // случилось, уходим обычным путём: он не переживёт закрытие страницы, зато
+    // при переходе внутри приложения отработает штатно.
+    if(body.length>60000){
+      persistProgram(t,w)
+      return false
+    }
+    try{
+      fetch(`${SUPABASE_URL}/rest/v1/assigned_programs?on_conflict=client_id`,{
+        method:'POST',
+        keepalive:true,
+        headers:{
+          'Content-Type':'application/json',
+          apikey:SUPABASE_KEY,
+          Authorization:`Bearer ${token}`,
+          Prefer:'resolution=merge-duplicates',
+        },
+        body,
+      }).catch(e=>console.error('Программа: keepalive-досохранение не дошло:',e?.message||e))
+      // Помечаем чистым сразу: повторно слать то же самое из соседнего
+      // обработчика (pagehide после visibilitychange) незачем.
+      dirtyRef.current=false
+      return true
+    }catch(e){
+      console.error('Программа: не удалось отправить keepalive-запрос:',e?.message||e)
+      return false
+    }
+  }
+
+  // Сохранение по дискретному действию — когда ввод заведомо закончен (blur
+  // поля, добавление/удаление, работа с датами). Ждать секунду тут незачем:
+  // именно эта секунда и терялась при закрытии приложения. Отложенное
+  // сохранение отменяем, чтобы не слать то же самое дважды.
+  const saveNow=()=>{
+    if(!dirtyRef.current)return
+    if(autosaveTimerRef.current){clearTimeout(autosaveTimerRef.current);autosaveTimerRef.current=null}
+    const{title:t,workouts:w}=latestRef.current
+    persistProgram(t,w)
+  }
+
   // Автосохранение с задержкой. latestRef обновляем на каждый прогон, чтобы
   // cleanup при уходе с экрана взял самые свежие значения.
   useEffect(()=>{
@@ -1340,24 +1446,28 @@ function ProgramEditor({ client, trainerId }) {
     // Первый прогон после загрузки — холостой: состояние только пришло из базы.
     if(skipNextAutosaveRef.current){skipNextAutosaveRef.current=false;return}
     dirtyRef.current=true
-    const t=setTimeout(()=>{persistProgram(title,workouts)},1000)
+    // Секундная пауза — только для непрерывного набора текста (имя упражнения,
+    // заметка, название). Дискретные действия помечают saveNowRef и пишутся
+    // сразу: см. markImmediate у обработчиков.
+    const immediate=saveNowRef.current
+    saveNowRef.current=false
+    const t=setTimeout(()=>{autosaveTimerRef.current=null;persistProgram(title,workouts)},immediate?0:1000)
+    autosaveTimerRef.current=t
     return()=>clearTimeout(t)
   },[title,workouts])
 
   // Сохранение при размонтировании: быстрый уход сразу после правки убил бы
-  // таймер автосохранения вместе с компонентом. Дописываем из latestRef.
-  useEffect(()=>()=>{
-    if(dirtyRef.current)persistProgram(latestRef.current.title,latestRef.current.workouts)
-  },[])
+  // таймер автосохранения вместе с компонентом. Дописываем из latestRef, и
+  // именно keepalive-путём — уход с экрана и закрытие приложения свайпом для
+  // компонента выглядят одинаково, а второй случай обычный fetch не переживает.
+  useEffect(()=>()=>{flushKeepalive()},[])
 
   // Флаш при закрытии/сворачивании мини-приложения. Размонтирование ловит уход в
   // другой раздел, но не закрытие Telegram свайпом или сворачивание — компонент
   // не размонтируется, страница просто умирает вместе с таймером автосохранения.
   // pagehide и visibilitychange (hidden) — момент дописать последнюю правку.
   useEffect(()=>{
-    const flush=()=>{
-      if(dirtyRef.current)persistProgram(latestRef.current.title,latestRef.current.workouts)
-    }
+    const flush=()=>{flushKeepalive()}
     const onVis=()=>{if(document.visibilityState==='hidden')flush()}
     window.addEventListener('pagehide',flush)
     window.addEventListener('visibilitychange',onVis)
@@ -1409,16 +1519,27 @@ function ProgramEditor({ client, trainerId }) {
           </button>
         </div>
       )}
+      {/* Статус сохранения закреплён в шапке редактора: тренер вводит подходы
+          далеко внизу, и статус под названием программы к этому моменту уже
+          за верхом экрана. Сюда же попадает и «Сохраняю…», чтобы было видно,
+          что правка ушла, а не просто «ничего не произошло». */}
+      <div style={{ position:'sticky', top:0, zIndex:5, background:BG, paddingBottom:6, display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+        <span style={{ fontSize:11, color:TXT3 }}>Программа клиента</span>
+        <span style={{ fontSize:11, fontWeight:700, padding:'3px 9px', borderRadius:20, whiteSpace:'nowrap',
+          background:saveState==='error'?'#fee2e2':saveState==='saved'?'#dcfce7':SURF2,
+          color:saveState==='error'?'#b91c1c':saveState==='saved'?'#085041':TXT3 }}>
+          {saveState==='saving'?'Сохраняю…':saveState==='saved'?'Сохранено':saveState==='error'?'Не сохранено':'Черновик'}
+        </span>
+      </div>
       <div style={{ marginBottom:14 }}>
         <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Название программы</div>
+        {/* onBlur у всех полей редактора = «ввод закончен» → пишем сразу, не
+            дожидаясь секундной паузы автосохранения. */}
         <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Программа"
           style={{ width:'100%', padding:'9px 12px', fontSize:14, fontWeight:600, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
-          onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
-        {/* Статус автосохранения. «Все изменения сохранены» держим постоянно —
-            тренер должен в любой момент видеть, что работа в базе. */}
-        {saveState==='saving'&&<div style={{ fontSize:11, color:TXT3, marginTop:4 }}>Сохраняем…</div>}
-        {saveState==='saved'&&<div style={{ fontSize:11, color:'#085041', marginTop:4 }}>Все изменения сохранены</div>}
-        {saveState==='error'&&<div style={{ fontSize:11, color:'#ef4444', marginTop:4 }}>Не сохранено</div>}
+          onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>{e.target.style.borderColor=HAIR;saveNow()}} />
+        {/* Статус автосохранения переехал в закреплённую шапку выше — здесь он
+            дублировал бы её и при этом всё равно уезжал бы за экран. */}
       </div>
 
       {/* Календарь: тап по дню выбирает дату, ‹ › листают месяц. Даты мягкие —
@@ -1474,7 +1595,7 @@ function ProgramEditor({ client, trainerId }) {
             <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
               <input value={w.name} onChange={e=>renameWorkout(wi,e.target.value)} placeholder="Тренировка"
                 style={{ flex:1, padding:'7px 10px', fontSize:13, fontWeight:600, borderRadius:8, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
-                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
+                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>{e.target.style.borderColor=HAIR;saveNow()}} />
               <button onClick={()=>{setCopyWi(wi);setCopySel([]);setCopyMonth(viewMonth)}}
                 style={{ background:SURF2, border:`1px solid ${HAIR}`, borderRadius:8, padding:'7px 10px', fontSize:12, fontWeight:600, color:PUR, cursor:'pointer', flexShrink:0, whiteSpace:'nowrap' }}>Копировать</button>
               <button onClick={()=>removeWorkout(wi)} style={{ background:'none', border:'none', color:TXT3, fontSize:16, cursor:'pointer', lineHeight:1, padding:4, flexShrink:0 }}><GlassIcon name="close" size={26} /></button>
@@ -1510,9 +1631,9 @@ function ProgramEditor({ client, trainerId }) {
                     {sets.map((s,si)=>(
                       <div key={si} style={{ display:'grid', gridTemplateColumns:'24px 1fr 1fr 20px', gap:5, alignItems:'center', marginBottom:5 }}>
                         <span style={{ fontSize:12, color:TXT3, textAlign:'center', fontWeight:700 }}>{si+1}</span>
-                        <input value={s.kg} inputMode="decimal" onChange={e=>setSetField(wi,ei,si,'kg',e.target.value)} placeholder="0"
+                        <input value={s.kg} inputMode="decimal" onChange={e=>setSetField(wi,ei,si,'kg',e.target.value)} onBlur={saveNow} placeholder="0"
                           style={{ background:SURF2, border:`1.5px solid ${HAIR}`, borderRadius:12, padding:'6px 6px', fontSize:17, fontWeight:700, fontVariantNumeric:'tabular-nums', color:TXT, textAlign:'center', width:'100%', boxSizing:'border-box' }} />
-                        <input value={s.reps} inputMode="numeric" onChange={e=>setSetField(wi,ei,si,'reps',e.target.value)} placeholder="0"
+                        <input value={s.reps} inputMode="numeric" onChange={e=>setSetField(wi,ei,si,'reps',e.target.value)} onBlur={saveNow} placeholder="0"
                           style={{ background:SURF2, border:`1.5px solid ${HAIR}`, borderRadius:12, padding:'6px 6px', fontSize:17, fontWeight:700, fontVariantNumeric:'tabular-nums', color:TXT, textAlign:'center', width:'100%', boxSizing:'border-box' }} />
                         {/* Последний подход не удаляем — упражнение без
                             подходов не имеет смысла. Плейсхолдер держит
@@ -1530,7 +1651,7 @@ function ProgramEditor({ client, trainerId }) {
                     <textarea value={ex.note||''} onChange={e=>setExerciseNote(wi,ei,e.target.value)}
                       placeholder="Комментарий к упражнению (техника, темп, на что обратить внимание)" rows={2}
                       style={{ width:'100%', marginTop:10, padding:'8px 10px', fontSize:12, borderRadius:8, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT, background:SURF2, resize:'vertical', fontFamily:'inherit' }}
-                      onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
+                      onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>{e.target.style.borderColor=HAIR;saveNow()}} />
                     <div style={{ fontSize:16, fontWeight:700, color:PUR, marginTop:8 }}>Тоннаж: {setsTonnage(ex.sets)} кг</div>
                   </div>
                 )
