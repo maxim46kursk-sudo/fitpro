@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, createContext, useContext } from 'react'
 import { createPortal } from 'react-dom'
 import AIAssistant from './AIAssistant'
+import TrainerSession, { TrainerSessionsList } from './TrainerSession.jsx'
 import { supabase, SUPABASE_AUTH_STORAGE_KEY, SUPABASE_URL, SUPABASE_KEY } from './supabase.js'
 import { logError } from './logError'
 import { FOLDERS, PROGRAMS_MAP, EXERCISES, isOneSidedExercise, countCompletedProgramSlots, isProgramFullyCompleted } from './programs.js'
@@ -945,7 +946,14 @@ function ClientDetail({ client, goBack, trainerId }) {
 // loadWorkoutHistoryFromSupabase (RLS разрешает тренеру читать данные
 // клиента с его coach_id). Никаких мутаций отсюда не уходит.
 function RealClientDetail({ client, goBack, trainerId }) {
+  const { exercises: catalogExercises } = useContext(CatalogContext)
   const [tab,setTab]=useState('diary')
+  // Экран «Провести тренировку» (src/TrainerSession.jsx): открывается ПОВЕРХ
+  // карточки, отдельного маршрута в App не заводим — точка входа только здесь.
+  // null — закрыт; {editId:null} — новая сессия; {editId:<id>} — правка своей
+  // прошлой записи. По выходу перечитываем дневник: тренер только что в него
+  // написал, и старый список был бы неправдой.
+  const [session,setSession]=useState(null)
   const [history,setHistory]=useState([])
   const [loading,setLoading]=useState(true)
   const [error,setError]=useState(false)
@@ -997,6 +1005,18 @@ function RealClientDetail({ client, goBack, trainerId }) {
 
   const initials=(client.name||'Без имени').trim().split(' ').map(w=>w[0]?.toUpperCase()||'').join('').slice(0,2)||'КЛ'
 
+  // Пока идёт сессия — карточку не рисуем вовсе: экран записи занимает весь
+  // рабочий лист, а закреплённая шапка карточки с ним бы конфликтовала.
+  if(session)return (
+    <TrainerSession
+      client={client}
+      trainerId={trainerId}
+      catalogExercises={catalogExercises}
+      editWorkoutId={session.editId}
+      onExit={()=>{setSession(null);load()}}
+    />
+  )
+
   return (
     <div>
       <button onClick={goBack} style={{ fontSize:12, color:TXT3, border:'none', background:'none', cursor:'pointer', marginBottom:14, padding:0, display:'inline-flex', alignItems:'center', gap:5 }}><GlassIcon name="back" size={16} />Назад</button>
@@ -1023,15 +1043,25 @@ function RealClientDetail({ client, goBack, trainerId }) {
       {accessLink&&(
         <AccessLinkModal link={accessLink} clientName={client.name||''} onClose={()=>setAccessLink(null)} />
       )}
-      <div style={{ marginBottom:18 }}>
+      <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14 }}>
+        {/* Главное действие тренера в карточке — провести занятие и записать
+            его клиенту в дневник (src/TrainerSession.jsx). */}
+        <button onClick={()=>setSession({editId:null})}
+          style={{ fontSize:13, fontWeight:700, padding:'9px 16px', background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', border:'none', borderRadius:10, cursor:'pointer', boxShadow:'0 6px 18px rgba(124,122,240,.35)' }}>
+          Провести тренировку
+        </button>
         <button onClick={issueAccess} disabled={issuing}
-          style={{ fontSize:13, padding:'8px 14px', background:'none', color:PUR, border:`1px solid ${PUR}`, borderRadius:8, cursor:issuing?'default':'pointer', opacity:issuing?0.6:1 }}>
+          style={{ fontSize:13, padding:'9px 14px', background:'none', color:PUR, border:`1px solid ${PUR}`, borderRadius:10, cursor:issuing?'default':'pointer', opacity:issuing?0.6:1 }}>
           {issuing?'Выдаём…':'Выдать ссылку для входа'}
         </button>
-        {issueError&&(
-          <div style={{ fontSize:12, color:'#ef4444', marginTop:6 }}>{issueError}</div>
-        )}
       </div>
+      {issueError&&(
+        <div style={{ fontSize:12, color:'#ef4444', marginTop:-8, marginBottom:12 }}>{issueError}</div>
+      )}
+      {/* Записи, сделанные ЭТИМ тренером, — их он вправе открыть и поправить.
+          Тренировки, которые клиент вёл сам, сюда не попадают: их правку база
+          не пропустит (политика требует created_by = auth.uid()). */}
+      <TrainerSessionsList clientId={client.id} trainerId={trainerId} onEdit={id=>setSession({editId:id})} />
       <div style={{ display:'flex', gap:0, marginBottom:18, background:SURF2, borderRadius:10, padding:3, width:'fit-content', flexWrap:'wrap' }}>
         {[['diary','Дневник'],['program','Программа']].map(([id,label])=>(
           <button key={id} onClick={()=>setTab(id)}
@@ -5918,7 +5948,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const exerciseNames=Object.keys(exerciseMap).sort()
   const allWorkoutTons=workoutHistory
     .map((w,histIdx)=>({
-      date:w.date,name:w.name,color:w.color||PUR,histIdx,exercises:w.exercises||[],comment:w.comment,
+      date:w.date,name:w.name,color:w.color||PUR,histIdx,exercises:w.exercises||[],comment:w.comment,createdBy:w.createdBy||null,
       ton:(w.exercises||[]).reduce((s1,ex)=>(ex.sets||[]).reduce((s2,set)=>s2+(parseFloat(set.kg)||0)*(parseInt(set.reps)||0),s1),0),
     }))
     .sort((a,b)=>new Date(a.date)-new Date(b.date))
@@ -6745,7 +6775,13 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                 <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start' }}>
                   <div style={{ flex:1,minWidth:0 }}>
                     <div style={{ fontSize:14,fontWeight:600,color:TXT }}>{w.name}</div>
-                    <div style={{ fontSize:11,color:TXT3,marginTop:2 }}>{fmtFull(w.date)}</div>
+                    <div style={{ fontSize:11,color:TXT3,marginTop:2 }}>
+                      {fmtFull(w.date)}
+                      {/* Запись внёс тренер, а не сам владелец дневника
+                          (workouts.created_by). Без пометки такая тренировка
+                          выглядит как «я этого не записывал, откуда это». */}
+                      {w.createdBy&&<span style={{ color:PUR,fontWeight:600 }}> · записал тренер</span>}
+                    </div>
                   </div>
                   <div style={{ display:'flex',alignItems:'flex-start',gap:8,flexShrink:0 }}>
                     <div style={{ textAlign:'right' }}>
@@ -9823,6 +9859,10 @@ async function loadWorkoutHistoryFromSupabase(userId) {
     if (!sets?.length) continue
     result.push({
       workoutId: w.id, name: w.name || 'Тренировка', color: w.color || PUR,
+      // Кто внёс запись: null — сам владелец дневника, uuid — его тренер
+      // (sql/2026-08-04_trainer_logs_workouts.sql). Нужно только для пометки
+      // в карточке тренировки, на расчёты не влияет.
+      createdBy: w.created_by || null,
       date: w.date, duration: w.duration != null ? Number(w.duration) : null, comment: w.comment || '',
       exercises: groupByExercise(sets),
     })
