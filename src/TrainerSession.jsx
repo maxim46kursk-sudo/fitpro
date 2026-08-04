@@ -191,6 +191,13 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
   const pendingRef = useRef(new Map())
   const latestRef = useRef({ workoutId: editWorkoutId, comment: '' })
   const creatingRef = useRef(null)               // промис создания workouts — защита от двойной вставки
+  // Содержимое сессии реально загружено/выбрано. Нужен ТОЛЬКО как предохранитель
+  // для удаления пустой тренировки: в режиме правки workoutId известен с первого
+  // рендера, а упражнения приезжают позже, и «подходов ноль» до загрузки —
+  // неправда. Плюс StrictMode в разработке прогоняет эффекты дважды (mount →
+  // cleanup → mount), то есть досылка успевает сработать до загрузки данных —
+  // без этого флага она снесла бы открытую на правку настоящую тренировку.
+  const contentReadyRef = useRef(false)
 
   useEffect(() => { latestRef.current = { workoutId, comment } }, [workoutId, comment])
 
@@ -268,7 +275,7 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
       const todayPlan = structure.find(w => w?.date === today) || null
       const lastWorkout = hist.data?.[0] || null
       setStarters({ program: todayPlan, last: lastWorkout })
-      if (!todayPlan && !lastWorkout) { setPhase('session'); return }
+      if (!todayPlan && !lastWorkout) { contentReadyRef.current = true; setPhase('session'); return }
       setPhase('choose')
     })()
     return () => { cancelled = true }
@@ -300,6 +307,7 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
         note: (byEx.get(ex).find(s => s.note)?.note) || '',
         sets: byEx.get(ex).map(s => ({ id: s.id, kg: s.kg != null ? String(s.kg) : '', reps: s.reps != null ? String(s.reps) : '' })),
       })))
+      contentReadyRef.current = true
       loadPrev(order, editWorkoutId)
     })()
     return () => { cancelled = true }
@@ -437,6 +445,24 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
     }
   }
 
+  // Смена даты в шапке. Дата лежит В ДВУХ местах: workouts.date и date каждого
+  // подхода — так устроена схема, workout_sets несёт свою копию. Меняем ОБА
+  // разом: разъехавшись, они ломают и аналитику (она группирует подходы по их
+  // собственной дате), и блок «в прошлый раз» — он берёт самую свежую дату по
+  // упражнению из workout_sets, а не из тренировки.
+  const changeDate = async (next) => {
+    setDate(next)
+    const wid = latestRef.current.workoutId
+    if (!wid) return                       // тренировки ещё нет — дата уйдёт при создании
+    setSaveState('saving')
+    const [{ error: we }, { error: se }] = await Promise.all([
+      supabase.from('workouts').update({ date: next }).eq('id', wid),
+      supabase.from('workout_sets').update({ date: next }).eq('workout_id', wid),
+    ])
+    if (we || se) { fail('Дата не сохранена — проверь связь и нажми «Повторить»', we || se); return }
+    setSaveError(''); setSaveState('saved')
+  }
+
   // Заметка к упражнению живёт на ПЕРВОМ подходе: в workout_sets поле note
   // относится к подходу, отдельного места под заметку упражнения в схеме нет,
   // а дневник клиента показывает именно эти note.
@@ -463,7 +489,7 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
     if (!token || !wid) return
     const send = (url, method, body) => {
       try {
-        fetch(url, {
+        const opts = {
           method, keepalive: true,
           headers: {
             'Content-Type': 'application/json',
@@ -471,11 +497,16 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
             Authorization: `Bearer ${token}`,
             Prefer: 'return=minimal',
           },
-          body: JSON.stringify(body),
-        }).catch(e => console.error('Тренировка с тренером: досылка не дошла:', e?.message || e))
+        }
+        // У DELETE тела нет — с body:undefined fetch отправит запрос без него,
+        // но явная ветка честнее и не зависит от поведения реализации.
+        if (body !== undefined) opts.body = JSON.stringify(body)
+        fetch(url, opts).catch(e => console.error('Тренировка с тренером: досылка не дошла:', e?.message || e))
       } catch (e) { console.error('Тренировка с тренером: не удалось отправить досылку:', e?.message || e) }
     }
     // Незакоммиченные правки полей: те, у кого уже есть id — PATCH, новые — POST.
+    let willHaveSets = 0
+    for (const ex of exercises) for (const s of ex.sets) if (s.id) willHaveSets++
     for (const key of pendingRef.current.keys()) {
       const [exKey, idxRaw] = key.split(':')
       const ex = exercises.find(e => e.key === exKey)
@@ -490,16 +521,34 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
         workout_id: wid,
       }
       if (s.id) send(`${SUPABASE_URL}/rest/v1/workout_sets?id=eq.${s.id}`, 'PATCH', { kg: body.kg, reps: body.reps })
-      else send(`${SUPABASE_URL}/rest/v1/workout_sets`, 'POST', body)
+      else { send(`${SUPABASE_URL}/rest/v1/workout_sets`, 'POST', body); willHaveSets++ }
     }
     pendingRef.current.clear()
+
+    // Уходим, не записав ни одного подхода (открыл экран, добавил упражнение и
+    // передумал) — тренировку сносим, пустышке в дневнике клиента не место.
+    // Подходы ушли бы каскадом, но их тут и нет. Комментарий в этом случае
+    // писать уже некуда.
+    if (willHaveSets === 0) {
+      // Пока содержимое не загружено, «ноль подходов» ничего не значит.
+      if (contentReadyRef.current) send(`${SUPABASE_URL}/rest/v1/workouts?id=eq.${wid}`, 'DELETE', undefined)
+      return
+    }
     // Комментарий к тренировке — он живёт только в состоянии до «Завершить».
     if (cmt) send(`${SUPABASE_URL}/rest/v1/workouts?id=eq.${wid}`, 'PATCH', { comment: cmt })
   }, [exercises, clientId, date])
 
-  useEffect(() => () => { flushKeepalive() }, [flushKeepalive])
+  // Досылку зовём ЧЕРЕЗ ref, а эффекты вешаем с пустыми зависимостями.
+  // Иначе flushKeepalive попадает в зависимости, его identity меняется на
+  // каждую правку упражнений, и cleanup эффекта срабатывает не при уходе с
+  // экрана, а после КАЖДОГО изменения: лишний поток запросов, а с удалением
+  // пустой тренировки (ниже) — ещё и снос свежесозданной записи в момент,
+  // когда подходов в ней пока ноль.
+  const flushRef = useRef(flushKeepalive)
+  useEffect(() => { flushRef.current = flushKeepalive }, [flushKeepalive])
+  useEffect(() => () => { flushRef.current() }, [])
   useEffect(() => {
-    const flush = () => flushKeepalive()
+    const flush = () => flushRef.current()
     const onVis = () => { if (document.visibilityState === 'hidden') flush() }
     window.addEventListener('pagehide', flush)
     window.addEventListener('visibilitychange', onVis)
@@ -507,7 +556,7 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
       window.removeEventListener('pagehide', flush)
       window.removeEventListener('visibilitychange', onVis)
     }
-  }, [flushKeepalive])
+  }, [])
 
   // ── Старт из программы / из прошлой тренировки ────────────────────────────
   const startFrom = async (source) => {
@@ -535,6 +584,7 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
       ))
     }
     setExercises(list)
+    contentReadyRef.current = true
     setPhase('session')
     if (list.length) {
       loadPrev(list.map(e => e.name), null)
@@ -572,16 +622,44 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
     setFinishing(true)
     try {
       const wid = latestRef.current.workoutId
-      // Ничего не записали — выходим молча, пустую тренировку в дневнике
-      // клиента оставлять незачем.
+      // Тренировку даже не заводили — выходить нечем.
       if (!wid) { onExit(); return }
       setSaveState('saving')
+
+      // Сначала дописываем то, что тренер ввёл, но не увёл фокус: на мобильных
+      // тап по «Завершить» гасит клавиатуру и blur может прийти уже после
+      // клика. Без этого последний подход считался бы несуществующим — и
+      // тренировка могла уехать в удаление как пустая.
+      for (const key of [...pendingRef.current.keys()]) {
+        const [exKey, idx] = key.split(':')
+        await persistSet(exKey, Number(idx))
+      }
+
+      // Пустышку в дневнике клиента не оставляем. Считаем ПО БАЗЕ, а не по
+      // состоянию: состояние могло разойтись с базой, если какая-то запись
+      // не прошла. Подходы уйдут сами — внешний ключ workout_sets.workout_id
+      // объявлен с ON DELETE CASCADE.
+      const { count, error: cErr } = await supabase
+        .from('workout_sets').select('id', { count: 'exact', head: true }).eq('workout_id', wid)
+      if (cErr) { fail('Не удалось завершить тренировку — проверь связь и нажми «Повторить»', cErr); return }
+      if (!count) {
+        const { error: dErr } = await supabase.from('workouts').delete().eq('id', wid)
+        if (dErr) { fail('Не удалось убрать пустую тренировку', dErr); return }
+        pendingRef.current.clear()
+        latestRef.current = { ...latestRef.current, workoutId: null }
+        setWorkoutId(null)
+        onExit()
+        return
+      }
+
       const patch = { comment: comment || null, name: name || 'Тренировка с тренером', date }
-      // Длительность — минуты с начала сессии. При правке старой записи время
-      // не трогаем: секундомер там не про неё.
+      // Длительность — минуты с начала сессии, и ТОЛЬКО для новой записи. В
+      // режиме правки секундомер не идёт вовсе (см. эффект выше), и время
+      // занятия здесь не наше: перезаписав его, мы бы стёрли настоящую
+      // длительность прошедшей тренировки.
       if (!editWorkoutId) patch.duration = Math.max(1, Math.round((Date.now() - (startedAtRef.current ?? Date.now())) / 60000))
       const { error } = await supabase.from('workouts').update(patch).eq('id', wid)
-      if (error) { fail('Не удалось завершить тренировку — проверь связь и нажми «Повторить»', error); setFinishing(false); return }
+      if (error) { fail('Не удалось завершить тренировку — проверь связь и нажми «Повторить»', error); return }
       pendingRef.current.clear()
       setSaveState('saved')
       onExit()
@@ -635,7 +713,7 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
             </div>
           </button>
         )}
-        <button onClick={() => { setExercises([]); setPhase('session') }}
+        <button onClick={() => { setExercises([]); contentReadyRef.current = true; setPhase('session') }}
           style={{ width:'100%', textAlign:'left', padding:'14px 16px', borderRadius:16, border:`1px solid ${HAIR}`, background:SURF, color:TXT, cursor:'pointer' }}>
           <div style={{ fontSize:14, fontWeight:700, marginBottom:3 }}>С чистого листа</div>
           <div style={{ fontSize:12, color:TXT2 }}>Добавить упражнения вручную</div>
@@ -684,9 +762,10 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
           <input value={name} onChange={e => setName(e.target.value)} placeholder="Название"
             onBlur={() => { if (latestRef.current.workoutId) supabase.from('workouts').update({ name: name || 'Тренировка с тренером' }).eq('id', latestRef.current.workoutId).then(({ error }) => error && fail('Название не сохранено', error)) }}
             style={{ flex:1, minWidth:0, padding:'8px 10px', fontSize:13, fontWeight:600, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT, background:SURF2 }} />
-          {/* Дату можно менять — тренер записывает и задним числом. */}
-          <input type="date" value={date} onChange={e => setDate(e.target.value)}
-            onBlur={() => { if (latestRef.current.workoutId) supabase.from('workouts').update({ date }).eq('id', latestRef.current.workoutId).then(({ error }) => error && fail('Дата не сохранена', error)) }}
+          {/* Дату можно менять — тренер записывает и задним числом. Пишем по
+              onChange, а не по onBlur: выбор в календаре — законченное
+              действие, а blur у date-инпута на мобильных приходит не всегда. */}
+          <input type="date" value={date} onChange={e => changeDate(e.target.value)}
             style={{ flexShrink:0, padding:'8px 10px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT, background:SURF2 }} />
         </div>
       </div>
