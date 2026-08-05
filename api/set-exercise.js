@@ -7,7 +7,13 @@ import { rateLimit } from './_ratelimit.js'
 import {
   isValidBarcode, normalizeOffProduct, fromRow, sanitizeMacros,
   cleanText, MAX_NAME_LEN, MAX_BRAND_LEN,
+  basisToSource, SOURCE_ESTIMATE, SOURCE_LABEL,
 } from './_foodProduct.js'
+
+// Набор колонок карточки, который отдаём клиенту. source в списке обязателен:
+// от него зависит и решение сервера (идти ли за обновлением в OFF), и пометка
+// «примерные значения» в интерфейсе.
+const CARD_COLUMNS = 'barcode,name,brand,kcal100,p100,c100,f100,source'
 
 // Ручка ТРЕНЕРСКОГО КОНТЕНТА — ТОЛЬКО для роли trainer. Ведёт и глобальный
 // каталог упражнений (catalog_exercises), и видео (exercise_videos), и ШАБЛОНЫ
@@ -124,19 +130,41 @@ async function handleBarcode(req, res) {
   const supabaseAdmin = serviceRoleKey ? createClient(SUPABASE_URL, serviceRoleKey) : null
 
   // ── 1. Свой кэш
+  //
+  // Примерная карточка (ai_estimate) кэш НЕ закрывает. Её завёл человек по
+  // лицевой стороне упаковки, числа в ней — оценка модели; как только товар
+  // появится в Open Food Facts, оценку надо заменить сверенными данными.
+  // Поэтому при ai_estimate мы всё равно идём в OFF, а саму карточку держим
+  // наготове как запасной ответ: если OFF не ответит или не знает товар,
+  // отдадим её, а не ошибку.
+  //
+  // Для точных источников (off, ai_photo) поведение прежнее — ответ из кэша
+  // без похода наружу.
+  let cachedEstimate = null
   if (supabaseAdmin) {
     const { data: cached, error: cacheError } = await supabaseAdmin
       .from('food_products')
-      .select('barcode,name,brand,kcal100,p100,c100,f100')
+      .select(CARD_COLUMNS)
       .eq('barcode', code)
       .maybeSingle()
     if (cacheError) {
       // Кэш отвалился — не повод отказывать пользователю, идём в OFF.
       console.error(`Штрих-код ${code}: ошибка чтения кэша:`, cacheError)
     } else if (cached) {
-      return res.status(200).json({ found: true, product: fromRow(cached), cached: true })
+      const row = fromRow(cached)
+      if (row.source !== SOURCE_ESTIMATE) {
+        return res.status(200).json({ found: true, product: row, cached: true })
+      }
+      cachedEstimate = row
     }
   }
+
+  // Ответ примерной карточкой из кэша — общий выход для всех случаев, когда
+  // сходить в OFF не вышло или он ничего не знает. Отдельная функция, чтобы
+  // формулировка «ошибка → но у нас есть оценка» не разъехалась по четырём
+  // местам ниже.
+  const fallbackToEstimate = () =>
+    res.status(200).json({ found: true, product: cachedEstimate, cached: true })
 
   // ── 2. Open Food Facts
   // AbortController — единственный способ ограничить fetch по времени;
@@ -153,6 +181,10 @@ async function handleBarcode(req, res) {
   } catch (e) {
     clearTimeout(timer)
     console.error(`Штрих-код ${code}: OFF недоступен:`, e?.name === 'AbortError' ? 'таймаут' : e?.message)
+    // Есть примерная карточка — отдаём её. Показать оценку человеку, который
+    // стоит у полки, полезнее, чем «сервис недоступен»: числа он всё равно
+    // видит на экране сверки и может поправить.
+    if (cachedEstimate) return fallbackToEstimate()
     // 502, а НЕ {found:false}. Разница принципиальная: «не найден» —
     // достоверный ответ базы, после него человек вводит продукт руками и
     // больше не пытается. «Источник недоступен» — наша временная беда, тот же
@@ -162,9 +194,12 @@ async function handleBarcode(req, res) {
   clearTimeout(timer)
 
   // 404 — штатный ответ OFF «такого кода в базе нет».
-  if (offRes.status === 404) return res.status(200).json({ found: false })
+  if (offRes.status === 404) {
+    return cachedEstimate ? fallbackToEstimate() : res.status(200).json({ found: false })
+  }
   if (!offRes.ok) {
     console.error(`Штрих-код ${code}: OFF ответил ${offRes.status}`)
+    if (cachedEstimate) return fallbackToEstimate()
     return res.status(502).json({ error: 'source_unavailable' })
   }
 
@@ -173,18 +208,30 @@ async function handleBarcode(req, res) {
     offJson = await offRes.json()
   } catch (e) {
     console.error(`Штрих-код ${code}: не удалось разобрать ответ OFF:`, e?.message)
+    if (cachedEstimate) return fallbackToEstimate()
     return res.status(502).json({ error: 'source_unavailable' })
   }
 
   // OFF отдаёт «не нашёл» двумя способами: HTTP 404 (выше) и HTTP 200 с
   // status:0 в теле. Второй встречается чаще.
-  if (offJson?.status === 0) return res.status(200).json({ found: false })
+  if (offJson?.status === 0) {
+    return cachedEstimate ? fallbackToEstimate() : res.status(200).json({ found: false })
+  }
 
   const product = normalizeOffProduct(code, offJson?.product)
   // Карточка без названия — пустышка: в OFF полно записей, заведённых одним
   // лишь сканом, где не заполнено вообще ничего. Для пользователя это то же
   // самое, что «не найден».
-  if (!product) return res.status(200).json({ found: false })
+  if (!product) {
+    return cachedEstimate ? fallbackToEstimate() : res.status(200).json({ found: false })
+  }
+
+  // OFF знает товар, но без калорийности, а у нас лежит оценка с числами —
+  // оценка полезнее. Пустая карточка из точного источника хуже заполненной из
+  // примерного: в дневник её всё равно не занести.
+  if (product.kcal100 === null && cachedEstimate?.kcal100 !== null && cachedEstimate) {
+    return fallbackToEstimate()
+  }
 
   // ── 3. В кэш — только то, что стоит кэшировать
   // Название И калорийность: карточка без ккал бесполезна для дневника, а
@@ -196,10 +243,11 @@ async function handleBarcode(req, res) {
     // upsert по barcode, а не insert: параллельный скан того же кода другим
     // пользователем мог опередить нас на доли секунды, и insert упал бы на
     // первичном ключе. Заодно это способ обновить карточку, если в OFF её
-    // с прошлого раза поправили.
+    // с прошлого раза поправили, — и именно этим upsert'ом примерная карточка
+    // (ai_estimate) вытесняется сверенными данными OFF.
     const { error: writeError } = await supabaseAdmin
       .from('food_products')
-      .upsert({ ...product, source: 'off' }, { onConflict: 'barcode' })
+      .upsert({ ...product }, { onConflict: 'barcode' })
     // Ошибка записи в кэш пользователя не касается — продукт у нас на руках,
     // отдаём его и молча теряем только выгоду от кэширования.
     if (writeError) console.error(`Штрих-код ${code}: ошибка записи в кэш:`, writeError)
@@ -218,12 +266,24 @@ async function handleBarcode(req, res) {
 // намеренно — поэтому ветка и стоит ВЫШЕ проверки trainer, но НИЖЕ проверки
 // токена: аноним сюда не пишет.
 //
-// ГЛАВНОЕ ПРАВИЛО: карточку из Open Food Facts НЕ ПЕРЕЗАПИСЫВАЕМ. Данные OFF
-// сверены сообществом, а тут — прочитанное моделью с телефонного снимка и
-// подтверждённое одним человеком. Если строка с таким barcode уже есть —
-// оставляем её и возвращаем как есть. Это же аккуратно разруливает гонку:
-// двое сфотографировали один товар одновременно, побеждает первый, второй
-// получает ok:true с чужой (уже сохранённой) карточкой и ничего не теряет.
+// ПРИОРИТЕТ ИСТОЧНИКОВ — главное правило ветки:
+//   off, ai_photo  — точные, НЕ перезаписываются никогда;
+//   ai_estimate    — оценка модели по лицевой стороне упаковки; уступает место
+//                    точному источнику, как только тот появляется.
+//
+// Отсюда единственный разрешённый апгрейд: лежит ai_estimate, пришло чтение
+// таблицы (basis='label') → перезаписываем. Все прочие сочетания оставляют
+// существующую строку нетронутой. Данные OFF сверены сообществом, а тут —
+// прочитанное моделью с телефонного снимка и подтверждённое одним человеком;
+// менять первое на второе было бы шагом назад.
+//
+// Это же аккуратно разруливает гонку: двое сфотографировали один товар
+// одновременно, побеждает первый, второй получает ok:true с чужой (уже
+// сохранённой) карточкой и ничего не теряет.
+//
+// source клиент НЕ передаёт и передать не может — только basis, из которого
+// сервер сам выводит source (basisToSource). Иначе браузер объявил бы
+// примерную карточку точной и навсегда закрыл её от обновления из OFF.
 // ══════════════════════════════════════════════════════════════════════════
 async function handleSaveProduct(req, res, { supabaseAdmin, userId }) {
   const barcode = String(req.body?.barcode ?? '').trim()
@@ -236,43 +296,72 @@ async function handleSaveProduct(req, res, { supabaseAdmin, userId }) {
   // Те же пределы, что у ветки barcode: тело запроса — источник ничуть не
   // более доверенный, чем открытая база или модель.
   const macros = sanitizeMacros(req.body)
+  const source = basisToSource(req.body?.basis)
+  const row = { barcode, name, brand, ...macros, source }
+
+  const readCard = () => supabaseAdmin
+    .from('food_products').select(CARD_COLUMNS).eq('barcode', barcode).maybeSingle()
+
+  // Что делать, если строка уже есть: либо уступить, либо вытеснить оценку.
+  const resolveExisting = async (existing) => {
+    const canUpgrade = existing.source === SOURCE_ESTIMATE && source === SOURCE_LABEL
+    if (!canUpgrade) {
+      return res.status(200).json({ ok: true, product: fromRow(existing), created: false })
+    }
+    const { data: upgraded, error: upgradeError } = await supabaseAdmin
+      .from('food_products')
+      .update(row)
+      .eq('barcode', barcode)
+      // Условие на source ОБЯЗАТЕЛЬНО и в самом UPDATE, а не только в проверке
+      // выше: между чтением и записью строку мог обновить кто-то ещё (например,
+      // ветка barcode данными из OFF). Без него мы затёрли бы точный источник
+      // тем, что прочитали с телефона.
+      .eq('source', SOURCE_ESTIMATE)
+      .select(CARD_COLUMNS)
+      .maybeSingle()
+    if (upgradeError) {
+      console.error(`save-product ${barcode}: ошибка замены оценки:`, upgradeError)
+      return res.status(500).json({ error: 'Не удалось сохранить продукт' })
+    }
+    // upgraded пуст — значит, гонку мы проиграли и source уже не ai_estimate.
+    // Перечитываем и отдаём то, что победило.
+    if (!upgraded) {
+      const { data: current } = await readCard()
+      return res.status(200).json({ ok: true, product: fromRow(current || existing), created: false })
+    }
+    console.log(`save-product: пользователь ${userId} уточнил карточку ${barcode} «${name}» (оценка → таблица)`)
+    return res.status(200).json({ ok: true, product: fromRow(upgraded), created: false, replaced: true })
+  }
 
   // Сначала смотрим, не завёл ли кто карточку раньше.
-  const { data: existing, error: readError } = await supabaseAdmin
-    .from('food_products')
-    .select('barcode,name,brand,kcal100,p100,c100,f100')
-    .eq('barcode', barcode)
-    .maybeSingle()
+  const { data: existing, error: readError } = await readCard()
   if (readError) {
     console.error(`save-product ${barcode}: ошибка чтения справочника:`, readError)
     return res.status(500).json({ error: 'Не удалось сохранить продукт' })
   }
-  if (existing) return res.status(200).json({ ok: true, product: fromRow(existing), created: false })
+  if (existing) return resolveExisting(existing)
 
   // insert, а НЕ upsert: upsert по определению перезаписал бы чужую карточку,
   // а нам нужно ровно обратное — проиграть гонку молча.
   const { data: inserted, error: writeError } = await supabaseAdmin
     .from('food_products')
-    .insert({ barcode, name, brand, ...macros, source: 'ai_photo' })
-    .select('barcode,name,brand,kcal100,p100,c100,f100')
+    .insert(row)
+    .select(CARD_COLUMNS)
     .single()
   if (writeError) {
     // 23505 — нарушение первичного ключа: пока мы читали и писали, карточку
-    // успел завести кто-то другой. Это не ошибка, а тот самый штатный
-    // проигрыш в гонке: перечитываем и отдаём победившую строку.
+    // успел завести кто-то другой. Это не ошибка, а штатный проигрыш в гонке.
+    // Прогоняем победившую строку через то же правило приоритета: если успели
+    // положить оценку, а у нас чтение таблицы — всё равно уточняем.
     if (writeError.code === '23505') {
-      const { data: raced } = await supabaseAdmin
-        .from('food_products')
-        .select('barcode,name,brand,kcal100,p100,c100,f100')
-        .eq('barcode', barcode)
-        .maybeSingle()
-      if (raced) return res.status(200).json({ ok: true, product: fromRow(raced), created: false })
+      const { data: raced } = await readCard()
+      if (raced) return resolveExisting(raced)
     }
     console.error(`save-product ${barcode}: ошибка записи:`, writeError)
     return res.status(500).json({ error: 'Не удалось сохранить продукт' })
   }
 
-  console.log(`save-product: пользователь ${userId} завёл карточку ${barcode} «${name}»`)
+  console.log(`save-product: пользователь ${userId} завёл карточку ${barcode} «${name}» (${source})`)
   return res.status(200).json({ ok: true, product: fromRow(inserted), created: true })
 }
 

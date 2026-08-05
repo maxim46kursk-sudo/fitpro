@@ -96,7 +96,7 @@ assertEqual('полная карточка разбирается целиком
     brands: 'Coca-Cola',
     nutriments: { 'energy-kcal_100g': 42, proteins_100g: 0, carbohydrates_100g: 10.6, fat_100g: 0 },
   }),
-  { barcode: '5449000000996', name: 'Coca-Cola', brand: 'Coca-Cola', kcal100: 42, p100: 0, c100: 10.6, f100: 0 })
+  { barcode: '5449000000996', name: 'Coca-Cola', brand: 'Coca-Cola', kcal100: 42, p100: 0, c100: 10.6, f100: 0, source: 'off' })
 
 // Русское название приоритетнее — в дневнике оно и должно оказаться.
 assertEqual('product_name_ru важнее product_name',
@@ -125,10 +125,10 @@ assertEqual('нет ни ккал, ни кДж → null',
 // разные утверждения, и нуль в дневнике сложился бы с остальным как факт.
 assertEqual('незаполненные макросы → null, а не 0',
   normalizeOffProduct('1', { product_name: 'X', nutriments: { 'energy-kcal_100g': 100, proteins_100g: 5 } }),
-  { barcode: '1', name: 'X', brand: null, kcal100: 100, p100: 5, c100: null, f100: null })
+  { barcode: '1', name: 'X', brand: null, kcal100: 100, p100: 5, c100: null, f100: null, source: 'off' })
 assertEqual('нутриентов нет вовсе — карточка всё равно разбирается',
   normalizeOffProduct('1', { product_name: 'X' }),
-  { barcode: '1', name: 'X', brand: null, kcal100: null, p100: null, c100: null, f100: null })
+  { barcode: '1', name: 'X', brand: null, kcal100: null, p100: null, c100: null, f100: null, source: 'off' })
 
 // Абсурд из открытой базы.
 assertEqual('ккал > 1000 на 100 г отбрасываются',
@@ -141,7 +141,7 @@ assertEqual('ровно 100 г макроса проходит',
   normalizeOffProduct('1', { product_name: 'X', nutriments: { fat_100g: 100 } }).f100, 100)
 assertEqual('отрицательные отбрасываются, а не поджимаются к нулю',
   normalizeOffProduct('1', { product_name: 'X', nutriments: { 'energy-kcal_100g': -50, proteins_100g: -1 } }),
-  { barcode: '1', name: 'X', brand: null, kcal100: null, p100: null, c100: null, f100: null })
+  { barcode: '1', name: 'X', brand: null, kcal100: null, p100: null, c100: null, f100: null, source: 'off' })
 assertEqual('нечисловой мусор в поле → null',
   normalizeOffProduct('1', { product_name: 'X', nutriments: { 'energy-kcal_100g': 'нет данных' } }).kcal100, null)
 assertEqual('число строкой разбирается',
@@ -341,22 +341,22 @@ const OFF_NUTELLA = {
 // ── Попадание в кэш
 {
   const { res, writes } = await call('3017620422003', {
-    cache: { '3017620422003': { barcode: '3017620422003', name: 'Nutella', brand: 'Ferrero', kcal100: 539, p100: 6.3, c100: 57.5, f100: 30.9 } },
+    cache: { '3017620422003': { barcode: '3017620422003', name: 'Nutella', brand: 'Ferrero', kcal100: 539, p100: 6.3, c100: 57.5, f100: 30.9, source: 'off' } },
   })
   assertEqual('кэш: статус 200', res.statusCode, 200)
   assertEqual('кэш: cached=true', res.body?.cached, true)
   assertEqual('кэш: продукт отдан целиком', res.body?.product,
-    { barcode: '3017620422003', name: 'Nutella', brand: 'Ferrero', kcal100: 539, p100: 6.3, c100: 57.5, f100: 30.9 })
+    { barcode: '3017620422003', name: 'Nutella', brand: 'Ferrero', kcal100: 539, p100: 6.3, c100: 57.5, f100: 30.9, source: 'off' })
   assertEqual('кэш: повторной записи в базу не было', writes.length, 0)
 }
 {
   // numeric из PostgREST может приехать строкой — клиент не должен получить
   // "3.2" вместо 3.2, иначе пересчёт порции склеит строки.
   const { res } = await call('3017620422003', {
-    cache: { '3017620422003': { barcode: '3017620422003', name: 'X', brand: null, kcal100: '539', p100: '6.3', c100: null, f100: null } },
+    cache: { '3017620422003': { barcode: '3017620422003', name: 'X', brand: null, kcal100: '539', p100: '6.3', c100: null, f100: null, source: 'off' } },
   })
   assertEqual('кэш: numeric строкой приводится к числу',
-    res.body?.product, { barcode: '3017620422003', name: 'X', brand: null, kcal100: 539, p100: 6.3, c100: null, f100: null })
+    res.body?.product, { barcode: '3017620422003', name: 'X', brand: null, kcal100: 539, p100: 6.3, c100: null, f100: null, source: 'off' })
 }
 
 // ── Промах кэша → OFF → запись в кэш
@@ -366,7 +366,7 @@ const OFF_NUTELLA = {
   assertEqual('промах: found=true', res.body?.found, true)
   assertEqual('промах: cached=false', res.body?.cached, false)
   assertEqual('промах: продукт нормализован', res.body?.product,
-    { barcode: '3017620422003', name: 'Nutella', brand: 'Ferrero', kcal100: 539, p100: 6.3, c100: 57.5, f100: 30.9 })
+    { barcode: '3017620422003', name: 'Nutella', brand: 'Ferrero', kcal100: 539, p100: 6.3, c100: 57.5, f100: 30.9, source: 'off' })
   assertEqual('промах: одна запись в кэш', writes.length, 1)
   assertEqual('промах: в кэш ушла та же карточка с source=off', writes[0],
     { barcode: '3017620422003', name: 'Nutella', brand: 'Ferrero', kcal100: 539, p100: 6.3, c100: 57.5, f100: 30.9, source: 'off' })
@@ -481,19 +481,19 @@ const LBL = { name: 'Творог 5%', brand: 'Простоквашино', kcal
 
 assertEqual('карточка per=100g разбирается как есть',
   normalizeLabelProduct('4600682000129', LBL),
-  { barcode: '4600682000129', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: '100g' })
+  { barcode: '4600682000129', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: '100g', basis: 'label' })
 
 // per='portion' с известным весом порции — пересчёт ×100/portion_g.
 assertEqual('per=portion, порция 200 г → пересчёт на 100 г',
   normalizeLabelProduct('1', { ...LBL, per: 'portion', portion_g: 200, kcal100: 242, p100: 32, c100: 6, f100: 10 }),
-  { barcode: '1', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: 'portion' })
+  { barcode: '1', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: 'portion', basis: 'label' })
 assertEqual('per=portion, порция 30 г → пересчёт вверх',
   normalizeLabelProduct('1', { ...LBL, per: 'portion', portion_g: 30, kcal100: 45, p100: null, c100: null, f100: null }).kcal100, 150)
 // Пересчитать нельзя — числа выбрасываем целиком. Отдать их «как есть» было
 // бы хуже всего: выглядят правдоподобно и молча уедут в общий справочник.
 assertEqual('per=portion без portion_g → все числа null, название остаётся',
   normalizeLabelProduct('1', { ...LBL, per: 'portion', portion_g: null }),
-  { barcode: '1', name: 'Творог 5%', brand: 'Простоквашино', kcal100: null, p100: null, c100: null, f100: null, per: 'portion' })
+  { barcode: '1', name: 'Творог 5%', brand: 'Простоквашино', kcal100: null, p100: null, c100: null, f100: null, per: 'portion', basis: 'label' })
 assertEqual('per=portion с portion_g=0 → числа null (делить нельзя)',
   normalizeLabelProduct('1', { ...LBL, per: 'portion', portion_g: 0 }).kcal100, null)
 assertEqual('per=portion с отрицательным portion_g → числа null',
@@ -508,6 +508,29 @@ assertEqual('мусор в per → unknown',
   normalizeLabelProduct('1', { ...LBL, per: 'per_serving_lol' }).per, 'unknown')
 assertEqual('per отсутствует → unknown',
   normalizeLabelProduct('1', { name: 'X', kcal100: 100 }).per, 'unknown')
+
+// ── basis: откуда взялись числа ───────────────────────────────────────────
+assertEqual('basis=label проходит как есть',
+  normalizeLabelProduct('1', { ...LBL, basis: 'label' }).basis, 'label')
+assertEqual('basis=estimate проходит как есть',
+  normalizeLabelProduct('1', { ...LBL, basis: 'estimate' }).basis, 'estimate')
+// Обратная совместимость: клиент и промт до этой задачи поля basis не знали,
+// а числа там всегда были чтением таблицы.
+assertEqual('basis отсутствует → label (обратная совместимость)',
+  normalizeLabelProduct('1', { ...LBL }).basis, 'label')
+assertEqual('мусор в basis → label',
+  normalizeLabelProduct('1', { ...LBL, basis: 'вроде_бы_прикинул' }).basis, 'label')
+// Нишевый товар: модель узнала название, но чисел не знает. Карточка всё
+// равно ценна — КБЖУ впишет человек.
+assertEqual('estimate без чисел: карточка остаётся, числа null',
+  normalizeLabelProduct('4600682000129', { name: 'Сыр Козий хутор', brand: 'Козий хутор', basis: 'estimate', kcal100: null, p100: null, c100: null, f100: null, readable: true }),
+  { barcode: '4600682000129', name: 'Сыр Козий хутор', brand: 'Козий хутор', kcal100: null, p100: null, c100: null, f100: null, per: 'unknown', basis: 'estimate' })
+assertEqual('estimate без названия → карточки нет (unreadable)',
+  normalizeLabelProduct('1', { name: '', basis: 'estimate', kcal100: 300, readable: true }), null)
+assertEqual('sanity-пределы действуют и для estimate',
+  normalizeLabelProduct('1', { ...LBL, basis: 'estimate', kcal100: 9999 }).kcal100, null)
+assertEqual('пересчёт с порции действует и для estimate',
+  normalizeLabelProduct('1', { ...LBL, basis: 'estimate', per: 'portion', portion_g: 200, kcal100: 242 }).kcal100, 121)
 
 assertEqual('readable:false → карточки нет', normalizeLabelProduct('1', { ...LBL, readable: false }), null)
 assertEqual('нет названия → карточки нет', normalizeLabelProduct('1', { ...LBL, name: '' }), null)
@@ -612,7 +635,7 @@ const LABEL_BODY = { type: 'food_label', barcode: '4600682000129', image: TINY_J
   assertEqual('успех: статус 200', res.statusCode, 200)
   assertEqual('успех: ok=true', res.body?.ok, true)
   assertEqual('успех: карточка разобрана', res.body?.product,
-    { barcode: '4600682000129', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: '100g' })
+    { barcode: '4600682000129', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: '100g', basis: 'label' })
   assertEqual('успех: к модели ушёл ровно один запрос', seen.anthropic.length, 1)
   const sent = seen.anthropic[0]
   assertEqual('к модели ушла картинка блоком image', sent.messages[0].content[0].type, 'image')
@@ -874,7 +897,7 @@ async function callSave(body, opts = {}, reqOpts = {}) {
   const { res, writes } = await callSave(CARD)
   assertEqual('новая карточка: статус 200', res.statusCode, 200)
   assertEqual('новая карточка: ok=true, created=true', [res.body?.ok, res.body?.created], [true, true])
-  assertEqual('новая карточка: продукт вернулся', res.body?.product, CARD)
+  assertEqual('новая карточка: продукт вернулся', res.body?.product, { ...CARD, source: 'ai_photo' })
   assertEqual('новая карточка: одна запись в базу', writes.length, 1)
   assertEqual('новая карточка: помечена source=ai_photo', writes[0].source, 'ai_photo')
 }
@@ -893,7 +916,7 @@ async function callSave(body, opts = {}, reqOpts = {}) {
 }
 {
   // ГЛАВНОЕ ПРАВИЛО ВЕТКИ: карточку из OFF не перезаписываем.
-  const off = { barcode: '4600682000129', name: 'Tvorog OFF', brand: 'OFF Brand', kcal100: 100, p100: 10, c100: 2, f100: 4 }
+  const off = { barcode: '4600682000129', name: 'Tvorog OFF', brand: 'OFF Brand', kcal100: 100, p100: 10, c100: 2, f100: 4, source: 'off' }
   const { res, writes } = await callSave(CARD, { rows: { '4600682000129': off } })
   assertEqual('карточка уже есть: ok=true, created=false', [res.body?.ok, res.body?.created], [true, false])
   assertEqual('карточка уже есть: вернули СУЩЕСТВУЮЩУЮ, не нашу', res.body?.product, off)
@@ -928,6 +951,124 @@ async function callSave(body, opts = {}, reqOpts = {}) {
   assertEqual('в базу ушли уже вычищенные значения', writes[0].kcal100, null)
 }
 
+// ── Приоритет источников: off/ai_photo точные, ai_estimate уступает ───────
+console.log('\n── save-product: приоритет источников ─────────────────────────────')
+
+const estRow = extra => ({ barcode: '4600682000129', name: 'Творог старое', brand: null, kcal100: 100, p100: 10, c100: 2, f100: 4, source: 'ai_estimate', ...extra })
+
+{
+  const { res, writes } = await callSave({ ...CARD, basis: 'estimate' })
+  assertEqual('basis=estimate → source=ai_estimate', writes[0].source, 'ai_estimate')
+  assertEqual('basis=estimate: и в ответе тот же source', res.body?.product?.source, 'ai_estimate')
+}
+{
+  const { res, writes } = await callSave({ ...CARD, basis: 'label' })
+  assertEqual('basis=label → source=ai_photo', writes[0].source, 'ai_photo')
+  assertEqual('basis=label: и в ответе тот же source', res.body?.product?.source, 'ai_photo')
+}
+{
+  // Клиент не должен уметь объявить свою карточку точной в обход basis:
+  // иначе примерная навсегда закрылась бы от обновления из OFF.
+  const { writes } = await callSave({ ...CARD, basis: 'estimate', source: 'off' })
+  assertEqual('поле source из тела клиента игнорируется', writes[0].source, 'ai_estimate')
+}
+{
+  // ГЛАВНЫЙ АПГРЕЙД: лежит оценка, пришло чтение таблицы → перезаписываем.
+  const { res, writes } = await callSave({ ...CARD, basis: 'label' }, { rows: { '4600682000129': estRow() } })
+  assertEqual('label вытесняет ai_estimate: ok + replaced', [res.body?.ok, res.body?.replaced], [true, true])
+  assertEqual('label вытесняет ai_estimate: created=false (строка была)', res.body?.created, false)
+  assertEqual('label вытесняет ai_estimate: записан UPDATE', writes.length, 1)
+  assertEqual('label вытесняет ai_estimate: новый source', writes[0].source, 'ai_photo')
+  assertEqual('label вытесняет ai_estimate: имя обновилось', res.body?.product?.name, 'Творог 5%')
+}
+{
+  // Оценка поверх оценки — не апгрейд, нового знания нет.
+  const { res, writes } = await callSave({ ...CARD, basis: 'estimate' }, { rows: { '4600682000129': estRow() } })
+  assertEqual('estimate НЕ вытесняет estimate', writes.length, 0)
+  assertEqual('estimate поверх estimate: вернули существующую', res.body?.product?.name, 'Творог старое')
+  assertEqual('estimate поверх estimate: replaced не выставлен', res.body?.replaced, undefined)
+}
+{
+  const offRow = { ...estRow({ name: 'Творог из OFF' }), source: 'off' }
+  const { res, writes } = await callSave({ ...CARD, basis: 'label' }, { rows: { '4600682000129': offRow } })
+  assertEqual('label НЕ вытесняет off', writes.length, 0)
+  assertEqual('off остался как был', res.body?.product?.name, 'Творог из OFF')
+}
+{
+  const photoRow = { ...estRow({ name: 'Творог по таблице' }), source: 'ai_photo' }
+  const { res, writes } = await callSave({ ...CARD, basis: 'label' }, { rows: { '4600682000129': photoRow } })
+  assertEqual('label НЕ вытесняет ai_photo', writes.length, 0)
+  assertEqual('ai_photo остался как был', res.body?.product?.name, 'Творог по таблице')
+}
+{
+  const { res, writes } = await callSave({ ...CARD, basis: 'estimate' }, { rows: { '4600682000129': { ...estRow(), source: 'off' } } })
+  assertEqual('estimate НЕ вытесняет off', writes.length, 0)
+  assertEqual('estimate поверх off: отдана точная карточка', res.body?.product?.source, 'off')
+}
+
+// ── Ветка barcode: примерная карточка не закрывает поход в OFF ────────────
+console.log('\n── barcode: обновление примерной карточки из OFF ──────────────────')
+
+const CACHED_ESTIMATE = { barcode: '3017620422003', name: 'Паста ореховая (прикидка)', brand: 'Ferrero', kcal100: 500, p100: 6, c100: 55, f100: 30, source: 'ai_estimate' }
+
+{
+  const { res, writes } = await call('3017620422003', {
+    cache: { '3017620422003': CACHED_ESTIMATE }, off: OFF_NUTELLA,
+  })
+  assertEqual('кэш ai_estimate + OFF нашёл: cached=false', res.body?.cached, false)
+  assertEqual('кэш ai_estimate + OFF нашёл: отдан OFF', res.body?.product?.name, 'Nutella')
+  assertEqual('кэш ai_estimate + OFF нашёл: source стал off', res.body?.product?.source, 'off')
+  assertEqual('кэш ai_estimate + OFF нашёл: строка перезаписана', writes.length, 1)
+  assertEqual('перезапись помечена source=off', writes[0].source, 'off')
+}
+{
+  const { res, writes } = await call('3017620422003', { cache: { '3017620422003': CACHED_ESTIMATE }, offFail: 'network' })
+  assertEqual('кэш ai_estimate + OFF упал: НЕ 502, а 200', res.statusCode, 200)
+  assertEqual('кэш ai_estimate + OFF упал: отдана примерная карточка', res.body?.product, CACHED_ESTIMATE)
+  assertEqual('кэш ai_estimate + OFF упал: cached=true', res.body?.cached, true)
+  assertEqual('кэш ai_estimate + OFF упал: в базу не писали', writes.length, 0)
+}
+{
+  const { res } = await call('3017620422003', { cache: { '3017620422003': CACHED_ESTIMATE }, offFail: 'timeout' })
+  assertEqual('кэш ai_estimate + таймаут OFF: отдана примерная карточка', res.body?.found, true)
+}
+{
+  const { res } = await call('3017620422003', { cache: { '3017620422003': CACHED_ESTIMATE }, off: { status: 0 } })
+  assertEqual('кэш ai_estimate + OFF не знает товар: отдана примерная, не found:false', res.body?.found, true)
+  assertEqual('… и она помечена ai_estimate', res.body?.product?.source, 'ai_estimate')
+}
+{
+  const { res } = await call('3017620422003', { cache: { '3017620422003': CACHED_ESTIMATE }, off: { __status404: true } })
+  assertEqual('кэш ai_estimate + OFF 404: отдана примерная', res.body?.found, true)
+}
+{
+  // OFF знает товар, но без калорийности, а оценка с числами — оценка полезнее.
+  const { res } = await call('3017620422003', {
+    cache: { '3017620422003': CACHED_ESTIMATE },
+    off: { status: 1, product: { product_name: 'Nutella', nutriments: {} } },
+  })
+  assertEqual('OFF без ккал + оценка с числами: отдана оценка', res.body?.product?.source, 'ai_estimate')
+}
+{
+  // РЕГРЕССИЯ: точный источник в кэше по-прежнему закрывает поход в OFF.
+  const { res, writes } = await call('3017620422003', {
+    cache: { '3017620422003': { ...CACHED_ESTIMATE, source: 'off' } },
+    // Если бы код всё же пошёл в OFF, стаб бы это записал; но и сам ответ
+    // отличался бы именем.
+    off: OFF_NUTELLA,
+  })
+  assertEqual('кэш off: отвечаем из кэша', res.body?.cached, true)
+  assertEqual('кэш off: имя из кэша, не из OFF', res.body?.product?.name, 'Паста ореховая (прикидка)')
+  assertEqual('кэш off: в базу не писали', writes.length, 0)
+}
+{
+  const { res, writes } = await call('3017620422003', {
+    cache: { '3017620422003': { ...CACHED_ESTIMATE, source: 'ai_photo' } }, off: OFF_NUTELLA,
+  })
+  assertEqual('кэш ai_photo: тоже отвечаем из кэша', res.body?.cached, true)
+  assertEqual('кэш ai_photo: в OFF не ходили', writes.length, 0)
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // 8. ПОЛНЫЙ ПУТЬ: фото → подтверждение → save-product → порция → дневник
 // ══════════════════════════════════════════════════════════════════════════
@@ -943,7 +1084,7 @@ console.log('\n── Сквозной путь: фото → общая баз�
   })
   assertEqual('шаг 1: этикетка распознана', photoRes.body?.ok, true)
   assertEqual('шаг 1: порция 200 г пересчитана на 100 г',
-    photoRes.body?.product, { barcode: '4600682000129', name: 'ТВОРОГ 5%', brand: 'Простоквашино, ООО', kcal100: 121, p100: 16, c100: 3, f100: 5, per: 'portion' })
+    photoRes.body?.product, { barcode: '4600682000129', name: 'ТВОРОГ 5%', brand: 'Простоквашино, ООО', kcal100: 121, p100: 16, c100: 3, f100: 5, per: 'portion', basis: 'label' })
 
   // Шаг 2. Человек на экране подтверждения поправил название и бренд.
   const confirmed = { ...photoRes.body.product, name: 'Творог 5%', brand: 'Простоквашино' }
@@ -969,6 +1110,58 @@ console.log('\n── Сквозной путь: фото → общая баз�
   })
   assertEqual('шаг 5: следующий скан отвечает из общей базы', lookupRes.body?.cached, true)
   assertEqual('шаг 5: и не ходит в OFF', offWrites.length, 0)
+}
+
+// ── Второй сквозной: лицевая сторона → оценка → позже вытеснена данными OFF
+console.log('\n── Сквозной путь: оценка по обложке → апгрейд из OFF ──────────────')
+{
+  const CODE = '4600682000129'
+
+  // Шаг 1. Человек снял ЛИЦЕВУЮ сторону: таблицы в кадре нет, модель узнала
+  // товар по обложке и дала типичные значения.
+  const { res: photoRes } = await callChat({ ...LABEL_BODY, barcode: CODE }, {
+    anthropic: () => json(modelSays({
+      name: 'Творог 5%', brand: 'Простоквашино', basis: 'estimate', per: '100g',
+      kcal100: 121, p100: 16, c100: 3, f100: 5, portion_g: null, readable: true,
+    })),
+  })
+  assertEqual('шаг 1: распознано по обложке', photoRes.body?.ok, true)
+  assertEqual('шаг 1: basis=estimate — числа примерные', photoRes.body?.product?.basis, 'estimate')
+
+  // Шаг 2-3. Человек сверил, подтвердил — карточка легла как примерная.
+  const p = photoRes.body.product
+  const { res: saveRes, writes } = await callSave({
+    barcode: CODE, basis: p.basis, name: p.name, brand: p.brand,
+    kcal100: p.kcal100, p100: p.p100, c100: p.c100, f100: p.f100,
+  })
+  assertEqual('шаг 3: карточка заведена как примерная', writes[0].source, 'ai_estimate')
+  assertEqual('шаг 3: клиенту тоже видно, что она примерная', saveRes.body?.product?.source, 'ai_estimate')
+
+  // Шаг 4. Кто-то сканирует тот же код, пока OFF товара НЕ знает —
+  // отдаём примерную, а не «не найдено».
+  const { res: beforeOff } = await call(CODE, {
+    cache: { [CODE]: { ...saveRes.body.product } }, off: { status: 0 },
+  })
+  assertEqual('шаг 4: OFF ещё не знает товар → отдана примерная', beforeOff.body?.found, true)
+  assertEqual('шаг 4: и она честно помечена', beforeOff.body?.product?.source, 'ai_estimate')
+
+  // Шаг 5. Товар появился в OFF. Тот же скан — карточка обновляется на точную.
+  const { res: afterOff, writes: offWrites } = await call(CODE, {
+    cache: { [CODE]: { ...saveRes.body.product } },
+    off: { status: 1, product: { product_name_ru: 'Творог 5% классический', brands: 'Простоквашино', nutriments: { 'energy-kcal_100g': 121, proteins_100g: 16, carbohydrates_100g: 3, fat_100g: 5 } } },
+  })
+  assertEqual('шаг 5: отдана карточка OFF', afterOff.body?.product?.name, 'Творог 5% классический')
+  assertEqual('шаг 5: source стал точным', afterOff.body?.product?.source, 'off')
+  assertEqual('шаг 5: cached=false — данные свежие', afterOff.body?.cached, false)
+  assertEqual('шаг 5: примерная строка в базе перезаписана', offWrites.length, 1)
+  assertEqual('шаг 5: перезапись помечена off', offWrites[0].source, 'off')
+
+  // Шаг 6. Дальше карточка точная — в OFF больше не ходим.
+  const { res: settled, writes: settledWrites } = await call(CODE, {
+    cache: { [CODE]: { ...afterOff.body.product } }, off: OFF_NUTELLA,
+  })
+  assertEqual('шаг 6: точная карточка отвечает из кэша', settled.body?.cached, true)
+  assertEqual('шаг 6: в OFF больше не ходим', settledWrites.length, 0)
 }
 
 // ══════════════════════════════════════════════════════════════════════════

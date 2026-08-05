@@ -156,6 +156,13 @@ export default function BarcodeScanner({ onClose, onAdd, userId }) {
   // Распознанное моделью, приведённое к строкам для полей ввода.
   const [labelForm, setLabelForm] = useState(EMPTY_LABEL)
   const [labelPer, setLabelPer] = useState('100g')
+  // Откуда числа: 'label' — прочитаны с таблицы КБЖУ, 'estimate' — оценка
+  // модели по лицевой стороне упаковки. От этого зависит и плашка на экране
+  // сверки, и source, под которым карточка ляжет в общий справочник.
+  const [labelBasis, setLabelBasis] = useState('label')
+  // Модель опознала продукт, но чисел не дала вовсе (нишевый товар). Тогда
+  // поля пустые, и сохранять нечего, пока человек не впишет хотя бы ккал.
+  const [labelEmpty, setLabelEmpty] = useState(false)
   const [photoError, setPhotoError] = useState(null)
   const [saving, setSaving] = useState(false)
   // «Карточку успел завести кто-то другой» — показываем на экране порции,
@@ -427,7 +434,7 @@ export default function BarcodeScanner({ onClose, onAdd, userId }) {
     if (!json?.ok) {
       // reason:'unreadable' — модель не разглядела таблицу. Подсказка
       // конкретная: человеку надо знать, ЧТО переснять, а не просто «ошибка».
-      setPhotoError('Не разглядел таблицу КБЖУ. Сфотографируй сторону упаковки с составом крупнее.')
+      setPhotoError('Не разглядел продукт. Сфотографируй упаковку целиком, с названием')
       return
     }
 
@@ -437,6 +444,8 @@ export default function BarcodeScanner({ onClose, onAdd, userId }) {
     const s = v => (v === null || v === undefined ? '' : String(v))
     setLabelForm({ name: p.name || '', brand: p.brand || '', kcal100: s(p.kcal100), p100: s(p.p100), c100: s(p.c100), f100: s(p.f100) })
     setLabelPer(p.per || '100g')
+    setLabelBasis(p.basis === 'estimate' ? 'estimate' : 'label')
+    setLabelEmpty(p.kcal100 === null && p.p100 === null && p.c100 === null && p.f100 === null)
     setStage('confirm')
   }
 
@@ -454,7 +463,10 @@ export default function BarcodeScanner({ onClose, onAdd, userId }) {
         res = await fetch('/api/set-exercise?action=save-product', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-          body: JSON.stringify({ barcode: scannedCode, ...labelForm }),
+          // basis, а НЕ source: какой источник записать, решает сервер
+          // (api/_foodProduct.js, basisToSource). Клиент, объявляющий свою
+          // карточку точной, навсегда закрыл бы её от обновления из OFF.
+          body: JSON.stringify({ barcode: scannedCode, basis: labelBasis, ...labelForm }),
         })
       } catch {
         setPhotoError('Нет связи с сервером. Проверь интернет и попробуй ещё раз.')
@@ -508,6 +520,11 @@ export default function BarcodeScanner({ onClose, onAdd, userId }) {
 
   // Поле ввода числа на экране подтверждения — те же стили, что у формы еды
   // в дневнике (App.jsx), чтобы экран не выглядел чужим.
+  // Сохранять нечего, пока в карточке нет ни одного числа: такая строка в
+  // общем справочнике хуже отсутствия — следующий отсканирует и получит пусто.
+  // Требуем только ккал; макросы остаются необязательными, как и раньше.
+  const needsKcal = labelEmpty && parseGrams(labelForm.kcal100) === null
+
   const macroInput = c => ({
     width: '100%', padding: '10px 8px', fontSize: 15, borderRadius: 8,
     border: `1.5px solid ${c}44`, outline: 'none', boxSizing: 'border-box',
@@ -629,6 +646,12 @@ export default function BarcodeScanner({ onClose, onAdd, userId }) {
                 На 100 г: <span style={{ color: KCAL, fontWeight: 700 }}>{num(product.kcal100)} ккал</span>
                 {' · '}Б {num(product.p100)} · У {num(product.c100)} · Ж {num(product.f100)}
               </div>
+              {/* Карточку кто-то завёл по лицевой стороне упаковки — числа в
+                  ней оценка модели, а не данные с этикетки. Молчать об этом
+                  нельзя: человек считает их фактом и заносит в дневник. */}
+              {product.source === 'ai_estimate' && (
+                <div style={{ fontSize: 11, color: COR, marginTop: 6 }}>≈ примерные значения</div>
+              )}
             </div>
 
             <div style={{ fontSize: 12, color: TXT3, fontWeight: 600, marginBottom: 6 }}>Вес порции, г</div>
@@ -679,14 +702,14 @@ export default function BarcodeScanner({ onClose, onAdd, userId }) {
               <div style={{ fontSize: 15, fontWeight: 700, color: TXT, marginBottom: 6 }}>Продукт не найден в базе</div>
               <div style={{ fontSize: 13, color: TXT2 }}>
                 {userId
-                  ? 'Сфотографируй таблицу пищевой ценности — распознаем её и добавим продукт в общую базу. В следующий раз он найдётся по одному скану.'
+                  ? 'Сфотографируй упаковку так, чтобы было видно название. Если в кадр попадёт таблица КБЖУ — цифры будут точнее'
                   : 'Такого штрих-кода нет в открытом справочнике. Добавь продукт вручную — числа с упаковки.'}
               </div>
             </div>
             {/* Фото-режим только вошедшим: карточка уходит в ОБЩИЙ справочник,
                 и api/chat всё равно ответит 401 без токена. Анониму показываем
                 ровно то, что у него работает. */}
-            {userId && <button onClick={openPhotoPicker} style={primaryBtn}>Сфотографировать этикетку</button>}
+            {userId && <button onClick={openPhotoPicker} style={primaryBtn}>Сфотографировать упаковку</button>}
             <button onClick={openManual} style={userId ? { ...ghostBtn, marginTop: 10 } : primaryBtn}>Ввести вручную</button>
             <button onClick={restartScan} style={{ ...ghostBtn, marginTop: 10 }}>Сканировать ещё</button>
           </div>
@@ -719,10 +742,22 @@ export default function BarcodeScanner({ onClose, onAdd, userId }) {
               Эти данные уйдут в общую базу — по ним продукт найдут другие. Поправь, если модель ошиблась.
             </div>
 
+            {/* Числа — оценка модели, а не чтение таблицы. Сказать об этом
+                надо прямо: человек должен понимать, что сверять не с чем, и
+                либо довериться, либо переснять сторону с составом. */}
+            {labelBasis === 'estimate' && (
+              <div style={{ background: `${COR}18`, border: `1px solid ${COR}44`, borderRadius: 10, padding: '10px 12px', marginBottom: 12, fontSize: 12, color: TXT2 }}>
+                {labelEmpty
+                  ? 'Продукт опознан, но точных значений нет. Впиши КБЖУ с упаковки — или переснимите сторону с таблицей.'
+                  : 'Значения примерные (по данным ИИ). Если на упаковке есть таблица КБЖУ — сверь или переснимите ту сторону.'}
+              </div>
+            )}
+
             {/* per !== '100g' — модель не увидела на упаковке, что таблица
                 приведена к 100 г. Числа могли быть посчитаны с порции, и
-                проверить их глазами тут особенно важно. */}
-            {labelPer !== '100g' && (
+                проверить их глазами тут особенно важно. Для оценки этот случай
+                не возникает: там модель просят сразу давать на 100 г. */}
+            {labelBasis !== 'estimate' && labelPer !== '100g' && (
               <div style={{ background: `${COR}18`, border: `1px solid ${COR}44`, borderRadius: 10, padding: '10px 12px', marginBottom: 12, fontSize: 12, color: TXT2 }}>
                 {labelPer === 'portion'
                   ? 'На этикетке значения указаны на порцию — мы пересчитали их на 100 г. Сверь особенно внимательно.'
@@ -753,8 +788,18 @@ export default function BarcodeScanner({ onClose, onAdd, userId }) {
               <div style={{ fontSize: 12, color: COR, marginBottom: 10, textAlign: 'center' }}>{photoError}</div>
             )}
 
-            <button onClick={saveProduct} disabled={saving}
-              style={{ ...primaryBtn, opacity: saving ? 0.5 : 1, cursor: saving ? 'default' : 'pointer' }}>
+            {/* Карточка без единого числа в общем справочнике бесполезна —
+                следующий отсканирует её и не получит ничего. Поэтому когда
+                модель чисел не дала, требуем хотя бы калорийность; макросы
+                по-прежнему необязательны. */}
+            {needsKcal && (
+              <div style={{ fontSize: 12, color: TXT3, marginBottom: 10, textAlign: 'center' }}>
+                Впиши хотя бы калорийность, чтобы сохранить
+              </div>
+            )}
+
+            <button onClick={saveProduct} disabled={saving || needsKcal}
+              style={{ ...primaryBtn, opacity: (saving || needsKcal) ? 0.5 : 1, cursor: (saving || needsKcal) ? 'default' : 'pointer' }}>
               {saving ? 'Сохраняю…' : 'Всё верно, сохранить'}
             </button>
             <button onClick={openPhotoPicker} style={{ ...ghostBtn, marginTop: 10 }}>Переснять</button>
