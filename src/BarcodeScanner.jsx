@@ -138,7 +138,11 @@ function compressImage(file, maxSide = 1280, quality = 0.8) {
 
 const EMPTY_LABEL = { name: '', brand: '', kcal100: '', p100: '', c100: '', f100: '' }
 
-export default function BarcodeScanner({ onClose, onAdd, userId }) {
+export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) {
+  // meal — приём пищи, из которого сканер открыли. Сканер его не использует, а
+  // возвращает обратно вторым аргументом onAdd: решение «куда положить» принял
+  // родитель, и хранить это решение где-то ещё значило бы завести второй
+  // источник правды.
   // scan — камера ищет код; manual — ручной ввод; lookup — ждём ответ ручки;
   // result — экран порции; notfound — кода нет в базе; error — источник лёг;
   // photo — снимок ушёл на распознавание; confirm — человек сверяет прочитанное
@@ -506,7 +510,7 @@ export default function BarcodeScanner({ onClose, onAdd, userId }) {
 
   const addToDiary = () => {
     if (!product || gramsClamped === null) return
-    onAdd?.(buildFoodEntry(product, gramsClamped))
+    onAdd?.(buildFoodEntry(product, gramsClamped), meal)
   }
 
   // ── Стили

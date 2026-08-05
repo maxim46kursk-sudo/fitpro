@@ -32,6 +32,8 @@ const CARD_COLUMNS = 'barcode,name,brand,kcal100,p100,c100,f100,source'
 //   1. ?action=barcode      — GET, БЕЗ авторизации вовсе. Отвечает первой,
 //                             до проверки метода и токена: у неё свой метод,
 //                             свой ключ rate limit и своя логика доступа.
+//      ?action=food-search  — GET, тоже публичная, та же группа: поиск по
+//                             нашему справочнику продуктов по названию.
 //   2. ?action=save-product — POST, нужен токен, роль НЕ проверяется. Стоит
 //                             после авторизации, но ВЫШЕ проверки роли: это
 //                             ручка обычного пользователя, а не тренера.
@@ -257,6 +259,89 @@ async function handleBarcode(req, res) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+// ВЕТКА ?action=food-search: GET — поиск по НАШЕМУ справочнику продуктов.
+//
+// Зачем: сканер закрывает случай «товар в руках, штрих-код на месте». Но чаще
+// человек добавляет то, что уже ел (гречка, творог, банан) — доставать пачку
+// ради этого глупо. Поиск по названию отдаёт карточки, которые кто-то уже
+// завёл сканом или фото, — тем самым общая база начинает работать и на тех,
+// у кого упаковки под рукой нет.
+//
+// Публичная, как и barcode: отдаётся обезличенный справочник, ничего личного
+// тут нет, а дневник в приложении работает и без входа. От флуда — rateLimit
+// со своим ключом.
+// ══════════════════════════════════════════════════════════════════════════
+
+// Минимум — два символа: по одной букве нашлось бы полсправочника, и это был
+// бы не поиск, а выгрузка базы постранично.
+const SEARCH_MIN_LEN = 2
+const SEARCH_MAX_LEN = 40
+const SEARCH_LIMIT = 20
+
+// Строка запроса уходит в PostgREST-фильтр `or=(name.ilike.*q*,brand.ilike.*q*)`,
+// где запятая разделяет условия, а скобки их группируют. Пользовательский
+// текст с запятой или скобкой сломал бы разбор фильтра — в лучшем случае
+// ошибкой, в худшем чужим условием. Поэтому НЕ экранируем, а вычищаем:
+// оставляем только буквы, цифры, пробел, дефис и точку (точка нужна —
+// «Молоко 3.2%» без неё ищется хуже).
+//
+// Проценты и подчёркивания тоже вон: это подстановочные знаки LIKE, запрос из
+// одних «%» вернул бы всю таблицу в обход проверки длины.
+function sanitizeQuery(raw) {
+  return String(raw ?? '')
+    .replace(/[^\p{L}\p{N}\s.-]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, SEARCH_MAX_LEN)
+}
+
+async function handleFoodSearch(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  if (req.method === 'OPTIONS') return res.status(200).end()
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
+
+  // Свой ключ ('food-search'), не общий с barcode: набор в поле поиска идёт
+  // пачками по одному запросу на слово, и смешивать его со счётчиком сканера
+  // значило бы выжигать один другим.
+  if (!rateLimit(req, res, { name: 'food-search', limit: 60 })) return
+
+  const rawQ = req.query?.q
+  const q = sanitizeQuery(Array.isArray(rawQ) ? '' : rawQ)
+  if (q.length < SEARCH_MIN_LEN) {
+    return res.status(400).json({ error: 'Запрос должен быть не короче 2 символов' })
+  }
+
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!serviceRoleKey) {
+    // Без ключа искать негде: справочник закрыт RLS и грантами, клиент к нему
+    // не ходит. Пустой результат тут был бы враньём — честнее сказать, что
+    // поиск сломан, чем «ничего не нашлось».
+    console.error('SUPABASE_SERVICE_ROLE_KEY не настроен — ветка food-search не работает')
+    return res.status(500).json({ error: 'Поиск временно недоступен' })
+  }
+  const supabaseAdmin = createClient(SUPABASE_URL, serviceRoleKey)
+
+  const { data, error } = await supabaseAdmin
+    .from('food_products')
+    .select(CARD_COLUMNS)
+    // Ищем и по названию, и по бренду: люди набирают и «творог», и
+    // «простоквашино», и то и другое должно находить одно и то же.
+    .or(`name.ilike.*${q}*,brand.ilike.*${q}*`)
+    // Карточка без калорийности бесполезна: в дневник её не занести, а место
+    // в короткой выдаче она займёт.
+    .not('kcal100', 'is', null)
+    .limit(SEARCH_LIMIT)
+  if (error) {
+    console.error(`food-search «${q}»: ошибка запроса:`, error)
+    return res.status(500).json({ error: 'Поиск временно недоступен' })
+  }
+
+  return res.status(200).json({ results: (data || []).map(fromRow) })
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 // ВЕТКА ?action=save-product: POST — пользователь заводит карточку в ОБЩИЙ
 // справочник по фотографии этикетки (распознавание — в api/chat.js,
 // type:'food_label'; сюда приходит уже подтверждённый человеком результат).
@@ -373,8 +458,9 @@ export default async function handler(req, res) {
   // изменить ни один из старых сценариев — она либо срабатывает на новом
   // GET-запросе, либо пропускает всё как раньше.
   //
-  // Именно query, а не body: у ветки метод GET, тела у неё нет.
+  // Именно query, а не body: у веток метод GET, тела у них нет.
   if (req.query?.action === 'barcode') return handleBarcode(req, res)
+  if (req.query?.action === 'food-search') return handleFoodSearch(req, res)
 
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')

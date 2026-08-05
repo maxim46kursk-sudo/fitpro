@@ -1165,6 +1165,163 @@ console.log('\n── Сквозной путь: оценка по обложк�
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+// 8b. ИНТЕГРАЦИЯ: ветка ?action=food-search (поиск по справочнику)
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── Handler /api/set-exercise?action=food-search ───────────────────')
+
+const SEARCH_ROWS = [
+  { barcode: '1111111111111', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, source: 'off' },
+  { barcode: '2222222222222', name: 'Творожок ванильный', brand: 'Danone', kcal100: 150, p100: 8, c100: 18, f100: 4, source: 'ai_estimate' },
+]
+
+// Стаб PostgREST для поиска: запоминает, с каким фильтром пришли, чтобы можно
+// было проверить и ILIKE по обоим полям, и limit.
+function stubSearch({ rows = SEARCH_ROWS } = {}) {
+  const calls = []
+  globalThis.fetch = async (url) => {
+    const u = new URL(String(url))
+    if (u.host !== SUPA_HOST) throw new Error(`неожиданный хост: ${u.host}`)
+    calls.push({
+      path: u.pathname,
+      or: u.searchParams.get('or'),
+      limit: u.searchParams.get('limit'),
+      kcal: u.searchParams.get('kcal100'),
+      select: u.searchParams.get('select'),
+    })
+    return json(rows)
+  }
+  return calls
+}
+
+let searchIp = 0
+const searchReq = (q, method = 'GET') => ({
+  method, query: { action: 'food-search', q },
+  headers: { 'x-real-ip': `10.4.0.${++searchIp}` }, socket: {},
+})
+
+async function callSearch(q, opts = {}, method = 'GET') {
+  const calls = stubSearch(opts)
+  const res = mockRes()
+  await handler(searchReq(q, method), res)
+  restoreFetch()
+  return { res, calls }
+}
+
+{
+  const { res, calls } = await callSearch('творог')
+  assertEqual('поиск: статус 200', res.statusCode, 200)
+  assertEqual('поиск: вернулись обе карточки', res.body?.results?.length, 2)
+  assertEqual('поиск: карточка отдана целиком, с source', res.body.results[0], SEARCH_ROWS[0])
+  assertEqual('поиск: примерная помечена своим source', res.body.results[1].source, 'ai_estimate')
+  assertEqual('поиск: ходили в food_products', calls[0].path, '/rest/v1/food_products')
+}
+{
+  // ILIKE по ДВУМ полям: люди набирают и «творог», и «простоквашино».
+  const { calls } = await callSearch('простоквашино')
+  report('поиск: ILIKE по name', calls[0].or.includes('name.ilike.*простоквашино*'), calls[0].or)
+  report('поиск: ILIKE по brand', calls[0].or.includes('brand.ilike.*простоквашино*'), calls[0].or)
+  assertEqual('поиск: limit 20', calls[0].limit, '20')
+  report('поиск: карточки без ккал отсекаются', calls[0].kcal === 'not.is.null', JSON.stringify(calls[0]))
+  report('поиск: source в выборке', String(calls[0].select).includes('source'), calls[0].select)
+}
+{
+  const { res, calls } = await callSearch('т')
+  assertEqual('однобуквенный запрос → 400', res.statusCode, 400)
+  assertEqual('400: в базу не ходили', calls.length, 0)
+}
+{
+  const { res } = await callSearch('')
+  assertEqual('пустой запрос → 400', res.statusCode, 400)
+}
+{
+  const { res } = await callSearch(undefined)
+  assertEqual('q не передан → 400', res.statusCode, 400)
+}
+{
+  // Спецсимволы PostgREST-фильтра вычищаются, а не экранируются: запятая
+  // разделяет условия в or=(…), скобки их группируют. Пропусти мы их — и
+  // пользовательский текст стал бы частью фильтра.
+  //
+  // Сверяем фильтр ЦЕЛИКОМ, а не «не содержит запятую»: при точном сравнении
+  // видно и то, что лишнее убрано, и то, что нужное осталось, и что запятая в
+  // строке ровно одна — наша, разделяющая два условия.
+  const { calls } = await callSearch('творог, 5% (жирный)')
+  assertEqual('спецсимволы вычищены из фильтра целиком', calls[0].or,
+    '(name.ilike.*творог 5 жирный*,brand.ilike.*творог 5 жирный*)')
+  assertEqual('в фильтре ровно одна запятая — наш разделитель условий',
+    (calls[0].or.match(/,/g) || []).length, 1)
+}
+{
+  // Точка нужна: «Молоко 3.2%» без неё ищется заметно хуже.
+  const { calls } = await callSearch('Молоко 3.2%')
+  assertEqual('точка в числе сохраняется', calls[0].or,
+    '(name.ilike.*Молоко 3.2*,brand.ilike.*Молоко 3.2*)')
+}
+{
+  // Подстановочные знаки LIKE: запрос из одних процентов вернул бы всю
+  // таблицу в обход проверки длины.
+  const { res, calls } = await callSearch('%%%%')
+  assertEqual('запрос из одних «%» → 400, а не выгрузка базы', res.statusCode, 400)
+  assertEqual('«%»: в базу не ходили', calls.length, 0)
+}
+{
+  const { res } = await callSearch('_'.repeat(10))
+  assertEqual('запрос из подчёркиваний → 400', res.statusCode, 400)
+}
+{
+  const { calls } = await callSearch('т'.repeat(200))
+  assertEqual('слишком длинный запрос обрезается ровно до 40 символов',
+    (calls[0].or.match(/т+/) || [''])[0].length, 40)
+}
+{
+  const { res, calls } = await callSearch('творог', {}, 'POST')
+  assertEqual('POST в ветку поиска → 405', res.statusCode, 405)
+  assertEqual('405: в базу не ходили', calls.length, 0)
+}
+{
+  const { res } = await callSearch('творог', {}, 'OPTIONS')
+  assertEqual('OPTIONS в ветку поиска → 200', res.statusCode, 200)
+  assertEqual('OPTIONS: ветка объявляет GET', res.headers['Access-Control-Allow-Methods'], 'GET, OPTIONS')
+}
+{
+  const { res } = await callSearch('нетакого', { rows: [] })
+  assertEqual('ничего не нашлось → 200 с пустым списком, а не ошибка', res.statusCode, 200)
+  assertEqual('пустой список', res.body, { results: [] })
+}
+{
+  // Ветка публичная — токен не нужен, как и у barcode.
+  const calls = stubSearch({})
+  const res = mockRes()
+  await handler({ method: 'GET', query: { action: 'food-search', q: 'творог' }, headers: { 'x-real-ip': '10.4.9.9' }, socket: {} }, res)
+  restoreFetch()
+  assertEqual('поиск без токена работает (ветка публичная)', res.statusCode, 200)
+  void calls
+}
+{
+  // Свой ключ лимита: набор в поле поиска не должен выжигать счётчик сканера.
+  let last = null
+  for (let i = 0; i < 61; i++) {
+    stubSearch({})
+    const res = mockRes()
+    await handler({ method: 'GET', query: { action: 'food-search', q: 'творог' }, headers: { 'x-real-ip': '10.44.44.44' }, socket: {} }, res)
+    restoreFetch()
+    last = res
+  }
+  assertEqual('61-й поиск с одного IP → 429', last.statusCode, 429)
+  report('в ответе 429 есть Retry-After', Boolean(last.headers['Retry-After']))
+
+  // И сразу проверяем, что сканер с ТОГО ЖЕ IP не задет: счётчики разные.
+  const { res: scanRes } = await (async () => {
+    const writes = stubFetch({ cache: { '3017620422003': { barcode: '3017620422003', name: 'Nutella', brand: 'Ferrero', kcal100: 539, p100: 6.3, c100: 57.5, f100: 30.9, source: 'off' } } })
+    const res = mockRes()
+    await handler({ method: 'GET', query: { action: 'barcode', code: '3017620422003' }, headers: { 'x-real-ip': '10.44.44.44' }, socket: {} }, res)
+    restoreFetch()
+    return { res, writes }
+  })()
+  assertEqual('исчерпанный лимит поиска не мешает сканеру', scanRes.statusCode, 200)
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 // 9. РЕГРЕССИЯ: тренерские ветки того же файла не сломались
 //
 // Ветка штрих-кода въехала в api/set-exercise.js и отвечает ПЕРВОЙ. Здесь
