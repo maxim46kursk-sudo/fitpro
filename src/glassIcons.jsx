@@ -143,6 +143,17 @@ const IC = {
     <circle cx="8" cy="13" r="1.2" fill="#eaf4ff"/><circle cx="12" cy="13" r="1.2" fill="#eaf4ff"/><circle cx="16" cy="13" r="1.2" fill="#eaf4ff"/><circle cx="8" cy="16.5" r="1.2" fill="#eaf4ff"/><circle cx="12" cy="16.5" r="1.2" fill="#eaf4ff"/></>) },
   target: { glow: 'rgba(255,55,95,.5)', svg: (<>
     <circle cx="12" cy="12" r="8.5" fill="url(#gPk)"/><circle cx="12" cy="12" r="5" fill="#0b0b0d" opacity=".25"/><circle cx="12" cy="12" r="5" fill="none" stroke="#ffd0da" strokeWidth="1.2"/><circle cx="12" cy="12" r="1.9" fill="#fff"/></>) },
+  // Моно-глиф штрих-кода: шесть вертикальных штрихов разной толщины.
+  // Намеренно без градиентов и цвета — это служебная кнопка внутри поля
+  // поиска, а не герой экрана. Свечение нейтральное (белёсое, не цветное):
+  // цветной ореол здесь спорил бы с текстовым полем.
+  barcode: { glow: 'rgba(235,235,245,.22)', svg: (<>
+    <rect x="3.4" y="5" width="1.2" height="14" rx="0.5" fill="rgba(235,235,245,0.30)"/>
+    <rect x="6" y="5" width="2" height="14" rx="0.6" fill="rgba(235,235,245,0.30)"/>
+    <rect x="9.2" y="5" width="1" height="14" rx="0.5" fill="rgba(235,235,245,0.30)"/>
+    <rect x="11.5" y="5" width="2.4" height="14" rx="0.6" fill="rgba(235,235,245,0.30)"/>
+    <rect x="15.4" y="5" width="1.2" height="14" rx="0.5" fill="rgba(235,235,245,0.30)"/>
+    <rect x="17.8" y="5" width="2.2" height="14" rx="0.6" fill="rgba(235,235,245,0.30)"/></>) },
   ruler: { glow: 'rgba(10,132,255,.5)', svg: (<>
     <rect x="3" y="8" width="18" height="8" rx="2" fill="url(#gB)" transform="rotate(-45 12 12)"/>
     <path d="M9 9l1.4 1.4M12 6l1.4 1.4M15 9l1.4 1.4" stroke="#eaf4ff" strokeWidth="1.4" strokeLinecap="round"/></>) },

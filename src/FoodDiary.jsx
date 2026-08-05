@@ -55,6 +55,33 @@ const BLU = '#0A84FF'
 const COR = '#FF9F0A'
 const KCAL = '#BF5AF2'
 
+// Подвал «нет нужного» — три кнопки в родном стиле приложения: ровно те же
+// размеры и цвета, что у табов режимов в калькуляторе 1ПМ (App.jsx, tabBtn).
+// Без иконок и эмодзи: табы в приложении текстовые, это и есть фирменный вид.
+//
+// Отдельным компонентом, а не переменной в теле FoodDiary: он рисуется в двух
+// местах — в конце списка и под «не нашли», — и общий компонент гарантирует,
+// что они не разъедутся при следующей правке.
+function FooterActions({ onScan, onPhoto, onManual }) {
+  // flex:1 у каждой: на 320px под кнопку остаётся ~91px, «Штрих-код» кеглем
+  // 12.5 занимает около 62 — переноса нет с запасом.
+  const tabBtn = {
+    flex: 1, padding: '10px 6px', borderRadius: 9, border: 'none',
+    background: SURF2, color: TXT3, fontSize: 12.5, fontWeight: 600,
+    cursor: 'pointer', minHeight: 'unset',
+  }
+  return (
+    <>
+      <div style={{ height: 1, background: HAIR, margin: '12px 0' }} />
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={onScan} style={tabBtn}>Штрих-код</button>
+        <button onClick={onPhoto} style={tabBtn}>Фото</button>
+        <button onClick={onManual} style={tabBtn}>Вручную</button>
+      </div>
+    </>
+  )
+}
+
 // Копия Card из App.jsx — по той же причине, что и токены выше.
 function Card({ children, style = {}, onClick }) {
   return (
@@ -430,7 +457,6 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
   // список остаётся ~200px, и каждый лишний пиксель строки — это минус целый
   // результат на экране.
   const rowStyle = { background: SURF, border: `1px solid ${HAIR}`, borderRadius: 10, padding: '6px 11px', marginBottom: 4, cursor: 'pointer' }
-  const miniAction = { background: 'none', border: 'none', color: PUR, fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0, minHeight: 'unset', display: 'inline-flex', alignItems: 'center', gap: 4 }
 
   // Назад по одному шагу. Порция → результаты (запрос НЕ сбрасываем: человек
   // возвращается к той же выдаче), ручная форма → поиск, поиск → день.
@@ -440,24 +466,14 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
     else closeSheet()
   }
 
-  // «Нет нужного?» — три маленьких действия одной строкой В КОНЦЕ списка.
+  // Подвал рисуется в двух местах — в конце списка и под «не нашли».
   // Именно в конце и внутри прокрутки: постоянный подвал поверх списка съедал
-  // бы те же полторы строки, ради которых всё и переделывалось.
-  const moreRow = (
-    <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${HAIR}`, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-      <span style={{ fontSize: 12, color: TXT3 }}>Нет нужного?</span>
-      <button onClick={() => setShowScanner(true)} style={miniAction}>
-        <GlassIcon name="video" size={16} />Штрих-код
-      </button>
-      <span style={{ fontSize: 11, color: TXT3 }}>·</span>
-      <button onClick={() => setShowScanner(true)} style={miniAction}>
-        <GlassIcon name="video" size={16} />Фото упаковки
-      </button>
-      <span style={{ fontSize: 11, color: TXT3 }}>·</span>
-      <button onClick={() => setManualOpen(true)} style={miniAction}>
-        <GlassIcon name="pen" size={16} />Вручную
-      </button>
-    </div>
+  // бы те же строки результатов, ради которых экран и переделывался.
+  const footer = (
+    <FooterActions
+      onScan={() => setShowScanner(true)}
+      onPhoto={() => setShowScanner(true)}
+      onManual={() => setManualOpen(true)} />
   )
 
   const sectionTitle = own => (readOnly && readOnlyName ? `${readOnlyName} · ${own}` : own)
@@ -894,10 +910,13 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
             <button onClick={sheetBack} style={{ background: 'none', border: 'none', cursor: 'pointer', color: TXT3, padding: 0, minHeight: 'unset', lineHeight: 1 }}>
               <GlassIcon name="back" size={26} />
             </button>
+            {/* Иконка приёма — слева, вплотную к заголовку: она поясняет
+                именно его («В Завтрак»), а в правом углу читалась как
+                отдельная кнопка. */}
+            {MEAL_ICONS[sheetMeal] && !picked && !manualOpen && <GlassIcon name={MEAL_ICONS[sheetMeal]} size={20} />}
             <span style={{ fontSize: 17, fontWeight: 700, color: TXT, flex: 1 }}>
               {picked ? 'Порция' : manualOpen ? 'Вручную' : `В ${mealLabel(sheetMeal)}`}
             </span>
-            {MEAL_ICONS[sheetMeal] && <GlassIcon name={MEAL_ICONS[sheetMeal]} size={24} />}
           </div>
 
           {/* Строка поиска — вне прокручиваемой области: она не должна
@@ -916,7 +935,10 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
                   а не отдельный раздел. */}
               <button onClick={() => setShowScanner(true)} aria-label="Сканировать штрих-код"
                 style={{ position: 'absolute', right: 22, top: 16, background: 'none', border: 'none', cursor: 'pointer', padding: 4, minHeight: 'unset', lineHeight: 1 }}>
-                <GlassIcon name="video" size={22} />
+                {/* Моно-глиф штрих-кода, а не иконка видео: у той красное
+                    свечение, оно из раздела тренировок и здесь читается как
+                    «записать видео». */}
+                <GlassIcon name="barcode" size={20} />
               </button>
             </div>
           )}
@@ -1027,7 +1049,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
                         </div>
                       </div>
                     ))}
-                    {!searching && moreRow}
+                    {!searching && footer}
                   </>
                 ) : (
                   <>
@@ -1046,7 +1068,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
                         </div>
                       </div>
                     ))}
-                    {moreRow}
+                    {footer}
                   </>
                 )}
               </>
