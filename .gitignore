@@ -41,3 +41,11 @@ env-new*
 scripts/__pycache__/
 scripts/out/
 *.pyc
+
+# Рабочие заметки и выгрузки для передачи контекста — не код проекта.
+# Живут локально, в репозиторий не идут (в т.ч. потому, что security-разборы
+# содержат описания слабых мест, которым в публичной истории не место).
+fitpro_export.md
+fitpro_handoff.md
+fitpro_security_2.md
+fitpro_security_3.md

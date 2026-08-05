@@ -1,5 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 import { rateLimit } from './_ratelimit.js'
+// Разбор и валидация карточек продуктов — общие с api/chat.js (распознавание
+// этикетки по фото). Пределы правдоподобия обязаны совпадать в обеих ручках:
+// иначе в общий справочник попадёт карточка, которую одна ручка пропустила, а
+// другая бы завернула. Файл с подчёркиванием — не serverless-функция.
+import {
+  isValidBarcode, normalizeOffProduct, fromRow, sanitizeMacros,
+  cleanText, MAX_NAME_LEN, MAX_BRAND_LEN,
+} from './_foodProduct.js'
 
 // Ручка ТРЕНЕРСКОГО КОНТЕНТА — ТОЛЬКО для роли trainer. Ведёт и глобальный
 // каталог упражнений (catalog_exercises), и видео (exercise_videos), и ШАБЛОНЫ
@@ -9,14 +17,29 @@ import { rateLimit } from './_ratelimit.js'
 // Кто действует, берём из подписанного токена; роль проверяем service_role-
 // ключом (клиент под RLS свою роль в теле подделать не может).
 //
-// ⚠ ЗДЕСЬ ЖЕ КВАРТИРУЕТ ЧУЖАЯ ВЕТКА — поиск продукта по штрих-коду:
-// GET ?action=barcode&code=XXXX (см. «ВЕТКА ШТРИХ-КОДА» ниже). К тренерскому
-// каталогу она не имеет никакого отношения и живёт тут по единственной
-// причине — тот же лимит 12 функций: своя api/barcode.js была бы 13-й, и
-// деплой бы не прошёл. Ветка отвечает ПЕРВОЙ и уходит из handler'а раньше,
-// чем начинается всё тренерское: у неё свой метод (GET, а не POST), свой
-// лимит частоты и НЕТ авторизации вовсе. Если лимит функций когда-нибудь
-// перестанет жать — вынести обратно отдельным файлом, здесь ей не место.
+// ⚠ ЗДЕСЬ ЖЕ КВАРТИРУЮТ ДВЕ ЧУЖИЕ ВЕТКИ — обе про справочник продуктов
+// food_products, к тренерскому каталогу отношения не имеют и живут тут по
+// единственной причине: лимит 12 функций Vercel Hobby выбран целиком, своя
+// api/barcode.js была бы 13-й и деплой бы не прошёл.
+//
+// ПОРЯДОК ВЕТОК В ЭТОМ ФАЙЛЕ (ломать нельзя, дублируется в handoff §3):
+//   1. ?action=barcode      — GET, БЕЗ авторизации вовсе. Отвечает первой,
+//                             до проверки метода и токена: у неё свой метод,
+//                             свой ключ rate limit и своя логика доступа.
+//   2. ?action=save-product — POST, нужен токен, роль НЕ проверяется. Стоит
+//                             после авторизации, но ВЫШЕ проверки роли: это
+//                             ручка обычного пользователя, а не тренера.
+//   3. Проверка роли trainer.
+//   4. Тренерские ветки action (из ТЕЛА запроса) — save, delete,
+//      save_template, delete_template, assign_video, clear_video,
+//      save_technique. Все обязаны оставаться НИЖЕ проверки роли:
+//      save_template переписывает программы всех клиентов.
+//
+// Ветки 1 и 2 опознаются ТОЛЬКО по req.query.action; тренерские вызовы — это
+// POST на голый /api/set-exercise без строки запроса, пересечься они не могут.
+// Обе трогают единственную таблицу food_products — обезличенный справочник
+// «штрих-код → КБЖУ» без user_id. Если лимит функций когда-нибудь перестанет
+// жать — вынести их обратно отдельным файлом, здесь им не место.
 //
 // Тот же env и безопасные fallback (URL и publishable-ключ несекретны), что и
 // у остальных функций api/.
@@ -66,105 +89,6 @@ const OFF_USER_AGENT = 'FitPro/1.0 (fitpro-dun.vercel.app)'
 // в руке, и «сервис недоступен, введи вручную» через 6 с полезнее, чем
 // крутилка на полминуты. Плюс это заметно меньше потолка функции на Vercel.
 const OFF_TIMEOUT_MS = 6000
-
-// Коэффициент кДж → ккал. В OFF поле energy_100g — это килоджоули.
-const KJ_PER_KCAL = 4.184
-
-// Потолки правдоподобия для значений «на 100 г».
-// Калорийность: чистый жир — это 900 ккал/100 г, физического способа
-// превысить 1000 нет. Макронутриент: больше 100 г в 100 г продукта не
-// помещается. Всё, что выше, — мусор в открытой базе (перепутанная единица
-// измерения, опечатка в порции), и он не должен попасть ни в кэш, ни в
-// дневник: одна такая запись перекосит дневную сумму до бессмыслицы.
-const MAX_KCAL100 = 1000
-const MAX_MACRO100 = 100
-
-// Штрих-коды: EAN-8 (8), UPC-E (8), UPC-A (12), EAN-13 (13), ITF-14 (14).
-// Только цифры — ни пробелов, ни дефисов, ни ведущего плюса.
-export function isValidBarcode(code) {
-  return typeof code === 'string' && /^[0-9]{8,14}$/.test(code)
-}
-
-// Разбор числа из OFF. Там одно и то же поле в разных карточках приходит то
-// числом, то строкой ("12.5"), то строкой с запятой, то пустой строкой.
-function toNumber(v) {
-  if (v === null || v === undefined) return null
-  if (typeof v === 'number') return Number.isFinite(v) ? v : null
-  const s = String(v).replace(',', '.').trim()
-  if (!s) return null
-  const n = Number(s)
-  return Number.isFinite(n) ? n : null
-}
-
-// Отсев неправдоподобного + округление до одного знака.
-// Проверка ДО округления: 1000.04 — это уже мусор, а не «ровно потолок».
-// Отрицательные отбрасываем целиком, а не поджимаем к нулю: минус в
-// калорийности означает сломанную карточку, и ноль был бы выдумкой.
-function sanitize(n, max) {
-  if (n === null || n < 0 || n > max) return null
-  return Math.round(n * 10) / 10
-}
-
-// Ответ OFF → наша карточка продукта. Чистая функция, отдельно от сети:
-// именно её гоняет test-barcode.mjs на записанных ответах.
-// Возвращает null, если брать нечего (нет даже названия).
-export function normalizeOffProduct(barcode, product) {
-  if (!product || typeof product !== 'object') return null
-
-  // Русское название приоритетнее: в дневнике «Молоко 3.2%» читается лучше,
-  // чем «Milk 3.2%», а у российских товаров в OFF заполнены оба поля.
-  //
-  // Обрезаем ДО выбора, а не после: в OFF полно карточек, где product_name_ru
-  // заполнен одними пробелами. Такое поле «истинно» для ||, и наивный
-  // `ru || en` выбрал бы пробелы, а потом отбросил карточку целиком — хотя
-  // английское название рядом есть.
-  const nameRu = String(product.product_name_ru || '').trim()
-  const nameAny = String(product.product_name || '').trim()
-  const rawName = nameRu || nameAny
-  if (!rawName) return null
-
-  // brands в OFF — список через запятую ("Простоквашино, Danone"), берём
-  // первый: это производитель, остальное обычно владелец марки.
-  // Длину режем — в открытой базе поле иногда содержит абзац текста, и он
-  // потом целиком уедет в название записи дневника.
-  const brand = String(product.brands || '').split(',')[0].trim().slice(0, 100) || null
-
-  const nutr = product.nutriments && typeof product.nutriments === 'object' ? product.nutriments : {}
-
-  // Калорийность: сначала готовое поле в ккал, и только если его нет —
-  // пересчёт из килоджоулей. Не наоборот и не «взять оба и сверить»:
-  // energy-kcal_100g в OFF заполняют с упаковки, а energy_100g часто
-  // досчитан самой базой из макронутриентов.
-  const kcalDirect = toNumber(nutr['energy-kcal_100g'])
-  const kj = toNumber(nutr['energy_100g'])
-  const kcalRaw = kcalDirect !== null ? kcalDirect : (kj !== null ? kj / KJ_PER_KCAL : null)
-
-  return {
-    barcode,
-    name: rawName.slice(0, 200),
-    brand,
-    kcal100: sanitize(kcalRaw, MAX_KCAL100),
-    p100: sanitize(toNumber(nutr['proteins_100g']), MAX_MACRO100),
-    c100: sanitize(toNumber(nutr['carbohydrates_100g']), MAX_MACRO100),
-    f100: sanitize(toNumber(nutr['fat_100g']), MAX_MACRO100),
-  }
-}
-
-// Строка из базы → та же форма, что отдаёт normalizeOffProduct. Числа гоняем
-// через Number: numeric в PostgREST может приехать строкой, и тогда клиент
-// молча получил бы "3.2" вместо 3.2 и склеил бы строки при пересчёте порции.
-function fromRow(row) {
-  const n = v => (v === null || v === undefined ? null : (Number.isFinite(Number(v)) ? Number(v) : null))
-  return {
-    barcode: row.barcode,
-    name: row.name,
-    brand: row.brand ?? null,
-    kcal100: n(row.kcal100),
-    p100: n(row.p100),
-    c100: n(row.c100),
-    f100: n(row.f100),
-  }
-}
 
 async function handleBarcode(req, res) {
   // Свои CORS-заголовки: у ветки другой метод, чем у тренерской части файла.
@@ -284,6 +208,74 @@ async function handleBarcode(req, res) {
   return res.status(200).json({ found: true, product, cached: false })
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// ВЕТКА ?action=save-product: POST — пользователь заводит карточку в ОБЩИЙ
+// справочник по фотографии этикетки (распознавание — в api/chat.js,
+// type:'food_label'; сюда приходит уже подтверждённый человеком результат).
+//
+// Почему это ручка ОБЫЧНОГО пользователя, а не тренера: смысл затеи в том,
+// чтобы база наполнялась теми, кто стоит у полки. Роль здесь не проверяется
+// намеренно — поэтому ветка и стоит ВЫШЕ проверки trainer, но НИЖЕ проверки
+// токена: аноним сюда не пишет.
+//
+// ГЛАВНОЕ ПРАВИЛО: карточку из Open Food Facts НЕ ПЕРЕЗАПИСЫВАЕМ. Данные OFF
+// сверены сообществом, а тут — прочитанное моделью с телефонного снимка и
+// подтверждённое одним человеком. Если строка с таким barcode уже есть —
+// оставляем её и возвращаем как есть. Это же аккуратно разруливает гонку:
+// двое сфотографировали один товар одновременно, побеждает первый, второй
+// получает ok:true с чужой (уже сохранённой) карточкой и ничего не теряет.
+// ══════════════════════════════════════════════════════════════════════════
+async function handleSaveProduct(req, res, { supabaseAdmin, userId }) {
+  const barcode = String(req.body?.barcode ?? '').trim()
+  if (!isValidBarcode(barcode)) {
+    return res.status(400).json({ error: 'Штрих-код должен состоять из 8–14 цифр' })
+  }
+  const name = cleanText(req.body?.name, MAX_NAME_LEN)
+  if (!name) return res.status(400).json({ error: 'Не указано название продукта' })
+  const brand = cleanText(req.body?.brand, MAX_BRAND_LEN)
+  // Те же пределы, что у ветки barcode: тело запроса — источник ничуть не
+  // более доверенный, чем открытая база или модель.
+  const macros = sanitizeMacros(req.body)
+
+  // Сначала смотрим, не завёл ли кто карточку раньше.
+  const { data: existing, error: readError } = await supabaseAdmin
+    .from('food_products')
+    .select('barcode,name,brand,kcal100,p100,c100,f100')
+    .eq('barcode', barcode)
+    .maybeSingle()
+  if (readError) {
+    console.error(`save-product ${barcode}: ошибка чтения справочника:`, readError)
+    return res.status(500).json({ error: 'Не удалось сохранить продукт' })
+  }
+  if (existing) return res.status(200).json({ ok: true, product: fromRow(existing), created: false })
+
+  // insert, а НЕ upsert: upsert по определению перезаписал бы чужую карточку,
+  // а нам нужно ровно обратное — проиграть гонку молча.
+  const { data: inserted, error: writeError } = await supabaseAdmin
+    .from('food_products')
+    .insert({ barcode, name, brand, ...macros, source: 'ai_photo' })
+    .select('barcode,name,brand,kcal100,p100,c100,f100')
+    .single()
+  if (writeError) {
+    // 23505 — нарушение первичного ключа: пока мы читали и писали, карточку
+    // успел завести кто-то другой. Это не ошибка, а тот самый штатный
+    // проигрыш в гонке: перечитываем и отдаём победившую строку.
+    if (writeError.code === '23505') {
+      const { data: raced } = await supabaseAdmin
+        .from('food_products')
+        .select('barcode,name,brand,kcal100,p100,c100,f100')
+        .eq('barcode', barcode)
+        .maybeSingle()
+      if (raced) return res.status(200).json({ ok: true, product: fromRow(raced), created: false })
+    }
+    console.error(`save-product ${barcode}: ошибка записи:`, writeError)
+    return res.status(500).json({ error: 'Не удалось сохранить продукт' })
+  }
+
+  console.log(`save-product: пользователь ${userId} завёл карточку ${barcode} «${name}»`)
+  return res.status(200).json({ ok: true, product: fromRow(inserted), created: true })
+}
+
 export default async function handler(req, res) {
   // Развилка ДО всего остального. Ветка штрих-кода опознаётся ТОЛЬКО по
   // query-параметру: существующие вызовы тренерского каталога — это POST на
@@ -319,7 +311,15 @@ export default async function handler(req, res) {
   }
   const supabaseAdmin = createClient(SUPABASE_URL, serviceRoleKey)
 
-  // Только тренер. Роль читаем из базы service_role-ключом, а не из тела.
+  // Ветка обычного пользователя — ВЫШЕ проверки роли (см. порядок веток в
+  // шапке файла). Ей нужен вошедший человек, но не тренер: справочник
+  // продуктов наполняют те, кто стоит у полки с телефоном.
+  if (req.query?.action === 'save-product') {
+    return handleSaveProduct(req, res, { supabaseAdmin, userId })
+  }
+
+  // ── Дальше только тренерское. Роль читаем из базы service_role-ключом, а не
+  // из тела. Всё, что ниже этой черты, обязано оставаться ниже неё.
   const { data: me, error: meErr } = await supabaseAdmin
     .from('profiles').select('role').eq('id', userId).maybeSingle()
   if (meErr) {

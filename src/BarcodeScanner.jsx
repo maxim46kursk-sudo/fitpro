@@ -16,6 +16,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { GlassIcon } from './glassIcons'
+import { supabase } from './supabase.js'
 import {
   buildFoodEntry, scaleProduct, clampGrams, parseGrams,
   GRAMS_DEFAULT, GRAMS_MIN, GRAMS_MAX,
@@ -102,9 +103,46 @@ const cameraErrorText = e => {
 
 const num = v => (v === null || v === undefined ? '—' : String(v))
 
-export default function BarcodeScanner({ onClose, onAdd }) {
+// Сжатие снимка перед отправкой. Кадр с камеры телефона — это 4–8 МБ и
+// 4000px по длинной стороне; для чтения таблицы КБЖУ этого избыточно, а вот в
+// лимит тела Vercel (4.5 МБ) и в счёт за токены упирается сразу.
+// 1280px/q0.8 даёт ~200–400 КБ и читается моделью не хуже оригинала.
+//
+// Через <img> + objectURL, а не createImageBitmap: последнего нет в старых
+// WebView, а сюда мы приходим в том числе из Telegram на iOS. Ориентацию EXIF
+// браузер применяет к <img> сам (image-orientation: from-image — умолчание),
+// поэтому снятое вертикально не ложится на бок.
+function compressImage(file, maxSide = 1280, quality = 0.8) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      try {
+        // Math.min(1, …) — не растягиваем мелкие снимки: апскейл только
+        // раздул бы файл, не добавив ни пикселя информации.
+        const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight))
+        const w = Math.max(1, Math.round(img.naturalWidth * scale))
+        const h = Math.max(1, Math.round(img.naturalHeight * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+        resolve(canvas.toDataURL('image/jpeg', quality))
+      } catch (e) { reject(e) }
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Не удалось прочитать фото')) }
+    img.src = url
+  })
+}
+
+const EMPTY_LABEL = { name: '', brand: '', kcal100: '', p100: '', c100: '', f100: '' }
+
+export default function BarcodeScanner({ onClose, onAdd, userId }) {
   // scan — камера ищет код; manual — ручной ввод; lookup — ждём ответ ручки;
-  // result — экран порции; notfound — кода нет в базе; error — источник лёг.
+  // result — экран порции; notfound — кода нет в базе; error — источник лёг;
+  // photo — снимок ушёл на распознавание; confirm — человек сверяет прочитанное
+  // моделью с этикеткой перед тем, как это уйдёт в ОБЩИЙ справочник.
   const [stage, setStage] = useState('scan')
   const [scanToken, setScanToken] = useState(0)   // бампаем, чтобы перезапустить камеру
   const [cameraError, setCameraError] = useState(null)
@@ -112,12 +150,24 @@ export default function BarcodeScanner({ onClose, onAdd }) {
   const [product, setProduct] = useState(null)
   const [grams, setGrams] = useState(String(GRAMS_DEFAULT))
   const [lookupError, setLookupError] = useState(null)
+  // Код, который сейчас в работе: нужен и фото-режиму (карточка заводится
+  // именно на него), и повтору поиска.
+  const [scannedCode, setScannedCode] = useState('')
+  // Распознанное моделью, приведённое к строкам для полей ввода.
+  const [labelForm, setLabelForm] = useState(EMPTY_LABEL)
+  const [labelPer, setLabelPer] = useState('100g')
+  const [photoError, setPhotoError] = useState(null)
+  const [saving, setSaving] = useState(false)
+  // «Карточку успел завести кто-то другой» — показываем на экране порции,
+  // иначе расхождение с набранными числами выглядит как потеря правки.
+  const [productNote, setProductNote] = useState(null)
 
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
   const pollRef = useRef(null)
   const detectorRef = useRef(null)
+  const fileInputRef = useRef(null)
   const busyRef = useRef(false)   // тик ещё считает предыдущий кадр
   const doneRef = useRef(false)   // код уже распознан — больше не смотрим
 
@@ -150,6 +200,8 @@ export default function BarcodeScanner({ onClose, onAdd }) {
   // ── Поиск продукта
   const lookup = useCallback(async (code) => {
     stopCamera()
+    setScannedCode(code)
+    setProductNote(null)
     setStage('lookup')
     setLookupError(null)
     let res
@@ -306,6 +358,130 @@ export default function BarcodeScanner({ onClose, onAdd }) {
 
   const submitManual = () => { if (isValidCode(manualCode)) lookup(manualCode) }
 
+  // ── Фото этикетки → распознавание
+  // Камеру гасим ДО открытия файлового пикера: системная «Камера», которую
+  // поднимает capture="environment", не сможет захватить объектив, пока его
+  // держит наш MediaStream, — в Telegram WebView это кончается чёрным кадром.
+  const openPhotoPicker = () => {
+    stopCamera()
+    setPhotoError(null)
+    fileInputRef.current?.click()
+  }
+
+  const recognizeLabel = async (file) => {
+    if (!file) return
+    stopCamera()
+    setPhotoError(null)
+    setStage('photo')
+
+    let dataUrl
+    try {
+      dataUrl = await compressImage(file)
+    } catch {
+      setPhotoError('Не удалось прочитать фото. Попробуй снять ещё раз.')
+      return
+    }
+
+    // api/chat требует Supabase-токен (см. тот файл) — без сессии запрос
+    // бессмысленен, сервер ответит 401 ещё до обращения к модели.
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) {
+      setPhotoError('Сессия истекла. Войди заново и повтори.')
+      return
+    }
+
+    let res
+    try {
+      res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ type: 'food_label', barcode: scannedCode, image: dataUrl }),
+      })
+    } catch {
+      setPhotoError('Нет связи с сервером. Проверь интернет и попробуй ещё раз.')
+      return
+    }
+
+    if (res.status === 413) { setPhotoError('Фото слишком большое. Сними ближе, без лишнего фона.'); return }
+    if (res.status === 401) { setPhotoError('Нужно войти в аккаунт.'); return }
+    if (res.status === 429) {
+      // Два разных исчерпания, и путать их нельзя: бесплатному «попробуй через
+      // час» — враньё, у него раньше завтрашнего дня ничего не изменится, и
+      // он должен узнать про ПРОФИТ. Признак приходит полем reason
+      // (api/chat.js, REASON_FREE_DAILY); почасовой потолок его не ставит.
+      const body = await res.json().catch(() => null)
+      setPhotoError(body?.reason === 'free_daily_limit'
+        ? 'Лимит 3 фото в день исчерпан. Больше — на тарифе ПРОФИТ'
+        : 'Слишком много запросов, попробуй через час')
+      return
+    }
+    if (!res.ok) { setPhotoError('Распознавание сейчас недоступно. Попробуй ещё раз через минуту.'); return }
+
+    let json
+    try { json = await res.json() } catch {
+      setPhotoError('Распознавание сейчас недоступно. Попробуй ещё раз через минуту.')
+      return
+    }
+
+    if (!json?.ok) {
+      // reason:'unreadable' — модель не разглядела таблицу. Подсказка
+      // конкретная: человеку надо знать, ЧТО переснять, а не просто «ошибка».
+      setPhotoError('Не разглядел таблицу КБЖУ. Сфотографируй сторону упаковки с составом крупнее.')
+      return
+    }
+
+    // Числа кладём в поля ввода строками: null («на этикетке нет») превращаем
+    // в пустую строку, чтобы человек сразу видел, что вписать.
+    const p = json.product
+    const s = v => (v === null || v === undefined ? '' : String(v))
+    setLabelForm({ name: p.name || '', brand: p.brand || '', kcal100: s(p.kcal100), p100: s(p.p100), c100: s(p.c100), f100: s(p.f100) })
+    setLabelPer(p.per || '100g')
+    setStage('confirm')
+  }
+
+  // ── Подтверждённая карточка → в общий справочник → сразу к порции
+  const saveProduct = async () => {
+    if (saving) return
+    if (!String(labelForm.name).trim()) { setPhotoError('Впиши название продукта'); return }
+    setSaving(true)
+    setPhotoError(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) { setPhotoError('Сессия истекла. Войди заново и повтори.'); return }
+      let res
+      try {
+        res = await fetch('/api/set-exercise?action=save-product', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify({ barcode: scannedCode, ...labelForm }),
+        })
+      } catch {
+        setPhotoError('Нет связи с сервером. Проверь интернет и попробуй ещё раз.')
+        return
+      }
+      if (!res.ok) {
+        setPhotoError(res.status === 401 ? 'Нужно войти в аккаунт.' : 'Не удалось сохранить продукт. Попробуй ещё раз.')
+        return
+      }
+      const json = await res.json().catch(() => null)
+      if (!json?.ok || !json.product) {
+        setPhotoError('Не удалось сохранить продукт. Попробуй ещё раз.')
+        return
+      }
+      // created:false — карточку на этот штрих-код кто-то завёл раньше нас, и
+      // сервер вернул ЕЁ, а не нашу (данные OFF и чужой труд не перезаписываем).
+      // Молча подменять числа под носом нельзя — говорим прямо.
+      setProductNote(json.created === false
+        ? 'Карточку на этот штрих-код уже завели раньше — используем её данные.'
+        : null)
+      setProduct(json.product)
+      setGrams(String(GRAMS_DEFAULT))
+      setStage('result')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   // ── Пересчёт порции
   // Считаем от УЖЕ поджатого веса, чтобы предпросмотр показывал ровно те
   // числа, которые уйдут в дневник: набранные «5000 г» сохранятся как 3000,
@@ -329,10 +505,20 @@ export default function BarcodeScanner({ onClose, onAdd }) {
   const ghostBtn = { width: '100%', padding: '12px', borderRadius: 12, border: `2px dashed ${PUR}55`, background: 'transparent', color: PUR, fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 'unset' }
   const inputStyle = { width: '100%', padding: '12px 14px', fontSize: 16, borderRadius: 10, border: `1.5px solid ${HAIR}`, outline: 'none', boxSizing: 'border-box', color: TXT, background: SURF2 }
 
+  // Поле ввода числа на экране подтверждения — те же стили, что у формы еды
+  // в дневнике (App.jsx), чтобы экран не выглядел чужим.
+  const macroInput = c => ({
+    width: '100%', padding: '10px 8px', fontSize: 15, borderRadius: 8,
+    border: `1.5px solid ${c}44`, outline: 'none', boxSizing: 'border-box',
+    color: TXT, background: SURF2, textAlign: 'center',
+  })
+
   const headerTitle =
     stage === 'result' ? 'Порция'
       : stage === 'manual' ? 'Ввод штрих-кода'
-        : 'Сканирование'
+        : stage === 'confirm' ? 'Проверь данные'
+          : stage === 'photo' ? 'Этикетка'
+            : 'Сканирование'
 
   return createPortal(
     <div style={overlay}>
@@ -345,6 +531,20 @@ export default function BarcodeScanner({ onClose, onAdd }) {
           <GlassIcon name="close" size={28} />
         </button>
       </div>
+
+      {/* Скрытый файловый вход — живёт вне ветвлений по стадии, иначе
+          fileInputRef.current окажется null ровно в тот момент, когда по нему
+          кликают. capture="environment" открывает сразу заднюю камеру.
+          Сброс value обязателен: без него повторный выбор ТОГО ЖЕ файла
+          («переснял так же») не поднимет change и экран замрёт. */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: 'none' }}
+        onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; recognizeLabel(f) }}
+      />
 
       <div style={body}>
         {/* ── Камера */}
@@ -416,6 +616,11 @@ export default function BarcodeScanner({ onClose, onAdd }) {
         {/* ── Нашли: экран порции */}
         {stage === 'result' && product && (
           <div style={pad}>
+            {productNote && (
+              <div style={{ background: `${PUR}18`, border: `1px solid ${PUR}44`, borderRadius: 10, padding: '10px 12px', marginBottom: 12, fontSize: 12, color: TXT2 }}>
+                {productNote}
+              </div>
+            )}
             <div style={{ background: SURF, border: `1px solid ${HAIR}`, borderRadius: 14, padding: '14px 16px', marginBottom: 14 }}>
               <div style={{ fontSize: 16, fontWeight: 700, color: TXT, marginBottom: 2 }}>{product.name}</div>
               {product.brand && <div style={{ fontSize: 13, color: TXT2, marginBottom: 8 }}>{product.brand}</div>}
@@ -472,11 +677,86 @@ export default function BarcodeScanner({ onClose, onAdd }) {
             <div style={{ background: SURF, border: `1px solid ${HAIR}`, borderRadius: 14, padding: '16px', marginBottom: 14, textAlign: 'center' }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: TXT, marginBottom: 6 }}>Продукт не найден в базе</div>
               <div style={{ fontSize: 13, color: TXT2 }}>
-                Такого штрих-кода нет в открытом справочнике. Добавь продукт вручную — числа с упаковки.
+                {userId
+                  ? 'Сфотографируй таблицу пищевой ценности — распознаем её и добавим продукт в общую базу. В следующий раз он найдётся по одному скану.'
+                  : 'Такого штрих-кода нет в открытом справочнике. Добавь продукт вручную — числа с упаковки.'}
               </div>
             </div>
-            <button onClick={restartScan} style={primaryBtn}>Сканировать ещё</button>
-            <button onClick={openManual} style={{ ...ghostBtn, marginTop: 10 }}>Ввести вручную</button>
+            {/* Фото-режим только вошедшим: карточка уходит в ОБЩИЙ справочник,
+                и api/chat всё равно ответит 401 без токена. Анониму показываем
+                ровно то, что у него работает. */}
+            {userId && <button onClick={openPhotoPicker} style={primaryBtn}>Сфотографировать этикетку</button>}
+            <button onClick={openManual} style={userId ? { ...ghostBtn, marginTop: 10 } : primaryBtn}>Ввести вручную</button>
+            <button onClick={restartScan} style={{ ...ghostBtn, marginTop: 10 }}>Сканировать ещё</button>
+          </div>
+        )}
+
+        {/* ── Фото ушло на распознавание */}
+        {stage === 'photo' && (
+          photoError ? (
+            <div style={pad}>
+              <div style={{ background: SURF, border: `1px solid ${COR}44`, borderRadius: 14, padding: '16px', marginBottom: 14, textAlign: 'center' }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: COR }}>{photoError}</div>
+              </div>
+              <button onClick={openPhotoPicker} style={primaryBtn}>Переснять</button>
+              <button onClick={openManual} style={{ ...ghostBtn, marginTop: 10 }}>Ввести вручную</button>
+              <button onClick={restartScan} style={{ ...ghostBtn, marginTop: 10 }}>Сканировать ещё</button>
+            </div>
+          ) : (
+            <div style={{ ...pad, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: TXT }}>Распознаю этикетку…</div>
+              <div style={{ fontSize: 12, color: TXT3 }}>Обычно занимает несколько секунд</div>
+            </div>
+          )
+        )}
+
+        {/* ── Сверка распознанного с этикеткой */}
+        {stage === 'confirm' && (
+          <div style={pad}>
+            <div style={{ fontSize: 13, color: TXT2, marginBottom: 4 }}>Проверь, совпадает ли с этикеткой</div>
+            <div style={{ fontSize: 11, color: TXT3, marginBottom: 14 }}>
+              Эти данные уйдут в общую базу — по ним продукт найдут другие. Поправь, если модель ошиблась.
+            </div>
+
+            {/* per !== '100g' — модель не увидела на упаковке, что таблица
+                приведена к 100 г. Числа могли быть посчитаны с порции, и
+                проверить их глазами тут особенно важно. */}
+            {labelPer !== '100g' && (
+              <div style={{ background: `${COR}18`, border: `1px solid ${COR}44`, borderRadius: 10, padding: '10px 12px', marginBottom: 12, fontSize: 12, color: TXT2 }}>
+                {labelPer === 'portion'
+                  ? 'На этикетке значения указаны на порцию — мы пересчитали их на 100 г. Сверь особенно внимательно.'
+                  : 'На этикетке не указано, на какой вес приведена таблица. Мы считаем, что на 100 г — проверь.'}
+              </div>
+            )}
+
+            <div style={{ fontSize: 12, color: TXT3, fontWeight: 600, marginBottom: 6 }}>Название</div>
+            <input value={labelForm.name} onChange={e => setLabelForm(f => ({ ...f, name: e.target.value }))}
+              placeholder="Творог 5%" style={{ ...inputStyle, marginBottom: 10 }}
+              onFocus={e => e.target.style.borderColor = PUR} onBlur={e => e.target.style.borderColor = HAIR} />
+
+            <div style={{ fontSize: 12, color: TXT3, fontWeight: 600, marginBottom: 6 }}>Бренд</div>
+            <input value={labelForm.brand} onChange={e => setLabelForm(f => ({ ...f, brand: e.target.value }))}
+              placeholder="Простоквашино" style={{ ...inputStyle, marginBottom: 14 }}
+              onFocus={e => e.target.style.borderColor = PUR} onBlur={e => e.target.style.borderColor = HAIR} />
+
+            <div style={{ fontSize: 12, color: TXT3, fontWeight: 600, marginBottom: 6 }}>На 100 г</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 16 }}>
+              {[['ккал', 'kcal100', KCAL], ['Б (г)', 'p100', TEA], ['У (г)', 'c100', BLU], ['Ж (г)', 'f100', COR]].map(([pl, k, c]) => (
+                <input key={k} value={labelForm[k]} onChange={e => setLabelForm(f => ({ ...f, [k]: e.target.value }))}
+                  inputMode="decimal" placeholder={pl} style={macroInput(c)}
+                  onFocus={e => e.target.style.borderColor = c} onBlur={e => e.target.style.borderColor = `${c}44`} />
+              ))}
+            </div>
+
+            {photoError && (
+              <div style={{ fontSize: 12, color: COR, marginBottom: 10, textAlign: 'center' }}>{photoError}</div>
+            )}
+
+            <button onClick={saveProduct} disabled={saving}
+              style={{ ...primaryBtn, opacity: saving ? 0.5 : 1, cursor: saving ? 'default' : 'pointer' }}>
+              {saving ? 'Сохраняю…' : 'Всё верно, сохранить'}
+            </button>
+            <button onClick={openPhotoPicker} style={{ ...ghostBtn, marginTop: 10 }}>Переснять</button>
           </div>
         )}
 

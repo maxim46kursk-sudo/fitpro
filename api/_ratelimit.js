@@ -44,8 +44,16 @@ export function clientIp(req) {
 // Проверяет и учитывает запрос. Возвращает true — можно работать дальше,
 // false — ответ 429 уже отправлен, вызывающий обязан сразу выйти из handler:
 //   if (!rateLimit(req, res, { name: 'chat', limit: 12 })) return
-export function rateLimit(req, res, { name, limit, windowMs = 60000 }) {
-  const key = `${name}:${clientIp(req)}`
+//
+// subject — за КЕМ считаем. По умолчанию IP (см. оговорки выше). Можно передать
+// id пользователя, если ручка вызывается уже ПОСЛЕ проверки токена и лимит
+// должен быть персональным, а не общим на всех за одним NAT:
+//   if (!rateLimit(req, res, { name: 'food-label', limit: 20,
+//                              windowMs: 3600000, subject: userId })) return
+// Подставлять сюда что-либо из тела запроса нельзя — иначе лимит обходится
+// сменой одного поля; только значение, добытое из подписанного токена.
+export function rateLimit(req, res, { name, limit, windowMs = 60000, subject }) {
+  const key = `${name}:${subject || clientIp(req)}`
   const now = Date.now()
   const entry = hits.get(key)
 

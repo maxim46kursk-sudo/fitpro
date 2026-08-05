@@ -7229,6 +7229,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
             </div>
           }>
             <BarcodeScanner
+              userId={userId}
               onClose={()=>setShowScanner(false)}
               onAdd={entry=>{setShowScanner(false);addFood(entry)}}
             />
