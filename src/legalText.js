@@ -10,6 +10,15 @@ export const OPERATOR_INN   = '463227811939'
 export const OPERATOR_TG    = '@maxim_athlete'
 export const OPERATOR_EMAIL = 'maxim-46kursk@mail.ru'
 
+// Атрибуция Open Food Facts. Их база продуктов распространяется по ODbL, а
+// она требует явно указывать источник везде, где данные показываются. Мы
+// берём оттуда карточки продуктов (штрих-код → КБЖУ) в двух местах: ветка
+// ?action=barcode и текстовый поиск в api/set-exercise.js, плюс разовый импорт
+// российских товаров (scripts/import-off-ru.mjs). Строка выводится мелким
+// текстом в Настройках, в блоке с юридическими документами.
+export const DATA_ATTRIBUTION =
+  'Данные о продуктах: Open Food Facts (openfoodfacts.org), лицензия ODbL'
+
 export const POLICY_VERSION = '2026-07-24'
 
 export const CONSENT_CHECKBOX =

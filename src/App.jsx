@@ -14,7 +14,7 @@ import { Ic } from './icons.jsx'
 import { GlassDefs, GlassIcon } from './glassIcons'
 import { MuscleDefs } from './muscleIcons'
 import { muscleGroup, equipment } from './exerciseMeta'
-import { POLICY_VERSION, POLICY_SECTIONS, CONSENT_SECTIONS, CONSENT_CHECKBOX } from './legalText'
+import { POLICY_VERSION, POLICY_SECTIONS, CONSENT_SECTIONS, CONSENT_CHECKBOX, DATA_ATTRIBUTION } from './legalText'
 import { PLANS, VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, effectiveAccess } from './plans'
 // clampNum нужен полям профиля (вес/рост). Пределы питания уехали вместе с
 // разделом в src/FoodDiary.jsx.
@@ -7973,6 +7973,10 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
           <Row label="Пользовательское соглашение (оферта)" sub="Условия оказания услуг"
                right={<span style={{fontSize:16,color:TXT3}}>↗</span>}/>
         </button>
+        {/* Атрибуция ODbL — требование лицензии Open Food Facts: источник
+            данных о продуктах должен быть назван там, где эти данные видны.
+            Место выбрано по смыслу — блок с юридическими документами. */}
+        <div style={{padding:'10px 0 2px',fontSize:11,color:TXT3,lineHeight:1.5}}>{DATA_ATTRIBUTION}</div>
         {dataMsg&&<div style={{padding:'10px 0',fontSize:13,color:deleteError?'#ef4444':TEA,fontWeight:500}}>{dataMsg}</div>}
         <div style={{paddingBottom:14,display:'flex',flexDirection:'column',gap:8}}>
           <button onClick={exportData} disabled={exporting} style={{
