@@ -47,6 +47,20 @@ const LIMIT = (() => {
 // нормализован самим OFF.
 const RU_TAG = 'en:russia'
 
+// Нижний порог калорийности — только для ИМПОРТА, не для общего
+// нормализатора: при скане одной карточки человек видит, что взял, а тут мы
+// вливаем десятки тысяч строк вслепую.
+//
+// Проба на реальных данных показала, зачем: в дампе полно чая и напитков с
+// «1 ккал» и «2 ккал» на 100 г. Это не диетические продукты, а ошибка ввода —
+// сухой чайный пакетик даёт около 300 ккал/100 г, а единицу туда вписали,
+// посчитав на заваренную чашку. В дневнике такая карточка бесполезна вдвойне:
+// и врёт, и занимает строку в выдаче поиска.
+//
+// Пять, а не десять (как в food_basics): настоящие низкокалорийные продукты
+// вроде огурца дают 15, а всё ниже пяти — почти наверняка мусор.
+const MIN_KCAL_IMPORT = 5
+
 const log = (...a) => console.log(...a)
 const pct = (n, total) => (total ? `${(n / total * 100).toFixed(1)}%` : '0%')
 
@@ -151,6 +165,7 @@ export function cardFromDumpRow(line, idx) {
   // Без калорийности карточка в дневнике бесполезна — то же правило, что и в
   // ветке поиска.
   if (!card || card.kcal100 === null) return { skip: 'normalize' }
+  if (card.kcal100 < MIN_KCAL_IMPORT) return { skip: 'tooLowKcal' }
   return { card }
 }
 
@@ -169,6 +184,7 @@ async function run() {
     skipNoName: 0,      // ни названия, ни русского названия
     skipNoEnergy: 0,    // нет ни ккал, ни кДж
     skipNormalize: 0,   // не прошёл наш нормализатор (мусорные значения)
+    skipLowKcal: 0,     // калорийность ниже порога — почти наверняка ошибка ввода
     skipDupe: 0,        // штрих-код уже встречался в дампе
     kept: 0,
     full: 0,            // все четыре числа
@@ -211,6 +227,7 @@ async function run() {
     if (skip === 'noName') { stats.skipNoName++; continue }
     if (skip === 'noEnergy') { stats.skipNoEnergy++; continue }
     if (skip === 'normalize') { stats.skipNormalize++; continue }
+    if (skip === 'tooLowKcal') { stats.skipLowKcal++; continue }
     // Дубль внутри дампа отсекаем здесь, а не в чистой функции: она не должна
     // помнить состояние между строками.
     if (seen.has(card.barcode)) { stats.skipDupe++; continue }
@@ -244,6 +261,7 @@ async function run() {
   log(`  нет названия               ${stats.skipNoName.toLocaleString('ru').padStart(10)}`)
   log(`  нет энергии                ${stats.skipNoEnergy.toLocaleString('ru').padStart(10)}`)
   log(`  не прошли нормализатор     ${stats.skipNormalize.toLocaleString('ru').padStart(10)}`)
+  log(`  ккал ниже ${MIN_KCAL_IMPORT} (ошибка ввода) ${stats.skipLowKcal.toLocaleString('ru').padStart(9)}`)
   log(`\nОТОБРАНО К ИМПОРТУ: ${stats.kept.toLocaleString('ru')}`)
   log(`  с полным КБЖУ              ${stats.full.toLocaleString('ru').padStart(10)}  ${pct(stats.full, stats.kept)}`)
   log(`  только с калорийностью     ${stats.kcalOnly.toLocaleString('ru').padStart(10)}  ${pct(stats.kcalOnly, stats.kept)}`)
@@ -266,5 +284,15 @@ async function run() {
 // импорт модуля (а его импортирует test-off-import.mjs ради чистых функций)
 // начинал качать гигабайтный дамп — то есть npm test лез бы в сеть.
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
-  run().catch(e => { console.error('Импорт не удался:', e); process.exitCode = 1 })
+  run().catch(e => {
+    // Обрыв gzip — самый частый случай: дамп не докачался или файл побился.
+    // Стек Zlib об этом не говорит ничего, поэтому объясняем словами.
+    if (e?.code === 'Z_BUF_ERROR' || /unexpected end of file/i.test(e?.message || '')) {
+      console.error(`\nДамп повреждён или скачан не полностью: ${DUMP_PATH}`)
+      console.error('Удали файл и запусти скрипт заново.')
+    } else {
+      console.error('Импорт не удался:', e)
+    }
+    process.exitCode = 1
+  })
 }

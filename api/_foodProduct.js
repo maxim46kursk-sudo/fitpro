@@ -86,10 +86,25 @@ export function sanitize(n, max) {
   return Math.round(n * 10) / 10
 }
 
-// Текстовые поля: схлопываем пробелы (модель любит переносы строк внутри
-// названия) и режем длину. Пусто → null.
+// HTML-сущности. В дампе и в базе Open Food Facts названия местами хранятся
+// экранированными — «Йогурт &quot;Густой Греческий&quot;». Без раскодирования
+// это попадёт в дневник ровно в таком виде и будет мозолить глаза каждый день.
+//
+// Список короткий и закрытый: раскодируем ровно те сущности, что реально
+// встречаются в названиях продуктов. Полноценный HTML-парсер тут не нужен и
+// вреден — названия это не разметка, и превращать «&lt;» в рабочий тег мы не
+// хотим, только в текст.
+const HTML_ENTITIES = {
+  '&quot;': '"', '&apos;': "'", '&#39;': "'", '&#039;': "'",
+  '&amp;': '&', '&lt;': '<', '&gt;': '>', '&nbsp;': ' ',
+}
+export const decodeEntities = v =>
+  String(v ?? '').replace(/&(?:quot|apos|amp|lt|gt|nbsp|#0?39);/g, m => HTML_ENTITIES[m] ?? m)
+
+// Текстовые поля: раскодируем сущности, схлопываем пробелы (модель любит
+// переносы строк внутри названия) и режем длину. Пусто → null.
 export function cleanText(v, max) {
-  const s = String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
+  const s = decodeEntities(v).replace(/\s+/g, ' ').trim().slice(0, max)
   return s || null
 }
 
@@ -118,8 +133,8 @@ export function normalizeOffProduct(barcode, product) {
   // заполнен одними пробелами. Такое поле «истинно» для ||, и наивный
   // `ru || en` выбрал бы пробелы, а потом отбросил карточку целиком — хотя
   // английское название рядом есть.
-  const nameRu = String(product.product_name_ru || '').trim()
-  const nameAny = String(product.product_name || '').trim()
+  const nameRu = cleanText(product.product_name_ru, MAX_NAME_LEN) || ''
+  const nameAny = cleanText(product.product_name, MAX_NAME_LEN) || ''
   const rawName = nameRu || nameAny
   if (!rawName) return null
 

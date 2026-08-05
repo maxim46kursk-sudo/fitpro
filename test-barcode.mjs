@@ -164,6 +164,27 @@ report('длинное название обрезается до 200 симво
   normalizeOffProduct('1', { product_name: 'Н'.repeat(500), nutriments: {} }).name.length === 200)
 
 // Пустышки.
+// HTML-сущности. В базе и дампе OFF названия местами лежат экранированными —
+// «Йогурт &quot;Густой Греческий&quot;». Найдено на реальных данных при
+// импорте: без раскодирования это уезжает в дневник ровно в таком виде.
+assertEqual('&quot; в названии раскодируется',
+  normalizeOffProduct('1', { product_name: 'Йогурт &quot;Густой Греческий&quot;', nutriments: { 'energy-kcal_100g': 64 } }).name,
+  'Йогурт "Густой Греческий"')
+assertEqual('&amp; в бренде раскодируется',
+  normalizeOffProduct('1', { product_name: 'X', brands: 'Baby&amp;Me', nutriments: {} }).brand, 'Baby&Me')
+assertEqual('&#39; и &apos; раскодируются',
+  normalizeOffProduct('1', { product_name: 'M&#39;s &apos;special&apos;', nutriments: {} }).name,
+  'M\'s \'special\'')
+assertEqual('&nbsp; становится обычным пробелом и схлопывается',
+  normalizeOffProduct('1', { product_name: 'Сок&nbsp;&nbsp;яблочный', nutriments: {} }).name, 'Сок яблочный')
+assertEqual('&lt; и &gt; становятся текстом, а не разметкой',
+  normalizeOffProduct('1', { product_name: 'Сыр &lt;30%&gt;', nutriments: {} }).name, 'Сыр <30%>')
+assertEqual('незнакомая сущность остаётся как есть',
+  normalizeOffProduct('1', { product_name: 'Чай &copy; 2026', nutriments: {} }).name, 'Чай &copy; 2026')
+// Название из одних сущностей-пробелов — та же пустышка, что и раньше.
+assertEqual('название из &nbsp; считается пустым',
+  normalizeOffProduct('1', { product_name: '&nbsp;&nbsp;', nutriments: { 'energy-kcal_100g': 50 } }), null)
+
 assertEqual('карточка без названия → null (для нас это «не найден»)',
   normalizeOffProduct('1', { brands: 'Ferrero', nutriments: { 'energy-kcal_100g': 500 } }), null)
 assertEqual('product отсутствует → null', normalizeOffProduct('1', undefined), null)

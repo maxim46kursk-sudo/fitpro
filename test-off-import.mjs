@@ -99,6 +99,15 @@ console.log('\n── Строки российских товаров ───
   assertEqual('не российский товар отсеян', skip, 'noRu')
 }
 
+{
+  // Сущности в дампе — реальный случай, найденный на живых данных.
+  const { card } = cardFromDumpRow(row({
+    code: '4600682000136', product_name: 'Йогурт &quot;Густой Греческий&quot;',
+    brands: 'Простоквашино', countries_tags: 'en:russia', 'energy-kcal_100g': '64',
+  }), idx)
+  assertEqual('HTML-сущности раскодированы по пути из дампа', card.name, 'Йогурт "Густой Греческий"')
+}
+
 console.log('\n── Отсев ──────────────────────────────────────────────────────────')
 const skipOf = v => cardFromDumpRow(row({ countries_tags: 'en:russia', ...v }), idx).skip
 
@@ -116,6 +125,24 @@ assertEqual('нечисловая калорийность', skipOf({ code: '460
   // Обрезанная строка (в дампе такие есть) — не роняем импорт.
   const short = ['4600682000129', 'url', 'creator'].join(T)
   assertEqual('обрезанная строка помечена broken', cardFromDumpRow(short, idx).skip, 'broken')
+}
+
+console.log('\n── Нижний порог калорийности (только у импорта) ───────────────────')
+// Найдено на реальных данных: в дампе полно чая и напитков с «1 ккал» и
+// «2 ккал» на 100 г — это ошибка ввода (посчитали на заваренную чашку, а не на
+// сухой продукт). При скане одной карточки человек такое видит, при вливании
+// десятков тысяч строк — нет.
+{
+  const withKcal = k => cardFromDumpRow(row({
+    code: '4600682000129', product_name: 'Чай Earl Grey', countries_tags: 'en:russia',
+    'energy-kcal_100g': String(k),
+  }), idx)
+  assertEqual('1 ккал отсеян как ошибка ввода', withKcal(1).skip, 'tooLowKcal')
+  assertEqual('2 ккал отсеяны', withKcal(2).skip, 'tooLowKcal')
+  assertEqual('4.9 ккал отсеяны', withKcal(4.9).skip, 'tooLowKcal')
+  assertEqual('ровно 5 ккал проходят', withKcal(5).card.kcal100, 5)
+  // Настоящие низкокалорийные продукты порог не задевает.
+  assertEqual('огурец (15 ккал) проходит', withKcal(15).card.kcal100, 15)
 }
 
 console.log('\n── Пределы у импорта те же, что у скана ───────────────────────────')
