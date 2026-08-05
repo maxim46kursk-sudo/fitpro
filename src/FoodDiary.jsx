@@ -426,6 +426,39 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
   // ── Стили
   const inputStyle = { width: '100%', padding: '11px 13px', fontSize: 15, borderRadius: 10, border: `1.5px solid ${HAIR}`, outline: 'none', boxSizing: 'border-box', color: TXT, background: SURF2 }
   const sheetBtn = { width: '100%', padding: '12px', borderRadius: 12, border: `1px solid ${HAIR}`, background: SURF2, color: TXT, fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 'unset', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }
+  // Строка списка. Компактная намеренно: на 320px с открытой клавиатурой под
+  // список остаётся ~200px, и каждый лишний пиксель строки — это минус целый
+  // результат на экране.
+  const rowStyle = { background: SURF, border: `1px solid ${HAIR}`, borderRadius: 10, padding: '6px 11px', marginBottom: 4, cursor: 'pointer' }
+  const miniAction = { background: 'none', border: 'none', color: PUR, fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0, minHeight: 'unset', display: 'inline-flex', alignItems: 'center', gap: 4 }
+
+  // Назад по одному шагу. Порция → результаты (запрос НЕ сбрасываем: человек
+  // возвращается к той же выдаче), ручная форма → поиск, поиск → день.
+  const sheetBack = () => {
+    if (picked) setPicked(null)
+    else if (manualOpen) setManualOpen(false)
+    else closeSheet()
+  }
+
+  // «Нет нужного?» — три маленьких действия одной строкой В КОНЦЕ списка.
+  // Именно в конце и внутри прокрутки: постоянный подвал поверх списка съедал
+  // бы те же полторы строки, ради которых всё и переделывалось.
+  const moreRow = (
+    <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${HAIR}`, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 12, color: TXT3 }}>Нет нужного?</span>
+      <button onClick={() => setShowScanner(true)} style={miniAction}>
+        <GlassIcon name="video" size={16} />Штрих-код
+      </button>
+      <span style={{ fontSize: 11, color: TXT3 }}>·</span>
+      <button onClick={() => setShowScanner(true)} style={miniAction}>
+        <GlassIcon name="video" size={16} />Фото упаковки
+      </button>
+      <span style={{ fontSize: 11, color: TXT3 }}>·</span>
+      <button onClick={() => setManualOpen(true)} style={miniAction}>
+        <GlassIcon name="pen" size={16} />Вручную
+      </button>
+    </div>
+  )
 
   const sectionTitle = own => (readOnly && readOnlyName ? `${readOnlyName} · ${own}` : own)
 
@@ -838,28 +871,58 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
         )}
       </div>
 
-      {/* ── Лист добавления в приём */}
+      {/* ── Экран добавления в приём: ПОЛНОЭКРАННЫЙ, а не полулист.
+          Полулист отдавал половину высоты трём большим кнопкам, и на список
+          результатов над клавиатурой оставалось полторы строки. Здесь главный
+          и единственный герой — поиск: строка ввода сразу под шапкой, всё
+          остальное место у списка, а три пути «нет нужного» ужаты в одну
+          строку в конце списка и уезжают вместе с ним. */}
       {!readOnly && sheetMeal && (
-        <>
-          <div onClick={closeSheet} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1500 }} />
-          <div style={{
-            position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 1501,
-            background: BG, borderTop: `1px solid ${HAIR}`, borderRadius: '20px 20px 0 0',
-            maxHeight: '88vh', display: 'flex', flexDirection: 'column',
-          }}>
-            <div style={{ padding: '14px 16px 10px', borderBottom: `1px solid ${HAIR}`, display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-              {MEAL_ICONS[sheetMeal] && <GlassIcon name={MEAL_ICONS[sheetMeal]} size={24} />}
-              <span style={{ fontSize: 16, fontWeight: 700, color: TXT, flex: 1 }}>
-                {picked ? 'Порция' : mealLabel(sheetMeal)}
-              </span>
-              <button onClick={picked ? () => setPicked(null) : closeSheet}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: TXT3, padding: 0, minHeight: 'unset', lineHeight: 1 }}>
-                <GlassIcon name={picked ? 'back' : 'close'} size={26} />
+        <div style={{
+          position: 'fixed', left: 0, right: 0, top: 0, bottom: 0,
+          // dvh даёт реальную высоту окна на мобильных: с 100% на iOS низ
+          // экрана уезжает под панель браузера.
+          height: '100dvh', zIndex: 1500,
+          background: BG, display: 'flex', flexDirection: 'column',
+        }}>
+          {/* Шапка ниже общей на 8px и строка поиска плотнее: на 320px с
+              открытой клавиатурой под список остаётся около 200px, и эти
+              пиксели — это ровно одна лишняя видимая строка результата. */}
+          <div style={{ background: SURF, borderBottom: `1px solid ${HAIR}`, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+            {/* Назад по одному шагу: из порции — к результатам (запрос
+                сохраняется), из ручной формы — к поиску, из поиска — в день. */}
+            <button onClick={sheetBack} style={{ background: 'none', border: 'none', cursor: 'pointer', color: TXT3, padding: 0, minHeight: 'unset', lineHeight: 1 }}>
+              <GlassIcon name="back" size={26} />
+            </button>
+            <span style={{ fontSize: 17, fontWeight: 700, color: TXT, flex: 1 }}>
+              {picked ? 'Порция' : manualOpen ? 'Вручную' : `В ${mealLabel(sheetMeal)}`}
+            </span>
+            {MEAL_ICONS[sheetMeal] && <GlassIcon name={MEAL_ICONS[sheetMeal]} size={24} />}
+          </div>
+
+          {/* Строка поиска — вне прокручиваемой области: она не должна
+              уезжать вместе со списком. */}
+          {!picked && !manualOpen && (
+            <div style={{ padding: '8px 16px 6px', flexShrink: 0, position: 'relative' }}>
+              <input
+                value={query}
+                onChange={e => onQueryChange(e.target.value)}
+                placeholder="Найти продукт"
+                autoFocus
+                style={{ ...inputStyle, paddingRight: 46 }}
+                onFocus={e => e.target.style.borderColor = PUR} onBlur={e => e.target.style.borderColor = HAIR} />
+              {/* Сканер живёт прямо в строке поиска — там, где у поля обычно
+                  стоит крестик очистки: это второй способ «ввести» продукт,
+                  а не отдельный раздел. */}
+              <button onClick={() => setShowScanner(true)} aria-label="Сканировать штрих-код"
+                style={{ position: 'absolute', right: 22, top: 16, background: 'none', border: 'none', cursor: 'pointer', padding: 4, minHeight: 'unset', lineHeight: 1 }}>
+                <GlassIcon name="video" size={22} />
               </button>
             </div>
+          )}
 
-            <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px 24px' }}>
-              {picked ? (
+          <div style={{ flex: 1, overflowY: 'auto', padding: picked || manualOpen ? '14px 16px 24px' : '4px 16px 24px', WebkitOverflowScrolling: 'touch' }}>
+            {picked ? (
                 // ── Экран порции
                 <>
                   <div style={{ background: SURF, border: `1px solid ${HAIR}`, borderRadius: 14, padding: '14px 16px', marginBottom: 14 }}>
@@ -920,7 +983,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
                     Добавить в «{mealLabel(sheetMeal)}»
                   </button>
                 </>
-              ) : manualOpen ? (
+            ) : manualOpen ? (
                 // ── Ручной ввод
                 <>
                   <input placeholder="Название *" value={foodForm.name} onChange={e => setFoodForm(f => ({ ...f, name: e.target.value }))}
@@ -937,80 +1000,61 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
                   </button>
                   <button onClick={() => setManualOpen(false)} style={{ ...sheetBtn, marginTop: 10 }}>Назад к поиску</button>
                 </>
-              ) : (
-                // ── Поиск и недавние
-                <>
-                  <input
-                    value={query}
-                    onChange={e => onQueryChange(e.target.value)}
-                    placeholder="Найти продукт"
-                    autoFocus
-                    style={{ ...inputStyle, marginBottom: 14 }}
-                    onFocus={e => e.target.style.borderColor = PUR} onBlur={e => e.target.style.borderColor = HAIR} />
-
-                  {query.trim().length >= SEARCH_MIN_LEN ? (
-                    <>
-                      {searching && <div style={{ fontSize: 12, color: TXT3, marginBottom: 10 }}>Ищу…</div>}
-                      {searchError && <div style={{ fontSize: 12, color: COR, marginBottom: 10 }}>{searchError}</div>}
-                      {!searching && !searchError && searchResults && searchResults.length === 0 && (
-                        <div style={{ background: SURF, border: `1px solid ${HAIR}`, borderRadius: 14, padding: '14px 16px', marginBottom: 12, fontSize: 13, color: TXT2 }}>
-                          Не нашли — отсканируй штрих-код или сфотографируй упаковку, продукт появится в базе для всех
+            ) : (
+              // ── Поиск и недавние
+              <>
+                {query.trim().length >= SEARCH_MIN_LEN ? (
+                  <>
+                    {searching && <div style={{ fontSize: 12, color: TXT3, margin: '6px 0 10px' }}>Ищу…</div>}
+                    {searchError && <div style={{ fontSize: 12, color: COR, margin: '6px 0 10px' }}>{searchError}</div>}
+                    {!searching && !searchError && searchResults && searchResults.length === 0 && (
+                      <div style={{ fontSize: 13, color: TXT2, margin: '10px 0 4px' }}>
+                        Не нашли — заведи продукт сам, он появится в базе для всех
+                      </div>
+                    )}
+                    {/* key приходит с сервера: у позиции базового справочника
+                        нет штрих-кода, а по названию ключ был бы хрупким. */}
+                    {(searchResults || []).map(p => (
+                      <div key={p.key || p.barcode} onClick={() => pickProduct(p)} style={rowStyle}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: TXT }}>
+                          {p.name}
+                          {p.brand && <span style={{ color: TXT3, fontWeight: 400 }}> {p.brand}</span>}
                         </div>
-                      )}
-                      {/* key приходит с сервера: у позиции базового справочника
-                          нет штрих-кода, а по названию ключ был бы хрупким. */}
-                      {(searchResults || []).map(p => (
-                        <div key={p.key || p.barcode} onClick={() => pickProduct(p)}
-                          style={{ background: SURF, border: `1px solid ${HAIR}`, borderRadius: 12, padding: '11px 14px', marginBottom: 8, cursor: 'pointer' }}>
-                          <div style={{ fontSize: 14, fontWeight: 600, color: TXT }}>{p.name}</div>
-                          <div style={{ fontSize: 11, color: TXT3, marginTop: 2 }}>
-                            {p.brand ? `${p.brand} · ` : ''}
-                            <span style={{ color: KCAL, fontWeight: 600 }}>{num(p.kcal100)} ккал</span> / 100 г
-                            {p.source === 'ai_estimate' && <span style={{ color: COR }}> · ≈</span>}
-                          </div>
+                        <div style={{ fontSize: 11, color: TXT3, marginTop: 1 }}>
+                          <span style={{ color: KCAL, fontWeight: 600 }}>{num(p.kcal100)} ккал</span>
+                          {' · '}Б {num(p.p100)} · У {num(p.c100)} · Ж {num(p.f100)} / 100 г
+                          {p.source === 'ai_estimate' && <span style={{ color: COR }}> · ≈</span>}
                         </div>
-                      ))}
-                    </>
-                  ) : (
-                    <>
-                      <div style={{ fontSize: 12, color: TXT3, fontWeight: 600, marginBottom: 8 }}>Недавние</div>
-                      {recents.length === 0 && (
-                        <div style={{ fontSize: 13, color: TXT3, marginBottom: 12 }}>
-                          Пока пусто. Найди продукт по названию или отсканируй штрих-код.
+                      </div>
+                    ))}
+                    {!searching && moreRow}
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 12, color: TXT3, fontWeight: 600, margin: '6px 0 8px' }}>Недавние</div>
+                    {recents.length === 0 && (
+                      <div style={{ fontSize: 13, color: TXT3, marginBottom: 4 }}>
+                        Пока пусто. Найди продукт по названию или отсканируй штрих-код.
+                      </div>
+                    )}
+                    {recents.map(r => (
+                      <div key={r.name} onClick={() => pickRecent(r)} style={rowStyle}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: TXT }}>{r.name}</div>
+                        <div style={{ fontSize: 11, color: TXT3, marginTop: 1 }}>
+                          <span style={{ color: KCAL, fontWeight: 600 }}>{r.kcal} ккал</span>
+                          {' · '}Б {r.p} · У {r.c} · Ж {r.f} — как в прошлый раз
                         </div>
-                      )}
-                      {recents.map(r => (
-                        <div key={r.name} onClick={() => pickRecent(r)}
-                          style={{ background: SURF, border: `1px solid ${HAIR}`, borderRadius: 12, padding: '11px 14px', marginBottom: 8, cursor: 'pointer' }}>
-                          <div style={{ fontSize: 14, fontWeight: 600, color: TXT }}>{r.name}</div>
-                          <div style={{ fontSize: 11, color: TXT3, marginTop: 2 }}>
-                            <span style={{ color: KCAL, fontWeight: 600 }}>{r.kcal} ккал</span> · Б {r.p} · У {r.c} · Ж {r.f}
-                          </div>
-                        </div>
-                      ))}
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* Три существующих пути. Результат каждого падает в выбранный приём. */}
-            {!picked && !manualOpen && (
-              <div style={{ padding: '10px 16px 18px', borderTop: `1px solid ${HAIR}`, display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
-                <button onClick={() => setShowScanner(true)} style={sheetBtn}>
-                  <GlassIcon name="video" size={20} />Сканировать штрих-код
-                </button>
-                <button onClick={() => setShowScanner(true)} style={sheetBtn}>
-                  <GlassIcon name="video" size={20} />Сфотографировать упаковку
-                </button>
-                <button onClick={() => setManualOpen(true)} style={sheetBtn}>
-                  <GlassIcon name="pen" size={20} />Ввести вручную
-                </button>
-              </div>
+                      </div>
+                    ))}
+                    {moreRow}
+                  </>
+                )}
+              </>
             )}
           </div>
-        </>
+        </div>
       )}
+
 
       {/* Сканер штрих-кода. Записывает НЕ сам: отдаёт готовую строку в addFood
           вместе с приёмом, в который его открыли, — тот же путь, что у поиска и
