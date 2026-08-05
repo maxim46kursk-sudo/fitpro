@@ -1176,11 +1176,45 @@ const SEARCH_ROWS = [
 
 // Стаб PostgREST для поиска: запоминает, с каким фильтром пришли, чтобы можно
 // было проверить и ILIKE по обоим полям, и limit.
-function stubSearch({ rows = SEARCH_ROWS, basics = [] } = {}) {
+// off — что отвечает текстовый поиск Open Food Facts (null: считаем, что в
+// него ходить не должны, и падаем громко). offFail — сымитировать обрыв.
+// existing — что уже лежит в food_products (для проверки правил перезаписи).
+function stubSearch({ rows = SEARCH_ROWS, basics = [], off = null, offFail = null, existing = [] } = {}) {
   const calls = []
-  globalThis.fetch = async (url) => {
+  calls.off = []
+  calls.writes = []
+  globalThis.fetch = async (url, opts = {}) => {
     const u = new URL(String(url))
+
+    if (u.host.endsWith('openfoodfacts.org')) {
+      calls.off.push({ host: u.host, path: u.pathname, terms: u.searchParams.get('search_terms'), pageSize: u.searchParams.get('page_size'), ua: opts.headers?.['User-Agent'] })
+      if (offFail === 'network') throw new Error('ENOTFOUND')
+      if (offFail === 'timeout') {
+        return new Promise((_, reject) => {
+          opts.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })))
+        })
+      }
+      if (offFail === 'http500') return new Response('boom', { status: 500 })
+      if (offFail === 'html') return new Response('<html>заглушка</html>', { status: 200 })
+      // Бросать тут нельзя: handler ловит любую беду OFF и молча отдаёт
+      // локальную выдачу — тест бы прошёл, ничего не проверив. Поэтому факт
+      // похода наружу проверяется по calls.off, а не исключением.
+      return json(off === null ? { products: [] } : off)
+    }
+
     if (u.host !== SUPA_HOST) throw new Error(`неожиданный хост: ${u.host}`)
+
+    // Чтение существующих карточек перед записью в кэш (проверка правил
+    // перезаписи) отличается от поисковых выборок фильтром barcode=in.
+    if (u.searchParams.get('barcode')?.startsWith('in.')) {
+      calls.push({ table: 'existing', path: u.pathname })
+      return json(existing)
+    }
+    if ((opts.method || 'GET') !== 'GET') {
+      calls.writes.push(JSON.parse(opts.body))
+      return json([])
+    }
+
     const isBasics = u.pathname.includes('food_basics')
     calls.push({
       path: u.pathname,
@@ -1196,6 +1230,17 @@ function stubSearch({ rows = SEARCH_ROWS, basics = [] } = {}) {
   return calls
 }
 const callOf = (calls, table) => calls.find(c => c.table === table) || {}
+
+// Пять локальных находок — порог, за которым в OFF уже не ходим. Готовый
+// набор, чтобы каждый тест не выписывал его заново.
+const FIVE_BASICS = Array.from({ length: 5 }, (_, i) => ({
+  id: i + 1, name: `Молоко тип ${i}`, kcal100: 60, p100: 3, c100: 5, f100: 3,
+}))
+const offProduct = (over = {}) => ({
+  code: '4600000000017', product_name: 'Молоко деревенское', brands: 'Ферма',
+  nutriments: { 'energy-kcal_100g': 62, proteins_100g: 3.0, carbohydrates_100g: 4.7, fat_100g: 3.4 },
+  ...over,
+})
 
 let searchIp = 0
 const searchReq = (q, method = 'GET') => ({
@@ -1405,6 +1450,130 @@ async function callSearch(q, opts = {}, method = 'GET') {
   await handler(searchReq('молоко'), res)
   restoreFetch()
   assertEqual('обе таблицы недоступны → 500', res.statusCode, 500)
+}
+
+// ── Живой добор из Open Food Facts, когда локально почти пусто ────────────
+console.log('\n── food-search: fallback в Open Food Facts ────────────────────────')
+{
+  // Пять локальных находок — в OFF не идём вовсе.
+  const { res, calls } = await callSearch('молоко', { rows: [], basics: FIVE_BASICS })
+  assertEqual('локальных 5 → в OFF не ходим', calls.off.length, 0)
+  assertEqual('отдана только локальная выдача', res.body.results.length, 5)
+}
+{
+  // Четыре — уже идём.
+  const { calls } = await callSearch('молоко', { rows: [], basics: FIVE_BASICS.slice(0, 4), off: { products: [] } })
+  assertEqual('локальных 4 → идём в OFF', calls.off.length, 1)
+}
+{
+  const { calls } = await callSearch('молоко', { rows: [], basics: [], off: { products: [] } })
+  assertEqual('локально пусто → идём в OFF', calls.off.length, 1)
+  const c = calls.off[0]
+  report('запрос уходит на ru.openfoodfacts.org (приоритет русских товаров)', c.host === 'ru.openfoodfacts.org', c.host)
+  assertEqual('поисковый эндпоинт OFF', c.path, '/cgi/search.pl')
+  assertEqual('запрос передан в search_terms', c.terms, 'молоко')
+  assertEqual('page_size 10', c.pageSize, '10')
+  assertEqual('тот же User-Agent, что у поиска по коду', c.ua, 'FitPro/1.0 (fitpro-dun.vercel.app)')
+}
+{
+  // Годная карточка из OFF добавляется ПОСЛЕ локальных.
+  const { res, calls } = await callSearch('молоко', {
+    rows: [], basics: FIVE_BASICS.slice(0, 2), off: { products: [offProduct()] },
+  })
+  assertEqual('выдача = локальные + найденное в OFF', res.body.results.length, 3)
+  assertEqual('OFF-карточка идёт последней', res.body.results.at(-1).name, 'Молоко деревенское')
+  assertEqual('локальные остались впереди', res.body.results.slice(0, 2).map(r => r.source), ['basic', 'basic'])
+  assertEqual('OFF-карточка помечена source=off', res.body.results.at(-1).source, 'off')
+  assertEqual('у неё есть ключ для списка', res.body.results.at(-1).key, 'product:4600000000017')
+  assertEqual('и она ушла в кэш', calls.writes.length, 1)
+  assertEqual('в кэш записан именно source=off', calls.writes[0][0].source, 'off')
+}
+{
+  // Мусор OFF отфильтрован: без кода, с битым кодом, без названия, без ккал,
+  // с абсурдной калорийностью.
+  const { res } = await callSearch('молоко', {
+    rows: [], basics: [], off: { products: [
+      offProduct({ code: '' }),
+      offProduct({ code: 'abc' }),
+      offProduct({ code: '4600000000024', product_name: '', product_name_ru: '' }),
+      offProduct({ code: '4600000000031', nutriments: {} }),
+      offProduct({ code: '4600000000048', nutriments: { 'energy-kcal_100g': 99999 } }),
+      offProduct({ code: '4600000000055' }),
+    ] },
+  })
+  assertEqual('из шести карточек OFF годной осталась одна', res.body.results.length, 1)
+  assertEqual('это та, у которой есть код, имя и ккал', res.body.results[0].barcode, '4600000000055')
+}
+{
+  // product_name_ru приоритетнее — тот же нормализатор, что у поиска по коду.
+  const { res } = await callSearch('молоко', {
+    rows: [], basics: [], off: { products: [offProduct({ product_name: 'Milk', product_name_ru: 'Молоко 3.2%' })] },
+  })
+  assertEqual('русское название побеждает', res.body.results[0].name, 'Молоко 3.2%')
+}
+{
+  // Карточка, которая уже есть в локальной выдаче, не дублируется.
+  const { res } = await callSearch('молоко', {
+    rows: [{ barcode: '4600000000017', name: 'Молоко своё', brand: null, kcal100: 60, p100: 3, c100: 5, f100: 3, source: 'off' }],
+    basics: [], off: { products: [offProduct()] },
+  })
+  assertEqual('дубль по штрих-коду отброшен', res.body.results.length, 1)
+  assertEqual('осталась локальная карточка', res.body.results[0].name, 'Молоко своё')
+}
+{
+  // Правила перезаписи кэша: точные источники не трогаем, оценку уточняем.
+  const { calls } = await callSearch('молоко', {
+    rows: [], basics: [],
+    off: { products: [
+      offProduct({ code: '4600000000017' }),
+      offProduct({ code: '4600000000024' }),
+      offProduct({ code: '4600000000031' }),
+    ] },
+    existing: [
+      { barcode: '4600000000017', source: 'off' },
+      { barcode: '4600000000024', source: 'ai_photo' },
+      { barcode: '4600000000031', source: 'ai_estimate' },
+    ],
+  })
+  const written = calls.writes[0].map(r => r.barcode)
+  assertEqual('существующие off и ai_photo не перезаписаны',
+    written.includes('4600000000017') || written.includes('4600000000024'), false)
+  assertEqual('оценка ai_estimate уточнена данными OFF', written, ['4600000000031'])
+}
+{
+  const { calls } = await callSearch('молоко', {
+    rows: [], basics: [], off: { products: [offProduct()] },
+    existing: [{ barcode: '4600000000017', source: 'off' }],
+  })
+  assertEqual('писать нечего — в базу не ходим', calls.writes.length, 0)
+}
+{
+  const { res, calls } = await callSearch('молоко', { rows: [], basics: FIVE_BASICS.slice(0, 2), offFail: 'network' })
+  assertEqual('OFF упал → статус 200, а не ошибка', res.statusCode, 200)
+  assertEqual('OFF упал → отданы локальные', res.body.results.length, 2)
+  assertEqual('OFF упал → в кэш ничего не писали', calls.writes.length, 0)
+}
+{
+  console.log('  (следующий тест ждёт таймаута OFF — 4 секунды)')
+  const t0 = Date.now()
+  const { res } = await callSearch('молоко', { rows: [], basics: FIVE_BASICS.slice(0, 2), offFail: 'timeout' })
+  const elapsed = Date.now() - t0
+  assertEqual('таймаут OFF → локальные отданы', res.body.results.length, 2)
+  report(`таймаут сработал за ~4 с (факт ${(elapsed / 1000).toFixed(1)} с)`, elapsed >= 3500 && elapsed < 7000, `${elapsed} мс`)
+}
+{
+  const { res } = await callSearch('молоко', { rows: [], basics: FIVE_BASICS.slice(0, 1), offFail: 'http500' })
+  assertEqual('OFF ответил 500 → локальные отданы', res.body.results.length, 1)
+}
+{
+  const { res } = await callSearch('молоко', { rows: [], basics: FIVE_BASICS.slice(0, 1), offFail: 'html' })
+  assertEqual('OFF отдал не JSON → локальные отданы', res.body.results.length, 1)
+}
+{
+  // Общий лимит 20 держится и с добором.
+  const many = Array.from({ length: 15 }, (_, i) => offProduct({ code: `460000000${String(i).padStart(4, '0')}` }))
+  const { res } = await callSearch('молоко', { rows: [], basics: FIVE_BASICS.slice(0, 4), off: { products: many } })
+  report('общий лимит 20 не превышен', res.body.results.length <= 20, `получено ${res.body.results.length}`)
 }
 
 // ══════════════════════════════════════════════════════════════════════════

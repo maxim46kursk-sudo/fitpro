@@ -278,6 +278,22 @@ const SEARCH_MIN_LEN = 2
 const SEARCH_MAX_LEN = 40
 const SEARCH_LIMIT = 20
 
+// ── Живой поиск в Open Food Facts, когда своих карточек почти нет ──────────
+//
+// Порог: меньше пяти локальных находок — значит по этому слову у нас пусто
+// или почти пусто, и человек упрётся в «не нашли». Пять, а не ноль: одна
+// случайная карточка не делает выдачу полезной, а лишний поход в OFF на
+// каждый набор букв нам не нужен.
+const SEARCH_OFF_THRESHOLD = 5
+// Текстовый поиск OFF заметно медленнее выборки по коду, а человек в это
+// время смотрит в поле ввода. Четыре секунды — потолок, после которого
+// полезнее отдать то, что нашлось локально, чем держать его в ожидании.
+const SEARCH_OFF_TIMEOUT_MS = 4000
+const SEARCH_OFF_PAGE_SIZE = 10
+// ru.openfoodfacts.org, а не world: тот же индекс, но выдача приоритезирует
+// русские названия и товары, продающиеся в РФ, — ровно то, что нужно.
+const OFF_SEARCH_URL = 'https://ru.openfoodfacts.org/cgi/search.pl'
+
 // Строка запроса уходит в PostgREST-фильтр `or=(name.ilike.*q*,brand.ilike.*q*)`,
 // где запятая разделяет условия, а скобки их группируют. Пользовательский
 // текст с запятой или скобкой сломал бы разбор фильтра — в лучшем случае
@@ -405,8 +421,104 @@ async function handleFoodSearch(req, res) {
   }))
   const products = (productsRes.data || []).map(r => ({ key: `product:${r.barcode}`, ...fromRow(r) }))
 
-  const results = rankSearchResults([...basics, ...products], q).slice(0, SEARCH_LIMIT)
+  const local = rankSearchResults([...basics, ...products], q).slice(0, SEARCH_LIMIT)
+
+  // Локального хватило — наружу не ходим вовсе.
+  if (local.length >= SEARCH_OFF_THRESHOLD) {
+    return res.status(200).json({ results: local })
+  }
+
+  // ── Добор из Open Food Facts
+  // Всё, что дальше, — best effort: OFF может лечь, ответить мусором или
+  // задуматься. Любая беда здесь означает «отдаём то, что нашли локально», а
+  // не ошибку: человек и так видит мало результатов, показать ему сверху
+  // красное сообщение — сделать хуже.
+  const known = new Set(local.map(r => r.barcode).filter(Boolean))
+  const fresh = await searchOpenFoodFacts(q, known)
+  if (fresh.length && supabaseAdmin) await cacheOffCards(supabaseAdmin, fresh, q)
+
+  const results = [
+    ...local,
+    // Найденное в OFF идёт ПОСЛЕ локального: свой справочник и то, что уже
+    // сканировали люди, достовернее случайной карточки из открытой базы.
+    // Внутри группы — то же ранжирование, что и у локальных.
+    ...rankSearchResults(fresh.map(c => ({ key: `product:${c.barcode}`, ...c })), q),
+  ].slice(0, SEARCH_LIMIT)
+
   return res.status(200).json({ results })
+}
+
+// Текстовый поиск в OFF. Возвращает массив готовых карточек (возможно пустой);
+// НИКОГДА не бросает — вызывающий не должен об этом думать.
+async function searchOpenFoodFacts(q, known) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), SEARCH_OFF_TIMEOUT_MS)
+  try {
+    const url = `${OFF_SEARCH_URL}?search_terms=${encodeURIComponent(q)}`
+      + `&search_simple=1&action=process&json=1&page_size=${SEARCH_OFF_PAGE_SIZE}`
+      + `&fields=code,product_name,product_name_ru,brands,nutriments`
+    const offRes = await fetch(url, {
+      headers: { 'User-Agent': OFF_USER_AGENT, Accept: 'application/json' },
+      signal: controller.signal,
+    })
+    if (!offRes.ok) {
+      console.error(`food-search «${q}»: OFF ответил ${offRes.status}`)
+      return []
+    }
+    const json = await offRes.json()
+    const raw = Array.isArray(json?.products) ? json.products : []
+
+    const out = []
+    for (const p of raw) {
+      // Штрих-код обязателен: без него карточку некуда положить (barcode —
+      // первичный ключ) и незачем — повторно её уже не найти сканом.
+      const code = String(p?.code ?? '').trim()
+      if (!isValidBarcode(code)) continue
+      if (known.has(code)) continue           // уже есть в локальной выдаче
+      // Тот же нормализатор, что и у поиска по коду: пределы правдоподобия,
+      // приоритет product_name_ru, отсев мусора — всё уже написано.
+      const card = normalizeOffProduct(code, p)
+      // Без калорийности карточка бесполезна в дневнике; в локальной выдаче
+      // такие тоже отсекаются (not kcal100 is null), и здесь правило то же.
+      if (!card || card.kcal100 === null) continue
+      out.push(card)
+      if (out.length >= SEARCH_OFF_PAGE_SIZE) break
+    }
+    return out
+  } catch (e) {
+    console.error(`food-search «${q}»: OFF недоступен:`, e?.name === 'AbortError' ? 'таймаут' : e?.message)
+    return []
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// Складываем найденное в свой справочник, чтобы ВТОРОЙ такой же поиск был уже
+// локальным и мгновенным. Ошибки записи глотаем: продукт у пользователя на
+// экране, а потерянный кэш — не его проблема.
+async function cacheOffCards(supabaseAdmin, cards, q) {
+  try {
+    const codes = cards.map(c => c.barcode)
+    const { data: existing, error: readError } = await supabaseAdmin
+      .from('food_products').select('barcode,source').in('barcode', codes)
+    if (readError) { console.error(`food-search «${q}»: не прочитать существующие карточки:`, readError); return }
+
+    const sourceByCode = new Map((existing || []).map(r => [r.barcode, r.source]))
+    // Пишем только новые карточки и те, что до сих пор были оценкой модели.
+    // Точные (off, ai_photo) не трогаем: данные, прочитанные с реальной
+    // упаковки, не должны уступать место результату текстового поиска.
+    const toWrite = cards.filter(c => {
+      if (!sourceByCode.has(c.barcode)) return true
+      return sourceByCode.get(c.barcode) === SOURCE_ESTIMATE
+    })
+    if (!toWrite.length) return
+
+    const { error: writeError } = await supabaseAdmin
+      .from('food_products').upsert(toWrite, { onConflict: 'barcode' })
+    if (writeError) console.error(`food-search «${q}»: ошибка записи в кэш:`, writeError)
+  } catch (e) {
+    console.error(`food-search «${q}»: сбой кэширования:`, e?.message)
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
