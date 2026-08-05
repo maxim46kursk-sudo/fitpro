@@ -8,11 +8,13 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node test-progression.mjs && node test-nutrition.mjs"
+    "test": "node test-progression.mjs && node test-nutrition.mjs && node test-barcode.mjs"
   },
   "dependencies": {
     "@iconify/react": "^6.0.2",
     "@supabase/supabase-js": "^2.110.0",
+    "@zxing/browser": "^0.2.1",
+    "@zxing/library": "^0.23.0",
     "qs": "^6.15.3",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"

@@ -9,6 +9,15 @@ import { rateLimit } from './_ratelimit.js'
 // Кто действует, берём из подписанного токена; роль проверяем service_role-
 // ключом (клиент под RLS свою роль в теле подделать не может).
 //
+// ⚠ ЗДЕСЬ ЖЕ КВАРТИРУЕТ ЧУЖАЯ ВЕТКА — поиск продукта по штрих-коду:
+// GET ?action=barcode&code=XXXX (см. «ВЕТКА ШТРИХ-КОДА» ниже). К тренерскому
+// каталогу она не имеет никакого отношения и живёт тут по единственной
+// причине — тот же лимит 12 функций: своя api/barcode.js была бы 13-й, и
+// деплой бы не прошёл. Ветка отвечает ПЕРВОЙ и уходит из handler'а раньше,
+// чем начинается всё тренерское: у неё свой метод (GET, а не POST), свой
+// лимит частоты и НЕТ авторизации вовсе. Если лимит функций когда-нибудь
+// перестанет жать — вынести обратно отдельным файлом, здесь ей не место.
+//
 // Тот же env и безопасные fallback (URL и publishable-ключ несекретны), что и
 // у остальных функций api/.
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://api.fitproapp.ru'
@@ -20,7 +29,272 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 const VIDEO_PREFIX = 'https://api.fitproapp.ru/storage/v1/object/public/exercise-videos/'
 const POSTER_PREFIX = 'https://api.fitproapp.ru/storage/v1/object/public/exercise-posters/'
 
+// ══════════════════════════════════════════════════════════════════════════
+// ВЕТКА ШТРИХ-КОДА: GET /api/set-exercise?action=barcode&code=4600682000129
+//
+// Карточка продукта для дневника питания. Была отдельной функцией
+// api/barcode.js — переехала сюда целиком из-за лимита 12 функций на Vercel
+// Hobby (подробности в шапке файла). Ниже — весь её код без изменений в
+// поведении; с тренерским каталогом он не пересекается ничем, кроме
+// константы SUPABASE_URL.
+//
+// Зачем прокси, а не запрос из браузера напрямую в Open Food Facts:
+//  • OFF из РФ доступен через раз. Пусть с этим разбирается сервер в
+//    Vercel — у него сеть предсказуемее, чем у телефона в метро.
+//  • Всё найденное оседает в нашей таблице food_products (см.
+//    sql/2026-08-05_food_products_cache.sql). Один и тот же десяток продуктов
+//    сканируют изо дня в день: первый скан идёт в OFF, остальные — из кэша,
+//    мгновенно и без внешней сети.
+//  • OFF просит не долбить его API. Кэш — наша часть этой договорённости,
+//    а User-Agent ниже — вторая: OFF требует представляться.
+//
+// Авторизация НЕ требуется намеренно — и это осознанное отличие от всего
+// остального в этом файле. Ответ — обезличенный справочник «штрих-код →
+// КБЖУ», ничего личного тут не отдаётся и не пишется. А дневник питания в
+// приложении работает и без входа (App.jsx, addFood: при пустом userId запись
+// живёт в localStorage) — требование токена сломало бы сканер ровно для этих
+// пользователей. От флуда защищает rateLimit со своим ключом.
+// ══════════════════════════════════════════════════════════════════════════
+
+const OFF_URL = 'https://world.openfoodfacts.org/api/v2/product'
+const OFF_FIELDS = 'product_name,product_name_ru,brands,nutriments'
+// OFF просит указывать приложение и контакт — по этой строке они отличают
+// клиентов и, если что, находят, кому написать, вместо того чтобы молча
+// закрыть доступ по IP.
+const OFF_USER_AGENT = 'FitPro/1.0 (fitpro-dun.vercel.app)'
+// Шесть секунд. Дольше ждать бессмысленно: человек стоит у полки с телефоном
+// в руке, и «сервис недоступен, введи вручную» через 6 с полезнее, чем
+// крутилка на полминуты. Плюс это заметно меньше потолка функции на Vercel.
+const OFF_TIMEOUT_MS = 6000
+
+// Коэффициент кДж → ккал. В OFF поле energy_100g — это килоджоули.
+const KJ_PER_KCAL = 4.184
+
+// Потолки правдоподобия для значений «на 100 г».
+// Калорийность: чистый жир — это 900 ккал/100 г, физического способа
+// превысить 1000 нет. Макронутриент: больше 100 г в 100 г продукта не
+// помещается. Всё, что выше, — мусор в открытой базе (перепутанная единица
+// измерения, опечатка в порции), и он не должен попасть ни в кэш, ни в
+// дневник: одна такая запись перекосит дневную сумму до бессмыслицы.
+const MAX_KCAL100 = 1000
+const MAX_MACRO100 = 100
+
+// Штрих-коды: EAN-8 (8), UPC-E (8), UPC-A (12), EAN-13 (13), ITF-14 (14).
+// Только цифры — ни пробелов, ни дефисов, ни ведущего плюса.
+export function isValidBarcode(code) {
+  return typeof code === 'string' && /^[0-9]{8,14}$/.test(code)
+}
+
+// Разбор числа из OFF. Там одно и то же поле в разных карточках приходит то
+// числом, то строкой ("12.5"), то строкой с запятой, то пустой строкой.
+function toNumber(v) {
+  if (v === null || v === undefined) return null
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null
+  const s = String(v).replace(',', '.').trim()
+  if (!s) return null
+  const n = Number(s)
+  return Number.isFinite(n) ? n : null
+}
+
+// Отсев неправдоподобного + округление до одного знака.
+// Проверка ДО округления: 1000.04 — это уже мусор, а не «ровно потолок».
+// Отрицательные отбрасываем целиком, а не поджимаем к нулю: минус в
+// калорийности означает сломанную карточку, и ноль был бы выдумкой.
+function sanitize(n, max) {
+  if (n === null || n < 0 || n > max) return null
+  return Math.round(n * 10) / 10
+}
+
+// Ответ OFF → наша карточка продукта. Чистая функция, отдельно от сети:
+// именно её гоняет test-barcode.mjs на записанных ответах.
+// Возвращает null, если брать нечего (нет даже названия).
+export function normalizeOffProduct(barcode, product) {
+  if (!product || typeof product !== 'object') return null
+
+  // Русское название приоритетнее: в дневнике «Молоко 3.2%» читается лучше,
+  // чем «Milk 3.2%», а у российских товаров в OFF заполнены оба поля.
+  //
+  // Обрезаем ДО выбора, а не после: в OFF полно карточек, где product_name_ru
+  // заполнен одними пробелами. Такое поле «истинно» для ||, и наивный
+  // `ru || en` выбрал бы пробелы, а потом отбросил карточку целиком — хотя
+  // английское название рядом есть.
+  const nameRu = String(product.product_name_ru || '').trim()
+  const nameAny = String(product.product_name || '').trim()
+  const rawName = nameRu || nameAny
+  if (!rawName) return null
+
+  // brands в OFF — список через запятую ("Простоквашино, Danone"), берём
+  // первый: это производитель, остальное обычно владелец марки.
+  // Длину режем — в открытой базе поле иногда содержит абзац текста, и он
+  // потом целиком уедет в название записи дневника.
+  const brand = String(product.brands || '').split(',')[0].trim().slice(0, 100) || null
+
+  const nutr = product.nutriments && typeof product.nutriments === 'object' ? product.nutriments : {}
+
+  // Калорийность: сначала готовое поле в ккал, и только если его нет —
+  // пересчёт из килоджоулей. Не наоборот и не «взять оба и сверить»:
+  // energy-kcal_100g в OFF заполняют с упаковки, а energy_100g часто
+  // досчитан самой базой из макронутриентов.
+  const kcalDirect = toNumber(nutr['energy-kcal_100g'])
+  const kj = toNumber(nutr['energy_100g'])
+  const kcalRaw = kcalDirect !== null ? kcalDirect : (kj !== null ? kj / KJ_PER_KCAL : null)
+
+  return {
+    barcode,
+    name: rawName.slice(0, 200),
+    brand,
+    kcal100: sanitize(kcalRaw, MAX_KCAL100),
+    p100: sanitize(toNumber(nutr['proteins_100g']), MAX_MACRO100),
+    c100: sanitize(toNumber(nutr['carbohydrates_100g']), MAX_MACRO100),
+    f100: sanitize(toNumber(nutr['fat_100g']), MAX_MACRO100),
+  }
+}
+
+// Строка из базы → та же форма, что отдаёт normalizeOffProduct. Числа гоняем
+// через Number: numeric в PostgREST может приехать строкой, и тогда клиент
+// молча получил бы "3.2" вместо 3.2 и склеил бы строки при пересчёте порции.
+function fromRow(row) {
+  const n = v => (v === null || v === undefined ? null : (Number.isFinite(Number(v)) ? Number(v) : null))
+  return {
+    barcode: row.barcode,
+    name: row.name,
+    brand: row.brand ?? null,
+    kcal100: n(row.kcal100),
+    p100: n(row.p100),
+    c100: n(row.c100),
+    f100: n(row.f100),
+  }
+}
+
+async function handleBarcode(req, res) {
+  // Свои CORS-заголовки: у ветки другой метод, чем у тренерской части файла.
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  if (req.method === 'OPTIONS') return res.status(200).end()
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
+
+  // Свой ключ лимита ('barcode', не 'set-exercise'): счётчики не должны
+  // смешиваться — иначе тренер, сохраняющий шаблоны, выжигал бы лимит
+  // сканера, и наоборот.
+  // 60 в минуту: один продукт — один запрос, но человек у полки сканирует
+  // корзину подряд, а за одним IP (домашний вайфай, NAT оператора) их может
+  // быть несколько. Лимит бьёт только по явному скрипту.
+  if (!rateLimit(req, res, { name: 'barcode', limit: 60 })) return
+
+  // ?code=1&code=2 приезжает массивом — это не опечатка пользователя, а
+  // подбор формата, отвечаем ровно как на любой мусор.
+  const raw = req.query?.code
+  const code = Array.isArray(raw) ? '' : String(raw ?? '').trim()
+  if (!isValidBarcode(code)) {
+    return res.status(400).json({ error: 'Штрих-код должен состоять из 8–14 цифр' })
+  }
+
+  // Кэш — оптимизация, а не условие работы. Если серверный ключ не настроен,
+  // сканер обязан продолжать работать напрямую через OFF, просто медленнее;
+  // громко пишем в лог, чтобы поломка настроек не осталась незамеченной.
+  // (Тренерские ветки этого файла, наоборот, fail closed — им без ключа
+  // делать нечего.)
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!serviceRoleKey) console.error('SUPABASE_SERVICE_ROLE_KEY не настроен — ветка barcode работает без кэша')
+  const supabaseAdmin = serviceRoleKey ? createClient(SUPABASE_URL, serviceRoleKey) : null
+
+  // ── 1. Свой кэш
+  if (supabaseAdmin) {
+    const { data: cached, error: cacheError } = await supabaseAdmin
+      .from('food_products')
+      .select('barcode,name,brand,kcal100,p100,c100,f100')
+      .eq('barcode', code)
+      .maybeSingle()
+    if (cacheError) {
+      // Кэш отвалился — не повод отказывать пользователю, идём в OFF.
+      console.error(`Штрих-код ${code}: ошибка чтения кэша:`, cacheError)
+    } else if (cached) {
+      return res.status(200).json({ found: true, product: fromRow(cached), cached: true })
+    }
+  }
+
+  // ── 2. Open Food Facts
+  // AbortController — единственный способ ограничить fetch по времени;
+  // без него зависший запрос держал бы функцию до её собственного таймаута,
+  // а пользователь смотрел бы на крутилку.
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), OFF_TIMEOUT_MS)
+  let offRes
+  try {
+    offRes = await fetch(`${OFF_URL}/${code}.json?fields=${OFF_FIELDS}`, {
+      headers: { 'User-Agent': OFF_USER_AGENT, Accept: 'application/json' },
+      signal: controller.signal,
+    })
+  } catch (e) {
+    clearTimeout(timer)
+    console.error(`Штрих-код ${code}: OFF недоступен:`, e?.name === 'AbortError' ? 'таймаут' : e?.message)
+    // 502, а НЕ {found:false}. Разница принципиальная: «не найден» —
+    // достоверный ответ базы, после него человек вводит продукт руками и
+    // больше не пытается. «Источник недоступен» — наша временная беда, тот же
+    // скан через минуту сработает, и клиент говорит именно это.
+    return res.status(502).json({ error: 'source_unavailable' })
+  }
+  clearTimeout(timer)
+
+  // 404 — штатный ответ OFF «такого кода в базе нет».
+  if (offRes.status === 404) return res.status(200).json({ found: false })
+  if (!offRes.ok) {
+    console.error(`Штрих-код ${code}: OFF ответил ${offRes.status}`)
+    return res.status(502).json({ error: 'source_unavailable' })
+  }
+
+  let offJson
+  try {
+    offJson = await offRes.json()
+  } catch (e) {
+    console.error(`Штрих-код ${code}: не удалось разобрать ответ OFF:`, e?.message)
+    return res.status(502).json({ error: 'source_unavailable' })
+  }
+
+  // OFF отдаёт «не нашёл» двумя способами: HTTP 404 (выше) и HTTP 200 с
+  // status:0 в теле. Второй встречается чаще.
+  if (offJson?.status === 0) return res.status(200).json({ found: false })
+
+  const product = normalizeOffProduct(code, offJson?.product)
+  // Карточка без названия — пустышка: в OFF полно записей, заведённых одним
+  // лишь сканом, где не заполнено вообще ничего. Для пользователя это то же
+  // самое, что «не найден».
+  if (!product) return res.status(200).json({ found: false })
+
+  // ── 3. В кэш — только то, что стоит кэшировать
+  // Название И калорийность: карточка без ккал бесполезна для дневника, а
+  // положив её в кэш, мы бы навсегда закрыли себе повторный поход в OFF за
+  // теми же данными — а там их вполне могут дозаполнить завтра. Поэтому такую
+  // карточку отдаём клиенту (пусть он покажет, что нашлось), но не сохраняем.
+  const worthCaching = supabaseAdmin && product.kcal100 !== null
+  if (worthCaching) {
+    // upsert по barcode, а не insert: параллельный скан того же кода другим
+    // пользователем мог опередить нас на доли секунды, и insert упал бы на
+    // первичном ключе. Заодно это способ обновить карточку, если в OFF её
+    // с прошлого раза поправили.
+    const { error: writeError } = await supabaseAdmin
+      .from('food_products')
+      .upsert({ ...product, source: 'off' }, { onConflict: 'barcode' })
+    // Ошибка записи в кэш пользователя не касается — продукт у нас на руках,
+    // отдаём его и молча теряем только выгоду от кэширования.
+    if (writeError) console.error(`Штрих-код ${code}: ошибка записи в кэш:`, writeError)
+  }
+
+  return res.status(200).json({ found: true, product, cached: false })
+}
+
 export default async function handler(req, res) {
+  // Развилка ДО всего остального. Ветка штрих-кода опознаётся ТОЛЬКО по
+  // query-параметру: существующие вызовы тренерского каталога — это POST на
+  // голый /api/set-exercise без строки запроса (App.jsx, шесть мест), у них
+  // req.query.action не бывает вовсе. Поэтому строка ниже физически не может
+  // изменить ни один из старых сценариев — она либо срабатывает на новом
+  // GET-запросе, либо пропускает всё как раньше.
+  //
+  // Именно query, а не body: у ветки метод GET, тела у неё нет.
+  if (req.query?.action === 'barcode') return handleBarcode(req, res)
+
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, createContext, useContext } from 'react'
+import { useState, useEffect, useRef, useMemo, createContext, useContext, lazy, Suspense } from 'react'
 import { createPortal } from 'react-dom'
 import AIAssistant from './AIAssistant'
 import TrainerSession, { TrainerSessionsList } from './TrainerSession.jsx'
@@ -16,7 +16,14 @@ import { MuscleDefs } from './muscleIcons'
 import { muscleGroup, equipment } from './exerciseMeta'
 import { POLICY_VERSION, POLICY_SECTIONS, CONSENT_SECTIONS, CONSENT_CHECKBOX } from './legalText'
 import { PLANS, VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, effectiveAccess } from './plans'
+import { CAL_MIN, CAL_MAX, MACRO_MIN, MACRO_MAX, clampNum } from './nutrition.js'
 import './App.css'
+
+// Сканер штрих-кода для дневника питания — лениво, отдельным чанком. Внутри
+// него лежит декодер @zxing, который нужен единицам (fallback для браузеров
+// без системного BarcodeDetector) и который незачем тащить в основной бандл,
+// загружаемый вообще всеми при каждом входе.
+const BarcodeScanner = lazy(() => import('./BarcodeScanner.jsx'))
 
 // ── Тёмная тема (единая палитра, шаг 1: каркас + экран «Тренировки»).
 // Акцентные имена (PUR/TEA/BLU/COR) сохранены — переопределены на новые
@@ -56,11 +63,13 @@ const localTodayISO = () => { const d = new Date(); const p = n => String(n).pad
 // графики и расчёт нормы КБЖУ (calcMacroGoals, aiPrompt.js). Клампим ПРИ
 // СОХРАНЕНИИ (жёстко, в коде) — HTML min/max на инпутах ниже это только
 // подсказка браузеру, её легко обойти (вставка, автозаполнение, DevTools).
-const CAL_MIN = 0, CAL_MAX = 20000
-const MACRO_MIN = 0, MACRO_MAX = 2000
+//
+// Пределы питания (CAL_*/MACRO_*) и сам clampNum переехали в src/nutrition.js
+// и импортируются выше: те же значения нужны сканеру штрих-кода, который
+// считает КБЖУ порции у себя, а импортировать их из App.jsx не может —
+// App.jsx подгружает сканер лениво, вышло бы кольцо.
 const PROFILE_WEIGHT_MIN = 0, PROFILE_WEIGHT_MAX = 500
 const PROFILE_HEIGHT_MIN = 0, PROFILE_HEIGHT_MAX = 300
-const clampNum = (v, min, max) => Math.max(min, Math.min(max, Number(v) || 0))
 
 const BADGE = {
   'Сила':        { bg:'#EEEDFE', tx:'#3C3489' },
@@ -5977,6 +5986,10 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const [foodDate,setFoodDate]=useState(()=>{const t=new Date();return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`})
   const [showFoodForm,setShowFoodForm]=useState(false)
   const [foodForm,setFoodForm]=useState({name:'',kcal:'',p:'',c:'',f:''})
+  // Сканер штрих-кода (src/BarcodeScanner.jsx, lazy). Открывается из раздела
+  // питания; в readOnly (тренер смотрит чужой дневник) не показывается вовсе —
+  // писать в чужой дневник отсюда нельзя, addFood там всё равно выйдет сразу.
+  const [showScanner,setShowScanner]=useState(false)
   const [editingFoodId,setEditingFoodId]=useState(null)
   const [editFoodForm,setEditFoodForm]=useState({name:'',kcal:'',p:'',c:'',f:'',items:[]})
   const [openFoodMenu,setOpenFoodMenu]=useState(null)
@@ -6116,17 +6129,25 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   },[userId,foodDate,readOnly])
   const dayEntries=foodDiary[foodDate]||[]
   const dayTotal=dayEntries.reduce((acc,e)=>({kcal:acc.kcal+(+e.kcal||0),p:acc.p+(+e.p||0),c:acc.c+(+e.c||0),f:acc.f+(+e.f||0)}),{kcal:0,p:0,c:0,f:0})
-  const addFood=async()=>{
+  // Единственный путь добавления записи в дневник питания. Без аргумента
+  // берёт то, что набрано в форме «Добавить продукт»; с аргументом — готовую
+  // запись {name,kcal,p,c,f} от сканера штрих-кода. Сканер намеренно НЕ несёт
+  // своей записи в Supabase: и вставка, и localStorage, и разбор ошибки должны
+  // остаться в одном месте, иначе две копии логики разъедутся на первой же
+  // правке. Форма при внешней записи не трогается — пользователь мог начать
+  // набирать в ней что-то своё до того, как открыл сканер.
+  const addFood=async(external)=>{
     if(readOnly)return
-    if(!foodForm.name.trim())return
-    const kcal=clampNum(foodForm.kcal,CAL_MIN,CAL_MAX)
-    const p=clampNum(foodForm.p,MACRO_MIN,MACRO_MAX)
-    const c=clampNum(foodForm.c,MACRO_MIN,MACRO_MAX)
-    const f=clampNum(foodForm.f,MACRO_MIN,MACRO_MAX)
-    let entry={id:Date.now(),...foodForm,kcal,p,c,f}
+    const src=external||foodForm
+    if(!String(src.name||'').trim())return
+    const kcal=clampNum(src.kcal,CAL_MIN,CAL_MAX)
+    const p=clampNum(src.p,MACRO_MIN,MACRO_MAX)
+    const c=clampNum(src.c,MACRO_MIN,MACRO_MAX)
+    const f=clampNum(src.f,MACRO_MIN,MACRO_MAX)
+    let entry={id:Date.now(),...src,kcal,p,c,f}
     if(userId){
       const {data,error}=await supabase.from('food_diary').insert({
-        user_id:userId,date:foodDate,name:foodForm.name,
+        user_id:userId,date:foodDate,name:src.name,
         kcal,p,c,f,
       }).select().single()
       if(error){console.error('Ошибка записи в дневник питания:',error);flashFoodSaveError();return}
@@ -6138,8 +6159,10 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
       localStorage.setItem('fitpro_food_diary',JSON.stringify(all))
       return updated
     })
-    setFoodForm({name:'',kcal:'',p:'',c:'',f:''})
-    setShowFoodForm(false)
+    if(!external){
+      setFoodForm({name:'',kcal:'',p:'',c:'',f:''})
+      setShowFoodForm(false)
+    }
   }
   const removeFood=async(id)=>{
     if(readOnly)return
@@ -6871,6 +6894,15 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     const rem=(k)=>Math.max(0,foodGoals[k]-dayTotal[k])
     const over=(k)=>Math.max(0,dayTotal[k]-foodGoals[k])
     const pct=(k)=>foodGoals[k]?Math.min(100,Math.round((dayTotal[k]/foodGoals[k])*100)):0
+    // Одна и та же кнопка стоит в двух местах: рядом с «+ Добавить продукт»
+    // (когда форма закрыта) и первой строкой внутри открытой формы — до
+    // сканера не должно быть нужно сначала закрывать то, что уже открыл.
+    const scanBtn=(
+      <button onClick={()=>setShowScanner(true)}
+        style={{ width:'100%',padding:'13px',borderRadius:12,border:`2px dashed ${TEA}55`,background:'transparent',color:TEA,fontSize:14,fontWeight:600,cursor:'pointer',minHeight:'unset',display:'flex',alignItems:'center',justifyContent:'center',gap:8 }}>
+        <GlassIcon name="video" size={22} />Сканировать штрих-код
+      </button>
+    )
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:BG,zIndex:1000,display:'flex',flexDirection:'column' }}>
         {/* Тост ошибки записи в дневник/нормы — addFood/removeFood/saveEditFood/
@@ -7157,6 +7189,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
             {!readOnly&&(showFoodForm?(
               <Card style={{ marginBottom:12,background:SURF,border:`1px solid ${HAIR}` }}>
                 <div style={{ fontSize:13,fontWeight:700,color:TXT,marginBottom:10 }}>Добавить продукт</div>
+                <div style={{ marginBottom:10 }}>{scanBtn}</div>
                 <input placeholder="Название *" value={foodForm.name} onChange={e=>setFoodForm(f=>({...f,name:e.target.value}))}
                   style={{ width:'100%',padding:'9px 12px',fontSize:13,borderRadius:8,border:`1.5px solid ${HAIR}`,outline:'none',boxSizing:'border-box',marginBottom:8,color:TXT,background:SURF2 }}
                   onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
@@ -7168,17 +7201,39 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                   ))}
                 </div>
                 <div style={{ display:'flex',gap:8 }}>
-                  <button onClick={addFood} style={{ flex:1,padding:'10px',borderRadius:9,border:'none',background:PUR,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>Добавить</button>
+                  {/* Обёртка в стрелку обязательна: onClick={addFood} передал
+                      бы в addFood событие мыши как «готовую запись». */}
+                  <button onClick={()=>addFood()} style={{ flex:1,padding:'10px',borderRadius:9,border:'none',background:PUR,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>Добавить</button>
                   <button onClick={()=>setShowFoodForm(false)} style={{ padding:'10px 16px',borderRadius:9,border:'none',background:SURF2,color:TXT3,fontSize:13,cursor:'pointer',minHeight:'unset' }}>Отмена</button>
                 </div>
               </Card>
             ):(
-              <button onClick={()=>setShowFoodForm(true)}
-                style={{ width:'100%',padding:'13px',borderRadius:12,border:`2px dashed ${PUR}55`,background:'transparent',color:PUR,fontSize:14,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>
-                + Добавить продукт
-              </button>
+              <div style={{ display:'flex',flexDirection:'column',gap:8 }}>
+                <button onClick={()=>setShowFoodForm(true)}
+                  style={{ width:'100%',padding:'13px',borderRadius:12,border:`2px dashed ${PUR}55`,background:'transparent',color:PUR,fontSize:14,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>
+                  + Добавить продукт
+                </button>
+                {scanBtn}
+              </div>
             ))}
         </div>
+        {/* Сканер штрих-кода — поверх всего раздела. Записывает НЕ сам:
+            отдаёт готовую строку в addFood, тот же путь, что и у формы, вместе
+            с его обработкой ошибки (flashFoodSaveError). Оверлей закрываем ДО
+            записи — тост об ошибке живёт в этом разделе и из-под сканера его
+            было бы не видно. */}
+        {!readOnly&&showScanner&&(
+          <Suspense fallback={
+            <div style={{ position:'fixed',inset:0,background:BG,zIndex:2000,display:'flex',alignItems:'center',justifyContent:'center',color:TXT3,fontSize:14 }}>
+              Загружаю сканер…
+            </div>
+          }>
+            <BarcodeScanner
+              onClose={()=>setShowScanner(false)}
+              onAdd={entry=>{setShowScanner(false);addFood(entry)}}
+            />
+          </Suspense>
+        )}
       </div>
     , document.body)
   }
