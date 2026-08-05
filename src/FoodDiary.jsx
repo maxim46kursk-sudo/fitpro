@@ -17,6 +17,7 @@ import { createPortal } from 'react-dom'
 import { supabase } from './supabase.js'
 import { GlassIcon } from './glassIcons'
 import { Ic } from './icons.jsx'
+import MacroInputs from './MacroInputs.jsx'
 import {
   CAL_MIN, CAL_MAX, MACRO_MIN, MACRO_MAX, clampNum,
   buildFoodEntry, scaleProduct, clampGrams,
@@ -672,12 +673,9 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
                             style={{ fontSize: 12, color: PUR, border: 'none', background: 'none', cursor: 'pointer', padding: '4px 0', minHeight: 'unset' }}>+ добавить позицию</button>
                         </div>
                       )}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6, marginBottom: 10 }}>
-                        {[['ккал', 'kcal', PUR], ['Б', 'p', TEA], ['У', 'c', BLU], ['Ж', 'f', COR]].map(([pl, k, c]) => (
-                          <input key={k} type="number" min={k === 'kcal' ? CAL_MIN : MACRO_MIN} max={k === 'kcal' ? CAL_MAX : MACRO_MAX} placeholder={pl} value={editFoodForm[k]} onChange={ev => setEditFoodForm(f => ({ ...f, [k]: ev.target.value }))}
-                            style={{ width: '100%', padding: '7px 6px', fontSize: 12, borderRadius: 7, border: `1.5px solid ${c}44`, outline: 'none', boxSizing: 'border-box', color: TXT, textAlign: 'center', background: SURF2 }}
-                            onFocus={ev => ev.target.style.borderColor = c} onBlur={ev => ev.target.style.borderColor = `${c}44`} />
-                        ))}
+                      <div style={{ marginBottom: 10 }}>
+                        <MacroInputs size="sm" values={editFoodForm}
+                          onChange={(k, v) => setEditFoodForm(f => ({ ...f, [k]: v }))} />
                       </div>
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button onClick={saveEditFood} style={{ flex: 1, padding: '9px', borderRadius: 8, border: 'none', background: PUR, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 'unset' }}>Сохранить</button>
@@ -840,12 +838,9 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
                   <input placeholder="Название *" value={foodForm.name} onChange={e => setFoodForm(f => ({ ...f, name: e.target.value }))}
                     style={{ ...inputStyle, marginBottom: 10 }}
                     onFocus={e => e.target.style.borderColor = PUR} onBlur={e => e.target.style.borderColor = HAIR} />
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 14 }}>
-                    {[['ккал', 'kcal', KCAL], ['Б (г)', 'p', TEA], ['У (г)', 'c', BLU], ['Ж (г)', 'f', COR]].map(([pl, k, c]) => (
-                      <input key={k} type="number" min={k === 'kcal' ? CAL_MIN : MACRO_MIN} max={k === 'kcal' ? CAL_MAX : MACRO_MAX} placeholder={pl} value={foodForm[k]} onChange={e => setFoodForm(f => ({ ...f, [k]: e.target.value }))}
-                        style={{ width: '100%', padding: '10px 8px', fontSize: 14, borderRadius: 9, border: `1.5px solid ${c}44`, outline: 'none', boxSizing: 'border-box', color: TXT, background: SURF2, textAlign: 'center' }}
-                        onFocus={e => e.target.style.borderColor = c} onBlur={e => e.target.style.borderColor = `${c}44`} />
-                    ))}
+                  <div style={{ marginBottom: 14 }}>
+                    <MacroInputs values={foodForm}
+                      onChange={(k, v) => setFoodForm(f => ({ ...f, [k]: v }))} />
                   </div>
                   <button onClick={async () => { const meal = sheetMeal; const src = foodForm; closeSheet(); await addFood({ ...src }, meal) }}
                     disabled={!foodForm.name.trim()}

@@ -17,6 +17,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { GlassIcon } from './glassIcons'
 import { supabase } from './supabase.js'
+import MacroInputs from './MacroInputs.jsx'
 import {
   buildFoodEntry, scaleProduct, clampGrams, parseGrams,
   GRAMS_DEFAULT, GRAMS_MIN, GRAMS_MAX,
@@ -529,12 +530,6 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
   // Требуем только ккал; макросы остаются необязательными, как и раньше.
   const needsKcal = labelEmpty && parseGrams(labelForm.kcal100) === null
 
-  const macroInput = c => ({
-    width: '100%', padding: '10px 8px', fontSize: 15, borderRadius: 8,
-    border: `1.5px solid ${c}44`, outline: 'none', boxSizing: 'border-box',
-    color: TXT, background: SURF2, textAlign: 'center',
-  })
-
   const headerTitle =
     stage === 'result' ? 'Порция'
       : stage === 'manual' ? 'Ввод штрих-кода'
@@ -780,12 +775,12 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
               onFocus={e => e.target.style.borderColor = PUR} onBlur={e => e.target.style.borderColor = HAIR} />
 
             <div style={{ fontSize: 12, color: TXT3, fontWeight: 600, marginBottom: 6 }}>На 100 г</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 16 }}>
-              {[['ккал', 'kcal100', KCAL], ['Б (г)', 'p100', TEA], ['У (г)', 'c100', BLU], ['Ж (г)', 'f100', COR]].map(([pl, k, c]) => (
-                <input key={k} value={labelForm[k]} onChange={e => setLabelForm(f => ({ ...f, [k]: e.target.value }))}
-                  inputMode="decimal" placeholder={pl} style={macroInput(c)}
-                  onFocus={e => e.target.style.borderColor = c} onBlur={e => e.target.style.borderColor = `${c}44`} />
-              ))}
+            {/* type="decimal", а не "number": значения приходят от модели и
+                человек правит их с телефонной клавиатуры, где легко ввести
+                запятую — type="number" такое поле молча обнулил бы. */}
+            <div style={{ marginBottom: 16 }}>
+              <MacroInputs suffix="100" type="decimal" values={labelForm}
+                onChange={(k, v) => setLabelForm(f => ({ ...f, [k]: v }))} />
             </div>
 
             {photoError && (
