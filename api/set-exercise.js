@@ -295,6 +295,36 @@ function sanitizeQuery(raw) {
     .slice(0, SEARCH_MAX_LEN)
 }
 
+// Ранжирование выдачи. Обе таблицы дают «где-то внутри названия есть q», но
+// для человека это очень разные попадания: набрав «молоко», он ждёт сверху
+// молоко, а не «Какао с молоком».
+//
+// Три уровня:
+//   0 — название НАЧИНАЕТСЯ с q («Молоко 3.2%» для «молоко»);
+//   1 — q стоит в начале другого слова («Какао с молоком»);
+//   2 — q где-то внутри слова («Молочный» для «молочн»).
+// Уровни 0 и 1 разведены намеренно, хотя оба — «начало слова». С одним общим
+// уровнем сортировка по длине вклинивала «Какао с молоком» (15 символов)
+// между «Молоко 6%» и «Молоко топлёное 4%»: список видов молока разрывался
+// посторонним блюдом ровно там, где человек его листает.
+//
+// При равенстве выигрывает КОРОТКОЕ название: «Молоко 2.5%» конкретнее и
+// нужнее, чем «Молоко сгущённое с сахаром». Последний ключ — сам текст, чтобы
+// порядок не плавал между запросами при полностью равных названиях.
+function rankSearchResults(rows, q) {
+  const needle = q.toLowerCase()
+  const tier = name => {
+    const n = String(name || '').toLowerCase()
+    if (n.startsWith(needle)) return 0
+    if (n.includes(` ${needle}`)) return 1
+    return 2
+  }
+  return rows
+    .map(r => ({ r, t: tier(r.name), len: String(r.name || '').length }))
+    .sort((a, b) => a.t - b.t || a.len - b.len || String(a.r.name).localeCompare(String(b.r.name), 'ru'))
+    .map(x => x.r)
+}
+
 async function handleFoodSearch(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
@@ -323,22 +353,60 @@ async function handleFoodSearch(req, res) {
   }
   const supabaseAdmin = createClient(SUPABASE_URL, serviceRoleKey)
 
-  const { data, error } = await supabaseAdmin
-    .from('food_products')
-    .select(CARD_COLUMNS)
-    // Ищем и по названию, и по бренду: люди набирают и «творог», и
-    // «простоквашино», и то и другое должно находить одно и то же.
-    .or(`name.ilike.*${q}*,brand.ilike.*${q}*`)
-    // Карточка без калорийности бесполезна: в дневник её не занести, а место
-    // в короткой выдаче она займёт.
-    .not('kcal100', 'is', null)
-    .limit(SEARCH_LIMIT)
-  if (error) {
-    console.error(`food-search «${q}»: ошибка запроса:`, error)
+  // Ищем в ДВУХ таблицах сразу и параллельно:
+  //  • food_basics   — стартовый справочник (гречка, творог, яблоко). Именно
+  //                    он делает поиск полезным, пока сканов мало;
+  //  • food_products — то, что пользователи насканировали и наснимали.
+  // Из каждой берём по SEARCH_LIMIT, объединяем, ранжируем и режем общим
+  // лимитом: иначе одна таблица могла бы вытеснить другую целиком просто
+  // потому, что её запрос выполнился первым.
+  const [basicsRes, productsRes] = await Promise.all([
+    supabaseAdmin
+      .from('food_basics')
+      .select('id,name,kcal100,p100,c100,f100')
+      // У базовых нет бренда — искать есть только по названию.
+      .ilike('name', `*${q}*`)
+      .limit(SEARCH_LIMIT),
+    supabaseAdmin
+      .from('food_products')
+      .select(CARD_COLUMNS)
+      // Ищем и по названию, и по бренду: люди набирают и «творог», и
+      // «простоквашино», и то и другое должно находить одно и то же.
+      .or(`name.ilike.*${q}*,brand.ilike.*${q}*`)
+      // Карточка без калорийности бесполезна: в дневник её не занести, а место
+      // в короткой выдаче она займёт.
+      .not('kcal100', 'is', null)
+      .limit(SEARCH_LIMIT),
+  ])
+
+  // Падение ЛЮБОЙ из таблиц не должно обнулять выдачу: базовый справочник и
+  // пользовательские карточки независимы, и половина ответа полезнее ошибки.
+  if (basicsRes.error) console.error(`food-search «${q}»: ошибка food_basics:`, basicsRes.error)
+  if (productsRes.error) console.error(`food-search «${q}»: ошибка food_products:`, productsRes.error)
+  if (basicsRes.error && productsRes.error) {
     return res.status(500).json({ error: 'Поиск временно недоступен' })
   }
 
-  return res.status(200).json({ results: (data || []).map(fromRow) })
+  const basics = (basicsRes.data || []).map(r => ({
+    // key нужен клиенту для React-списка: у базовых нет barcode, а по одному
+    // лишь названию ключ был бы хрупким.
+    key: `basic:${r.id}`,
+    barcode: null,
+    name: r.name,
+    // Бренда у базового продукта нет по определению — это не товар, а позиция
+    // справочника. Клиент по source:'basic' не рисует ни бренда, ни пометки
+    // «≈»: значения тут точнее, чем у чего угодно другого в выдаче.
+    brand: null,
+    kcal100: Number(r.kcal100),
+    p100: Number(r.p100),
+    c100: Number(r.c100),
+    f100: Number(r.f100),
+    source: 'basic',
+  }))
+  const products = (productsRes.data || []).map(r => ({ key: `product:${r.barcode}`, ...fromRow(r) }))
+
+  const results = rankSearchResults([...basics, ...products], q).slice(0, SEARCH_LIMIT)
+  return res.status(200).json({ results })
 }
 
 // ══════════════════════════════════════════════════════════════════════════

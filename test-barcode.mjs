@@ -1176,22 +1176,26 @@ const SEARCH_ROWS = [
 
 // Стаб PostgREST для поиска: запоминает, с каким фильтром пришли, чтобы можно
 // было проверить и ILIKE по обоим полям, и limit.
-function stubSearch({ rows = SEARCH_ROWS } = {}) {
+function stubSearch({ rows = SEARCH_ROWS, basics = [] } = {}) {
   const calls = []
   globalThis.fetch = async (url) => {
     const u = new URL(String(url))
     if (u.host !== SUPA_HOST) throw new Error(`неожиданный хост: ${u.host}`)
+    const isBasics = u.pathname.includes('food_basics')
     calls.push({
       path: u.pathname,
+      table: isBasics ? 'basics' : 'products',
       or: u.searchParams.get('or'),
+      name: u.searchParams.get('name'),
       limit: u.searchParams.get('limit'),
       kcal: u.searchParams.get('kcal100'),
       select: u.searchParams.get('select'),
     })
-    return json(rows)
+    return json(isBasics ? basics : rows)
   }
   return calls
 }
+const callOf = (calls, table) => calls.find(c => c.table === table) || {}
 
 let searchIp = 0
 const searchReq = (q, method = 'GET') => ({
@@ -1211,18 +1215,27 @@ async function callSearch(q, opts = {}, method = 'GET') {
   const { res, calls } = await callSearch('творог')
   assertEqual('поиск: статус 200', res.statusCode, 200)
   assertEqual('поиск: вернулись обе карточки', res.body?.results?.length, 2)
-  assertEqual('поиск: карточка отдана целиком, с source', res.body.results[0], SEARCH_ROWS[0])
+  // key добавляется сервером: у позиции базового справочника нет barcode, а
+  // React-списку нужен стабильный ключ.
+  assertEqual('поиск: карточка отдана целиком, с source и key',
+    res.body.results[0], { key: 'product:1111111111111', ...SEARCH_ROWS[0] })
   assertEqual('поиск: примерная помечена своим source', res.body.results[1].source, 'ai_estimate')
-  assertEqual('поиск: ходили в food_products', calls[0].path, '/rest/v1/food_products')
+  assertEqual('поиск: ходили в food_products', callOf(calls, 'products').path, '/rest/v1/food_products')
+  assertEqual('поиск: ходили и в food_basics', callOf(calls, 'basics').path, '/rest/v1/food_basics')
 }
 {
   // ILIKE по ДВУМ полям: люди набирают и «творог», и «простоквашино».
   const { calls } = await callSearch('простоквашино')
-  report('поиск: ILIKE по name', calls[0].or.includes('name.ilike.*простоквашино*'), calls[0].or)
-  report('поиск: ILIKE по brand', calls[0].or.includes('brand.ilike.*простоквашино*'), calls[0].or)
-  assertEqual('поиск: limit 20', calls[0].limit, '20')
-  report('поиск: карточки без ккал отсекаются', calls[0].kcal === 'not.is.null', JSON.stringify(calls[0]))
-  report('поиск: source в выборке', String(calls[0].select).includes('source'), calls[0].select)
+  const prod = callOf(calls, 'products')
+  report('поиск: ILIKE по name', prod.or.includes('name.ilike.*простоквашино*'), prod.or)
+  report('поиск: ILIKE по brand', prod.or.includes('brand.ilike.*простоквашино*'), prod.or)
+  assertEqual('поиск: limit 20 в food_products', prod.limit, '20')
+  assertEqual('поиск: limit 20 в food_basics', callOf(calls, 'basics').limit, '20')
+  report('поиск: карточки без ккал отсекаются', prod.kcal === 'not.is.null', JSON.stringify(prod))
+  report('поиск: source в выборке', String(prod.select).includes('source'), prod.select)
+  // У базовых бренда нет — ищем только по названию.
+  assertEqual('базовые ищутся по name через ilike', callOf(calls, 'basics').name, 'ilike.*простоквашино*')
+  assertEqual('к базовым не применяется or-фильтр', callOf(calls, 'basics').or, null)
 }
 {
   const { res, calls } = await callSearch('т')
@@ -1246,15 +1259,18 @@ async function callSearch(q, opts = {}, method = 'GET') {
   // видно и то, что лишнее убрано, и то, что нужное осталось, и что запятая в
   // строке ровно одна — наша, разделяющая два условия.
   const { calls } = await callSearch('творог, 5% (жирный)')
-  assertEqual('спецсимволы вычищены из фильтра целиком', calls[0].or,
+  const or = callOf(calls, 'products').or
+  assertEqual('спецсимволы вычищены из фильтра целиком', or,
     '(name.ilike.*творог 5 жирный*,brand.ilike.*творог 5 жирный*)')
   assertEqual('в фильтре ровно одна запятая — наш разделитель условий',
-    (calls[0].or.match(/,/g) || []).length, 1)
+    (or.match(/,/g) || []).length, 1)
+  assertEqual('в фильтр базовых спецсимволы тоже не уехали',
+    callOf(calls, 'basics').name, 'ilike.*творог 5 жирный*')
 }
 {
   // Точка нужна: «Молоко 3.2%» без неё ищется заметно хуже.
   const { calls } = await callSearch('Молоко 3.2%')
-  assertEqual('точка в числе сохраняется', calls[0].or,
+  assertEqual('точка в числе сохраняется', callOf(calls, 'products').or,
     '(name.ilike.*Молоко 3.2*,brand.ilike.*Молоко 3.2*)')
 }
 {
@@ -1271,7 +1287,7 @@ async function callSearch(q, opts = {}, method = 'GET') {
 {
   const { calls } = await callSearch('т'.repeat(200))
   assertEqual('слишком длинный запрос обрезается ровно до 40 символов',
-    (calls[0].or.match(/т+/) || [''])[0].length, 40)
+    (callOf(calls, 'products').or.match(/т+/) || [''])[0].length, 40)
 }
 {
   const { res, calls } = await callSearch('творог', {}, 'POST')
@@ -1319,6 +1335,76 @@ async function callSearch(q, opts = {}, method = 'GET') {
     return { res, writes }
   })()
   assertEqual('исчерпанный лимит поиска не мешает сканеру', scanRes.statusCode, 200)
+}
+
+{
+  // ── Объединение двух таблиц и ранжирование
+  const BASICS = [
+    { id: 1, name: 'Молоко 3.2%', kcal100: 60, p100: 2.9, c100: 4.7, f100: 3.2 },
+    { id: 2, name: 'Молоко 1.5%', kcal100: 44, p100: 2.9, c100: 4.8, f100: 1.5 },
+    { id: 3, name: 'Молоко сгущённое с сахаром', kcal100: 320, p100: 7.2, c100: 56, f100: 8.5 },
+    { id: 4, name: 'Какао с молоком', kcal100: 102, p100: 3.2, c100: 15, f100: 3.2 },
+  ]
+  const PRODUCTS = [
+    { barcode: '999', name: 'Молоко Домик в деревне 3.2%', brand: 'Домик в деревне', kcal100: 59, p100: 2.9, c100: 4.7, f100: 3.2, source: 'off' },
+  ]
+  const { res, calls } = await callSearch('молоко', { rows: PRODUCTS, basics: BASICS })
+
+  assertEqual('обе таблицы опрошены', calls.map(c => c.table).sort(), ['basics', 'products'])
+  assertEqual('выдача объединена', res.body.results.length, 5)
+  // Порядок: сначала то, что НАЧИНАЕТСЯ с запроса (короткое выше), потом
+  // совпадение с начала другого слова.
+  // Внутри уровня «начинается с запроса» решает ДЛИНА названия, а не таблица:
+  // «Молоко сгущённое с сахаром» (26 символов) идёт раньше «Молоко Домик в
+  // деревне 3.2%» (27) — это и есть требуемое «короткое название выше».
+  assertEqual('ранжирование: молоко выше молочных блюд',
+    res.body.results.map(r => r.name),
+    ['Молоко 1.5%', 'Молоко 3.2%', 'Молоко сгущённое с сахаром', 'Молоко Домик в деревне 3.2%', 'Какао с молоком'])
+  assertEqual('«Какао с молоком» ушло вниз — совпадение не с начала названия',
+    res.body.results.at(-1).name, 'Какао с молоком')
+  assertEqual('базовые и отсканированные вперемешку по релевантности',
+    res.body.results.map(r => r.source),
+    ['basic', 'basic', 'basic', 'off', 'basic'])
+}
+{
+  const BASICS = [{ id: 7, name: 'Гречка варёная', kcal100: 92, p100: 3.6, c100: 17.1, f100: 1.1 }]
+  const { res } = await callSearch('гречка', { rows: [], basics: BASICS })
+  const r = res.body.results[0]
+  assertEqual('базовый продукт помечен source=basic', r.source, 'basic')
+  assertEqual('у базового нет бренда', r.brand, null)
+  assertEqual('у базового нет штрих-кода', r.barcode, null)
+  assertEqual('у базового стабильный ключ для списка', r.key, 'basic:7')
+  assertEqual('числа приведены к числам', [r.kcal100, r.p100, r.c100, r.f100], [92, 3.6, 17.1, 1.1])
+}
+{
+  // Общий лимит 20 на объединённую выдачу, а не по 20 из каждой таблицы.
+  const BASICS = Array.from({ length: 20 }, (_, i) => ({ id: i + 1, name: `Молоко тип ${String(i).padStart(2, '0')}`, kcal100: 60, p100: 3, c100: 5, f100: 3 }))
+  const PRODUCTS = Array.from({ length: 20 }, (_, i) => ({ barcode: `9${i}`, name: `Молоко бренд ${i}`, brand: 'X', kcal100: 60, p100: 3, c100: 5, f100: 3, source: 'off' }))
+  const { res } = await callSearch('молоко', { rows: PRODUCTS, basics: BASICS })
+  assertEqual('общий лимит выдачи — 20, а не 40', res.body.results.length, 20)
+}
+{
+  // Падение одной таблицы не должно обнулять выдачу целиком.
+  const calls = []
+  globalThis.fetch = async (url) => {
+    const u = new URL(String(url))
+    calls.push(u.pathname)
+    if (u.pathname.includes('food_basics')) return json({ message: 'boom' }, 500)
+    return json([{ barcode: '5', name: 'Молоко скан', brand: null, kcal100: 60, p100: 3, c100: 5, f100: 3, source: 'off' }])
+  }
+  const res = mockRes()
+  await handler(searchReq('молоко'), res)
+  restoreFetch()
+  assertEqual('справочник отвалился — отдаём то, что нашлось в сканах', res.statusCode, 200)
+  assertEqual('… и это не пустой список', res.body?.results?.length, 1)
+}
+{
+  // А вот падение ОБЕИХ — это уже честная ошибка.
+  globalThis.fetch = async () => json({ message: 'boom' }, 500)
+  const res = mockRes()
+  await handler(searchReq('молоко'), res)
+  restoreFetch()
+  assertEqual('обе таблицы недоступны → 500', res.statusCode, 500)
 }
 
 // ══════════════════════════════════════════════════════════════════════════

@@ -869,8 +869,10 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
                           Не нашли — отсканируй штрих-код или сфотографируй упаковку, продукт появится в базе для всех
                         </div>
                       )}
+                      {/* key приходит с сервера: у позиции базового справочника
+                          нет штрих-кода, а по названию ключ был бы хрупким. */}
                       {(searchResults || []).map(p => (
-                        <div key={p.barcode} onClick={() => pickProduct(p)}
+                        <div key={p.key || p.barcode} onClick={() => pickProduct(p)}
                           style={{ background: SURF, border: `1px solid ${HAIR}`, borderRadius: 12, padding: '11px 14px', marginBottom: 8, cursor: 'pointer' }}>
                           <div style={{ fontSize: 14, fontWeight: 600, color: TXT }}>{p.name}</div>
                           <div style={{ fontSize: 11, color: TXT3, marginTop: 2 }}>
