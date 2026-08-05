@@ -680,10 +680,40 @@ const LABEL_BODY = { type: 'food_label', barcode: '4600682000129', image: TINY_J
   assertEqual('слишком большое фото НЕ съело суточную квоту', seen.rpc, [])
 }
 {
-  // Платный идёт по почасовому потолку, суточного счётчика не касается.
   const { res, seen } = await callChat(LABEL_BODY, { profile: PAID_PROFILE })
   assertEqual('ПРОФИТ: фото проходит (200)', res.statusCode, 200)
-  assertEqual('ПРОФИТ: суточный счётчик не трогаем вовсе', seen.rpc, [])
+  // Раньше платный суточного счётчика не касался вовсе. Теперь считается и он —
+  // тем же kind, что и бесплатный, только потолок другой.
+  assertEqual('ПРОФИТ: расход тоже учитывается своим счётчиком', seen.rpc, ['incr_feature_usage:food_label'])
+}
+{
+  const { res } = await callChat(LABEL_BODY, { profile: PAID_PROFILE, labelUsage: 100 })
+  assertEqual('ПРОФИТ: 100-е фото за сутки ещё проходит', res.statusCode, 200)
+}
+{
+  const { res, seen } = await callChat(LABEL_BODY, { profile: PAID_PROFILE, labelUsage: 101 })
+  assertEqual('ПРОФИТ: 101-е фото за сутки → 429', res.statusCode, 429)
+  assertEqual('ПРОФИТ: признак — daily_limit, а не free_daily_limit', res.body?.reason, 'daily_limit')
+  assertEqual('ПРОФИТ: текст про завтра', res.body?.error, 'Дневной лимит фото исчерпан, продолжим завтра')
+  assertEqual('ПРОФИТ 429: к модели не ходили', seen.anthropic.length, 0)
+}
+{
+  // Потолки не перепутаны местами: у бесплатного он по-прежнему 3, а не 100.
+  const { res } = await callChat(LABEL_BODY, { profile: FREE_PROFILE, labelUsage: 4 })
+  assertEqual('бесплатная квота 3/день не поднялась до 100', res.statusCode, 429)
+  assertEqual('бесплатный при этом получает свой признак', res.body?.reason, 'free_daily_limit')
+}
+{
+  // И наоборот: платному 4-е фото за сутки ничем не мешает.
+  const { res } = await callChat(LABEL_BODY, { profile: PAID_PROFILE, labelUsage: 4 })
+  assertEqual('ПРОФИТ: 4-е фото за сутки проходит (не упирается в лимит бесплатных)', res.statusCode, 200)
+}
+{
+  // Суточный потолок платных не течёт в чат: у чата свой счётчик и свои 40.
+  const { res, seen } = await callChat({ messages: [{ role: 'user', content: 'привет' }] },
+    { profile: PAID_PROFILE, labelUsage: 500, anthropic: () => json({ content: [{ type: 'text', text: 'ок' }] }) })
+  assertEqual('исчерпанный суточный потолок фото не мешает чату', res.statusCode, 200)
+  assertEqual('чат по-прежнему считается только incr_ai_usage', seen.rpc, ['incr_ai_usage'])
 }
 
 // ── Счётчики чата и распознавания не смешиваются ──────────────────────────
@@ -750,20 +780,27 @@ const LABEL_BODY = { type: 'food_label', barcode: '4600682000129', image: TINY_J
   // иначе первым сработал бы общий чатовый лимит по IP (12/мин) и тест
   // проверял бы не то.
   const HEAVY_UID = '22222222-2222-4222-8222-222222222222'
-  let last = null, twentieth = null
+  let last = null, twentieth = null, lastSeen = null
   for (let i = 0; i < 21; i++) {
-    stubChat({ uid: HEAVY_UID, profile: PAID_PROFILE })
+    const seen = stubChat({ uid: HEAVY_UID, profile: PAID_PROFILE })
     const res = mockRes()
     await chatHandler(chatReq(LABEL_BODY, { ip: `10.8.0.${i + 1}` }), res)
     restoreFetch()
     if (i === 19) twentieth = res
     last = res
+    lastSeen = seen
   }
   assertEqual('ПРОФИТ: 20-е распознавание за час ещё проходит', twentieth.statusCode, 200)
   assertEqual('ПРОФИТ: 21-е распознавание за час → 429', last.statusCode, 429)
   report('в ответе 429 есть Retry-After', Boolean(last.headers['Retry-After']))
-  report('почасовой 429 НЕ помечен free_daily_limit (клиент скажет «через час»)',
-    last.body?.reason !== 'free_daily_limit', JSON.stringify(last.body))
+  // Признака нет ВООБЩЕ — именно так клиент отличает «через час» от «завтра».
+  // Проверяем на undefined, а не «не free_daily_limit»: со вторым условием
+  // тест прошёл бы и в случае, когда почасовой потолок молча подменился
+  // суточным (reason:'daily_limit'), то есть проверял бы не то.
+  assertEqual('почасовой 429 приходит без reason (клиент скажет «через час»)',
+    last.body?.reason, undefined)
+  assertEqual('почасовой 429 сработал ДО суточного счётчика (в базу не ходили)',
+    lastSeen.rpc, [])
 }
 {
   // Обычный чат тем же ключом лимита не задет — у него свой счётчик.
