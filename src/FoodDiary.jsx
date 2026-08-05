@@ -27,7 +27,12 @@ import {
   MEALS, MEAL_ICONS, NO_MEAL, NO_MEAL_LABEL, mealLabel,
   groupByMeal, sumEntries, remainingOf, overBy, pctOf, recentProducts, moveEntry,
   scaleEntryByPortions, clampPortions, PORTIONS_DEFAULT, PORTIONS_MIN, PORTIONS_MAX,
+  shiftISO,
 } from './foodMeals.js'
+import {
+  DAY, GOALS, SUMMARY, initialStack, currentScreen, currentDate, currentMonth,
+  pushScreen, replaceTop, popScreen, canGoBack, monthTotals,
+} from './foodNav.js'
 
 // Сканер — лениво, как и раньше: внутри него декодер @zxing, которому нечего
 // делать в основном бандле.
@@ -69,7 +74,7 @@ const isoOf = d => {
 const SEARCH_DEBOUNCE_MS = 300
 const SEARCH_MIN_LEN = 2
 
-export default function FoodDiary({ userId, readOnly = false, readOnlyName = '', onClose, onOpenAI }) {
+export default function FoodDiary({ userId, readOnly = false, readOnlyName = '', onClose }) {
   // ── Состояние дневника (перенесено из DiaryView без изменений)
   // Инициализация из localStorage-кэша — мгновенный показ до ответа сети
   // (полная загрузка из Supabase ниже перезатирает это, как только придёт
@@ -77,15 +82,29 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
   const [foodDiary, setFoodDiary] = useState(() => {
     try { return JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}') } catch { return {} }
   })
-  const [foodDate, setFoodDate] = useState(() => isoOf(new Date()))
+  // Стек экранов раздела. В основании всегда день; поверх ложатся «Норма» и
+  // «Сводка», а из календаря сводки — ещё один день. «Назад» = снять верхний.
+  const [stack, setStack] = useState(() => initialStack(isoOf(new Date())))
+  const screen = currentScreen(stack)
+  const foodDate = currentDate(stack)
+  // Какой месяц подгружать для чисел в календаре: тот, что листают в «Сводке»,
+  // а если она не открыта — месяц выбранного дня (данные пригодятся, когда её
+  // откроют, и нужны недельной сводке).
+  const loadMonth = useMemo(() => {
+    const inSummary = currentMonth(stack)
+    if (inSummary) return inSummary
+    const [y, m] = (foodDate || '').split('-').map(Number)
+    return { y, m: m - 1 }
+  }, [stack, foodDate])
   const [editingFoodId, setEditingFoodId] = useState(null)
   const [editFoodForm, setEditFoodForm] = useState({ name: '', kcal: '', p: '', c: '', f: '', items: [] })
   const [openFoodMenu, setOpenFoodMenu] = useState(null)
   // Меню записи переключается в режим выбора приёма — «Перенести в другой
   // приём» показывает те же четыре пункта вместо Редактировать/Удалить.
   const [movingFoodId, setMovingFoodId] = useState(null)
-  const [calPickerMonth, setCalPickerMonth] = useState(() => { const t = new Date(); return { y: t.getFullYear(), m: t.getMonth() } })
-  const [showGoals, setShowGoals] = useState(false)
+  // Меню шестерёнки — оверлей, в стек «назад» НЕ входит: закрывается тапом
+  // мимо, как и меню записи.
+  const [gearOpen, setGearOpen] = useState(false)
   // Тост ошибки записи в дневник/нормы — addFood/removeFood/saveEditFood/
   // сохранение нормы падают в Supabase молча, тот же паттерн, что и у своих
   // упражнений.
@@ -114,6 +133,22 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
   const [manualOpen, setManualOpen] = useState(false)
   const [foodForm, setFoodForm] = useState({ name: '', kcal: '', p: '', c: '', f: '' })
   const [showScanner, setShowScanner] = useState(false)
+
+  // ── Переходы между экранами
+  const goBack = () => {
+    if (canGoBack(stack)) setStack(popScreen(stack))
+    else onClose?.()
+  }
+  const openGoals = () => { setGearOpen(false); setGoalsForm(foodGoals); setStack(st => pushScreen(st, { type: GOALS })) }
+  const openSummary = () => {
+    setGearOpen(false)
+    const [y, m] = foodDate.split('-').map(Number)
+    setStack(st => pushScreen(st, { type: SUMMARY, tab: 'week', month: { y, m: m - 1 } }))
+  }
+  // Стрелки даты и «Сегодня» ЗАМЕНЯЮТ верхний экран, а не добавляют новый:
+  // иначе после десяти нажатий «‹» пришлось бы десять раз жать «назад».
+  const setDate = date => setStack(st => replaceTop(st, { date }))
+  const todayISO = isoOf(new Date())
 
   const closeSheet = () => {
     setSheetMeal(null); setQuery(''); setSearchResults(null); setSearchError(null)
@@ -173,7 +208,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
   // Загрузка за весь видимый месяц (для чисел в календаре)
   useEffect(() => {
     if (!userId) return
-    const { y, m } = calPickerMonth
+    const { y, m } = loadMonth
     const monthStart = `${y}-${String(m + 1).padStart(2, '0')}-01`
     const lastDay = new Date(y, m + 1, 0).getDate()
     const monthEnd = `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
@@ -194,7 +229,11 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
           return updated
         })
       })
-  }, [calPickerMonth, userId, readOnly])
+    // Зависимости — ПОЛЯ loadMonth, а не сам объект: useMemo отдаёт новую
+    // ссылку при каждом изменении стека, и эффект перезапрашивал бы месяц на
+    // каждое нажатие стрелки даты.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadMonth.y, loadMonth.m, userId, readOnly])
 
   // Нормы КБЖУ
   useEffect(() => {
@@ -426,32 +465,44 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
         </div>
       )}
 
-      {/* Шапка */}
+      {/* Шапка. Кнопка «назад» одна на все экраны раздела: снимает верхний
+          экран стека, а из основания закрывает раздел целиком. */}
       <div style={{ background: SURF, borderBottom: `1px solid ${HAIR}`, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: TXT3, lineHeight: 1, padding: 0, minHeight: 'unset' }}><GlassIcon name="back" size={26} /></button>
-        <span style={{ fontSize: 17, fontWeight: 700, color: TXT, flex: 1 }}>{sectionTitle('Питание')}</span>
-        {!readOnly && <button onClick={() => { setGoalsForm(foodGoals); setShowGoals(g => !g) }}
-          style={{ background: showGoals ? PUR : SURF2, border: 'none', borderRadius: 9, padding: '7px 13px', fontSize: 12, fontWeight: 600, color: showGoals ? '#fff' : TXT3, cursor: 'pointer', minHeight: 'unset' }}>
-          ⚙️ Норма
-        </button>}
+        <button onClick={goBack} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: TXT3, lineHeight: 1, padding: 0, minHeight: 'unset' }}><GlassIcon name="back" size={26} /></button>
+        <span style={{ fontSize: 17, fontWeight: 700, color: TXT, flex: 1 }}>
+          {screen.type === GOALS ? 'Норма' : screen.type === SUMMARY ? sectionTitle('Сводка') : sectionTitle('Питание')}
+        </span>
+        {/* Шестерёнка только на экране дня: на подэкранах ей некуда вести. */}
+        {!readOnly && screen.type === DAY && (
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <button onClick={() => setGearOpen(o => !o)} aria-label="Настройки питания"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: TXT3, padding: 0, minHeight: 'unset', lineHeight: 1 }}>
+              <GlassIcon name="gear" size={26} />
+            </button>
+            {gearOpen && (
+              <>
+                <div onClick={() => setGearOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 49 }} />
+                <div onClick={ev => ev.stopPropagation()} style={{ position: 'absolute', top: 32, right: 0, background: SURF, borderRadius: 12, boxShadow: '0 6px 24px rgba(0,0,0,0.35)', zIndex: 51, minWidth: 170, overflow: 'hidden', border: `1px solid ${HAIR}` }}>
+                  <button onClick={openGoals} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '11px 15px', border: 'none', borderBottom: `1px solid ${HAIR}`, background: 'transparent', cursor: 'pointer', textAlign: 'left', color: TXT, fontSize: 13 }}>
+                    <GlassIcon name="target" size={20} />Норма
+                  </button>
+                  <button onClick={openSummary} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '11px 15px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left', color: TXT, fontSize: 13 }}>
+                    <GlassIcon name="chart" size={20} />Сводка
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px 32px' }}>
 
-        {/* Плашка AI диетолога */}
-        {onOpenAI && (
-          <div onClick={() => onOpenAI('nutrition')} style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'linear-gradient(120deg,rgba(48,209,88,.14),rgba(48,209,88,.04))', border: '1px solid rgba(48,209,88,.28)', borderRadius: 18, padding: '12px 16px', marginBottom: 14, cursor: 'pointer' }}>
-            <div style={{ width: 38, height: 38, borderRadius: '50%', background: `linear-gradient(135deg,${TEA},#1f8f3d)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><GlassIcon name="robot" size={28} /></div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: TXT }}>Спросить AI-ассистента</div>
-              <div style={{ fontSize: 12, color: TXT2, marginTop: 1 }}>Знает твой план и остаток калорий</div>
-            </div>
-            <span style={{ fontSize: 18, color: TEA }}>›</span>
-          </div>
-        )}
-
+        {/* ── Экран «Норма» */}
+        {screen.type === GOALS && (
+          <>
         {/* Настройка норм */}
-        {!readOnly && showGoals && (
+        {(
           <Card style={{ marginBottom: 14, background: SURF, border: `1.5px solid ${PUR}33` }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: TXT, marginBottom: 10 }}>Дневная норма</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 12 }}>
@@ -476,7 +527,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
                 const { error } = await supabase.from('food_goals').upsert({ user_id: userId, ...clampedGoals, updated_at: new Date().toISOString() })
                 if (error) { console.error('Ошибка сохранения нормы КБЖУ:', error); flashFoodSaveError(); return }
               }
-              setFoodGoals(clampedGoals); setShowGoals(false)
+              setFoodGoals(clampedGoals); goBack()
               localStorage.setItem('fitpro_food_goals', JSON.stringify(clampedGoals))
             }}
               style={{ width: '100%', padding: '12px', borderRadius: 16, border: 'none', background: `linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer', minHeight: 'unset', boxShadow: '0 10px 26px rgba(124,122,240,.4)' }}>
@@ -484,65 +535,21 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
             </button>
           </Card>
         )}
+          </>
+        )}
 
-        {/* Календарь месяца — переключатель даты, оставлен как был */}
-        {(() => {
-          const { y, m } = calPickerMonth
-          const first = new Date(y, m, 1)
-          const startDow = (first.getDay() + 6) % 7 // Пн=0
-          const daysInMonth = new Date(y, m + 1, 0).getDate()
-          const MONTH_RU = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
-          const DAY_HEADS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
-          const todayISO = isoOf(new Date())
-          const cells = []
-          for (let i = 0; i < startDow; i++) cells.push(null)
-          for (let d = 1; d <= daysInMonth; d++) cells.push(d)
-          while (cells.length % 7 !== 0) cells.push(null)
-          return (
-            <div style={{ background: SURF, borderRadius: 20, boxShadow: '0 4px 24px rgba(0,0,0,0.35)', border: `1px solid ${HAIR}`, padding: '16px', marginBottom: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                <button onClick={() => setCalPickerMonth(({ y, m }) => m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 })}
-                  style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: TXT3, minHeight: 'unset', padding: '0 6px' }}>‹</button>
-                <span style={{ fontSize: 15, fontWeight: 700, color: TXT }}>{MONTH_RU[m]} {y}</span>
-                <button onClick={() => setCalPickerMonth(({ y, m }) => m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 })}
-                  style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: TXT3, minHeight: 'unset', padding: '0 6px' }}>›</button>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2, marginBottom: 4 }}>
-                {DAY_HEADS.map(h => (
-                  <div key={h} style={{ textAlign: 'center', fontSize: 10, fontWeight: 600, color: TXT3, padding: '2px 0' }}>{h}</div>
-                ))}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2 }}>
-                {cells.map((d, ci) => {
-                  if (!d) return <div key={ci} />
-                  const iso = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-                  const entries = foodDiary[iso] || []
-                  const kcal = entries.reduce((s, e) => s + (+e.kcal || 0), 0)
-                  const hasData = kcal > 0
-                  const isSel = iso === foodDate
-                  const isToday = iso === todayISO
-                  return (
-                    <div key={ci} onClick={() => setFoodDate(iso)}
-                      style={{
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: 12, padding: '5px 2px', minHeight: 44,
-                        background: isSel ? PUR : hasData ? SURF2 : isToday ? `${PUR}18` : 'transparent',
-                        border: isToday && !isSel ? `1px solid ${PUR}40` : '1px solid transparent',
-                      }}>
-                      <span style={{ fontSize: 13, fontWeight: isSel || isToday ? 700 : 400, color: isSel ? '#fff' : isToday ? PUR : TXT2, lineHeight: 1.4 }}>{d}</span>
-                      {hasData && (
-                        <span style={{ fontSize: 8, fontWeight: 600, color: isSel ? 'rgba(255,255,255,0.85)' : TXT3, lineHeight: 1.2, marginTop: 1, textAlign: 'center' }}>
-                          {kcal}
-                        </span>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
+        {/* ── Экран «Сводка»: две вкладки */}
+        {screen.type === SUMMARY && (
+          <>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              {[['week', 'Неделя'], ['month', 'Месяц']].map(([k, label]) => (
+                <button key={k} onClick={() => setStack(st => replaceTop(st, { tab: k }))}
+                  style={{ flex: 1, padding: '10px 6px', borderRadius: 9, border: 'none', background: screen.tab === k ? PUR : SURF2, color: screen.tab === k ? '#fff' : TXT3, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', minHeight: 'unset' }}>
+                  {label}
+                </button>
+              ))}
             </div>
-          )
-        })()}
-
-        {/* Сводка за неделю */}
+        {screen.tab === 'week' && (
         <Card style={{ marginBottom: 14, background: SURF, border: `1px solid ${HAIR}` }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: TXT, marginBottom: 4 }}>Сводка за неделю</div>
           <div style={{ fontSize: 11, color: TXT3, marginBottom: 12 }}>
@@ -570,12 +577,92 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
             })}
           </div>
         </Card>
+            )}
+        {screen.tab === 'month' && (() => {
+          const { y, m } = screen.month
+          const first = new Date(y, m, 1)
+          const startDow = (first.getDay() + 6) % 7 // Пн=0
+          const daysInMonth = new Date(y, m + 1, 0).getDate()
+          const MONTH_RU = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
+          const DAY_HEADS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+          const todayISO = isoOf(new Date())
+          // Суммы по дням — чистой функцией (foodNav.monthTotals), чтобы их
+          // можно было проверить тестом, а не только глазами в календаре.
+          const totals = monthTotals(foodDiary, y, m)
+          const cells = []
+          for (let i = 0; i < startDow; i++) cells.push(null)
+          for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+          while (cells.length % 7 !== 0) cells.push(null)
+          return (
+            <div style={{ background: SURF, borderRadius: 20, boxShadow: '0 4px 24px rgba(0,0,0,0.35)', border: `1px solid ${HAIR}`, padding: '16px', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <button onClick={() => setStack(st => replaceTop(st, { month: m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 } }))}
+                  style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: TXT3, minHeight: 'unset', padding: '0 6px' }}>‹</button>
+                <span style={{ fontSize: 15, fontWeight: 700, color: TXT }}>{MONTH_RU[m]} {y}</span>
+                <button onClick={() => setStack(st => replaceTop(st, { month: m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 } }))}
+                  style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: TXT3, minHeight: 'unset', padding: '0 6px' }}>›</button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2, marginBottom: 4 }}>
+                {DAY_HEADS.map(h => (
+                  <div key={h} style={{ textAlign: 'center', fontSize: 10, fontWeight: 600, color: TXT3, padding: '2px 0' }}>{h}</div>
+                ))}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2 }}>
+                {cells.map((d, ci) => {
+                  if (!d) return <div key={ci} />
+                  const iso = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+                  const kcal = totals[iso] || 0
+                  const hasData = kcal > 0
+                  const isSel = iso === foodDate
+                  const isToday = iso === todayISO
+                  return (
+                    <div key={ci} onClick={() => setStack(st => pushScreen(st, { type: DAY, date: iso }))}
+                      style={{
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: 12, padding: '5px 2px', minHeight: 44,
+                        background: isSel ? PUR : hasData ? SURF2 : isToday ? `${PUR}18` : 'transparent',
+                        border: isToday && !isSel ? `1px solid ${PUR}40` : '1px solid transparent',
+                      }}>
+                      <span style={{ fontSize: 13, fontWeight: isSel || isToday ? 700 : 400, color: isSel ? '#fff' : isToday ? PUR : TXT2, lineHeight: 1.4 }}>{d}</span>
+                      {hasData && (
+                        <span style={{ fontSize: 8, fontWeight: 600, color: isSel ? 'rgba(255,255,255,0.85)' : TXT3, lineHeight: 1.2, marginTop: 1, textAlign: 'center' }}>
+                          {kcal}
+                        </span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })()}
+          </>
+        )}
 
+        {/* ── Экран дня */}
+        {screen.type === DAY && (
+          <>
         {/* ── Сводка дня */}
         <Card style={{ marginBottom: 14, background: 'linear-gradient(150deg,#241f3a,#151519)', border: `1px solid ${HAIR}`, borderRadius: 22 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: TXT }}>Итого за день</span>
-            <span style={{ fontSize: 11, color: TXT3 }}>{selDate.toLocaleDateString('ru', { day: 'numeric', month: 'short' })}</span>
+          {/* Переключатель даты. Стрелки и «Сегодня» ЗАМЕНЯЮТ верхний экран
+              стека, а не добавляют новый: листание дней не должно копиться в
+              кнопке «назад». */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: TXT, flex: 1 }}>Итого за день</span>
+            <button onClick={() => setDate(shiftISO(foodDate, -1))} aria-label="Предыдущий день"
+              style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: TXT3, padding: '0 6px', minHeight: 'unset', lineHeight: 1 }}>‹</button>
+            <span style={{ fontSize: 12, fontWeight: 700, color: TXT, minWidth: 62, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>
+              {selDate.toLocaleDateString('ru', { day: 'numeric', month: 'short' })}
+            </span>
+            <button onClick={() => setDate(shiftISO(foodDate, 1))} aria-label="Следующий день"
+              style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: TXT3, padding: '0 6px', minHeight: 'unset', lineHeight: 1 }}>›</button>
+            {/* «Сегодня» появляется только когда мы не на сегодняшнем дне —
+                иначе это кнопка, которая ничего не делает. */}
+            {foodDate !== todayISO && (
+              <button onClick={() => setDate(todayISO)}
+                style={{ background: SURF2, border: 'none', borderRadius: 8, padding: '4px 9px', fontSize: 11, fontWeight: 600, color: PUR, cursor: 'pointer', minHeight: 'unset' }}>
+                Сегодня
+              </button>
+            )}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
@@ -603,7 +690,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
                 : `осталось ${remainingOf(dayTotal.kcal, foodGoals.kcal)} ккал`}
             </div>
           ) : !readOnly && (
-            <button onClick={() => { setGoalsForm(foodGoals); setShowGoals(true) }}
+            <button onClick={openGoals}
               style={{ background: 'none', border: 'none', color: PUR, fontSize: 13, fontWeight: 700, cursor: 'pointer', padding: 0, marginBottom: 12, minHeight: 'unset' }}>
               Задать норму
             </button>
@@ -634,7 +721,6 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
             )
           })}
         </Card>
-
         {/* ── Приёмы пищи */}
         {[...MEALS, { key: NO_MEAL, label: NO_MEAL_LABEL }].map(meal => {
           const list = grouped[meal.key] || []
@@ -748,6 +834,8 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
             </div>
           )
         })}
+          </>
+        )}
       </div>
 
       {/* ── Лист добавления в приём */}

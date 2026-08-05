@@ -5854,7 +5854,7 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
 // accessLevel — уровень пакета: «Прогресс по упражнениям» требует БАЗУ (1).
 // Остальные разделы Дневника (тоннаж, тренировки, питание, 1ПМ) бесплатны.
 // readOnly — просмотр чужого дневника тренером, там гейт не применяем.
-function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, onOpenAI, userId, initialSection, diaryJumpToken, onSectionChange, historyLoading, historyLoadError, onRetryHistory, readOnly=false, readOnlyName='', accessLevel = 0, openPlans }) {
+function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, userId, initialSection, diaryJumpToken, onSectionChange, historyLoading, historyLoadError, onRetryHistory, readOnly=false, readOnlyName='', accessLevel = 0, openPlans }) {
   const { exercises: catalogExercises } = useContext(CatalogContext) // для labelOf (имена в истории — ключи)
   const exercisesLocked=!readOnly&&accessLevel<SLOTS_MIN_LEVEL
   const [showExLock,setShowExLock]=useState(false)
@@ -6667,7 +6667,6 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
       userId={userId}
       readOnly={readOnly}
       readOnlyName={readOnlyName}
-      onOpenAI={onOpenAI}
       onClose={()=>setSection(null)}
     />
   }
@@ -10360,11 +10359,11 @@ export default function App() {
     switch(nav){
       case 'dashboard': return userRole==='trainer'
         ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} userId={user?.id} />
-        : <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} accessLevel={access.level} openPlans={openPlans} />
+        : <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} accessLevel={access.level} openPlans={openPlans} />
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} userId={user?.id} />
       case 'nutrition': return <NutritionView userId={user?.id} />
       case 'library':   return <LibraryView customExercises={customExercises} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} />
-      case 'progress':  return <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} onOpenAI={m=>aiRef.current?.open(m)} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} accessLevel={access.level} openPlans={openPlans} />
+      case 'progress':  return <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} accessLevel={access.level} openPlans={openPlans} />
       default:          return null
     }
   }

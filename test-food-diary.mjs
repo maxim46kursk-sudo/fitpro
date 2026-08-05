@@ -19,6 +19,10 @@ const {
   recentProducts, shiftISO, scaleEntryByPortions, clampPortions,
 } = await import('./src/foodMeals.js')
 const { buildFoodEntry } = await import('./src/nutrition.js')
+const {
+  DAY, GOALS, SUMMARY, initialStack, currentScreen, currentDate, currentMonth,
+  pushScreen, replaceTop, popScreen, canGoBack, monthTotals,
+} = await import('./src/foodNav.js')
 
 let pass = 0, fail = 0
 function report(label, ok, detail) {
@@ -258,6 +262,144 @@ const addTo = (entries, entry, meal) => [...entries, { id: entries.length + 100,
   assertEqual('старая запись после правки осталась без категории', ge[NO_MEAL].map(e => e.name), ['Поправленная'])
   assertEqual('правка изменила число', sumEntries(ge[NO_MEAL]).kcal, 150)
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+// 8. НАВИГАЦИЯ: стек экранов раздела «Питание»
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── Стек экранов ───────────────────────────────────────────────────')
+
+const D1 = '2026-08-06'
+const D2 = '2026-08-20'
+
+{
+  const st = initialStack(D1)
+  assertEqual('в основании — экран дня', st, [{ type: DAY, date: D1 }])
+  assertEqual('текущий экран — день', currentScreen(st).type, DAY)
+  assertEqual('текущая дата', currentDate(st), D1)
+  assertEqual('из основания назад некуда', canGoBack(st), false)
+  assertEqual('pop основания ничего не меняет', popScreen(st), st)
+}
+
+// ── Питание → Норма → назад
+{
+  let st = initialStack(D1)
+  st = pushScreen(st, { type: GOALS })
+  assertEqual('«Норма» легла поверх дня', st.map(s => s.type), [DAY, GOALS])
+  assertEqual('стоя на «Норме», дата — того же дня', currentDate(st), D1)
+  assertEqual('назад доступно', canGoBack(st), true)
+  st = popScreen(st)
+  assertEqual('назад из «Нормы» → день', currentScreen(st).type, DAY)
+  assertEqual('день ТОТ ЖЕ, дата не сбросилась', currentDate(st), D1)
+  assertEqual('дальше назад — выход из раздела', canGoBack(st), false)
+}
+
+// ── Питание → Сводка → назад
+{
+  let st = initialStack(D1)
+  st = pushScreen(st, { type: SUMMARY, tab: 'week', month: { y: 2026, m: 7 } })
+  assertEqual('«Сводка» легла поверх дня', st.map(s => s.type), [DAY, SUMMARY])
+  assertEqual('открывается на вкладке «Неделя»', currentScreen(st).tab, 'week')
+  st = replaceTop(st, { tab: 'month' })
+  assertEqual('переключение вкладки НЕ добавляет экран', st.length, 2)
+  assertEqual('вкладка сменилась', currentScreen(st).tab, 'month')
+  st = popScreen(st)
+  assertEqual('назад со «Сводки» → день', currentScreen(st).type, DAY)
+  assertEqual('день тот же', currentDate(st), D1)
+}
+
+// ── Ключевой путь: Месяц → день из календаря → назад → тот же месяц
+{
+  let st = initialStack(D1)
+  st = pushScreen(st, { type: SUMMARY, tab: 'month', month: { y: 2026, m: 7 } })
+  // Полистали календарь назад до июня.
+  st = replaceTop(st, { month: { y: 2026, m: 6 } })
+  st = replaceTop(st, { month: { y: 2026, m: 5 } })
+  assertEqual('листание месяцев не копится в стеке', st.length, 2)
+  assertEqual('листаем июнь 2026', currentMonth(st), { y: 2026, m: 5 })
+
+  // Тап по дню в календаре.
+  st = pushScreen(st, { type: DAY, date: D2 })
+  assertEqual('открылся день из календаря', st.map(s => s.type), [DAY, SUMMARY, DAY])
+  assertEqual('показывается именно выбранный день', currentDate(st), D2)
+
+  // Назад — обязаны вернуться в СВОДКУ, на тот месяц, который листали.
+  st = popScreen(st)
+  assertEqual('назад из дня-из-календаря → «Сводка»', currentScreen(st).type, SUMMARY)
+  assertEqual('вкладка осталась «Месяц»', currentScreen(st).tab, 'month')
+  assertEqual('месяц ТОТ ЖЕ, что листали (июнь)', currentMonth(st), { y: 2026, m: 5 })
+
+  // Ещё назад — исходный день.
+  st = popScreen(st)
+  assertEqual('назад со «Сводки» → исходный день', currentScreen(st).type, DAY)
+  assertEqual('дата исходная, а не та, что тапнули в календаре', currentDate(st), D1)
+
+  // И ещё — выход из раздела.
+  assertEqual('дальше назад — выход в Дневник', canGoBack(st), false)
+}
+
+// ── Норма, открытая с дня-из-календаря
+{
+  let st = initialStack(D1)
+  st = pushScreen(st, { type: SUMMARY, tab: 'month', month: { y: 2026, m: 7 } })
+  st = pushScreen(st, { type: DAY, date: D2 })
+  st = pushScreen(st, { type: GOALS })
+  assertEqual('стоя на «Норме», дата — дня из календаря', currentDate(st), D2)
+  st = popScreen(st)
+  assertEqual('назад из «Нормы» → день из календаря', currentDate(st), D2)
+  st = popScreen(st)
+  assertEqual('дальше → «Сводка»', currentScreen(st).type, SUMMARY)
+}
+
+// ── Переключение даты стрелками
+{
+  let st = initialStack(D1)
+  st = replaceTop(st, { date: shiftISO(D1, -1) })
+  assertEqual('стрелка назад сдвинула дату', currentDate(st), '2026-08-05')
+  assertEqual('и НЕ добавила экран в стек', st.length, 1)
+  st = replaceTop(st, { date: shiftISO(currentDate(st), 1) })
+  st = replaceTop(st, { date: shiftISO(currentDate(st), 1) })
+  assertEqual('листание дней вперёд', currentDate(st), '2026-08-07')
+  assertEqual('стек по-прежнему из одного экрана', st.length, 1)
+  st = replaceTop(st, { date: D1 })
+  assertEqual('«Сегодня» возвращает дату', currentDate(st), D1)
+  assertEqual('и тоже не копит стек', st.length, 1)
+}
+{
+  // Дата, сдвинутая через границу месяца и года.
+  assertEqual('сдвиг через начало месяца', shiftISO('2026-08-01', -1), '2026-07-31')
+  assertEqual('сдвиг через конец года', shiftISO('2026-12-31', 1), '2027-01-01')
+  assertEqual('високосный февраль', shiftISO('2028-02-28', 1), '2028-02-29')
+}
+
+// ── Суммы по дням месяца (числа под датами в календаре)
+console.log('\n── Суммы ккал по дням месяца ──────────────────────────────────────')
+{
+  const diary = {
+    '2026-08-05': [{ kcal: '350' }, { kcal: '250' }],
+    '2026-08-06': [{ kcal: '1200' }],
+    '2026-08-07': [],
+    '2026-07-31': [{ kcal: '999' }],
+    '2025-08-05': [{ kcal: '777' }],
+  }
+  const t = monthTotals(diary, 2026, 7)
+  assertEqual('суммируются записи дня', t['2026-08-05'], 600)
+  assertEqual('день с одной записью', t['2026-08-06'], 1200)
+  assertEqual('пустой день в результат не попадает', '2026-08-07' in t, false)
+  assertEqual('соседний месяц не подмешивается', '2026-07-31' in t, false)
+  assertEqual('тот же месяц другого года не подмешивается', '2025-08-05' in t, false)
+  assertEqual('в результате только дни августа 2026', Object.keys(t).sort(), ['2026-08-05', '2026-08-06'])
+}
+{
+  assertEqual('пустой дневник → пусто', monthTotals({}, 2026, 7), {})
+  assertEqual('undefined не роняет', monthTotals(undefined, 2026, 7), {})
+  assertEqual('месяц без записей → пусто', monthTotals({ '2026-08-05': [{ kcal: '100' }] }, 2026, 0), {})
+  // Строки складываются как числа: дневник хранит их строками.
+  assertEqual('строки не конкатенируются',
+    monthTotals({ '2026-08-05': [{ kcal: '100' }, { kcal: '50' }] }, 2026, 7)['2026-08-05'], 150)
+  assertEqual('дробные суммы округляются',
+    monthTotals({ '2026-08-05': [{ kcal: '100.4' }, { kcal: '50.4' }] }, 2026, 7)['2026-08-05'], 151)
+}
+
 
 console.log(`\n${'─'.repeat(68)}\nИтог: ${pass} пройдено, ${fail} провалено`)
 process.exitCode = fail ? 1 : 0
