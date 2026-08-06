@@ -15,6 +15,7 @@
 import { useState, useEffect, useMemo, lazy, Suspense } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from './supabase.js'
+import { resolveLoadOutcome, LOAD_OUTCOME } from './authState.js'
 import { GlassIcon } from './glassIcons'
 import { Ic } from './icons.jsx'
 import MacroInputs from './MacroInputs.jsx'
@@ -218,9 +219,20 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
       setFoodDiary(d => ({ ...d, ...(() => { try { return JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}') } catch { return {} } })() }))
       return
     }
+    let cancelled = false
     supabase.from('food_diary').select('*').eq('user_id', userId).eq('date', foodDate).order('created_at')
-      .then(({ data }) => {
-        const entries = (data || []).map(r => ({ id: r.id, name: r.name, kcal: String(r.kcal || 0), p: String(r.p || 0), c: String(r.c || 0), f: String(r.f || 0), meal: r.meal || null }))
+      .then(({ data, error }) => {
+        if (cancelled) return
+        // Упавший запрос раньше превращался в `(data || [])` → пустой день,
+        // который ЕЩЁ И уезжал в localStorage, затирая кэш. Теперь при ошибке
+        // не трогаем ни state, ни кэш — показываем баннер с «Повторить».
+        // Пустой массив от сервера (день реально пуст) по-прежнему применяется.
+        if (resolveLoadOutcome({ data, error }) === LOAD_OUTCOME.FAILED) {
+          console.error('Ошибка загрузки дня дневника питания:', error)
+          setFoodLoadError(true)
+          return
+        }
+        const entries = data.map(r => ({ id: r.id, name: r.name, kcal: String(r.kcal || 0), p: String(r.p || 0), c: String(r.c || 0), f: String(r.f || 0), meal: r.meal || null }))
         setFoodDiary(d => {
           const updated = { ...d, [foodDate]: entries }
           if (!readOnly) {
@@ -230,7 +242,8 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
           return updated
         })
       })
-  }, [foodDate, userId, readOnly])
+    return () => { cancelled = true }
+  }, [foodDate, userId, readOnly, foodReloadToken])
 
   // Загрузка за весь видимый месяц (для чисел в календаре)
   useEffect(() => {
@@ -239,10 +252,19 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
     const monthStart = `${y}-${String(m + 1).padStart(2, '0')}-01`
     const lastDay = new Date(y, m + 1, 0).getDate()
     const monthEnd = `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+    let cancelled = false
     supabase.from('food_diary').select('*').eq('user_id', userId).gte('date', monthStart).lte('date', monthEnd).order('created_at')
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (cancelled) return
+        // См. комментарий в загрузке дня выше: ошибка не должна выглядеть как
+        // «в этом месяце ничего не ели» и не должна затирать кэш календаря.
+        if (resolveLoadOutcome({ data, error }) === LOAD_OUTCOME.FAILED) {
+          console.error('Ошибка загрузки месяца дневника питания:', error)
+          setFoodLoadError(true)
+          return
+        }
         const byDate = {}
-        for (const r of (data || [])) {
+        for (const r of data) {
           const entry = { id: r.id, name: r.name, kcal: String(r.kcal || 0), p: String(r.p || 0), c: String(r.c || 0), f: String(r.f || 0), meal: r.meal || null }
           if (!byDate[r.date]) byDate[r.date] = []
           byDate[r.date].push(entry)
@@ -256,11 +278,12 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
           return updated
         })
       })
+    return () => { cancelled = true }
     // Зависимости — ПОЛЯ loadMonth, а не сам объект: useMemo отдаёт новую
     // ссылку при каждом изменении стека, и эффект перезапрашивал бы месяц на
     // каждое нажатие стрелки даты.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadMonth.y, loadMonth.m, userId, readOnly])
+  }, [loadMonth.y, loadMonth.m, userId, readOnly, foodReloadToken])
 
   // Нормы КБЖУ
   useEffect(() => {
@@ -285,8 +308,16 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
         return
       }
       supabase.from('food_diary').select('*').eq('user_id', userId).eq('date', foodDate).order('created_at')
-        .then(({ data }) => {
-          const entries = (data || []).map(r => ({ id: r.id, name: r.name, kcal: String(r.kcal || 0), p: String(r.p || 0), c: String(r.c || 0), f: String(r.f || 0), meal: r.meal || null }))
+        .then(({ data, error }) => {
+          // Перечитывание после записи. Ошибка тут особенно опасна: запись уже
+          // легла в базу, а пустой ответ стёр бы её и из state, и из кэша —
+          // выглядело бы как «еда не сохранилась».
+          if (resolveLoadOutcome({ data, error }) === LOAD_OUTCOME.FAILED) {
+            console.error('Ошибка обновления дня дневника питания:', error)
+            setFoodLoadError(true)
+            return
+          }
+          const entries = data.map(r => ({ id: r.id, name: r.name, kcal: String(r.kcal || 0), p: String(r.p || 0), c: String(r.c || 0), f: String(r.f || 0), meal: r.meal || null }))
           setFoodDiary(d => {
             const updated = { ...d, [foodDate]: entries }
             if (!readOnly) {

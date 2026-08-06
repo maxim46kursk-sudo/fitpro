@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import AIAssistant from './AIAssistant'
 import TrainerSession, { TrainerSessionsList } from './TrainerSession.jsx'
 import { supabase, SUPABASE_AUTH_STORAGE_KEY, SUPABASE_URL, SUPABASE_KEY } from './supabase.js'
+import { resolveAuthOutcome, AUTH_OUTCOME } from './authState.js'
 import { logError } from './logError'
 import { FOLDERS, PROGRAMS_MAP, EXERCISES, isOneSidedExercise, countCompletedProgramSlots, isProgramFullyCompleted } from './programs.js'
 import { oneRepMax, weightForReps, roundToPlate, percentTable, plateStep } from './oneRepMax.js'
@@ -384,8 +385,12 @@ const GROUP_ICON = {
 }
 
 // ── Экраны
-function Dashboard({ setNav, setSC, isTrainer, userId }) {
-  const workoutHistory = (() => { try { return JSON.parse(localStorage.getItem('fitpro_history')||'[]') } catch { return [] } })()
+// workoutHistory приходит пропом из App, а не читается из localStorage прямо в
+// рендере, как было раньше. Чтение из localStorage тут было НЕреактивным: когда
+// App догружал историю из Supabase, этот компонент про это не узнавал и не
+// перерисовывался — на главной висели цифры из кэша до ближайшего
+// перемонтирования. Источник правды один и тот же для всех экранов.
+function Dashboard({ setNav, setSC, isTrainer, userId, workoutHistory = [] }) {
   const foodDiary = (() => { try { return JSON.parse(localStorage.getItem('fitpro_food_diary')||'{}') } catch { return {} } })()
   const foodDays = Object.keys(foodDiary).length
 
@@ -5471,7 +5476,10 @@ function VideoPicker({ exerciseName, exerciseVideos = {}, setExerciseVideos, onC
   </>, document.body)
 }
 
-function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client', setExerciseVideos }) {
+// workoutHistory — пропом из App по той же причине, что и в Dashboard выше:
+// рекорды по упражнениям считались из localStorage-кэша и не обновлялись после
+// того, как App догружал историю из Supabase.
+function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client', setExerciseVideos, workoutHistory = [] }) {
   const { exercises: catalogExercises, reloadCatalog } = useContext(CatalogContext)
   const [filt,setFilt]=useState('Все')
   const [sel,setSel]=useState(null)
@@ -5590,7 +5598,7 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
   const showGroupHub = filt==='Все' && !query.trim()
   const fl=all.filter(e=>(filt==='Все'||e.m===filt)&&((e.label||e.n).toLowerCase().includes(query.toLowerCase())||e.n.toLowerCase().includes(query.toLowerCase())))
 
-  const history=(()=>{ try{ return JSON.parse(localStorage.getItem('fitpro_history')||'[]') }catch{ return [] } })()
+  const history=workoutHistory
 
   // Тот же попап плеера, что в WorkoutsView. Один элемент на оба возврата.
   const videoPopup = playVideo&&(
@@ -8271,6 +8279,20 @@ function PlansView({ user, onClose, hideBack, onChanged }) {
   // order_id/customer_extra выписывает бэкенд по токену пользователя.
   const pay=async(plan)=>{
     if(payBusy)return
+    // Внутри Telegram ничего заранее открывать не нужно: tg.openLink() под
+    // ограничение user-gesture не подпадает и спокойно работает после await.
+    const inTelegram=!!window.Telegram?.WebApp?.initData
+    // А в обычном браузере вкладку открываем СИНХРОННО, прямо в обработчике
+    // клика. Раньше window.open вызывался уже после двух await (getSession +
+    // fetch за ссылкой) — к этому моменту жест пользователя "потрачен", и
+    // Safari с Chrome mobile блокировали окно как всплывающее: человек жал
+    // "Оплатить", и не происходило ровно ничего. Держим пустую вкладку и
+    // подставляем в неё адрес, когда сервер ответит.
+    //
+    // 'noopener' тут передавать НЕЛЬЗЯ: с ним window.open возвращает null, и
+    // ссылки на вкладку не остаётся. Разрываем связь через w.opener=null ниже —
+    // эффект тот же.
+    const w=inTelegram?null:window.open('about:blank','_blank')
     setPayBusy(true);setMsg('')
     try{
       const{data:{session}}=await supabase.auth.getSession()
@@ -8283,8 +8305,21 @@ function PlansView({ user, onClose, hideBack, onChanged }) {
       })
       const body=await res.json().catch(()=>({}))
       if(!res.ok||!body?.url)throw new Error(body?.error||`сервер вернул ${res.status}`)
-      openExternal(body.url)
+      if(inTelegram){
+        openExternal(body.url)
+      }else if(w){
+        try{w.opener=null}catch{ /* кросс-origin ещё не наступил, но бывает */ }
+        w.location.replace(body.url)
+      }else{
+        // Вкладку всё-таки заблокировали (жёсткие настройки браузера) — уходим
+        // на оплату в текущей вкладке. Хуже, чем новая вкладка, но несравнимо
+        // лучше молчания: Продамус вернёт человека обратно по redirect.
+        window.location.assign(body.url)
+      }
     }catch(e){
+      // Пустую вкладку за собой закрываем — иначе на экране остаётся висеть
+      // about:blank без всякого объяснения.
+      try{w?.close()}catch{ /* уже закрыта пользователем */ }
       console.error('Ошибка создания ссылки оплаты:',e)
       flash(`Не удалось открыть оплату: ${e.message}`,true)
     }finally{
@@ -9460,9 +9495,41 @@ function MinimizedWorkoutBar({ meta, isMobile, bottomOffset, onClick }) {
   , document.body)
 }
 
+// Экран для случая, когда сессию не удалось ПОДТВЕРДИТЬ (сеть/5xx), но токены
+// на месте. Осознанно НЕ LandingPage: показать форму входа тут — значит соврать
+// человеку, что он вышел, и спровоцировать повторный вход там, где достаточно
+// дождаться сети. Кнопка дублирует авторетрай по online/visibilitychange.
+function ConnectionErrorView({ onRetry, retrying }) {
+  return (
+    <div style={{ minHeight:'100vh',background:BG,display:'flex',alignItems:'center',justifyContent:'center',padding:24 }}>
+      <div style={{ maxWidth:340,width:'100%',textAlign:'center' }}>
+        <div style={{ fontSize:17,fontWeight:700,color:TXT,marginBottom:10 }}>Нет связи с сервером</div>
+        <div style={{ fontSize:13,color:TXT2,lineHeight:1.5,marginBottom:20 }}>
+          Не удалось проверить, что ты в аккаунте. Выходить не нужно — как только
+          связь вернётся, приложение откроется само.
+        </div>
+        <button onClick={onRetry} disabled={retrying}
+          style={{ fontSize:14,fontWeight:600,padding:'11px 26px',borderRadius:12,border:`1px solid ${HAIR}`,background:SURF2,color:retrying?TXT3:PUR,cursor:retrying?'default':'pointer' }}>
+          {retrying?'Проверяем…':'Повторить'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const [user,setUser]=useState(null)
   const [authLoading,setAuthLoading]=useState(true)
+  // Сессию не удалось подтвердить из-за временного сбоя (сеть/5xx), при этом
+  // токены в localStorage целы. НЕ то же самое, что "пользователь вышел":
+  // показываем экран "нет связи" с ретраем, а не форму входа. См. authState.js.
+  const [authError,setAuthError]=useState(false)
+  const [authRetrying,setAuthRetrying]=useState(false)
+  const [authRetryToken,setAuthRetryToken]=useState(0)
+  // Зеркало authError для слушателей online/visibilitychange: они вешаются
+  // один раз с пустыми зависимостями и иначе видели бы authError навсегда false.
+  const authErrorRef=useRef(false)
+  useEffect(()=>{authErrorRef.current=authError},[authError])
   // Взводится событием PASSWORD_RECOVERY из onAuthStateChange (переход по
   // ссылке "Восстановление пароля" из письма) — пока true, показываем
   // ResetPasswordView вместо обычного входа/приложения, см. ниже.
@@ -9571,6 +9638,10 @@ export default function App() {
   // тому, кто согласия ещё не давал.
   const [consentLoaded,setConsentLoaded]=useState(false)
   const [consentGiven,setConsentGiven]=useState(false)
+  // Профиль не прочитался (сеть/5xx/401). Отдельно от consentGiven: «не смогли
+  // спросить» — не повод требовать согласие заново у того, кто его давал.
+  const [consentError,setConsentError]=useState(false)
+  const [consentRetryToken,setConsentRetryToken]=useState(0)
   // Признак «к клиенту прикреплён тренер» (profiles.coach_id непустой).
   // По умолчанию false, пока профиль не загрузился — значок видео тренеру не
   // мигнёт свободному пользователю. У самого тренера coach_id пустой, так что
@@ -9853,20 +9924,83 @@ export default function App() {
     setUser(mergeUserWithProfile(session?.user??null))
   }
 
+  // Первичное чтение сессии. Три исхода вместо прежних двух — см.
+  // resolveAuthOutcome в src/authState.js. Ключевое: UNAVAILABLE (рефреш не
+  // прошёл из-за сети/5xx, но токены в localStorage целы) больше НЕ приводит
+  // к setUser(null). Раньше приводил, и это был тот самый "тихий logout":
+  // человек с живыми токенами оказывался на LandingPage после того, как
+  // вкладка поспала ночь и первый рефреш на просыпании упал.
+  // Перезапускается по authRetryToken — кнопкой "Повторить" и авторетраем ниже.
   useEffect(()=>{
-    supabase.auth.getSession().then(({data:{session}})=>{
+    let cancelled=false
+    ;(async()=>{
+      const{data,error}=await supabase.auth.getSession()
+      if(cancelled)return
+      const session=data?.session??null
+      // Читаем хранилище ПОСЛЕ запроса: supabase-js успевает вычистить его сам,
+      // если сервер отверг refresh token. Токены на месте + ошибка = временный
+      // сбой; токенов нет = сессия мертва по-настоящему. См. authState.js.
+      const hasStoredSession=(()=>{
+        try{return !!localStorage.getItem(SUPABASE_AUTH_STORAGE_KEY)}catch{return false}
+      })()
+      if(resolveAuthOutcome({session,error,hasStoredSession})===AUTH_OUTCOME.UNAVAILABLE){
+        console.warn('Сессию подтвердить не удалось (временный сбой) — выход НЕ выполняем:',error?.message||error)
+        setAuthError(true)
+        setAuthRetrying(false)
+        setAuthLoading(false)
+        return
+      }
+      setAuthError(false)
+      setAuthRetrying(false)
       applySession(session)
       setAuthLoading(false)
-    })
+    })()
+    return()=>{cancelled=true}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[authRetryToken])
+
+  useEffect(()=>{
     const{data:{subscription}}=supabase.auth.onAuthStateChange((event,session)=>{
       // Переход по ссылке восстановления пароля создаёт временную сессию —
       // это НЕ обычный вход, обычный setUser() увёл бы сразу в приложение
       // вместо формы смены пароля (см. ResetPasswordView).
       if(event==='PASSWORD_RECOVERY'){setRecoveryMode(true);return}
+      // INITIAL_SESSION игнорируем целиком. Это НЕ реальная смена состояния, а
+      // разовый снимок при подписке, и supabase-js отдаёт в нём session:null не
+      // только когда сессии нет, но и когда рефреш упал по сети/5xx (см.
+      // _emitInitialSession: ошибка → callback('INITIAL_SESSION', null)). То
+      // есть ровно тот случай, ради которого всё это и переписано — обработай
+      // мы его тут через applySession(null), тихий logout вернулся бы через
+      // заднюю дверь. Начальное состояние целиком за эффектом getSession выше:
+      // он единственный различает три исхода.
+      if(event==='INITIAL_SESSION')return
+      // Дальше — настоящие события (SIGNED_IN/SIGNED_OUT/TOKEN_REFRESHED/
+      // USER_UPDATED): состояние достоверно, снимаем экран "нет связи", если он
+      // висел. SIGNED_OUT как и раньше: applySession(null) → LandingPage.
+      setAuthError(false)
       applySession(session)
     })
     return()=>subscription.unsubscribe()
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[])
+
+  // Авторетрай ровно в двух случаях: вернулась сеть и вкладка стала видимой
+  // (тот самый сценарий "вкладка спала ночь"). Слушатели вешаются один раз,
+  // а не пересоздаются на каждый ретрай, поэтому состояние читается через ref.
+  // Без gate по authErrorRef каждый переход по вкладкам дёргал бы getSession().
+  useEffect(()=>{
+    const retry=()=>{
+      if(!authErrorRef.current)return
+      if(document.visibilityState==='hidden')return
+      setAuthRetrying(true)
+      setAuthRetryToken(t=>t+1)
+    }
+    window.addEventListener('online',retry)
+    document.addEventListener('visibilitychange',retry)
+    return()=>{
+      window.removeEventListener('online',retry)
+      document.removeEventListener('visibilitychange',retry)
+    }
   },[])
 
   useEffect(()=>{
@@ -9913,21 +10047,34 @@ export default function App() {
   // cancelled — защита от гонки при быстрой смене пользователя: ответ по
   // старому id не должен открыть ворота новому.
   useEffect(()=>{
-    if(!user?.id){setConsentLoaded(false);setConsentGiven(false);return}
+    if(!user?.id){setConsentLoaded(false);setConsentGiven(false);setConsentError(false);return}
     let cancelled=false
     setConsentLoaded(false)
-    supabase.from('profiles').select('pd_consent_at,pd_consent_version').eq('id',user.id).single()
+    // maybeSingle(), а не single(): при отсутствии строки профиля single() отдаёт
+    // ошибку (PGRST116), неотличимую от сетевого сбоя, а нам эти два случая
+    // теперь нужно разделять. maybeSingle() на пустой выборке возвращает
+    // data:null БЕЗ ошибки — то есть "профиля нет, согласия нет".
+    supabase.from('profiles').select('pd_consent_at,pd_consent_version').eq('id',user.id).maybeSingle()
       .then(({data,error})=>{
         if(cancelled)return
-        if(error)console.error('Не удалось прочитать согласие на обработку ПДн:',error)
-        // При любой ошибке (сеть, строки профиля ещё нет) остаёмся на
-        // consentGiven=false — лишний раз спросить согласие безопаснее,
-        // чем пустить в приложение без него.
-        setConsentGiven(!error&&!!data?.pd_consent_at&&data?.pd_consent_version===POLICY_VERSION)
+        if(error){
+          // Раньше тут был setConsentGiven(false) на любую ошибку — и сетевой
+          // сбой заставлял человека, давно давшего согласие, давать его заново.
+          // Теперь "не смогли прочитать" ≠ "согласия нет": ранее известное
+          // значение не сбрасываем, показываем экран "нет связи" с ретраем.
+          console.error('Не удалось прочитать согласие на обработку ПДн:',error)
+          setConsentError(true)
+          setConsentLoaded(true)
+          return
+        }
+        // Ответ получен — вот тут отсутствие согласия действительно означает,
+        // что его не давали (или версия Политики устарела), и спросить надо.
+        setConsentError(false)
+        setConsentGiven(!!data?.pd_consent_at&&data?.pd_consent_version===POLICY_VERSION)
         setConsentLoaded(true)
       })
     return()=>{cancelled=true}
-  },[user?.id])
+  },[user?.id,consentRetryToken])
 
   // Авто-вход внутри Telegram: как только известно, что мы (а) внутри
   // Telegram, (б) уже определили, есть ли сохранённая Supabase-сессия
@@ -9939,7 +10086,10 @@ export default function App() {
   // и не долбим сервер, если попытка уже провалилась. Обычный email-вход
   // (isTelegram=false) этот эффект вообще не трогает.
   useEffect(()=>{
-    if(authLoading||user||!isTelegram||telegramAuthTriedRef.current)return
+    // authError — не пробуем, пока связи заведомо нет: попытка одноразовая
+    // (telegramAuthTriedRef), и сжечь её на мёртвой сети значит не войти уже
+    // никогда за эту сессию приложения. Ретрай сам перезапустит эффект.
+    if(authLoading||authError||user||!isTelegram||telegramAuthTriedRef.current)return
     const initData=window.Telegram?.WebApp?.initData
     if(!initData)return
     telegramAuthTriedRef.current=true
@@ -9963,7 +10113,7 @@ export default function App() {
         setTelegramAuthPending(false)
       }
     })()
-  },[authLoading,user,isTelegram])
+  },[authLoading,authError,user,isTelegram])
 
   // Обмен ссылки доступа на сессию. Условие запуска то же, что у телеграм-входа
   // выше: сохранённая сессия уже проверена (authLoading===false), пользователя
@@ -9974,7 +10124,8 @@ export default function App() {
   // текущий аккаунт на другой по ссылке из чата нельзя. Токен при этом всё
   // равно уже стёрт из адресной строки эффектом выше.
   useEffect(()=>{
-    if(authLoading||user||accessAuthTriedRef.current)return
+    // authError — та же логика, что у телеграм-входа выше: попытка одноразовая.
+    if(authLoading||authError||user||accessAuthTriedRef.current)return
     const accessToken=pendingAccessRef.current
     if(!accessToken)return
     accessAuthTriedRef.current=true
@@ -10001,7 +10152,7 @@ export default function App() {
         setAccessAuthPending(false)
       }
     })()
-  },[authLoading,user])
+  },[authLoading,authError,user])
 
   // Счётчик версии истории тренировок — растёт на 1 при КАЖДОМ подтверждённом
   // изменении workouts/workout_sets (завершение, правка, удаление, копия),
@@ -10052,6 +10203,9 @@ export default function App() {
       if (!ok) return
     }
     setUser(null)
+    // Явный выход — состояние достоверно известно, экран "нет связи" тут
+    // показывать нельзя: он перекрыл бы LandingPage, если баннер висел до этого.
+    setAuthError(false)
     setWorkoutHistory([])
     setCustomExercises([])
     Object.keys(localStorage).filter(k=>k.startsWith('sb-')).forEach(k=>localStorage.removeItem(k))
@@ -10073,6 +10227,7 @@ export default function App() {
   // несуществующего аккаунта в localStorage оставлять нельзя.
   const resetAfterAccountDelete = () => {
     setUser(null)
+    setAuthError(false)
     setWorkoutHistory([])
     setCustomExercises([])
     Object.keys(localStorage).filter(k=>k.startsWith('sb-')).forEach(k=>localStorage.removeItem(k))
@@ -10373,8 +10528,15 @@ export default function App() {
   if(recoveryMode) return <ResetPasswordView onDone={()=>setRecoveryMode(false)} />
   if(authLoading) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:BG,color:TXT3,fontSize:14}}>Загрузка...</div>
   if(!user&&(telegramAuthPending||accessAuthPending)) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:BG,color:TXT3,fontSize:14}}>Входим…</div>
+  // Строго перед LandingPage: "не смогли проверить" ≠ "вышел". Условие только
+  // на !user — если сессия уже подтверждена, временный сбой рефреша не должен
+  // выбрасывать человека из приложения вообще.
+  if(!user&&authError) return <ConnectionErrorView onRetry={()=>{setAuthRetrying(true);setAuthRetryToken(t=>t+1)}} retrying={authRetrying} />
   if(!user) return <LandingPage onEnter={setUser} isTelegram={isTelegram} accessError={accessAuthError} />
   if(!consentLoaded) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:BG,color:TXT3,fontSize:14}}>Загрузка…</div>
+  // Профиль не прочитался и согласия мы за эту сессию так и не подтвердили —
+  // честно говорим про связь вместо того, чтобы требовать согласие повторно.
+  if(consentError&&!consentGiven) return <ConnectionErrorView onRetry={()=>setConsentRetryToken(t=>t+1)} retrying={false} />
   if(!consentGiven) return <ConsentGate user={user} onAccepted={()=>setConsentGiven(true)} onDecline={performLogout} />
 
   // Всё, КРОМЕ Тренировок — обычная свитч-навигация, монтируется/
@@ -10383,11 +10545,11 @@ export default function App() {
     if(nav==='cdetail'&&sc)return <ClientDetail client={sc} goBack={goBackNav} trainerId={user?.id} />
     switch(nav){
       case 'dashboard': return userRole==='trainer'
-        ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} userId={user?.id} />
+        ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} userId={user?.id} workoutHistory={workoutHistory} />
         : <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} accessLevel={access.level} openPlans={openPlans} />
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} userId={user?.id} />
       case 'nutrition': return <NutritionView userId={user?.id} />
-      case 'library':   return <LibraryView customExercises={customExercises} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} />
+      case 'library':   return <LibraryView customExercises={customExercises} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} workoutHistory={workoutHistory} />
       case 'progress':  return <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} accessLevel={access.level} openPlans={openPlans} />
       default:          return null
     }
