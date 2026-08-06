@@ -20,6 +20,7 @@ import { PLANS, VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, pric
 // разделом в src/FoodDiary.jsx.
 import { clampNum } from './nutrition.js'
 import FoodDiary from './FoodDiary.jsx'
+import HubCard from './HubCard.jsx'
 import './App.css'
 
 // ── Тёмная тема (единая палитра, шаг 1: каркас + экран «Тренировки»).
@@ -371,6 +372,16 @@ const LOCK_EXERCISES = { title:'Прогресс по упражнениям д�
 // Со скольки слотов начинается платная часть шаблона и какой уровень нужен.
 const FREE_SLOTS = 3
 const SLOTS_MIN_LEVEL = 1
+
+// Иконка карточки группы мышц. В наборе GlassIcon анатомии нет, поэтому связь
+// ассоциативная — задача иконки здесь отличать карточки друг от друга, смысл
+// несёт подпись под ней. Анатомический силуэт (muscleIcons.jsx) сюда просится,
+// но его сознательно откатили раньше (см. комментарий у <MuscleDefs/> в конце
+// файла) — не возвращаем.
+const GROUP_ICON = {
+  'Ноги': 'runner', 'Ягодицы': 'target', 'Спина': 'ruler', 'Грудь': 'dumbbell',
+  'Плечи': 'lightning', 'Руки': 'flame', 'Кор': 'droplet', 'Всё тело': 'people',
+}
 
 // ── Экраны
 function Dashboard({ setNav, setSC, isTrainer, userId }) {
@@ -4305,27 +4316,21 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         const totalVids=slotsArr.reduce((s,sl)=>s+sl.exercises.filter(e=>e.videoId).length,0)
         const isSelected=selectedProgram===folder
         return (
-          <Card key={folder} style={{ marginBottom:10, cursor:'pointer', position:'relative', border:isSelected?`1.5px solid ${PUR}`:'1.5px solid transparent', background:isSelected?'rgba(124,122,240,0.14)':SURF }}
-            onClick={()=>setOpenFolder(folder)}>
-            <span style={{ position:'absolute', top:'50%', right:16, transform:'translateY(-50%)', fontSize:20, color:TXT3 }}>›</span>
-            <button onClick={e=>{e.stopPropagation();setInfoFolder(folder)}}
-              style={{ position:'absolute', top:10, left:12, width:22, height:22, borderRadius:'50%', border:`1px solid ${HAIR}`, background:SURF2, color:TXT3, fontSize:12, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset', padding:0 }}>?</button>
-            {/* Редактор шаблона — только тренеру. Клиент кнопку не видит. */}
-            {isTrainer&&(
+          <HubCard key={folder}
+            icon={folderIcon(folder)}
+            title={t.label}
+            subtitle={`${slotsArr.length} тренировок · ${totalEx} упр.${totalVids>0?` · ${totalVids} видео`:''}`}
+            selected={isSelected}
+            checked={isSelected}
+            onInfo={()=>setInfoFolder(folder)}
+            /* Редактор шаблона — только тренеру. Клиент кнопку не видит. */
+            topRight={isTrainer?(
               <button onClick={e=>{e.stopPropagation();setTemplateEditor({key:folder,isNew:false})}} title="Редактировать программу"
-                style={{ position:'absolute', top:8, right:44, width:26, height:26, borderRadius:'50%', border:'none', background:`${PUR}22`, color:PUR, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset', padding:0 }}>
+                style={{ width:26, height:26, borderRadius:'50%', border:'none', background:`${PUR}22`, color:PUR, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset', padding:0 }}>
                 <GlassIcon name="gear" size={15} />
               </button>
-            )}
-            {isSelected&&<span style={{ position:'absolute', top:10, right:16 }}><GlassIcon name="check" size={18} /></span>}
-            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingRight:20 }}>
-              <div style={{ display:'flex',justifyContent:'center',marginBottom:6 }}><GlassIcon name={folderIcon(folder)} size={42} /></div>
-              <div style={{ fontSize:16, fontWeight:700, color:TXT, textAlign:'center' }}>{t.label}</div>
-              <div style={{ fontSize:12, color:TXT3, marginTop:3, textAlign:'center' }}>
-                {slotsArr.length} тренировок · {totalEx} упр.{totalVids>0?` · ${totalVids} видео`:''}
-              </div>
-            </div>
-          </Card>
+            ):null}
+            onClick={()=>setOpenFolder(folder)} />
         )
       })}
       {/* Новая программа — только тренеру. */}
@@ -5577,6 +5582,12 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
 
   const all=[...catalogExercises,...(customExercises||[])]
   const muscles=['Все',...new Set(all.map(e=>e.m))]
+  // Группы для карточек-хабов: без «Все» и с числом упражнений в каждой.
+  const groupCards=muscles.filter(m=>m!=='Все').map(m=>({ m, count:all.filter(e=>e.m===m).length }))
+  // Хаб показываем, только когда человек ничего не ищет и не выбрал группу.
+  // Начал печатать — сразу плоский список по всему каталогу: искать внутри
+  // одной группы, не зная, в какой лежит упражнение, бессмысленно.
+  const showGroupHub = filt==='Все' && !query.trim()
   const fl=all.filter(e=>(filt==='Все'||e.m===filt)&&((e.label||e.n).toLowerCase().includes(query.toLowerCase())||e.n.toLowerCase().includes(query.toLowerCase())))
 
   const history=(()=>{ try{ return JSON.parse(localStorage.getItem('fitpro_history')||'[]') }catch{ return [] } })()
@@ -5814,11 +5825,26 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
       <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Поиск упражнения..."
         style={{ width:'100%',padding:'9px 12px',fontSize:13,borderRadius:9,border:`1.5px solid ${HAIR}`,boxSizing:'border-box',outline:'none',marginBottom:10,color:TXT }}
         onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
-      <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:14 }}>
-        {muscles.map(m=>(
-          <button key={m} onClick={()=>setFilt(m)} style={{ fontSize:12, padding:'4px 10px', borderRadius:20, cursor:'pointer', border:`1px solid ${filt===m?PUR:HAIR}`, background:filt===m?'#EEEDFE':'transparent', color:filt===m?'#3C3489':TXT3 }}>{m}</button>
-        ))}
-      </div>
+      {/* Внутри группы — строка возврата к хабу вместо ряда чипов. */}
+      {filt!=='Все'&&(
+        <button onClick={()=>setFilt('Все')}
+          style={{ fontSize:13,color:TXT3,border:'none',background:'none',cursor:'pointer',padding:0,marginBottom:14,display:'flex',alignItems:'center',gap:5 }}>
+          <GlassIcon name="back" size={16} />Все группы
+        </button>
+      )}
+      {/* ── Хаб групп мышц. Ниже, при выбранной группе или поиске, идёт
+          обычный плотный список — его специально не трогаем. */}
+      {showGroupHub?(
+        <div>
+          {groupCards.map(g=>(
+            <HubCard key={g.m}
+              icon={GROUP_ICON[g.m]||'dumbbell'}
+              title={g.m}
+              subtitle={`${g.count} ${plural(g.count,'упражнение','упражнения','упражнений')}`}
+              onClick={()=>setFilt(g.m)} />
+          ))}
+        </div>
+      ):(
       <div style={{ display:'flex', flexDirection:'column', gap:9 }}>
         {fl.map((ex,i)=>{
           const vid=pickVideo(exerciseVideos,ex.n,null)
@@ -5846,6 +5872,7 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
         })}
         {fl.length===0&&<div style={{ color:TXT3,fontSize:13,gridColumn:'1/-1',textAlign:'center',padding:'30px 0' }}>Ничего не найдено</div>}
       </div>
+      )}
     </div>
   )
 }
@@ -6808,18 +6835,12 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         // Заперт только "Прогресс по упражнениям"; соседние разделы бесплатны.
         const locked=f.key==='exercises'&&exercisesLocked
         return (
-        <div key={f.key} style={{ background:SURF,borderRadius:14,boxShadow:'0 1px 5px rgba(0,0,0,0.08)',marginBottom:10,display:'flex',alignItems:'center',gap:14,padding:'16px',cursor:'pointer',opacity:locked?0.55:1 }}
-          onClick={()=>{if(locked){setShowExLock(true);return}if(f.key==='exercises'){setExPeriod('all');setExCustomFrom('');setExCustomTo('')}setSection(f.key)}}>
-          <div style={{ width:50,height:50,borderRadius:14,background:`${f.color}18`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
-            <GlassIcon name={f.ic} size={40} />
-          </div>
-          <div style={{ flex:1,minWidth:0 }}>
-            <div style={{ fontSize:15,fontWeight:700,color:TXT }}>{f.label}</div>
-            {locked?<div style={{ fontSize:11,color:TXT3,marginTop:3 }}>Доступно в пакете БАЗА</div>
-                   :f.sub&&<div style={{ fontSize:11,color:TXT3,marginTop:3 }}>{f.sub}</div>}
-          </div>
-          <span style={{ fontSize:locked?17:22,color:TXT3,flexShrink:0 }}>{locked?'🔒':'›'}</span>
-        </div>
+        <HubCard key={f.key}
+          icon={f.ic}
+          title={f.label}
+          subtitle={locked?'Доступно в пакете БАЗА':f.sub}
+          locked={locked}
+          onClick={()=>{if(locked){setShowExLock(true);return}if(f.key==='exercises'){setExPeriod('all');setExCustomFrom('');setExCustomTo('')}setSection(f.key)}} />
         )
       })}
       {showExLock&&createPortal(

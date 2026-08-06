@@ -780,9 +780,13 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
           const tot = sumEntries(list)
           return (
             <div key={meal.key} style={{ marginBottom: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 4px', marginBottom: 6 }}>
-                {MEAL_ICONS[meal.key] && <GlassIcon name={MEAL_ICONS[meal.key]} size={22} />}
-                <span style={{ fontSize: 14, fontWeight: 700, color: TXT, flex: 1 }}>{meal.label}</span>
+              {/* Заголовок приёма — той же семьи, что карточки-хабы на других
+                  вкладках: крупная иконка и тот же вес шрифта. Сами секции
+                  хабами НЕ делаем — внутри списки записей, там важна
+                  плотность, а не воздух. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '0 4px', marginBottom: 7 }}>
+                {MEAL_ICONS[meal.key] && <GlassIcon name={MEAL_ICONS[meal.key]} size={28} />}
+                <span style={{ fontSize: 17, fontWeight: 700, color: TXT, flex: 1 }}>{meal.label}</span>
                 <span style={{ fontSize: 13, fontWeight: 700, color: list.length ? KCAL : TXT3 }}>{Math.round(tot.kcal)} ккал</span>
               </div>
 
