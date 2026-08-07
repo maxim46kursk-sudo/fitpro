@@ -102,7 +102,7 @@ const isoOf = d => {
 const SEARCH_DEBOUNCE_MS = 300
 const SEARCH_MIN_LEN = 2
 
-export default function FoodDiary({ userId, readOnly = false, readOnlyName = '', onClose }) {
+export default function FoodDiary({ userId, readOnly = false, readOnlyName = '', onClose, embedded = false }) {
   // ── Состояние дневника (перенесено из DiaryView без изменений)
   // Инициализация из localStorage-кэша — мгновенный показ до ответа сети
   // (полная загрузка из Supabase ниже перезатирает это, как только придёт
@@ -531,8 +531,21 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
 
   const num = v => (v === null || v === undefined ? '—' : String(v))
 
-  return createPortal(
-    <div style={{ position: 'fixed', inset: 0, background: BG, zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
+  // ПОРТАЛ ТОЛЬКО В ОВЕРЛЕЙНОМ РЕЖИМЕ. Вынос в document.body был нужен, пока
+  // раздел открывался поверх Дневника: так он гарантированно ложился выше
+  // любых родительских контекстов наложения. Встроенный в свою вкладку
+  // дневник, наоборот, ОБЯЗАН рендериться на месте — иначе он уезжает из
+  // потока вкладки в конец body, обёртка схлопывается в нулевую высоту, а сам
+  // экран оказывается ниже видимой области.
+  const tree = (
+    // embedded — дневник живёт ВНУТРИ вкладки «Питание» и обязан оставить
+    // место нижнему меню. position:fixed/inset:0/zIndex:1000 подходил, пока
+    // раздел открывался поверх Дневника; как главный экран вкладки он
+    // накрывал нижнее меню (zIndex 900) целиком, и уйти из вкладки было
+    // нельзя — она превращалась в ловушку.
+    <div style={embedded
+      ? { background: BG, display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 190px)' }
+      : { position: 'fixed', inset: 0, background: BG, zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
       {/* Тост ошибки записи — операция упала в Supabase, локально ничего не менялось. */}
       {showFoodSaveError && (
         <div style={{
@@ -548,7 +561,14 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
       {/* Шапка. Кнопка «назад» одна на все экраны раздела: снимает верхний
           экран стека, а из основания закрывает раздел целиком. */}
       <div style={{ background: SURF, borderBottom: `1px solid ${HAIR}`, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-        <button data-back="1" onClick={goBack} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: TXT3, lineHeight: 1, padding: 0, minHeight: 'unset' }}><GlassIcon name="back" size={26} /></button>
+        {/* Кнопку рисуем, только когда ей есть куда вести: со дня (основание
+            стека) без onClose уходить некуда — дневник теперь сам является
+            главным экраном вкладки «Питание», а не подразделом. Молчащая
+            стрелка в шапке была бы ровно тем, что мы вычищаем по всему
+            приложению. */}
+        {(stack.length > 1 || onClose) && (
+          <button data-back="1" onClick={goBack} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: TXT3, lineHeight: 1, padding: 0, minHeight: 'unset' }}><GlassIcon name="back" size={26} /></button>
+        )}
         <span style={{ fontSize: 17, fontWeight: 700, color: TXT, flex: 1 }}>
           {screen.type === GOALS ? 'Норма' : screen.type === SUMMARY ? sectionTitle('Сводка') : sectionTitle('Питание')}
         </span>
@@ -576,7 +596,9 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
         )}
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px 32px' }}>
+      <div style={embedded
+        ? { padding: '14px 16px 32px' }
+        : { flex: 1, overflowY: 'auto', padding: '14px 16px 32px' }}>
 
         {/* ── Экран «Норма» */}
         {screen.type === GOALS && (
@@ -1131,7 +1153,8 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
           />
         </Suspense>
       )}
-    </div>,
-    document.body,
+    </div>
   )
+
+  return embedded ? tree : createPortal(tree, document.body)
 }

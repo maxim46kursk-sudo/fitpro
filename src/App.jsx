@@ -4855,6 +4855,46 @@ const NUTRITION_PLANS=[
 const DAY_NAMES=['Пн','Вт','Ср','Чт','Пт','Сб','Вс']
 const MEAL_ICONS={'Завтрак':'sunrise','Перекус':'food','Обед':'plate','Ужин':'moon'}
 
+// ── Вкладка «Питание» ────────────────────────────────────────────────────────
+// Главный экран вкладки — ДНЕВНИК ПИТАНИЯ. Раньше он лежал секцией внутри
+// вкладки «Дневник», и человек, который хотел записать съеденное, шёл в
+// «Питание», находил там готовые рационы и уходил ни с чем: сквозной прогон
+// спотыкался ровно об это, и по коду видно, что иначе и быть не могло.
+//
+// Готовые рационы никуда не делись — они стали вторым разделом здесь же,
+// переключателем сверху. Не отдельным экраном: лишний уровень вложенности
+// вернул бы ту же проблему поиска, только на этаж ниже.
+//
+// FoodDiary и NutritionView переехали как есть, целиком, без правок логики.
+function NutritionTab({ userId }){
+  const [tab,setTab]=useState('diary')
+  // Тот же вид, что у переключателей внутри самого дневника (tabBtn в
+  // FoodDiary.jsx) — вкладка не должна выглядеть как чужой экран.
+  const btn=active=>({
+    flex:1, padding:'10px 6px', borderRadius:9, border:'none',
+    background:active?SURF:SURF2, color:active?TXT:TXT3,
+    fontSize:13, fontWeight:active?700:600, cursor:'pointer', minHeight:'unset',
+  })
+  return (
+    <div>
+      <div style={{ display:'flex', gap:8, padding:'12px 16px 4px' }}>
+        <button data-testid="nutrition-tab-diary" onClick={()=>setTab('diary')} style={btn(tab==='diary')}>Дневник</button>
+        <button data-testid="nutrition-tab-plans" onClick={()=>setTab('plans')} style={btn(tab==='plans')}>Готовые рационы</button>
+      </div>
+      {/* Оба раздела ОСТАЮТСЯ СМОНТИРОВАННЫМИ. Дневник держит собственный стек
+          экранов (foodNav.js: день → норма → сводка → день из календаря), и
+          размонтирование сбрасывало бы его при каждом переключении — человек
+          возвращался бы из «Готовых рационов» не туда, где был. */}
+      <div style={{ display: tab==='diary'?'block':'none' }}>
+        <FoodDiary userId={userId} embedded />
+      </div>
+      <div style={{ display: tab==='plans'?'block':'none' }}>
+        <NutritionView userId={userId} />
+      </div>
+    </div>
+  )
+}
+
 function NutritionView({ userId }){
   const [openPlan,setOpenPlan]=useState(null)
   const [openDay,setOpenDay]=useState(null)
@@ -4981,7 +5021,7 @@ function NutritionView({ userId }){
                   </button>
                 </div>
                 <div style={{ display:'flex',gap:8 }}>
-                  <button onClick={()=>applyToFoodDiary(day,logDate)}
+                  <button data-testid="plan-apply-confirm" onClick={()=>applyToFoodDiary(day,logDate)}
                     style={{ flex:1,padding:'12px',borderRadius:12,border:'none',background:BLU,color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset',display:'flex',alignItems:'center',justifyContent:'center',gap:7 }}>
                     <GlassIcon name="copy" size={17} />Копировать
                   </button>
@@ -4993,7 +5033,7 @@ function NutritionView({ userId }){
               </div>
             )
           })():(
-            <button onClick={()=>{if(logDone)return;const t=new Date();setLogDate(`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`);setShowLogDatePicker(true)}}
+            <button data-testid="plan-apply" onClick={()=>{if(logDone)return;const t=new Date();setLogDate(`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`);setShowLogDatePicker(true)}}
               style={{ width:'100%',padding:'13px',borderRadius:12,border:'none',
                 background:logDone?TEA:BLU,color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',minHeight:'unset',
                 display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'background 0.3s' }}>
@@ -6863,12 +6903,15 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     {key:'tonnage',ic:'scale',label:'Общий тоннаж',color:PUR,sub:`${totalTon.toLocaleString('ru')} кг · ${allWorkoutTons.length} ${plural(allWorkoutTons.length,'тренировка','тренировки','тренировок')}`},
     {key:'exercises',ic:'chart',label:'Прогресс по упражнениям',color:TEA,sub:`${exerciseNames.length} ${plural(exerciseNames.length,'упражнение','упражнения','упражнений')} отслеживается`},
     {key:'workouts',ic:'dumbbell',label:'Мои тренировки',color:COR,sub:allWorkoutTons.length>0?`Последняя: ${fmtFull(allWorkoutTons[allWorkoutTons.length-1].date)}`:'Нет записей'},
-    {key:'food',ic:'food',label:'Питание',color:BLU,sub:'Дневник питания · макросы'},
+    // Карточка «Питание» отсюда убрана: дневник еды переехал во вкладку
+    // «Питание» и стал её главным экраном. Секция section==='food' ниже
+    // остаётся рабочей — по ней тренер смотрит питание клиента в его карточке
+    // (RealClientDetail рендерит этот же DiaryView с readOnly).
     {key:'onerm',ic:'calculator',label:'Калькулятор 1ПМ',color:'#F59E0B',sub:''},
   ]
   return(
     <div>
-      <h2 style={{ fontSize:20,fontWeight:500,color:TXT,margin:'0 0 16px' }}>Дневник</h2>
+      <h2 style={{ fontSize:20,fontWeight:500,color:TXT,margin:'0 0 16px' }}>Прогресс</h2>
       {/* Статус загрузки истории тренировок — иначе при сбое папки тоннажа/
           упражнений/тренировок молча показывали бы нули, будто данных нет.
           Питания не касается (у него своя загрузка). */}
@@ -6909,13 +6952,13 @@ const NAV=[
   {id:'workouts',ic:'dumbbell',label:'Тренировки'},
   {id:'nutrition',ic:'food',label:'Питание'},
   {id:'library',ic:'book',label:'Упражнения'},
-  {id:'progress',ic:'notebook',label:'Дневник'},
+  {id:'progress',ic:'notebook',label:'Прогресс'},
 ]
 const NAV_MOBILE=[
   {id:'workouts',ic:'dumbbell',label:'Тренировки'},
   {id:'nutrition',ic:'food',label:'Питание'},
   {id:'library',ic:'book',label:'Упражнения'},
-  {id:'progress',ic:'notebook',label:'Дневник'},
+  {id:'progress',ic:'notebook',label:'Прогресс'},
   {id:'clients',ic:'people',label:'Клиенты'},
 ]
 
@@ -7043,7 +7086,10 @@ function LandingPage({ onEnter, isTelegram, accessError }) {
 
             {/* Бейдж */}
             <div style={{ display:'inline-flex',alignItems:'center',gap:7,background:`linear-gradient(90deg,${PUR}35,#5b54c420)`,border:`1px solid ${PUR}70`,borderRadius:20,padding:'6px 16px',fontSize:12,color:'#d0ccff',marginBottom:22,fontWeight:700,letterSpacing:'0.5px',boxShadow:`0 0 18px ${PUR}30` }}>
-              <GlassIcon name="bulb" size={18} /> Первое приложение с AI-ассистентом
+              {/* Было «Первое приложение с AI-ассистентом» — утверждение,
+                  которое невозможно подтвердить и легко опровергнуть. Заменено
+                  на проверяемое: ассистент действительно обучен тренером. */}
+              <GlassIcon name="bulb" size={18} /> AI-ассистент, обученный тренером
             </div>
 
             <h1 style={{ fontSize:mobile?32:56,fontWeight:800,lineHeight:1.12,margin:'0 0 32px',background:'linear-gradient(150deg,#fff 45%,#9d97e8)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent' }}>
@@ -9875,7 +9921,15 @@ export default function App() {
   // 1 БАЗА, 2 ПРОФИТ, 3 ПРЕМИУМ. До загрузки профиля — 0: платную функцию
   // лучше на миг не показать, чем показать тому, кто её не купил.
   const [access,setAccess]=useState(()=>effectiveAccess(null))
-  const [nav,setNav]=useState('dashboard')
+  // Стартовый экран. У тренера — его Dashboard, у клиента — «Тренировки».
+  // Раньше клиент открывался на 'dashboard', а тот отдавал ему ВТОРОЙ
+  // экземпляр DiaryView — то есть стартовый экран и вкладка «Дневник» были
+  // буквально одним и тем же компонентом с одинаковым содержимым.
+  //
+  // Считаем синхронно, из того же localStorage, что и userRole строкой выше:
+  // через эффект была бы видна лишняя перерисовка — клиент на кадр увидел бы
+  // чужой экран.
+  const [nav,setNav]=useState(()=>userRole==='trainer'?'dashboard':'workouts')
   // Тренеру стартовое «Добро пожаловать» не нужно — его рабочий экран это
   // «Клиенты». Уводим один раз за сессию, при первом определении роли, и
   // только если тренер ещё не ушёл с dashboard сам. Ref гарантирует
@@ -10611,15 +10665,18 @@ export default function App() {
   const goToDiaryWorkouts=()=>{
     pendingSectionRestoreRef.current='workouts'
     setDiaryJumpToken(t=>t+1)
-    handleNav('dashboard')
+    // Раньше вело на dashboard — там у клиента жила копия Дневника. История
+    // тренировок теперь только во вкладке «Прогресс».
+    handleNav('progress')
   }
 
   // Тот же переход, но в подраздел дневника питания — для постоянной кнопки
   // "Дневник" в чате AI-ассистента (режим "Питание").
   const goToDiaryFood=()=>{
-    pendingSectionRestoreRef.current='food'
-    setDiaryJumpToken(t=>t+1)
-    handleNav('dashboard')
+    // Дневник питания переехал во вкладку «Питание» и стал её главным экраном:
+    // ни секция, ни токен прыжка тут больше не нужны — достаточно открыть
+    // вкладку, дневник и так первое, что там видно.
+    handleNav('nutrition')
   }
 
   // workouts/workout_sets в Supabase — единственный источник правды и для Дневника,
@@ -10798,11 +10855,16 @@ export default function App() {
   const renderOther=()=>{
     if(nav==='cdetail'&&sc)return <ClientDetail client={sc} goBack={goBackNav} trainerId={user?.id} />
     switch(nav){
+      // dashboard остаётся ТОЛЬКО тренерским. У клиента этот case раньше
+      // отдавал второй экземпляр DiaryView — то есть стартовый экран и вкладка
+      // «Дневник» были буквально одним и тем же компонентом. Клиент теперь
+      // стартует на «Тренировках» (см. начальное значение nav), и попасть сюда
+      // ему нечем; null — страховка на случай прямого перехода.
       case 'dashboard': return userRole==='trainer'
         ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} userId={user?.id} workoutHistory={workoutHistory} />
-        : <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} accessLevel={access.level} openPlans={openPlans} />
+        : null
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} userId={user?.id} />
-      case 'nutrition': return <NutritionView userId={user?.id} />
+      case 'nutrition': return <NutritionTab userId={user?.id} />
       case 'library':   return <LibraryView customExercises={customExercises} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} workoutHistory={workoutHistory} />
       case 'progress':  return <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} accessLevel={access.level} openPlans={openPlans} />
       default:          return null
