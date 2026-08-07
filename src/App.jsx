@@ -8834,6 +8834,56 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
   // тогда tgNick пустой, и падаем на ручное поле telegram, если оно заполнено.
   const isTgUser=(user?.email||userEdit.email||'').endsWith('@telegram.fitpro')
   const tgNick=userEdit.tgUsername?'@'+userEdit.tgUsername:(userEdit.telegram||'')
+
+  // ── Настоящая почта аккаунта ────────────────────────────────────────────────
+  // Раньше здесь было обычное текстовое поле, и оно НИЧЕГО не делало:
+  // saveProfile кладёт userEdit.email только в localStorage — ни в auth.users,
+  // ни в profiles он не уходил. Человек менял адрес, видел «Сохранено» и был
+  // уверен, что почта у аккаунта поменялась. У телеграм-аккаунтов поля не было
+  // вовсе, потому что показывать tg<id>@telegram.fitpro бессмысленно.
+  //
+  // Теперь адрес меняется по-настоящему — через auth.updateUser({email}), то
+  // есть с подтверждением по ссылке из письма (GOTRUE_MAILER_AUTOCONFIRM=false
+  // на проде): до перехода по ссылке адрес НЕ применяется. Это единственный
+  // честный способ — иначе почту можно было бы записать чужую.
+  //
+  // ПОЧЕМУ ЭТО СТАЛО ВОЗМОЖНО ТОЛЬКО СЕЙЧАС. До появления profiles.tg_id почта
+  // БЫЛА идентичностью телеграм-аккаунта: api/telegram-auth.js искал человека
+  // по tg<id>@telegram.fitpro. Смена адреса означала бы, что следующий вход
+  // через Telegram аккаунт не найдёт и заведёт дубль. Теперь опознание идёт по
+  // tg_id, и адрес свободен (см. тест «смена почты больше не рвёт вход через
+  // Telegram» в test-telegram-auth.mjs).
+  const currentEmail=realEmail(user?.email)
+  const [emailEditing,setEmailEditing]=useState(false)
+  const [emailInput,setEmailInput]=useState('')
+  const [emailBusy,setEmailBusy]=useState(false)
+  const [emailMsg,setEmailMsg]=useState(null)   // {ok:boolean,text:string}
+  const submitEmail=async()=>{
+    const next=emailInput.trim()
+    // Проверка нарочно нестрогая: полный разбор адреса по RFC на клиенте
+    // бессмысленен, настоящая проверка — дойдёт ли письмо. Ловим только явные
+    // опечатки, чтобы не гонять человека за письмом, которого не будет.
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(next)){
+      setEmailMsg({ok:false,text:'Проверь адрес — похоже, в нём опечатка'});return
+    }
+    if(currentEmail&&next.toLowerCase()===currentEmail.toLowerCase()){
+      setEmailMsg({ok:false,text:'Это и есть текущая почта аккаунта'});return
+    }
+    setEmailBusy(true);setEmailMsg(null)
+    const{error}=await supabase.auth.updateUser({email:next})
+    setEmailBusy(false)
+    if(error){
+      // Адрес в лог не пишем — это персональные данные. Только код и текст сервера.
+      console.error('Смена почты: сервер отказал',error.status||'',error.message||'')
+      logError('update_email',{message:error.message,status:error.status})
+      setEmailMsg({ok:false,text:/already|exists|registered/i.test(error.message||'')
+        ?'Эта почта уже привязана к другому аккаунту'
+        :'Не удалось отправить письмо — попробуй позже'})
+      return
+    }
+    setEmailEditing(false)
+    setEmailMsg({ok:true,text:`Письмо отправлено на ${next}. Открой его и подтверди — до этого адрес аккаунта не поменяется.`})
+  }
   const photoInputPVRef=useRef(null)
   const [saved,setSaved]=useState(false)
   // Тост ошибки записи — тот же паттерн, что showFoodSaveError/showClientSaveError,
@@ -9093,18 +9143,64 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                 style={{width:'100%',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,fontSize:15,color:TXT,outline:'none',boxSizing:'border-box',background:SURF}}
                 onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
             </div>
-            {/* Email и Telegram — у telegram-аккаунтов поле Email не рисуем
-                вовсе: там лежит технический tg{id}@telegram.fitpro, менять
-                который пользователю нельзя и показывать незачем. */}
-            {(isTgUser?[{key:'telegram',label:'Telegram'}]:[{key:'email',label:'Эл. почта'},{key:'telegram',label:'Telegram'}]).map(f=>(
-              <div key={f.key}>
-                <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>{f.label}</label>
-                <input value={userEdit[f.key]||''} type="text" placeholder={f.key==='email'?'ivan@example.com':'@username'}
-                  onChange={e=>setUserEdit(u=>({...u,[f.key]:e.target.value}))}
-                  style={{width:'100%',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,fontSize:15,color:TXT,outline:'none',boxSizing:'border-box',background:SURF}}
-                  onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
-              </div>
-            ))}
+            {/* Эл. почта — не обычное поле, а отдельный блок со сменой через
+                подтверждение. Кнопкой «Сохранить» внизу почта НЕ трогается:
+                у неё свой поток, потому что адрес применяется только после
+                перехода по ссылке из письма. Показывается ВСЕМ, включая
+                телеграм-аккаунты: техническую почту прячем (realEmail вернёт
+                null), но возможность добавить настоящую нужна как раз им — без
+                неё, потеряв Telegram, человек теряет и доступ. */}
+            <div>
+              <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>Эл. почта</label>
+              {!emailEditing?(
+                <div style={{padding:'12px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,background:SURF}}>
+                  <div style={{fontSize:15,color:currentEmail?TXT:TXT3,wordBreak:'break-all'}}>
+                    {currentEmail||'Не добавлена'}
+                  </div>
+                  <div style={{fontSize:12,color:TXT3,marginTop:5,lineHeight:1.45}}>
+                    {currentEmail
+                      ?'Подтверждена. На неё приходит восстановление пароля.'
+                      :'Вход у тебя через Telegram. Почта нужна, чтобы не потерять доступ, если Telegram окажется недоступен.'}
+                  </div>
+                  <button onClick={()=>{setEmailEditing(true);setEmailInput('');setEmailMsg(null)}}
+                    style={{marginTop:10,padding:'8px 14px',borderRadius:9,border:`1px solid ${PUR}`,background:'none',color:PUR,fontSize:13,fontWeight:600,cursor:'pointer',minHeight:'unset'}}>
+                    {currentEmail?'Изменить почту':'Добавить почту'}
+                  </button>
+                </div>
+              ):(
+                <div style={{padding:'12px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,background:SURF}}>
+                  <input value={emailInput} type="email" inputMode="email" autoComplete="email" placeholder="ivan@example.com" autoFocus
+                    onChange={e=>{setEmailInput(e.target.value);setEmailMsg(null)}}
+                    onKeyDown={e=>{if(e.key==='Enter'&&!emailBusy)submitEmail()}}
+                    style={{width:'100%',padding:'11px 13px',borderRadius:9,border:`1.5px solid ${HAIR}`,fontSize:15,color:TXT,outline:'none',boxSizing:'border-box',background:SURF2}}
+                    onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
+                  <div style={{fontSize:12,color:TXT3,marginTop:7,lineHeight:1.45}}>
+                    На этот адрес придёт письмо со ссылкой. Почта поменяется только после того, как ты по ней перейдёшь.
+                  </div>
+                  <div style={{display:'flex',gap:8,marginTop:10}}>
+                    <button onClick={submitEmail} disabled={emailBusy||!emailInput.trim()}
+                      style={{flex:1,padding:'10px',borderRadius:10,border:'none',background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontSize:13,fontWeight:700,cursor:emailBusy||!emailInput.trim()?'default':'pointer',opacity:emailBusy||!emailInput.trim()?0.6:1,minHeight:'unset'}}>
+                      {emailBusy?'Отправляем…':'Отправить подтверждение'}
+                    </button>
+                    <button onClick={()=>{setEmailEditing(false);setEmailMsg(null)}} disabled={emailBusy}
+                      style={{flex:1,padding:'10px',borderRadius:10,border:`1px solid ${HAIR}`,background:'none',color:TXT3,fontSize:13,cursor:emailBusy?'default':'pointer',minHeight:'unset'}}>
+                      Отмена
+                    </button>
+                  </div>
+                </div>
+              )}
+              {emailMsg&&(
+                <div style={{fontSize:12.5,lineHeight:1.45,marginTop:8,color:emailMsg.ok?TEA:'#ef4444'}}>{emailMsg.text}</div>
+              )}
+            </div>
+            {/* Telegram — обычное поле, оно действительно пишется в profiles.telegram */}
+            <div>
+              <label style={{fontSize:13,fontWeight:600,color:TXT3,display:'block',marginBottom:6}}>Telegram</label>
+              <input value={userEdit.telegram||''} type="text" placeholder="@username"
+                onChange={e=>setUserEdit(u=>({...u,telegram:e.target.value}))}
+                style={{width:'100%',padding:'12px 14px',borderRadius:10,border:`1.5px solid ${HAIR}`,fontSize:15,color:TXT,outline:'none',boxSizing:'border-box',background:SURF}}
+                onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
+            </div>
             {/* Физические данные */}
             {/* Дата рождения — нативный календарь, хранится в ISO (YYYY-MM-DD) */}
             <div>
