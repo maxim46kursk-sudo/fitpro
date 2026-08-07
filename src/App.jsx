@@ -10,7 +10,7 @@ import { oneRepMax, weightForReps, roundToPlate, percentTable, plateStep } from 
 // Движок прогрессии (1ПМ) — врезан в кнопку "▶ Начать тренировку" внутри
 // слота шаблонной программы (WorkoutsView), см. подробный комментарий там.
 import { buildExerciseAggregates, computeTemplateScale, parseTemplateSets, computeProgressSteps, computeBandTarget, UNRATED_STOP_AFTER } from './workoutPrompt.js'
-import { MAX_TELEGRAM_URL, BOT_USERNAME } from './config.js'
+import { MAX_TELEGRAM_URL, MAX_EMAIL, BOT_USERNAME, realEmail, telegramChatIdOf } from './config.js'
 import { Ic } from './icons.jsx'
 import { GlassDefs, GlassIcon } from './glassIcons'
 import { MuscleDefs } from './muscleIcons'
@@ -707,7 +707,11 @@ function ClientsView({ setSC, setNav, userId }) {
   const loadRealClients=async()=>{
     if(!userId)return
     setRealClientsLoading(true);setRealClientsError(false)
-    const{data,error}=await supabase.from('profiles').select('id,name,tg_username,plan,plan_until,goal,weight,height').eq('coach_id',userId)
+    // email тянем вместе с остальным: у клиента без @ника это ЕДИНСТВЕННЫЙ
+    // способ с ним связаться, а ради него отдельный запрос гонять незачем.
+    // RLS уже пускает тренера в профили своих клиентов целиком (правило
+    // построчное, не поколоночное), новых прав тут не нужно.
+    const{data,error}=await supabase.from('profiles').select('id,name,email,tg_username,plan,plan_until,goal,weight,height').eq('coach_id',userId)
     if(error){console.error('Ошибка загрузки клиентов тренера:',error);setRealClientsError(true);setRealClientsLoading(false);return}
     const clients=data||[]
     setRealClients(clients)
@@ -728,7 +732,7 @@ function ClientsView({ setSC, setNav, userId }) {
   const openRealClient=(c)=>{
     // Объект собирается вручную (не спредом), поэтому каждое новое поле надо
     // проводить явно — иначе оно молча не доедет до RealClientDetail.
-    setSC({id:c.id,name:c.name||'Без имени',tg_username:c.tg_username||null,isReal:true})
+    setSC({id:c.id,name:c.name||'Без имени',tg_username:c.tg_username||null,email:c.email||null,isReal:true})
     setNav('cdetail')
   }
 
@@ -853,6 +857,13 @@ function ClientsView({ setSC, setNav, userId }) {
               // Цель, вес и рост — заполнены не у всех, поэтому собираем строку
               // только из непустых полей и не показываем её вовсе, если пусты все.
               const facts=[c.goal,c.weight&&`${c.weight} кг`,c.height&&`${c.height} см`].filter(Boolean).join(' · ')
+              // Почта показывается ТОЛЬКО настоящая: у телеграм-аккаунтов и у
+              // клиентов, заведённых тренером, в profiles.email лежит
+              // техническая строка (tg…@telegram.fitpro / c…@clients.fitproapp.ru),
+              // писать на неё некуда — см. realEmail() в src/config.js.
+              // Без @ника почта остаётся единственным каналом связи, поэтому
+              // тогда она подписана явно, а не показана молчаливой строкой.
+              const mail=realEmail(c.email)
               return (
                 <Card key={c.id} style={{ cursor:'pointer' }} onClick={()=>openRealClient(c)}>
                   <div style={{ display:'flex', alignItems:'center', gap:10 }}>
@@ -861,6 +872,15 @@ function ClientsView({ setSC, setNav, userId }) {
                       <div style={{ fontSize:14, fontWeight:500, color:TXT }}>{label}</div>
                       {c.tg_username&&(
                         <div style={{ fontSize:11, color:TXT3, marginTop:2 }}>@{c.tg_username}</div>
+                      )}
+                      {mail&&(
+                        // stopPropagation: карточка целиком открывает клиента, а
+                        // клик по почте должен открывать почтовик, а не экран.
+                        <div style={{ fontSize:11, marginTop:2 }}>
+                          {!c.tg_username&&<span style={{ color:TXT3 }}>почта клиента: </span>}
+                          <a href={`mailto:${mail}`} onClick={e=>e.stopPropagation()}
+                            style={{ color:TEA, textDecoration:'none', wordBreak:'break-all' }}>{mail}</a>
+                        </div>
                       )}
                       <div style={{ fontSize:11, fontWeight:600, color:sub.color, marginTop:3 }}>{sub.text}</div>
                       {facts&&(
@@ -1059,6 +1079,27 @@ function RealClientDetail({ client, goBack, trainerId }) {
             }} style={{ fontSize:13, color:TEA, marginTop:3, cursor:'pointer', width:'fit-content' }}>
               @{client.tg_username}
             </div>
+          )}
+          {/* Почта клиента. Показывается только настоящая (realEmail) — у
+              телеграм-аккаунтов и заведённых тренером клиентов в profiles.email
+              лежит техническая строка, mailto: на неё был бы обманом. Если
+              @ника нет, почта — единственный способ связаться, поэтому она
+              подписана явно. */}
+          {(()=>{
+            const mail=realEmail(client.email)
+            if(!mail)return null
+            return (
+              <div style={{ fontSize:13, marginTop:3 }}>
+                {!client.tg_username&&<span style={{ color:TXT3 }}>почта клиента: </span>}
+                <a href={`mailto:${mail}`} style={{ color:TEA, textDecoration:'none', wordBreak:'break-all' }}>{mail}</a>
+              </div>
+            )
+          })()}
+          {/* Ни ника, ни настоящей почты — связаться через приложение нечем.
+              Молчание тут читалось бы как «контактов не существует», хотя на
+              деле их просто некуда взять: клиент заведён тренером вручную. */}
+          {!client.tg_username&&!realEmail(client.email)&&(
+            <div style={{ fontSize:12, color:TXT3, marginTop:3 }}>Контактов нет — свяжись с клиентом вне приложения</div>
           )}
         </div>
       </div>
@@ -7653,6 +7694,11 @@ function AnalyticsView({ userRole }) {
 function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPage, onProfileChanged, userRole }) {
   const load=(k,def)=>{try{return JSON.parse(localStorage.getItem(k)??'null')??def}catch{return def}}
   const [notifs,setNotifs]=useState(()=>normalizeNotifs(load('fitpro_notifs',null)))
+  // Есть ли вообще куда слать напоминание. Считается ровно так же, как это
+  // делает крон (см. telegramChatIdOf в src/config.js — зеркало extractChatId
+  // из api/send-reminders.js): если chat_id не выводится, напоминание не уйдёт
+  // никуда, и тумблер обязан это признать, а не молчать.
+  const canNotify=!!telegramChatIdOf(user)
   const [units,setUnits]=useState(()=>load('fitpro_units',{weight:'kg',height:'cm'}))
   const [chatCount,setChatCount]=useState(null)
   const [clearConfirm,setClearConfirm]=useState(false)
@@ -7866,8 +7912,27 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
         </Section>
       )}
 
-      {/* Уведомления */}
+      {/* Уведомления.
+          Канал доставки один — Telegram: в api/send-reminders.js нет ни одной
+          отправки письма, только api.telegram.org/sendMessage. Поэтому у
+          аккаунта без chat_id тумблер раньше был обманом — включался, честно
+          сохранялся в profiles.notifs, и ничего не приходило. Теперь при
+          отсутствии канала тумблера нет вовсе, а вместо него — что сделать,
+          чтобы напоминания заработали. */}
       <Section title="Уведомления">
+        {!canNotify&&(
+          <div style={{ padding:'12px 0 14px', borderBottom:`1px solid ${HAIR}` }}>
+            <div style={{ fontSize:14, color:TXT, fontWeight:600, marginBottom:6 }}>Чтобы получать напоминания, подключите Telegram</div>
+            <div style={{ fontSize:12.5, color:TXT3, lineHeight:1.5, marginBottom:10 }}>
+              Напоминания приходят сообщением от бота — другого канала нет, на почту они не отправляются.
+              Откройте приложение через бота один раз, и аккаунт свяжется автоматически.
+            </div>
+            <a href={`https://t.me/${BOT_USERNAME}`} target="_blank" rel="noopener noreferrer" style={{
+              display:'inline-block', padding:'9px 16px', borderRadius:10, textDecoration:'none',
+              background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', fontSize:13, fontWeight:700,
+            }}>Открыть бота в Telegram</a>
+          </div>
+        )}
         {[
           {key:'workout',label:'Напоминание о тренировке'},
           {key:'diary',label:'Дневник питания'},
@@ -7878,10 +7943,18 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
           return (
             <div key={key} style={{ borderBottom:`1px solid ${HAIR}` }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'13px 0' }}>
-                <div style={{ fontSize:15, color:TXT, fontWeight:500 }}>{label}</div>
-                <Toggle on={n.enabled} onToggle={()=>setField({enabled:!n.enabled})}/>
+                <div>
+                  <div style={{ fontSize:15, color:canNotify?TXT:TXT3, fontWeight:500 }}>{label}</div>
+                  {/* Канал под названием — прямым текстом, а не намёком. */}
+                  <div style={{ fontSize:12, color:TXT3, marginTop:2 }}>
+                    {!canNotify?'Недоступно без Telegram':n.enabled?'Придут в Telegram':'Выключено'}
+                  </div>
+                </div>
+                {/* Без канала тумблера нет: включать то, что заведомо никуда не
+                    придёт, — ровно тот молчаливый обман, который тут чинится. */}
+                {canNotify&&<Toggle on={n.enabled} onToggle={()=>setField({enabled:!n.enabled})}/>}
               </div>
-              {n.enabled&&(
+              {canNotify&&n.enabled&&(
                 <div style={{ padding:'0 0 14px', display:'flex', flexDirection:'column', gap:10 }}>
                   <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                     <span style={{ fontSize:13, color:TXT3 }}>Время</span>
@@ -8020,10 +8093,43 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
         </div>
       </Section>
 
+      {/* Связаться с тренером — публичный контакт, виден ВСЕМ и везде.
+          Раньше единственной точкой связи была строка «Написать тренеру» в
+          Поддержке ниже: обычная ссылка t.me, которая внутри Mini App не всегда
+          открывается, а у человека без Telegram не работает вовсе. Здесь оба
+          канала названы явно, и почта — запасной, работающий без Telegram. */}
+      <Section title="Связаться с тренером">
+        <a href={MAX_TELEGRAM_URL} target="_blank" rel="noopener noreferrer"
+          onClick={e=>{
+            // Внутри Mini App внешние ссылки надёжно открывает только
+            // openTelegramLink — тот же приём, что у @ника клиента выше.
+            if(window.Telegram?.WebApp){e.preventDefault();window.Telegram.WebApp.openTelegramLink(MAX_TELEGRAM_URL)}
+          }}
+          style={{ display:'flex',alignItems:'center',gap:12,padding:'13px 0',borderBottom:`1px solid ${HAIR}`,textDecoration:'none',color:TXT }}>
+          <GlassIcon name="chat" size={26} />
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:15,fontWeight:500 }}>Telegram</div>
+            <div style={{ fontSize:12,color:TXT3,marginTop:2 }}>@maxim_athlete — быстрее всего</div>
+          </div>
+          <span style={{ fontSize:16,color:TXT3 }}>›</span>
+        </a>
+        <a href={`mailto:${MAX_EMAIL}`}
+          style={{ display:'flex',alignItems:'center',gap:12,padding:'13px 0',borderBottom:`1px solid ${HAIR}`,textDecoration:'none',color:TXT }}>
+          <GlassIcon name="question" size={26} />
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:15,fontWeight:500 }}>Почта</div>
+            <div style={{ fontSize:12,color:TXT3,marginTop:2,wordBreak:'break-all' }}>{MAX_EMAIL}</div>
+          </div>
+          <span style={{ fontSize:16,color:TXT3 }}>›</span>
+        </a>
+      </Section>
+
       {/* Поддержка */}
       <Section title="Поддержка">
+        {/* «Написать тренеру» отсюда убран — он переехал выше, в блок
+            «Связаться с тренером», вместе с почтой. Дублировать одну и ту же
+            ссылку двумя строками подряд смысла нет. */}
         {[
-          {label:'Написать тренеру',icon:'chat',url:MAX_TELEGRAM_URL},
           {label:'Поддержка',icon:'question',url:'https://t.me/fitpro_supportt'},
           {label:'Сообщить об ошибке',icon:'danger',url:'https://t.me/fitpro_supportt'},
         ].map(item=>(

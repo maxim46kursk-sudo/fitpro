@@ -55,6 +55,160 @@ function verifyTelegramInitData(initData, botToken) {
   }
 }
 
+// Синтетическая почта телеграм-аккаунта. ВАЖНО, ЧЕМ ОНА СТАЛА: раньше это была
+// идентичность пользователя, теперь — только техническое значение, нужное
+// GoTrue при СОЗДАНИИ аккаунта (создать пользователя без email нельзя) и как
+// запасной ключ поиска для аккаунтов, заведённых до появления profiles.tg_id.
+// Опознаём пользователя по profiles.tg_id, см. resolveTelegramAccount ниже.
+const syntheticEmail = tgId => `tg${tgId}@telegram.fitpro`
+
+// Выдача одноразового кода входа для уже известной почты. Общий кусок обоих
+// путей (и по tg_id, и по синтетической почте) — вынесен, чтобы формат ответа
+// и обработка ошибки были в одном месте.
+async function issueOtp(admin, email) {
+  const { data, error } = await admin.auth.admin.generateLink({ type: 'magiclink', email })
+  if (error || !data?.properties?.email_otp) {
+    console.error('telegram-auth: ошибка выдачи одноразового кода:', error)
+    return null
+  }
+  return { otp: data.properties.email_otp, userId: data?.user?.id || null }
+}
+
+// Ник в profiles освежаем при каждом входе — человек мог его сменить. Пустой
+// НЕ пишем: у большинства ника нет, и он затёр бы уже сохранённое значение.
+// Ошибку только логируем: авторизация из-за ника падать не должна.
+async function refreshUsername(admin, userId, username) {
+  if (!username) return
+  const { error } = await admin.from('profiles').update({ tg_username: username }).eq('id', userId)
+  if (error) console.error('telegram-auth: ошибка обновления tg_username:', error)
+}
+
+// ── Опознание телеграм-пользователя ─────────────────────────────────────────
+// Экспортируется ради тестов (test-telegram-auth.mjs) — вся развилка входа
+// живёт здесь, и проверять её надо именно как функцию, а не через HTTP.
+//
+// Возвращает { ok:true, email, otp } либо { ok:false, status, error }.
+//
+// Порядок веток — это и есть суть задачи:
+//   1. profiles.tg_id — ОСНОВНОЙ и единственный настоящий ключ. Почта аккаунта
+//      при этом может быть какой угодно, в том числе обычной пользовательской:
+//      именно поэтому связь и вынесена в отдельную колонку.
+//   2. Синтетическая почта — ТОЛЬКО совместимость со старыми аккаунтами
+//      (заведёнными до tg_id) и создание новых. Найдя такой аккаунт, сразу
+//      проставляем ему tg_id, чтобы в следующий раз он нашёлся по ветке 1.
+//      Дубль при этом НЕ создаётся — это главное требование к совместимости.
+export async function resolveTelegramAccount(admin, tgUser) {
+  const tgId = Number(tgUser.id)
+  if (!Number.isSafeInteger(tgId) || tgId <= 0) {
+    console.error('telegram-auth: некорректный tgUser.id:', tgUser.id)
+    return { ok: false, status: 401, error: 'Не удалось проверить подпись Telegram' }
+  }
+
+  // ── Ветка 1: поиск по tg_id ──
+  const { data: byTgId, error: lookupErr } = await admin
+    .from('profiles').select('id').eq('tg_id', tgId).maybeSingle()
+  if (lookupErr) {
+    // НЕ проваливаемся в ветку 2. Если поиск сломался, а аккаунт на самом деле
+    // есть, ветка 2 завела бы дубль — то есть человек потерял бы свою историю
+    // из-за сетевой ошибки. Лучше честно отказать: он повторит вход.
+    console.error('telegram-auth: ошибка поиска профиля по tg_id:', lookupErr)
+    return { ok: false, status: 500, error: 'Не удалось проверить аккаунт' }
+  }
+
+  if (byTgId?.id) {
+    const { data: userData, error: userErr } = await admin.auth.admin.getUserById(byTgId.id)
+    const email = userData?.user?.email
+    if (userErr || !email) {
+      // Профиль с таким tg_id есть, а auth-пользователя нет — рассинхрон
+      // (например, аккаунт удалён, а строка profiles осталась). В ветку 2 не
+      // идём: там сработает защита от занятого tg_id и мы получим невнятный
+      // отказ. Говорим прямо, что состояние битое.
+      console.error(`telegram-auth: профиль ${byTgId.id} с tg_id=${tgId} есть, а auth-пользователя нет:`, userErr)
+      return { ok: false, status: 500, error: 'Аккаунт в неисправном состоянии, напишите в поддержку' }
+    }
+    const issued = await issueOtp(admin, email)
+    if (!issued) return { ok: false, status: 500, error: 'Не удалось выдать сессию' }
+    await refreshUsername(admin, byTgId.id, tgUser.username)
+    console.log(`telegram-auth: вход по tg_id, пользователь ${byTgId.id}`)
+    return { ok: true, email, otp: issued.otp }
+  }
+
+  // ── Ветка 2: синтетическая почта — старый аккаунт либо новый ──
+  const email = syntheticEmail(tgId)
+
+  const { error: createError } = await admin.auth.admin.createUser({
+    email,
+    email_confirm: true,
+    user_metadata: {
+      telegram_id: tgId,
+      name: tgUser.first_name,
+      telegram_username: tgUser.username,
+      photo_url: tgUser.photo_url,
+    },
+  })
+  // "Уже существует" — не ошибка, а ровно тот самый legacy-аккаунт: человек
+  // заходил до появления tg_id. Ниже мы его найдём и достроим связь.
+  const alreadyExists = createError && (createError.code === 'email_exists' || /already.*(registered|exists)/i.test(createError.message || ''))
+  const isNewAccount = !createError
+  if (createError && !alreadyExists) {
+    console.error('telegram-auth: ошибка создания пользователя:', createError)
+    return { ok: false, status: 500, error: 'Не удалось создать пользователя' }
+  }
+
+  const issued = await issueOtp(admin, email)
+  if (!issued) return { ok: false, status: 500, error: 'Не удалось выдать сессию' }
+  const userId = issued.userId
+  if (!userId) {
+    console.error('telegram-auth: generateLink не вернул пользователя — tg_id проставить некому')
+    return { ok: false, status: 500, error: 'Не удалось выдать сессию' }
+  }
+
+  // Строка профиля: у телеграм-аккаунтов она заводилась не всегда. Для
+  // существующего пользователя (например с уже выставленной role='trainer')
+  // строку не трогаем — ON CONFLICT (id) DO NOTHING.
+  const { error: profileError } = await admin
+    .from('profiles')
+    .upsert({ id: userId, name: tgUser.first_name, tg_username: tgUser.username }, { onConflict: 'id', ignoreDuplicates: true })
+  if (profileError) console.error('telegram-auth: ошибка создания строки профиля:', profileError)
+
+  // ── Фиксация связи. Пишем ТОЛЬКО в пустое поле (.is('tg_id', null)) ──
+  // Ни одна ветка ниже не перезаписывает чужой или уже проставленный tg_id.
+  const { data: claimed, error: claimErr } = await admin
+    .from('profiles').update({ tg_id: tgId }).eq('id', userId).is('tg_id', null).select('id')
+
+  if (claimErr) {
+    // 23505 — уникальный индекс profiles_tg_id_key: этот tg_id уже принадлежит
+    // ДРУГОМУ профилю. Состояние аномальное (иначе ветка 1 его бы нашла), и
+    // молча логинить человека в аккаунт, который ему не принадлежит, нельзя.
+    if (claimErr.code === '23505') {
+      console.error(`telegram-auth: tg_id=${tgId} уже занят другим профилем, вход по ветке совместимости отклонён`)
+      return { ok: false, status: 409, error: 'Этот Telegram уже привязан к другому аккаунту' }
+    }
+    console.error('telegram-auth: ошибка записи tg_id:', claimErr)
+    return { ok: false, status: 500, error: 'Не удалось связать аккаунт с Telegram' }
+  }
+
+  if (!claimed?.length) {
+    // Обновление никого не задело — значит tg_id у строки уже был. Проверяем,
+    // НАШ ли он: чужой означает, что синтетическая почта и tg_id указывают на
+    // разные аккаунты, и вход надо остановить, ничего не переписывая.
+    const { data: existing, error: readErr } = await admin
+      .from('profiles').select('tg_id').eq('id', userId).maybeSingle()
+    if (readErr) {
+      console.error('telegram-auth: не удалось перечитать tg_id:', readErr)
+      return { ok: false, status: 500, error: 'Не удалось связать аккаунт с Telegram' }
+    }
+    if (existing?.tg_id != null && Number(existing.tg_id) !== tgId) {
+      console.error(`telegram-auth: у профиля ${userId} чужой tg_id=${existing.tg_id}, ожидался ${tgId} — вход отклонён`)
+      return { ok: false, status: 409, error: 'Этот аккаунт уже привязан к другому Telegram' }
+    }
+  }
+
+  await refreshUsername(admin, userId, tgUser.username)
+  console.log(`telegram-auth: ${isNewAccount ? 'создан новый аккаунт' : 'вход по синтетической почте, связь достроена'}, пользователь ${userId}, tg_id=${tgId}`)
+  return { ok: true, email, otp: issued.otp }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -148,56 +302,9 @@ export default async function handler(req, res) {
   if (!tgUser?.id) return res.status(401).json({ error: 'Не удалось проверить подпись Telegram' })
 
   const supabaseAdmin = createClient(SUPABASE_URL, serviceRoleKey)
-  const email = `tg${tgUser.id}@telegram.fitpro`
 
-  const { error: createError } = await supabaseAdmin.auth.admin.createUser({
-    email,
-    email_confirm: true,
-    user_metadata: {
-      telegram_id: tgUser.id,
-      name: tgUser.first_name,
-      telegram_username: tgUser.username,
-      photo_url: tgUser.photo_url,
-    },
-  })
-  // "Уже существует" — не ошибка, пользователь просто уже заходил раньше.
-  const alreadyExists = createError && (createError.code === 'email_exists' || /already.*(registered|exists)/i.test(createError.message || ''))
-  if (createError && !alreadyExists) {
-    console.error('Ошибка создания пользователя по Telegram:', createError)
-    return res.status(500).json({ error: 'Не удалось создать пользователя' })
-  }
+  const result = await resolveTelegramAccount(supabaseAdmin, tgUser)
+  if (!result.ok) return res.status(result.status).json({ error: result.error })
 
-  const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({ type: 'magiclink', email })
-  if (linkError || !linkData?.properties?.email_otp) {
-    console.error('Ошибка выдачи одноразового кода:', linkError)
-    return res.status(500).json({ error: 'Не удалось выдать сессию' })
-  }
-
-  // Гарантируем строку профиля — у Telegram-аккаунтов её раньше не заводилось
-  // автоматически (в отличие от email-регистрации, где это делает триггер
-  // on_auth_user_created). ignoreDuplicates: у СУЩЕСТВУЮЩЕГО пользователя
-  // (например с уже выставленной role='trainer') строку не трогаем вообще —
-  // только insert для новых, ON CONFLICT (id) DO NOTHING.
-  const telegramUserId = linkData?.user?.id
-  if (telegramUserId) {
-    const { error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .upsert({ id: telegramUserId, name: tgUser.first_name, tg_username: tgUser.username }, { onConflict: 'id', ignoreDuplicates: true })
-    if (profileError) console.error('Ошибка создания строки профиля для Telegram-пользователя:', profileError)
-
-    // Upsert выше для существующей строки — DO NOTHING, поэтому ник при
-    // повторных входах освежаем отдельным узким апдейтом (только это поле,
-    // чтобы не задеть name/role). Пустой username не пишем: у большинства
-    // пользователей он не задан, и затирать им уже сохранённое значение
-    // нельзя. Ошибку только логируем — авторизация из-за ника не падает.
-    if (tgUser.username) {
-      const { error: usernameError } = await supabaseAdmin
-        .from('profiles')
-        .update({ tg_username: tgUser.username })
-        .eq('id', telegramUserId)
-      if (usernameError) console.error('Ошибка обновления tg_username:', usernameError)
-    }
-  }
-
-  res.status(200).json({ email, otp: linkData.properties.email_otp })
+  res.status(200).json({ email: result.email, otp: result.otp })
 }

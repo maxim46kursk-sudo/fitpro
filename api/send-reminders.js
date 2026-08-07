@@ -35,7 +35,13 @@ function parseHHMM(str) {
 // chat_id из auth-пользователя: сперва user_metadata.telegram_id, иначе
 // разбираем из технического email вида tg<цифры>@telegram.fitpro, которым
 // заводится телеграм-аккаунт (api/telegram-auth.js). null — не нашли.
-function extractChatId(user) {
+//
+// ЭКСПОРТИРУЕТСЯ РАДИ ТЕСТА. У этой функции есть близнец на фронте —
+// telegramChatIdOf() в src/config.js: он решает, писать ли в Настройках
+// «Придут в Telegram» или «Чтобы получать напоминания, подключите Telegram».
+// Разойдись они — интерфейс начнёт врать ровно в том месте, где обещает не
+// врать. Совпадение проверяет test-telegram-auth.mjs.
+export function extractChatId(user) {
   const fromMeta = user?.user_metadata?.telegram_id
   if (fromMeta != null && String(fromMeta).trim()) return String(fromMeta).trim()
   const email = user?.email || ''
@@ -247,6 +253,10 @@ export default async function handler(req, res) {
 
   let checked = 0
   let sent = 0
+  // Сколько напоминаний оказалось некуда доставить (нет chat_id). Отдельно от
+  // sent: раньше такие случаи были неотличимы от «не наступило время» и тихо
+  // растворялись в разнице checked − sent.
+  let undeliverable = 0
 
   for (const profile of profiles || []) {
     for (const type of REMINDER_TYPES) {
@@ -291,8 +301,23 @@ export default async function handler(req, res) {
       }
       const chatId = extractChatId(userData?.user)
       if (!chatId) {
-        console.warn(`send-reminders: нет chat_id, пропуск (${type})`)
-        await dropClaim()
+        // ОТСУТСТВИЕ КАНАЛА — НЕ СБОЙ, а устойчивое состояние аккаунта, и
+        // dropClaim() тут был вреден: заявка снималась, следующий запуск крона
+        // (через 15 минут) снова доходил до этого же пользователя, снова не
+        // находил chat_id и снова её снимал — и так до конца суток, ~40 лишних
+        // проходов с чтением auth.users на каждого такого человека. Повторять
+        // нечего: chat_id не появится оттого, что мы спросим ещё раз.
+        //
+        // Заявку ОСТАВЛЯЕМ — она и есть отметка «за сегодня вопрос закрыт»:
+        // PRIMARY KEY (user_id, type, sent_date) не пустит второй заход в этот
+        // день, а завтра строка будет уже с новой датой, и попытка повторится
+        // сама. Отдельной колонки-флага сознательно не заводим — поведение,
+        // ради которого всё это делается, строка обеспечивает и так.
+        //
+        // sent НЕ увеличиваем: ничего не отправлено, и счётчик обязан это
+        // показывать честно.
+        console.warn(`send-reminders: нет chat_id — напоминание (${type}) недоставляемо, до завтра больше не пробуем`)
+        undeliverable++
         continue
       }
 
@@ -336,5 +361,5 @@ export default async function handler(req, res) {
     console.error('send-reminders: сбой сводки ошибок (на напоминания не влияет):', e)
   }
 
-  return res.status(200).json({ checked, sent, errorsAlerted })
+  return res.status(200).json({ checked, sent, undeliverable, errorsAlerted })
 }
