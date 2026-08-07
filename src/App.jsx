@@ -7007,8 +7007,7 @@ function LandingPage({ onEnter, isTelegram, accessError }) {
     setForgotDone(true)
   }
 
-  // Рамка карточки формы входа. Фоновая заливка G убрана вместе с карточками
-  // функций на стартовом экране — больше её использовать негде.
+  const G='rgba(255,255,255,0.06)'
   const GB='1px solid rgba(255,255,255,0.09)'
 
   return(
@@ -7037,74 +7036,98 @@ function LandingPage({ onEnter, isTelegram, accessError }) {
       )}
 
       {view==='hero'?(
-        /* ── Стартовый экран ──────────────────────────────────────────────────
-           Одна колонка, сверху вниз: заголовок → одно предложение → одна
-           кнопка → строка входа → что внутри → кто автор.
+        <div style={{ maxWidth:900,margin:'0 auto',padding:mobile?'0 18px':'0 28px' }}>
 
-           Чего здесь намеренно НЕТ и что вернуть нельзя:
-           * заявления вроде «первое приложение с…» — их невозможно проверить,
-             и они тратят доверие в первую же секунду;
-           * градиентной заливки текста, радиальных подсветок и цветных
-             ореолов boxShadow — внутри приложение спокойное и плоское, и
-             витрина не должна обещать другой продукт;
-           * поддельной карточки чата со списком «вот что я умею» — она
-             ИЗОБРАЖАЛА ассистента вместо того, чтобы дать его попробовать;
-           * эмодзи и превосходных степеней.
+          {/* ── Hero */}
+          <div style={{ padding:mobile?'52px 0 44px':'80px 0 60px',textAlign:'center',background:`radial-gradient(ellipse at 50% -10%, ${PUR}30 0%, transparent 62%)` }}>
 
-           Все цвета — из общей палитры (BG/SURF/TXT/TXT2/TXT3/HAIR/PUR).
-           Своих цветов у этого экрана нет: разъехавшись с приложением один
-           раз, они разъезжаются навсегда. */
-        /* textAlign:'left' задан явно: в src/index.css у #root стоит
-           text-align:center, и без этого весь экран собирается по центру —
-           прежний лендинг центрировался осознанно, а этот должен читаться
-           как обычный экран приложения, слева направо. */
-        <div style={{ maxWidth:560,margin:'0 auto',padding:mobile?'0 20px':'0 28px',textAlign:'left' }}>
+            {/* Бейдж */}
+            <div style={{ display:'inline-flex',alignItems:'center',gap:7,background:`linear-gradient(90deg,${PUR}35,#5b54c420)`,border:`1px solid ${PUR}70`,borderRadius:20,padding:'6px 16px',fontSize:12,color:'#d0ccff',marginBottom:22,fontWeight:700,letterSpacing:'0.5px',boxShadow:`0 0 18px ${PUR}30` }}>
+              <GlassIcon name="bulb" size={18} /> Первое приложение с AI-ассистентом
+            </div>
 
-          <div style={{ padding:mobile?'44px 0 8px':'64px 0 12px' }}>
-            <h1 style={{ fontSize:mobile?30:40,fontWeight:800,lineHeight:1.18,letterSpacing:'-0.5px',margin:'0 0 14px',color:TXT }}>
-              Тренировки и питание<br />в одном приложении
+            <h1 style={{ fontSize:mobile?32:56,fontWeight:800,lineHeight:1.12,margin:'0 0 32px',background:'linear-gradient(150deg,#fff 45%,#9d97e8)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent' }}>
+              Твой персональный<br />тренер всегда<br />рядом
             </h1>
 
-            <p style={{ fontSize:mobile?15:16,lineHeight:1.55,color:TXT2,margin:'0 0 26px' }}>
-              Для тех, кто занимается в зале или дома и хочет видеть свой прогресс,
-              а не держать его в голове.
-            </p>
-
             <button onClick={()=>openForm('register')}
-              style={{ width:'100%',padding:'15px 24px',borderRadius:12,border:'none',background:PUR,color:'#fff',fontSize:16,fontWeight:700,cursor:'pointer' }}>
-              Начать бесплатно
+              style={{ padding:'15px 40px',borderRadius:14,border:'none',background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontSize:17,fontWeight:700,cursor:'pointer',boxShadow:`0 10px 32px ${PUR}55`,marginBottom:52 }}>
+              Попробовать бесплатно
             </button>
 
-            <div style={{ fontSize:14,color:TXT3,marginTop:14 }}>
-              Уже есть аккаунт — <button onClick={()=>openForm('login')}
-                style={{ background:'none',border:'none',padding:0,color:PUR,fontSize:14,fontWeight:600,cursor:'pointer',minHeight:'unset' }}>Войти</button>
+            {/* ── AI-персонаж */}
+            <div style={{ textAlign:'left',background:'rgba(255,255,255,0.03)',border:`1px solid ${PUR}35`,borderRadius:20,overflow:'hidden',boxShadow:`0 0 48px ${PUR}18` }}>
+
+              {/* Хедер карточки */}
+              <div style={{ background:`linear-gradient(90deg,${PUR}28,transparent)`,borderBottom:`1px solid ${PUR}25`,padding:'16px 20px',display:'flex',alignItems:'center',gap:14 }}>
+                <div style={{ position:'relative',flexShrink:0 }}>
+                  <div style={{ width:52,height:52,borderRadius:'50%',background:`linear-gradient(135deg,${PUR},#4d47b0)`,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:`0 4px 16px ${PUR}50` }}><GlassIcon name="robot" size={40} /></div>
+                  <div style={{ position:'absolute',bottom:2,right:2,width:13,height:13,borderRadius:'50%',background:'#22c55e',border:'2.5px solid #0d0d1a' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize:16,fontWeight:700,color:'#fff' }}>FitPro AI</div>
+                  <div style={{ fontSize:12,color:'rgba(255,255,255,0.4)',marginTop:2 }}>Обучен твоим тренером</div>
+                </div>
+              </div>
+
+              {/* Сообщение AI */}
+              <div style={{ padding:'20px 20px 8px' }}>
+                {/* Сообщение — умения */}
+                <div style={{ display:'flex',gap:10,alignItems:'flex-start' }}>
+                  <div style={{ background:`${PUR}18`,border:`1px solid ${PUR}30`,borderRadius:14,padding:'12px 15px',flex:1 }}>
+                    <p style={{ margin:'0 0 10px',fontSize:13,color:'rgba(255,255,255,0.75)',lineHeight:1.5,fontWeight:600 }}>Вот что я умею:</p>
+                    <div style={{ display:'flex',flexDirection:'column',gap:7 }}>
+                      {[
+                        ['template','Знаю твою программу тренировок — вижу, какой вес был в прошлый раз'],
+                        ['food','Помогу с питанием — спроси, что съесть, что заменить или как вписать любимое'],
+                        ['gear','Скорректирую план, если было слишком тяжело или слишком легко'],
+                        ['chat','Отвечаю так, как ответил бы сам тренер — потому что он меня именно так обучил'],
+                      ].map(([ic,tx],i)=>(
+                        <div key={i} style={{ display:'flex',gap:9,alignItems:'flex-start',background:'rgba(255,255,255,0.04)',borderRadius:9,padding:'8px 11px' }}>
+                          <GlassIcon name={ic} size={22} style={{marginTop:1}} />
+                          <span style={{ fontSize:12,color:'rgba(255,255,255,0.6)',lineHeight:1.6 }}>{tx}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ padding:'6px 0 2px' }} />
+              </div>
             </div>
           </div>
 
-          {/* Что внутри. Простой список: ни карточек-обёрток, ни иконок в
-              рамках — перечисление, а не витрина. Разделитель тонкой линией
-              из палитры, у последнего пункта его нет. */}
-          <div style={{ borderTop:`1px solid ${HAIR}`,marginTop:34,paddingTop:6 }}>
+          {/* ── Карточки функций */}
+          <div style={{ display:'grid',gridTemplateColumns:mobile?'1fr':'1fr 1fr',gap:12,marginBottom:32 }}>
             {[
-              ['Программы тренировок', 'Готовые программы под цель. Упражнения, подходы и вес уже внутри — остаётся начать.'],
-              ['Журнал с весами и повторами', 'Записываешь кг и повторы прямо во время тренировки. Видно, что было в прошлый раз.'],
-              ['Дневник питания', 'Считает КБЖУ. Продукт можно найти поиском или отсканировать штрих-код.'],
-              ['Ассистент, обученный тренером', 'Знает твою программу и дневник. Отвечает на вопросы, записывает еду.'],
-            ].map(([title,desc],i,arr)=>(
-              <div key={i} style={{ padding:'18px 0',borderBottom:i<arr.length-1?`1px solid ${HAIR}`:'none' }}>
-                <div style={{ fontSize:15,fontWeight:600,color:TXT,marginBottom:5 }}>{title}</div>
-                <div style={{ fontSize:13.5,lineHeight:1.55,color:TXT3 }}>{desc}</div>
+              {icon:'template',title:'Программы тренировок от maxim_athlete',desc:'Готовые программы под твои цели. Просто запусти тренировку — все упражнения, вес и подходы уже внутри'},
+              {icon:'dumbbell',title:'Умный журнал тренировок',desc:'Записывай кг и повторы прямо в процессе тренировки, оставляй заметки для тренера или AI-ассистента'},
+              {icon:'plate',title:'Умный дневник питания',desc:'Умеет не только считать КБЖУ, но и даёт рекомендации — что на что заменить'},
+              {icon:'chart',title:'Достижения',desc:'Аналитика общего тоннажа тренировок, прогресс по каждому упражнению и аналитика питания'},
+            ].map((f,i)=>(
+              <div key={i} style={{ background:G,border:GB,borderRadius:16,padding:'20px 18px',display:'flex',gap:14,alignItems:'flex-start' }}>
+                <GlassIcon name={f.icon} size={34} style={{marginTop:2}} />
+                <div>
+                  <div style={{ fontSize:14,fontWeight:700,color:'#fff',marginBottom:6,lineHeight:1.35 }}>{f.title}</div>
+                  <div style={{ fontSize:12,color:'rgba(255,255,255,0.42)',lineHeight:1.65 }}>{f.desc}</div>
+                </div>
               </div>
             ))}
           </div>
 
-          {/* Автор. Не «эксперт года», а просто кто это сделал и куда написать. */}
-          <div style={{ marginTop:26,paddingTop:20,borderTop:`1px solid ${HAIR}`,paddingBottom:44 }}>
-            <div style={{ fontSize:13.5,lineHeight:1.6,color:TXT3 }}>
-              Программы и ответы ассистента — от тренера{' '}
-              <a href={MAX_TELEGRAM_URL} target="_blank" rel="noopener noreferrer"
-                style={{ color:PUR,textDecoration:'none',fontWeight:600 }}>maxim_athlete</a>.
+          {/* ── Акцентная строка */}
+          <div style={{ textAlign:'center',marginBottom:28,padding:'22px 20px',background:`linear-gradient(135deg,${PUR}20,${TEA}12)`,border:`1px solid ${PUR}35`,borderRadius:16 }}>
+            <div style={{ fontSize:mobile?17:20,fontWeight:800,background:`linear-gradient(135deg,#fff 40%,#b8b3f5)`,WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',lineHeight:1.4 }}>
+              Теперь тренировки станут ещё комфортнее ✨
             </div>
+          </div>
+
+          {/* ── Кнопка внизу */}
+          <div style={{ textAlign:'center',paddingBottom:52 }}>
+            <button onClick={()=>openForm('register')}
+              style={{ padding:'15px 44px',borderRadius:14,border:'none',background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontSize:17,fontWeight:700,cursor:'pointer',boxShadow:`0 10px 32px ${PUR}50` }}>
+              Попробовать бесплатно
+            </button>
           </div>
 
         </div>
