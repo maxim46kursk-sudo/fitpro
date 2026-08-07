@@ -12,6 +12,59 @@ input, select, button, textarea {
 
 input::placeholder, textarea::placeholder { color: rgba(235,235,245,0.30); }
 
+/* ── Отклик на нажатие: одно правило на всё приложение ──────────────────────
+   Проблема была не в отдельных кнопках, а в том, что нажатие в принципе ничем
+   не отзывалось: человек жал и не понимал, нажалось ли. Чинить поштучно
+   бессмысленно — правило общее.
+
+   КАК ПОКРЫТЫ КЛИКАБЕЛЬНЫЕ DIV. В приложении кликабельно далеко не только
+   <button>: половина карточек и строк — это div с onClick. Атрибута у onClick
+   нет, но у всех таких узлов проставлен инлайновый cursor:pointer, а React
+   сериализует его в атрибут style. По нему и цепляемся. Обе формы записи —
+   со пробелом и без — потому что сериализация зависит от того, задан стиль
+   объектом или строкой; тот же приём уже применён к font-size в глобальном
+   блоке App.jsx.
+
+   ПОЧЕМУ transform И opacity, А НЕ padding/цвет. Обе не влияют на раскладку:
+   браузер не пересчитывает геометрию, ничего не прыгает и не съезжает, и
+   прокрутка списков не страдает — палец продолжает скроллить сквозь нажатую
+   карточку. Любая правка размеров или отступов дала бы дёрганье в длинных
+   списках. */
+button,
+[role="button"],
+[style*="cursor:pointer"],
+[style*="cursor: pointer"] {
+  transition: transform 0.12s ease, opacity 0.12s ease;
+  /* Свой отклик вместо серой вспышки WebKit — иначе их видно одновременно,
+     и внутри Telegram Mini App это выглядит особенно грязно. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* :not(...) с position:fixed — обязателен. transform создаёт новый
+   containing block, и position:fixed у ПОТОМКОВ такого элемента начинает
+   считаться от него, а не от окна. Для оверлеев и закреплённых панелей это
+   означало бы разъезжающуюся вёрстку в момент нажатия. */
+button:not(:disabled):active,
+[role="button"]:active,
+[style*="cursor:pointer"]:not([style*="position:fixed"]):not([style*="position: fixed"]):active,
+[style*="cursor: pointer"]:not([style*="position:fixed"]):not([style*="position: fixed"]):active {
+  transform: scale(0.97);
+  opacity: 0.72;
+}
+
+/* Неактивная кнопка не должна притворяться нажимаемой. */
+button:disabled, button[disabled] { transition: none; }
+button:disabled:active, button[disabled]:active { transform: none; }
+
+/* Кому анимация противопоказана — оставляем только затухание. */
+@media (prefers-reduced-motion: reduce) {
+  button, [role="button"], [style*="cursor:pointer"], [style*="cursor: pointer"] { transition: opacity 0.12s ease; }
+  button:not(:disabled):active,
+  [role="button"]:active,
+  [style*="cursor:pointer"]:active,
+  [style*="cursor: pointer"]:active { transform: none; }
+}
+
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); border-radius: 4px; }

@@ -8890,6 +8890,12 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
   }
   const photoInputPVRef=useRef(null)
   const [saved,setSaved]=useState(false)
+  // Запись профиля уходит в сеть (upsert в profiles), и до этой правки на
+  // время запроса не показывалось НИЧЕГО: «Сохранено» загоралось уже по факту.
+  // На медленной связи это выглядело как молчащая кнопка — человек жал ещё раз.
+  // У остальных сетевых кнопок (оплата, пробный, вход, экспорт, удаление,
+  // отправка ассистенту) своё busy-состояние уже есть, их не трогаем.
+  const [savingProfile,setSavingProfile]=useState(false)
   // Тост ошибки записи — тот же паттерн, что showFoodSaveError/showClientSaveError,
   // своя копия т.к. компонент отдельный.
   const [showProfileSaveError,setShowProfileSaveError]=useState(false)
@@ -8998,6 +9004,9 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
   ]
 
   const saveProfile=async()=>{
+    if(savingProfile)return
+    setSavingProfile(true)
+    try{
     // Клампим вес/рост перед сохранением — гигантские/отрицательные значения
     // ломают calcMacroGoals (aiPrompt.js) и норму КБЖУ, которую AI-ассистент
     // считает от этих же полей.
@@ -9030,6 +9039,11 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
       if(error){console.error('Ошибка синхронизации профиля с Supabase:',error);flashProfileSaveError();return}
     }
     setSaved(true); setTimeout(()=>setSaved(false),2000)
+    }finally{
+      // finally, а не хвост try: при ошибке записи выше стоит return, и без
+      // finally кнопка осталась бы навсегда в состоянии «Сохраняем…».
+      setSavingProfile(false)
+    }
   }
 
   const handlePhotoPV=(e)=>{
@@ -9346,8 +9360,8 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
               </div>
             </div>
 
-            <button data-testid="profile-save" onClick={saveProfile} style={{padding:'14px',borderRadius:14,border:'none',background:saved?TEA:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontSize:16,fontWeight:800,cursor:'pointer',transition:'background 0.2s',boxShadow:'0 8px 22px rgba(124,122,240,.4)',display:'flex',alignItems:'center',justifyContent:'center',gap:7}}>
-              {saved&&<GlassIcon name="check" size={18} />}{saved?'Сохранено':'Сохранить'}
+            <button data-testid="profile-save" onClick={saveProfile} disabled={savingProfile} style={{padding:'14px',borderRadius:14,border:'none',background:saved?TEA:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontSize:16,fontWeight:800,cursor:'pointer',transition:'background 0.2s',boxShadow:'0 8px 22px rgba(124,122,240,.4)',display:'flex',alignItems:'center',justifyContent:'center',gap:7}}>
+              {saved&&<GlassIcon name="check" size={18} />}{savingProfile?'Сохраняем…':saved?'Сохранено':'Сохранить'}
             </button>
           </div>
         )}
