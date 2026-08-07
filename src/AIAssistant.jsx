@@ -701,7 +701,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
             display: 'flex', alignItems: 'center', gap: 10,
             background: SURF, flexShrink: 0,
           }}>
-            <button onClick={() => setIsOpen(false)} style={{
+            <button data-back="1" onClick={() => setIsOpen(false)} style={{
               background: 'none', border: 'none', fontSize: 22, cursor: 'pointer',
               color: TXT3, padding: 0, lineHeight: 1, minHeight: 'unset',
             }}><GlassIcon name="back" size={20} /></button>
@@ -902,7 +902,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-                  placeholder={mode === 'workout' ? 'Спроси про технику, восстановление...' : attachedImage ? 'Можно добавить комментарий...' : 'Спроси про питание или продукт...'}
+                  data-testid="assistant-input" placeholder={mode === 'workout' ? 'Спроси про технику, восстановление...' : attachedImage ? 'Можно добавить комментарий...' : 'Спроси про питание или продукт...'}
                   style={{
                     flex: 1, padding: '11px 16px', borderRadius: 24,
                     border: `1.5px solid ${HAIR}`, fontSize: 14,
@@ -913,7 +913,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
                   onBlur={e => e.target.style.borderColor = HAIR}
                 />
                 <button
-                  onClick={send}
+                  data-testid="assistant-send" onClick={send}
                   disabled={(!input.trim() && !attachedImage) || loading}
                   style={{
                     width: 44, height: 44, borderRadius: '50%', border: 'none', flexShrink: 0,

@@ -548,7 +548,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
       {/* Шапка. Кнопка «назад» одна на все экраны раздела: снимает верхний
           экран стека, а из основания закрывает раздел целиком. */}
       <div style={{ background: SURF, borderBottom: `1px solid ${HAIR}`, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-        <button onClick={goBack} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: TXT3, lineHeight: 1, padding: 0, minHeight: 'unset' }}><GlassIcon name="back" size={26} /></button>
+        <button data-back="1" onClick={goBack} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: TXT3, lineHeight: 1, padding: 0, minHeight: 'unset' }}><GlassIcon name="back" size={26} /></button>
         <span style={{ fontSize: 17, fontWeight: 700, color: TXT, flex: 1 }}>
           {screen.type === GOALS ? 'Норма' : screen.type === SUMMARY ? sectionTitle('Сводка') : sectionTitle('Питание')}
         </span>
@@ -563,10 +563,10 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
               <>
                 <div onClick={() => setGearOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 49 }} />
                 <div onClick={ev => ev.stopPropagation()} style={{ position: 'absolute', top: 32, right: 0, background: SURF, borderRadius: 12, boxShadow: '0 6px 24px rgba(0,0,0,0.35)', zIndex: 51, minWidth: 170, overflow: 'hidden', border: `1px solid ${HAIR}` }}>
-                  <button onClick={openGoals} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '11px 15px', border: 'none', borderBottom: `1px solid ${HAIR}`, background: 'transparent', cursor: 'pointer', textAlign: 'left', color: TXT, fontSize: 13 }}>
+                  <button data-testid="food-goals" onClick={openGoals} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '11px 15px', border: 'none', borderBottom: `1px solid ${HAIR}`, background: 'transparent', cursor: 'pointer', textAlign: 'left', color: TXT, fontSize: 13 }}>
                     <GlassIcon name="target" size={20} />Норма
                   </button>
-                  <button onClick={openSummary} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '11px 15px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left', color: TXT, fontSize: 13 }}>
+                  <button data-testid="food-summary" onClick={openSummary} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '11px 15px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left', color: TXT, fontSize: 13 }}>
                     <GlassIcon name="chart" size={20} />Сводка
                   </button>
                 </div>
@@ -810,7 +810,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
           if (meal.key === NO_MEAL && list.length === 0) return null
           const tot = sumEntries(list)
           return (
-            <div key={meal.key} style={{ marginBottom: 12 }}>
+            <div key={meal.key} data-testid={`meal-${meal.key}`} style={{ marginBottom: 12 }}>
               {/* Заголовок приёма — той же семьи, что карточки-хабы на других
                   вкладках: крупная иконка и тот же вес шрифта. Сами секции
                   хабами НЕ делаем — внутри списки записей, там важна
@@ -848,7 +848,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
                           onChange={(k, v) => setEditFoodForm(f => ({ ...f, [k]: v }))} />
                       </div>
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <button onClick={saveEditFood} style={{ flex: 1, padding: '9px', borderRadius: 8, border: 'none', background: PUR, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 'unset' }}>Сохранить</button>
+                        <button data-testid="food-edit-save" onClick={saveEditFood} style={{ flex: 1, padding: '9px', borderRadius: 8, border: 'none', background: PUR, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 'unset' }}>Сохранить</button>
                         <button onClick={() => setEditingFoodId(null)} style={{ padding: '9px 14px', borderRadius: 8, border: 'none', background: SURF2, color: TXT3, fontSize: 13, cursor: 'pointer', minHeight: 'unset' }}>Отмена</button>
                         <button onClick={() => { removeFood(e.id); setEditingFoodId(null) }} style={{ padding: '9px 14px', borderRadius: 8, border: 'none', background: '#fff5f5', color: '#ef4444', fontSize: 13, cursor: 'pointer', minHeight: 'unset' }}>Удалить</button>
                       </div>
@@ -873,7 +873,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
                           </div>
                         </div>
                         {!readOnly && <div style={{ position: 'relative', flexShrink: 0 }}>
-                          <button onClick={ev => { ev.stopPropagation(); setOpenFoodMenu(openFoodMenu === e.id ? null : e.id); setMovingFoodId(null); setEditingFoodId(null) }}
+                          <button data-testid="food-menu" onClick={ev => { ev.stopPropagation(); setOpenFoodMenu(openFoodMenu === e.id ? null : e.id); setMovingFoodId(null); setEditingFoodId(null) }}
                             style={{ background: 'none', border: `1px solid ${HAIR}`, borderRadius: 7, fontSize: 15, cursor: 'pointer', color: TXT3, padding: '2px 7px', minHeight: 'unset', lineHeight: 1.4, letterSpacing: 1 }}>⋯</button>
                           {openFoodMenu === e.id && (
                             <>
@@ -886,16 +886,16 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
                                   [...MEALS, { key: NO_MEAL, label: NO_MEAL_LABEL }]
                                     .filter(m => m.key !== (e.meal || NO_MEAL))
                                     .map(m => (
-                                      <button key={m.key} onClick={() => { setOpenFoodMenu(null); setMovingFoodId(null); moveFood(e.id, m.key === NO_MEAL ? null : m.key) }}
+                                      <button key={m.key} data-testid={`food-move-${m.key}`} onClick={() => { setOpenFoodMenu(null); setMovingFoodId(null); moveFood(e.id, m.key === NO_MEAL ? null : m.key) }}
                                         style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '11px 15px', border: 'none', borderBottom: `1px solid ${HAIR}`, background: 'transparent', cursor: 'pointer', textAlign: 'left', color: TXT, fontSize: 13 }}>
                                         {MEAL_ICONS[m.key] ? <GlassIcon name={MEAL_ICONS[m.key]} size={20} /> : <span style={{ width: 20 }} />}{m.label}
                                       </button>
                                     ))
                                 ) : (
                                   <>
-                                    <button onClick={() => { setOpenFoodMenu(null); startEditFood(e) }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '11px 15px', border: 'none', borderBottom: `1px solid ${HAIR}`, background: 'transparent', cursor: 'pointer', textAlign: 'left', color: TXT, fontSize: 13 }}>✏️ Редактировать</button>
-                                    <button onClick={() => setMovingFoodId(e.id)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '11px 15px', border: 'none', borderBottom: `1px solid ${HAIR}`, background: 'transparent', cursor: 'pointer', textAlign: 'left', color: TXT, fontSize: 13 }}>↔️ Перенести в другой приём</button>
-                                    <button onClick={() => { setOpenFoodMenu(null); removeFood(e.id) }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '11px 15px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left', color: '#ef4444', fontSize: 13 }}>🗑 Удалить</button>
+                                    <button data-testid="food-edit" onClick={() => { setOpenFoodMenu(null); startEditFood(e) }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '11px 15px', border: 'none', borderBottom: `1px solid ${HAIR}`, background: 'transparent', cursor: 'pointer', textAlign: 'left', color: TXT, fontSize: 13 }}>✏️ Редактировать</button>
+                                    <button data-testid="food-move-open" onClick={() => setMovingFoodId(e.id)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '11px 15px', border: 'none', borderBottom: `1px solid ${HAIR}`, background: 'transparent', cursor: 'pointer', textAlign: 'left', color: TXT, fontSize: 13 }}>↔️ Перенести в другой приём</button>
+                                    <button data-testid="food-delete" onClick={() => { setOpenFoodMenu(null); removeFood(e.id) }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '11px 15px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left', color: '#ef4444', fontSize: 13 }}>🗑 Удалить</button>
                                   </>
                                 )}
                               </div>
@@ -910,7 +910,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
 
               {/* В «Без категории» добавлять нечего — это склад старых записей. */}
               {!readOnly && meal.key !== NO_MEAL && (
-                <button onClick={() => { closeSheet(); setSheetMeal(meal.key) }}
+                <button data-testid={`meal-add-${meal.key}`} onClick={() => { closeSheet(); setSheetMeal(meal.key) }}
                   style={{ width: '100%', padding: '11px', borderRadius: 12, border: `2px dashed ${PUR}44`, background: 'transparent', color: PUR, fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 'unset' }}>
                   + Добавить
                 </button>
@@ -942,7 +942,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
           <div style={{ background: SURF, borderBottom: `1px solid ${HAIR}`, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
             {/* Назад по одному шагу: из порции — к результатам (запрос
                 сохраняется), из ручной формы — к поиску, из поиска — в день. */}
-            <button onClick={sheetBack} style={{ background: 'none', border: 'none', cursor: 'pointer', color: TXT3, padding: 0, minHeight: 'unset', lineHeight: 1 }}>
+            <button data-back="1" onClick={sheetBack} style={{ background: 'none', border: 'none', cursor: 'pointer', color: TXT3, padding: 0, minHeight: 'unset', lineHeight: 1 }}>
               <GlassIcon name="back" size={26} />
             </button>
             {/* Иконка приёма — слева, вплотную к заголовку: она поясняет
@@ -961,7 +961,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
               <input
                 value={query}
                 onChange={e => onQueryChange(e.target.value)}
-                placeholder="Найти продукт"
+                placeholder="Найти продукт" data-testid="food-search-input"
                 autoFocus
                 style={{ ...inputStyle, paddingRight: 46 }}
                 onFocus={e => e.target.style.borderColor = PUR} onBlur={e => e.target.style.borderColor = HAIR} />

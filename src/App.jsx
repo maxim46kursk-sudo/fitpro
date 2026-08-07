@@ -256,7 +256,7 @@ function NavBtn({ ic, color, label, active, onClick }) {
 function BackBtn({ label, right, onBack }) {
   return (
     <div style={{ background:SURF, borderBottom:`1px solid ${HAIR}`, padding:'14px 18px', display:'flex', alignItems:'center', gap:14, flexShrink:0, position:'sticky', top:0, zIndex:10 }}>
-      <button onClick={onBack} style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
+      <button data-back="1" onClick={onBack} style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
       <span style={{ fontSize:17, fontWeight:700, color:TXT, flex:1 }}>{label}</span>
       {right}
     </div>
@@ -952,7 +952,7 @@ function ClientDetail({ client, goBack, trainerId }) {
   const program=client.program?.trim()||''
   return (
     <div>
-      <button onClick={goBack} style={{ fontSize:12, color:TXT3, border:'none', background:'none', cursor:'pointer', marginBottom:14, padding:0, display:'inline-flex', alignItems:'center', gap:5 }}><GlassIcon name="back" size={16} />Назад</button>
+      <button data-back="1" onClick={goBack} style={{ fontSize:12, color:TXT3, border:'none', background:'none', cursor:'pointer', marginBottom:14, padding:0, display:'inline-flex', alignItems:'center', gap:5 }}><GlassIcon name="back" size={16} />Назад</button>
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:18 }}>
         <Av lbl={initials} sz={50} />
         <div>
@@ -1061,7 +1061,7 @@ function RealClientDetail({ client, goBack, trainerId }) {
 
   return (
     <div>
-      <button onClick={goBack} style={{ fontSize:12, color:TXT3, border:'none', background:'none', cursor:'pointer', marginBottom:14, padding:0, display:'inline-flex', alignItems:'center', gap:5 }}><GlassIcon name="back" size={16} />Назад</button>
+      <button data-back="1" onClick={goBack} style={{ fontSize:12, color:TXT3, border:'none', background:'none', cursor:'pointer', marginBottom:14, padding:0, display:'inline-flex', alignItems:'center', gap:5 }}><GlassIcon name="back" size={16} />Назад</button>
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:18 }}>
         <Av lbl={initials} sz={50} />
         <div>
@@ -3268,7 +3268,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                 style={{ width:'100%', padding:'11px', borderRadius:10, border:`1px solid ${HAIR}`, background:SURF2, color:'#fff', fontSize:15, colorScheme:'dark', cursor:'pointer', outline:'none', boxSizing:'border-box', marginBottom:16, textAlign:'center' }} />
               <div style={{ display:'flex', gap:8 }}>
                 <button onClick={()=>setShowDatePicker(false)} style={{ flex:1, padding:'10px', borderRadius:10, border:`1px solid ${HAIR}`, background:'none', color:TXT3, fontSize:13, cursor:'pointer' }}>Отмена</button>
-                <button onClick={confirmSaveWithDate} style={{ flex:1, padding:'10px', borderRadius:10, border:'none', background:wColor, color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer' }}>Сохранить</button>
+                <button data-testid="workout-save-confirm" onClick={confirmSaveWithDate} style={{ flex:1, padding:'10px', borderRadius:10, border:'none', background:wColor, color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer' }}>Сохранить</button>
               </div>
             </div>
           </div>
@@ -3549,14 +3549,14 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                   placeholder="1"
                                   style={{ background:isTemplateBand?'rgba(255,69,58,.08)':SURF2, border:isTemplateBand?'1.5px solid rgba(255,69,58,.55)':`1.5px solid ${HAIR}`, borderRadius:12, padding:'6px 6px', fontSize:17, fontWeight:700, fontVariantNumeric:'tabular-nums', color:isTemplateBand?'#ff8a82':TXT, textAlign:'center', width:'100%', boxSizing:'border-box' }} />
                               ):(
-                                <input value={set.kg} inputMode="decimal"
+                                <input data-testid="set-kg" value={set.kg} inputMode="decimal"
                                   onChange={e=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,kg:e.target.value,fromTemplate:false}:s)}:x))}
                                   onFocus={selectOnFocus}
                                   placeholder="0"
                                   style={{ background:isTemplateWeight?'rgba(255,69,58,.08)':SURF2, border:isTemplateWeight?'1.5px solid rgba(255,69,58,.55)':`1.5px solid ${HAIR}`, borderRadius:12, padding:'6px 6px', fontSize:17, fontWeight:700, fontVariantNumeric:'tabular-nums', color:isTemplateWeight?'#ff8a82':TXT, textAlign:'center', width:'100%', boxSizing:'border-box' }} />
                               )}
                               <div style={{ position:'relative', width:'100%' }}>
-                                <input value={set.reps} inputMode="numeric"
+                                <input data-testid="set-reps" value={set.reps} inputMode="numeric"
                                   onChange={e=>handleRepsChange(ei,si,e.target.value)}
                                   onFocus={selectOnFocus}
                                   placeholder="0"
@@ -3663,8 +3663,8 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
 
         {/* Нижняя панель */}
         <div style={{ padding:'10px 18px', display:'flex', justifyContent:'space-between', alignItems:'center', background:SURF2, flexShrink:0 }}>
-          <button onClick={()=>setPickOpen(true)} style={{ width:42, height:42, borderRadius:'50%', border:`2px solid ${HAIR}`, background:'none', color:TXT3, fontSize:22, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>+</button>
-          <button onClick={openDatePicker} style={{ padding:'12px 36px', borderRadius:16, border:'none', background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', fontSize:16, fontWeight:800, cursor:'pointer', boxShadow:'0 10px 26px rgba(124,122,240,.4)' }}>
+          <button data-testid="workout-add-exercise" onClick={()=>setPickOpen(true)} style={{ width:42, height:42, borderRadius:'50%', border:`2px solid ${HAIR}`, background:'none', color:TXT3, fontSize:22, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>+</button>
+          <button data-testid="workout-finish" onClick={openDatePicker} style={{ padding:'12px 36px', borderRadius:16, border:'none', background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', fontSize:16, fontWeight:800, cursor:'pointer', boxShadow:'0 10px 26px rgba(124,122,240,.4)' }}>
             {isEditMode?'Сохранить':'Завершить'}
           </button>
           <button onClick={()=>setShowSendModal(true)} style={{ width:42, height:42, borderRadius:'50%', border:`2px solid ${HAIR}`, background:'none', color:TXT3, fontSize:20, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}><GlassIcon name="share" size={26} /></button>
@@ -3886,7 +3886,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       {currentSlot&&createPortal(
         <div style={{ position:'fixed', inset:0, background:SURF2, zIndex:1001, display:'flex', flexDirection:'column' }}>
           <div style={{ background:SURF, borderBottom:`1px solid ${HAIR}`, padding:'14px 18px', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
-            <button onClick={()=>setOpenSlotId(null)}
+            <button data-back="1" onClick={()=>setOpenSlotId(null)}
               style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:17, fontWeight:700, color:TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{currentSlot.title}</div>
@@ -3910,7 +3910,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           </div>
           <div style={{ flex:1, overflowY:'auto', padding:'14px 16px 32px' }}>
             {currentSlot.exercises.length>0&&(
-              <button onClick={handleStartSlotClick}
+              <button data-testid="workout-start" onClick={handleStartSlotClick}
                 style={{ display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',padding:'15px',marginBottom:14,borderRadius:12,border:'none',background:TEA,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',boxSizing:'border-box',minHeight:'unset' }}>
                 ▶ Начать тренировку
               </button>
@@ -4111,7 +4111,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       {openFolder&&createPortal(
         <div style={{ position:'fixed', inset:0, background:SURF2, zIndex:1000, display:'flex', flexDirection:'column' }}>
           <div style={{ background:SURF, borderBottom:`1px solid ${HAIR}`, padding:'14px 18px', display:'flex', alignItems:'center', gap:14, flexShrink:0 }}>
-            <button onClick={()=>setOpenFolder(null)}
+            <button data-back="1" onClick={()=>setOpenFolder(null)}
               style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
             <GlassIcon name={folderIcon(openFolder)} size={34} />
             <div>
@@ -4228,7 +4228,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           <div style={{ background:SURF, borderBottom:`1px solid ${HAIR}`, padding:'14px 18px', display:'flex', alignItems:'center', gap:14, flexShrink:0 }}>
             {/* «Назад» из тренировки возвращает к списку, из списка — закрывает
                 модалку целиком (и сбрасывает выбранную тренировку). */}
-            <button onClick={()=>{if(openProgramWorkoutIdx!=null){setOpenProgramWorkoutIdx(null);return}setProgramOpen(false);setOpenProgramWorkoutIdx(null)}}
+            <button data-back="1" onClick={()=>{if(openProgramWorkoutIdx!=null){setOpenProgramWorkoutIdx(null);return}setProgramOpen(false);setOpenProgramWorkoutIdx(null)}}
               style={{ background:'none', border:'none', fontSize:24, cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
             <GlassIcon name="template" size={34} />
             <div>
@@ -4304,7 +4304,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               // сверху, ниже карточки упражнений (бейдж, название, ExMeta,
               // подходы, видео постером). Комментарий тренера — под упражнением.
               <>
-                <button onClick={()=>startTrainerWorkout(assignedProgram.structure[openProgramWorkoutIdx])}
+                <button data-testid="workout-start-assigned" onClick={()=>startTrainerWorkout(assignedProgram.structure[openProgramWorkoutIdx])}
                   style={{ display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',padding:'15px',marginBottom:14,borderRadius:12,border:'none',background:TEA,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',boxSizing:'border-box',minHeight:'unset' }}>
                   ▶ Начать тренировку
                 </button>
@@ -4910,7 +4910,7 @@ function NutritionView({ userId }){
           </div>
         )}
         <div style={{ background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexShrink:0 }}>
-          <button onClick={()=>setOpenDay(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
+          <button data-back="1" onClick={()=>setOpenDay(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
           <div>
             <div style={{ fontSize:17,fontWeight:700,color:TXT }}>День {day.n} — {DAY_NAMES[openDay]}</div>
             <div style={{ fontSize:11,color:TXT3 }}>{plan.title}</div>
@@ -5010,7 +5010,7 @@ function NutritionView({ userId }){
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:BG,zIndex:1000,display:'flex',flexDirection:'column' }}>
         <div style={{ background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexShrink:0 }}>
-          <button onClick={()=>setOpenPlan(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
+          <button data-back="1" onClick={()=>setOpenPlan(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
           <GlassIcon name={plan.icon} size={34} />
           <div>
             <div style={{ fontSize:17,fontWeight:700,color:TXT }}>{plan.title}</div>
@@ -5211,7 +5211,7 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
     {toast&&(<div style={{ position:'fixed', top:14, left:'50%', transform:'translateX(-50%)', zIndex:2600, padding:'10px 18px', borderRadius:24, maxWidth:340, textAlign:'center', background:'#dc2626', color:'#fff', fontSize:13, fontWeight:700, boxShadow:'0 6px 20px rgba(220,38,38,0.35)' }}>{toast}</div>)}
     <div style={{ position:'fixed', inset:0, background:SURF2, zIndex:2100, display:'flex', flexDirection:'column' }}>
       <div style={{ background:SURF, borderBottom:`1px solid ${HAIR}`, padding:'14px 18px', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
-        <button onClick={tryClose} style={{ background:'none', border:'none', cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
+        <button data-back="1" onClick={tryClose} style={{ background:'none', border:'none', cursor:'pointer', color:TXT3, lineHeight:1, padding:0, minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
         <div style={{ fontSize:16, fontWeight:700, color:TXT }}>Редактор программы</div>
       </div>
       <div style={{ flex:1, overflowY:'auto', padding:'14px 16px 24px' }}>
@@ -5725,7 +5725,7 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
     const best=records.length?Math.max(...records.map(r=>r.maxKg)):0
     return(
       <div>
-        <button onClick={()=>setSel(null)} style={{ fontSize:13,color:TXT3,border:'none',background:'none',cursor:'pointer',padding:0,marginBottom:18,display:'flex',alignItems:'center',gap:5 }}><GlassIcon name="back" size={16} />Все упражнения</button>
+        <button data-back="1" onClick={()=>setSel(null)} style={{ fontSize:13,color:TXT3,border:'none',background:'none',cursor:'pointer',padding:0,marginBottom:18,display:'flex',alignItems:'center',gap:5 }}><GlassIcon name="back" size={16} />Все упражнения</button>
         <div style={{ display:'flex',alignItems:'center',gap:12,marginBottom:20 }}>
           <div style={{ width:56,height:56,borderRadius:16,background:'rgba(124,122,240,.14)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
             <GlassIcon name="dumbbell" size={38} />
@@ -5876,7 +5876,7 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
         onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
       {/* Внутри группы — строка возврата к хабу вместо ряда чипов. */}
       {filt!=='Все'&&(
-        <button onClick={()=>setFilt('Все')}
+        <button data-back="1" onClick={()=>setFilt('Все')}
           style={{ fontSize:13,color:TXT3,border:'none',background:'none',cursor:'pointer',padding:0,marginBottom:14,display:'flex',alignItems:'center',gap:5 }}>
           <GlassIcon name="back" size={16} />Все группы
         </button>
@@ -6567,7 +6567,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         {/* ─ Шапка с кнопкой + */}
         <div style={{ background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0,position:'sticky',top:0,zIndex:10 }}>
           <div style={{ display:'flex',alignItems:'center',gap:14 }}>
-            <button onClick={()=>{setSection(null);setShowWorkoutMenu(false);setOpenCardMenu(null)}} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
+            <button data-back="1" onClick={()=>{setSection(null);setShowWorkoutMenu(false);setOpenCardMenu(null)}} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
             <span style={{ fontSize:17,fontWeight:700,color:TXT }}>{sectionTitle('Мои тренировки','Тренировки')}</span>
           </div>
           {!readOnly&&<div style={{ position:'relative' }}>
@@ -6763,7 +6763,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:BG,zIndex:1000,display:'flex',flexDirection:'column' }}>
         <div style={{ background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 16px',display:'flex',alignItems:'center',gap:10,flexShrink:0 }}>
-          <button onClick={()=>setSection(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
+          <button data-back="1" onClick={()=>setSection(null)} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
           <span style={{ fontSize:17,fontWeight:700,color:TXT,flex:1 }}><GlassIcon name="calculator" size={28} style={{marginRight:8,verticalAlign:'-6px'}} />{sectionTitle('Калькулятор 1ПМ')}</span>
         </div>
         <div style={{ flex:1,overflowY:'auto',padding:'14px 16px 32px' }}>
@@ -7135,7 +7135,7 @@ function LandingPage({ onEnter, isTelegram, accessError }) {
         /* ── Форма входа / регистрации */
         <div style={{ minHeight:'calc(100vh - 62px)',display:'flex',alignItems:'center',justifyContent:'center',padding:'28px 18px' }}>
           <div style={{ width:'100%',maxWidth:400 }}>
-            <button onClick={()=>{setView('hero');setAuthError('');setForgotMode(false);setForgotError('')}} style={{ background:'none',border:'none',color:'rgba(255,255,255,0.38)',fontSize:14,cursor:'pointer',padding:'0 0 18px',display:'flex',alignItems:'center',gap:6 }}>
+            <button data-back="1" onClick={()=>{setView('hero');setAuthError('');setForgotMode(false);setForgotError('')}} style={{ background:'none',border:'none',color:'rgba(255,255,255,0.38)',fontSize:14,cursor:'pointer',padding:'0 0 18px',display:'flex',alignItems:'center',gap:6 }}>
               <GlassIcon name="back" size={16} />Назад
             </button>
             <div style={{ background:'rgba(255,255,255,0.04)',border:GB,borderRadius:20,padding:'30px 24px' }}>
@@ -7143,7 +7143,7 @@ function LandingPage({ onEnter, isTelegram, accessError }) {
               {forgotMode ? (
                 /* ── Восстановление пароля */
                 <div>
-                  <button onClick={()=>{setForgotMode(false);setForgotDone(false);setForgotEmail('');setForgotError('')}} style={{ background:'none',border:'none',color:'rgba(255,255,255,0.38)',fontSize:13,cursor:'pointer',padding:'0 0 16px',display:'flex',alignItems:'center',gap:5 }}>
+                  <button data-back="1" onClick={()=>{setForgotMode(false);setForgotDone(false);setForgotEmail('');setForgotError('')}} style={{ background:'none',border:'none',color:'rgba(255,255,255,0.38)',fontSize:13,cursor:'pointer',padding:'0 0 16px',display:'flex',alignItems:'center',gap:5 }}>
                     <GlassIcon name="back" size={15} />Назад к входу
                   </button>
                   <h2 style={{ fontSize:20,fontWeight:800,margin:'0 0 6px' }}>Восстановление пароля</h2>
@@ -7890,7 +7890,7 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
 
       {/* Подписка */}
       <Section title="Подписка">
-        <button onClick={()=>setSubPage('plans')} style={{
+        <button data-testid="settings-plans" onClick={()=>setSubPage('plans')} style={{
           display:'block',width:'100%',padding:0,border:'none',background:'none',
           textAlign:'left',cursor:'pointer',minHeight:'unset',
         }}>
@@ -7902,7 +7902,7 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
       {/* Аналитика — только тренеру. Клиент этого пункта не видит. */}
       {userRole==='trainer'&&(
         <Section title="Тренеру">
-          <button onClick={()=>setSubPage('analytics')} style={{
+          <button data-testid="settings-analytics" onClick={()=>setSubPage('analytics')} style={{
             display:'block',width:'100%',padding:0,border:'none',background:'none',
             textAlign:'left',cursor:'pointer',minHeight:'unset',
           }}>
@@ -8052,14 +8052,14 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
 
       {/* Конфиденциальность */}
       <Section title="Конфиденциальность">
-        <button onClick={()=>setSubPage('policy')} style={{
+        <button data-testid="settings-policy" onClick={()=>setSubPage('policy')} style={{
           display:'block',width:'100%',padding:0,border:'none',background:'none',
           textAlign:'left',cursor:'pointer',minHeight:'unset',
         }}>
           <Row label="Политика конфиденциальности" sub="Как обрабатываются твои данные (152-ФЗ)"
                right={<span style={{fontSize:16,color:TXT3}}>›</span>}/>
         </button>
-        <button onClick={()=>setSubPage('consent')} style={{
+        <button data-testid="settings-consent" onClick={()=>setSubPage('consent')} style={{
           display:'block',width:'100%',padding:0,border:'none',background:'none',
           textAlign:'left',cursor:'pointer',minHeight:'unset',
         }}>
@@ -8502,7 +8502,7 @@ function PlansView({ user, onClose, hideBack, onChanged }) {
             <div style={{fontSize:13,lineHeight:1.5,color:'rgba(255,255,255,0.85)',marginBottom:14}}>
               Попробуй ИИ-ассистента и все тренировки без оплаты. Карта не нужна.
             </div>
-            <button onClick={startTrial} disabled={trialBusy} style={{
+            <button data-testid="trial-start" onClick={startTrial} disabled={trialBusy} style={{
               width:'100%',padding:'13px',borderRadius:12,border:'none',
               background:'#fff',color:PUR,fontSize:15,fontWeight:800,
               cursor:trialBusy?'not-allowed':'pointer',opacity:trialBusy?0.7:1,minHeight:'unset',
@@ -8802,7 +8802,7 @@ function ConsentGate({ user, onAccepted, onDecline }) {
         )}
 
         {/* 6. Кнопка «Поехали» */}
-        <button onClick={accept} disabled={!checked||saving} style={{
+        <button data-testid="consent-accept" onClick={accept} disabled={!checked||saving} style={{
           width:'100%',padding:'15px',borderRadius:14,border:'none',
           background:checked?`linear-gradient(180deg, ${ACCENT2}, ${PUR})`:SURF2,
           color:checked?'#fff':TXT3,fontSize:16,fontWeight:800,
@@ -9091,7 +9091,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
       )}
       {/* Хедер */}
       <div style={{background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
-        <button onClick={onClose} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset'}}><GlassIcon name="back" size={26} /></button>
+        <button data-back="1" onClick={onClose} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset'}}><GlassIcon name="back" size={26} /></button>
         <span style={{fontSize:18,fontWeight:800,color:TXT,flex:1}}>Мои данные</span>
       </div>
 
@@ -9182,7 +9182,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
                     На этот адрес придёт письмо со ссылкой. Почта поменяется только после того, как ты по ней перейдёшь.
                   </div>
                   <div style={{display:'flex',gap:8,marginTop:10}}>
-                    <button onClick={submitEmail} disabled={emailBusy||!emailInput.trim()}
+                    <button data-testid="profile-email-submit" onClick={submitEmail} disabled={emailBusy||!emailInput.trim()}
                       style={{flex:1,padding:'10px',borderRadius:10,border:'none',background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontSize:13,fontWeight:700,cursor:emailBusy||!emailInput.trim()?'default':'pointer',opacity:emailBusy||!emailInput.trim()?0.6:1,minHeight:'unset'}}>
                       {emailBusy?'Отправляем…':'Отправить подтверждение'}
                     </button>
@@ -9346,7 +9346,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
               </div>
             </div>
 
-            <button onClick={saveProfile} style={{padding:'14px',borderRadius:14,border:'none',background:saved?TEA:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontSize:16,fontWeight:800,cursor:'pointer',transition:'background 0.2s',boxShadow:'0 8px 22px rgba(124,122,240,.4)',display:'flex',alignItems:'center',justifyContent:'center',gap:7}}>
+            <button data-testid="profile-save" onClick={saveProfile} style={{padding:'14px',borderRadius:14,border:'none',background:saved?TEA:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontSize:16,fontWeight:800,cursor:'pointer',transition:'background 0.2s',boxShadow:'0 8px 22px rgba(124,122,240,.4)',display:'flex',alignItems:'center',justifyContent:'center',gap:7}}>
               {saved&&<GlassIcon name="check" size={18} />}{saved?'Сохранено':'Сохранить'}
             </button>
           </div>
@@ -10806,7 +10806,7 @@ export default function App() {
   // компонент всё равно смонтирован и слушает свою историю/профиль).
   const renderMain=()=>(
     <>
-      <div style={{ display: nav==='workouts' ? 'block' : 'none' }}>
+      <div data-testid="screen-workouts" style={{ display: nav==='workouts' ? 'block' : 'none' }}>
         <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} hasTrainer={hasCoach} coachSubExpired={coachSubExpired} accessLevel={access.level} openPlans={openPlans} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} />
       </div>
       {nav!=='workouts'&&renderOther()}
@@ -10901,7 +10901,7 @@ export default function App() {
           </div>
           )}
 
-          <div ref={mobileContentRef} className="mobile-content" style={{ flex:1, overflowY:'auto', padding:`${workoutFullscreen?14:MOBILE_TOP_H+14}px 16px ${BOTTOM_NAV_H+16}px`, position:'relative' }}>
+          <div ref={mobileContentRef} data-screen={nav} className="mobile-content" style={{ flex:1, overflowY:'auto', padding:`${workoutFullscreen?14:MOBILE_TOP_H+14}px 16px ${BOTTOM_NAV_H+16}px`, position:'relative' }}>
             <PullToRefreshIndicator pull={ptrPull} refreshing={ptrRefreshing} />
             {renderMain()}
           </div>
@@ -10914,7 +10914,7 @@ export default function App() {
             {NAV_MOBILE.filter(item=>userRole==='trainer'||item.id!=='clients').map(item=>{
               const active=nav===item.id||(nav==='cdetail'&&item.id==='clients')
               return (
-                <button key={item.id} onClick={()=>handleNav(item.id)} style={{
+                <button key={item.id} data-testid={`tab-${item.id}`} onClick={()=>handleNav(item.id)} style={{
                   flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
                   gap:3, border:'none', background:'none', cursor:'pointer', padding:'0 2px',
                   position:'relative', minHeight:'unset',
@@ -10980,7 +10980,7 @@ export default function App() {
                   </button>
                 ))}
                 {!isTelegram&&(
-                  <button onClick={()=>{setShowProfileSheet(false);performLogout()}}
+                  <button data-back="1" onClick={()=>{setShowProfileSheet(false);performLogout()}}
                     style={{ width:'100%', padding:'13px', borderRadius:12, border:'1.5px solid #fee2e2', background:'#fff5f5', color:'#ef4444', fontSize:14, fontWeight:600, cursor:'pointer', marginTop:4, display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
                     <GlassIcon name="back" size={16} />Выйти / сменить аккаунт
                   </button>
@@ -11033,7 +11033,7 @@ export default function App() {
       {showSettingsView&&(
         <div style={{position:'fixed',inset:0,background:BG,zIndex:1060,display:'flex',flexDirection:'column',fontFamily:'system-ui,sans-serif'}}>
           <div style={{background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
-            <button onClick={closeSettingsOrSubPage} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset'}}><GlassIcon name="back" size={26} /></button>
+            <button data-back="1" onClick={closeSettingsOrSubPage} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset'}}><GlassIcon name="back" size={26} /></button>
             <span style={{fontSize:18,fontWeight:800,color:TXT,flex:1}}>{settingsSubPage?SETTINGS_SUBPAGE_TITLES[settingsSubPage]:'Настройки'}</span>
           </div>
           <div style={{flex:1,overflowY:'auto'}}>
