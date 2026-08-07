@@ -16,7 +16,10 @@ export const PLAN_NAME  = { profit: 'ПРОФИТ', premium: 'ПРЕМИУМ' }
 // уже списаны, а вместо приложения открывается предложение установить
 // мессенджер. Поэтому адрес выбирается по источнику платежа.
 export const TELEGRAM_RETURN_URL = 'https://t.me/maxim_fitpro_bot'
-export const DEFAULT_APP_URL = 'https://fitpro-dun.vercel.app'
+// Основной адрес приложения. Старый fitpro-dun.vercel.app продолжает работать
+// и остаётся в URI_ALLOW_LIST у GoTrue, но возвращать после оплаты человека
+// нужно на основной домен.
+export const DEFAULT_APP_URL = 'https://fitproapp.ru'
 
 // ГЛАВНОЕ ПРО БЕЗОПАСНОСТЬ: сюда приходит НЕ адрес, а метка источника — 'web'
 // либо 'telegram'. Принимать URL из тела запроса нельзя ни в каком виде: он

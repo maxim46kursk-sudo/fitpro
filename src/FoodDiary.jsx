@@ -291,7 +291,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
       const g = JSON.parse(localStorage.getItem('fitpro_food_goals') || '{"kcal":2000,"p":150,"c":200,"f":60}')
       setFoodGoals(g); setGoalsForm(g); return
     }
-    supabase.from('food_goals').select('*').eq('user_id', userId).single()
+    supabase.from('food_goals').select('*').eq('user_id', userId).maybeSingle()
       .then(({ data }) => {
         if (data) {
           const g = { kcal: data.kcal || 2000, p: data.p || 150, c: data.c || 200, f: data.f || 60 }

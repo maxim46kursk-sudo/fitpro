@@ -215,9 +215,13 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
       return { user, today, profile: profile || {} }
     }
 
+    // maybeSingle, а НЕ single: у нового пользователя строки в food_goals ещё
+    // нет, и это нормальное состояние, а не ошибка. single() в таком случае
+    // отдаёт 406 от PostgREST — в прогоне по проду их набегало по 7 штук на
+    // одного новичка. Код ниже пустые цели переваривает (goals || null).
     const [{ data: diary }, { data: goals }, { data: profile }] = await Promise.all([
       supabase.from('food_diary').select('*').eq('user_id', user.id).gte('date', since).order('date', { ascending: false }).order('created_at'),
-      supabase.from('food_goals').select('*').eq('user_id', user.id).single(),
+      supabase.from('food_goals').select('*').eq('user_id', user.id).maybeSingle(),
       supabase.from('profiles').select('*').eq('id', user.id).single(),
     ])
     // Клампим вес/рост перед подачей в calcMacroGoals (aiPrompt.js, вызывается
@@ -247,7 +251,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
     const { data: diary, error: de } = await supabase.from('food_diary').select('*').eq('user_id', user.id).gte('date', since).order('date', { ascending: false })
     console.log('DIARY (30 дней):', JSON.stringify(diary), 'ERROR:', de?.message)
 
-    const { data: goals, error: ge } = await supabase.from('food_goals').select('*').eq('user_id', user.id).single()
+    const { data: goals, error: ge } = await supabase.from('food_goals').select('*').eq('user_id', user.id).maybeSingle()
     console.log('GOALS:', JSON.stringify(goals), 'ERROR:', ge?.message)
   }
 
@@ -630,7 +634,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
           что и hideButton). Программный вызов open() при этом не игнорируем —
           он показывает заглушку с предложением тарифа, см. ниже. */}
       {!isOpen && !hideButton && !locked && (
-        <button onClick={() => setIsOpen(true)} style={{
+        <button data-testid="assistant-open" onClick={() => setIsOpen(true)} style={{
           position: 'fixed', bottom: BTN_BOTTOM, right: 18, zIndex: 1070,
           width: 52, height: 52, borderRadius: '50%', border: 'none',
           background: 'linear-gradient(135deg,#7C7AF0,#5b54c4)',
