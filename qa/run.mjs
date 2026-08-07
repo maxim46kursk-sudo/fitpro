@@ -157,7 +157,7 @@ async function walkUser(browser, user, viewport, label) {
 
     // ── 2. Вход ──
     await step(page, rec, 'открыть форму входа', async () => {
-      await page.locator('text=Попробовать бесплатно').first().click({ timeout: 15000 })
+      await page.locator('text=Начать бесплатно').first().click({ timeout: 15000 })
       await sleep(800)
       const toLogin = page.locator('button:visible').filter({ hasText: /^Войти$/ }).first()
       if (await toLogin.count().catch(() => 0)) { await toLogin.click().catch(() => {}); await sleep(500) }

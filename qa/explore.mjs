@@ -56,7 +56,7 @@ try {
   await page.goto(BASE, { waitUntil: 'networkidle', timeout: 60000 })
   await snap('01-лендинг')
 
-  await page.locator('text=Попробовать бесплатно').first().click()
+  await page.locator('text=Начать бесплатно').first().click()
   await sleep(800)
   await page.locator('button:visible').filter({ hasText: /^Войти$/ }).first().click().catch(() => {})
   await snap('02-форма-входа')
