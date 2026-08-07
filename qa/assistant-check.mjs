@@ -15,7 +15,7 @@ import { chromium } from 'playwright'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { createUsers, cleanupAll, QA_PASSWORD } from './admin.mjs'
 
-const BASE = process.env.QA_BASE || 'https://fitpro-dun.vercel.app'
+const BASE = process.env.QA_BASE || 'https://fitproapp.ru'
 const OUT = 'qa-screens/_assistant'
 const MAX_CALLS = 6
 const sleep = ms => new Promise(r => setTimeout(r, ms))
@@ -62,17 +62,9 @@ try {
 
   // Открыть ассистента
   const opened = await (async () => {
-    for (const sel of ['text=/Спроси|ассистент/i', `${tid('assistant-input')}`]) {
-      const e = page.locator(sel).first()
-      if (await e.count().catch(() => 0)) { await e.click({ timeout: 8000 }).catch(() => {}); await sleep(1200) }
-      if (await page.locator(tid('assistant-input')).count().catch(() => 0)) return true
-    }
-    // Плавающая круглая кнопка ассистента — без текста, ищем по позиции справа снизу
-    const fab = await page.evaluateHandle(() => [...document.querySelectorAll('button')]
-      .filter(b => { const r = b.getBoundingClientRect(); return b.offsetParent && r.right > innerWidth - 90 && r.bottom > innerHeight - 190 && r.width < 90 })[0] || null)
-    const el = fab.asElement()
-    if (el) { await el.click({ timeout: 6000 }).catch(() => {}); await sleep(1500) }
-    return await page.locator(tid('assistant-input')).count().catch(() => 0) > 0
+    const btn = page.locator(tid("assistant-open"))
+    if (await btn.count().catch(() => 0)) { await btn.click({ timeout: 10000 }); await sleep(1500) }
+    return await page.locator(tid("assistant-input")).count().catch(() => 0) > 0
   })()
   note('ассистент открылся', opened)
   await page.screenshot({ path: `${OUT}/1-ассистент.png` })
@@ -96,10 +88,14 @@ try {
     return ok
   }
 
-  R.answer1 = await ask('Сколько граммов белка в день нужно при весе 70 кг? Ответь кратко.', 'вопрос')
+  // ПОРЯДОК ИЗМЕНЁН НАМЕРЕННО. В трёх прогонах подряд обычный вопрос, заданный
+  // ПЕРВЫМ, не получал ответа за 150 с, а просьбы записать/удалить еду сразу
+  // после него отвечались за 4–6 с. Отсюда две разные гипотезы: виснет первый
+  // запрос в сессии — или обычные вопросы не отвечаются в принципе. Различить
+  // их можно только порядком: пускаем действие первым, вопрос вторым.
+  await ask('Запиши мне в дневник питания 100 граммов гречки на обед.', 'запись-рациона-ПЕРВОЙ')
+  R.answer1 = await ask('Сколько граммов белка в день нужно при весе 70 кг? Ответь кратко.', 'вопрос-ВТОРЫМ')
   if (R.answer1) R.lastReply = (await page.evaluate(() => document.body.innerText)).replace(/\s+/g, ' ').slice(-260)
-
-  await ask('Запиши мне в дневник питания 100 граммов гречки на обед.', 'запись-рациона')
   await sleep(4000)
 
   // ФАКТ записи — смотрим дневник, а не слова
@@ -117,9 +113,9 @@ try {
   // Просим удалить
   await page.goto(BASE, { waitUntil: 'networkidle', timeout: 60000 }); await sleep(2500)
   const reopened = await (async () => {
-    const e = page.locator('text=/Спроси|ассистент/i').first()
-    if (await e.count().catch(() => 0)) { await e.click({ timeout: 8000 }).catch(() => {}); await sleep(1200) }
-    return await page.locator(tid('assistant-input')).count().catch(() => 0) > 0
+    const btn = page.locator(tid("assistant-open"))
+    if (await btn.count().catch(() => 0)) { await btn.click({ timeout: 10000 }); await sleep(1500) }
+    return await page.locator(tid("assistant-input")).count().catch(() => 0) > 0
   })()
   if (reopened) {
     await ask('Удали гречку из дневника питания.', 'удаление-рациона')
