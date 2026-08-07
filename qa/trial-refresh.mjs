@@ -21,7 +21,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms))
 const paywall = p => p.locator('text=/доступны в пакете/i').count().catch(() => 0)
 
 const openWorkout5 = async page => {
-  await page.locator('div:visible, button:visible').filter({ hasText: /^Тренировки$/ }).last().click().catch(() => {})
+  await page.locator('[data-testid="tab-workouts"]').click({timeout:10000}).catch(()=>{})
   await sleep(1500)
   await page.locator('text=Full Body').first().click({ timeout: 15000 }).catch(() => {}); await sleep(2000)
   await page.locator('text=Тренировка 5').first().click({ timeout: 15000 }).catch(() => {}); await sleep(2000)
@@ -59,8 +59,9 @@ try {
   await page.goto(PROD, { waitUntil: 'networkidle', timeout: 60000 }); await sleep(2500)
   await page.locator('button:visible').first().click().catch(() => {}); await sleep(1000)
   await page.locator('text=Настройки').first().click({ timeout: 10000 }); await sleep(1200)
-  await page.locator('text=Тарифы и подписка').first().click({ timeout: 10000 }); await sleep(2000)
-  const btn = page.locator('button:visible').filter({ hasText: /Активировать пробный/ }).first()
+  await page.locator('[data-testid="settings-plans"]').click({ timeout: 10000 });
+  await page.waitForSelector('[data-testid="trial-start"]',{timeout:30000}).catch(()=>{}); await sleep(500)
+  const btn = page.locator('[data-testid="trial-start"]').first()
   R.buttonFound = await btn.count().catch(() => 0) > 0
   if (R.buttonFound) { await btn.click({ timeout: 10000 }); await sleep(4000) }
   R.toast = await page.evaluate(() => document.body.innerText.match(/Пробный [^\n]{0,60}/)?.[0] || null).catch(() => null)
