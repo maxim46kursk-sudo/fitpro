@@ -8407,7 +8407,11 @@ function PlansView({ user, onClose, hideBack, onChanged }) {
       const res=await fetch('/api/create-payment',{
         method:'POST',
         headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
-        body:JSON.stringify({plan:plan.key}),
+        // source решает, куда Продамус вернёт человека после оплаты. Из
+        // браузера — обратно в приложение (?paid=1), из Telegram — в бота.
+        // Передаём МЕТКУ, а не адрес: сервер подписывает urlSuccess своим
+        // ключом, и принимать URL из тела было бы открытым редиректом.
+        body:JSON.stringify({plan:plan.key,source:inTelegram?'telegram':'web'}),
       })
       const body=await res.json().catch(()=>({}))
       if(!res.ok||!body?.url)throw new Error(body?.error||`сервер вернул ${res.status}`)
@@ -10049,6 +10053,40 @@ export default function App() {
     window.history.replaceState({},'',newUrl)
   },[])
 
+  // ── Возврат из Продамуса после оплаты (?paid=1) ──────────────────────────
+  // Ставится только для веб-оплаты (api/create-payment.js, source:'web') —
+  // из Telegram человек возвращается в бота, и этот путь не работает.
+  //
+  // Про повторные чтения профиля. Редирект и вебhook Продамуса — две
+  // независимые дороги: человек уже вернулся в приложение, а уведомление об
+  // оплате (api/prodamus-webhook.js), которое и проставляет пакет в profiles,
+  // может дойти на несколько секунд позже. Прочитав профиль только один раз,
+  // мы показали бы старый тариф сразу после оплаты — то есть «деньги ушли, а
+  // ничего не изменилось». Поэтому читаем сразу, потом на 5-й и 15-й секунде и
+  // БОЛЬШЕ НЕ ПРОБУЕМ: если за 15 секунд вебхук не пришёл, дело не в гонке, и
+  // бесконечный опрос сервера ничего не исправит — доступ подтянется при
+  // следующем открытии приложения.
+  const [paidToast,setPaidToast]=useState(false)
+  useEffect(()=>{
+    const params=new URLSearchParams(window.location.search)
+    if(params.get('paid')!=='1')return
+    // Параметр убираем сразу, тем же приёмом, что ?access= и ?coach= выше:
+    // иначе он останется в истории и «сработает» при каждом обновлении
+    // страницы, показывая сообщение об оплате, которой не было.
+    params.delete('paid')
+    const newUrl=window.location.pathname+(params.toString()?'?'+params.toString():'')
+    window.history.replaceState({},'',newUrl)
+
+    setPaidToast(true)
+    setProfileReloadToken(t=>t+1)
+    const timers=[
+      setTimeout(()=>setProfileReloadToken(t=>t+1),5000),
+      setTimeout(()=>setProfileReloadToken(t=>t+1),15000),
+      setTimeout(()=>setPaidToast(false),12000),
+    ]
+    return()=>timers.forEach(clearTimeout)
+  },[])
+
   // Второй заход за start_param — уже после того, как Telegram опознан и
   // отработал tg.ready(). Страхует случай, когда на mount initDataUnsafe был
   // ещё пуст. Уже захваченное приглашение (в том числе из ?coach=) не трогаем:
@@ -10791,6 +10829,18 @@ export default function App() {
       <MuscleDefs/>
       {/* Тост о применении приглашения от тренера — поверх всего, см.
           applyInvite. Тот же вид, что тосты ошибок записи в других экранах. */}
+      {/* Возврат с оплаты. Формулировка намеренно не обещает «доступ открыт»:
+          пакет проставляет вебхук, и на момент показа он мог ещё не дойти. */}
+      {paidToast&&(
+        <div style={{
+          position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
+          zIndex:3000, padding:'11px 20px', borderRadius:24, maxWidth:340, textAlign:'center',
+          background:TEA, color:'#fff', fontSize:13, fontWeight:700,
+          boxShadow:'0 6px 20px rgba(0,0,0,0.28)',
+        }}>
+          Оплата принята, доступ откроется в течение минуты
+        </div>
+      )}
       {inviteToast&&(
         <div style={{
           position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',

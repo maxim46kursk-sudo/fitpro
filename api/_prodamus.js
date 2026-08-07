@@ -10,6 +10,52 @@ import crypto from 'node:crypto'
 export const PLAN_PRICE = { profit: 2990, premium: 9990 }
 export const PLAN_NAME  = { profit: 'ПРОФИТ', premium: 'ПРЕМИУМ' }
 
+// ── Куда Продамус вернёт человека после оплаты ──────────────────────────────
+// Раньше адрес был один на всех — ссылка на бота. Для того, кто платит из
+// браузера и Telegram не пользуется, это тупик В САМЫЙ НЕУДАЧНЫЙ МОМЕНТ: деньги
+// уже списаны, а вместо приложения открывается предложение установить
+// мессенджер. Поэтому адрес выбирается по источнику платежа.
+export const TELEGRAM_RETURN_URL = 'https://t.me/maxim_fitpro_bot'
+export const DEFAULT_APP_URL = 'https://fitpro-dun.vercel.app'
+
+// ГЛАВНОЕ ПРО БЕЗОПАСНОСТЬ: сюда приходит НЕ адрес, а метка источника — 'web'
+// либо 'telegram'. Принимать URL из тела запроса нельзя ни в каком виде: он
+// попадает в urlSuccess, который мы же и подписываем своим ключом, — то есть
+// получился бы открытый редирект на ссылке с нашей подписью. Любое значение,
+// кроме точного 'web', трактуется как telegram: неизвестное, пустое,
+// отсутствующее, в другом регистре, не строка.
+export function returnUrlFor(source, appUrlOverride) {
+  if (source !== 'web') return TELEGRAM_RETURN_URL
+  const raw = appUrlOverride || process.env.APP_PUBLIC_URL || DEFAULT_APP_URL
+  // Опечатка в переменной окружения не должна превращаться в битый возврат
+  // после оплаты — молча падаем на заведомо рабочий адрес.
+  if (!/^https:\/\/[^\s/]+/.test(raw)) {
+    console.error('prodamus: APP_PUBLIC_URL не похож на https-адрес, беру адрес по умолчанию')
+    return DEFAULT_APP_URL + '/?paid=1'
+  }
+  return raw.replace(/\/+$/, '') + '/?paid=1'
+}
+
+// Тело платёжной формы. Вынесено сюда целиком (а не только выбор адреса)
+// намеренно: проверять надо не «правильный ли адрес выбран», а «ушёл ли этот
+// адрес в подпись». Подпись считается по ЭТОМУ объекту, поэтому объект и тест
+// обязаны видеть одно и то же. Если urlSuccess вдруг начнут подставлять после
+// createSignature, Продамус отклонит ссылку — тест ловит это заранее.
+export function buildPaymentData({ userId, plan, source }) {
+  const tag = `${userId}__${plan}`
+  const returnUrl = returnUrlFor(source)
+  return {
+    do: 'pay',
+    order_id: tag,
+    customer_extra: tag,
+    products: [{ name: `Подписка FitPro — ${PLAN_NAME[plan]}`, price: String(PLAN_PRICE[plan]), quantity: '1' }],
+    urlSuccess: returnUrl,
+    // Кнопка «вернуться в магазин» на форме. Добавлено ДО подписи — иначе
+    // поле уехало бы в ссылку неподписанным и Продамус её отклонил.
+    urlReturn: returnUrl,
+  }
+}
+
 // ── Подпись как в официальной библиотеке Prodamus\Hmac (PHP).
 // Нормализуем структуру: у объектов ключи сортируем по алфавиту (рекурсивно),
 // у массивов порядок элементов сохраняем, но их вложенные объекты тоже

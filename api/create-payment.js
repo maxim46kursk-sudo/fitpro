@@ -1,6 +1,6 @@
 import qs from 'qs'
 import { createClient } from '@supabase/supabase-js'
-import { createSignature, PLAN_PRICE, PLAN_NAME } from './_prodamus.js'
+import { createSignature, buildPaymentData } from './_prodamus.js'
 import { rateLimit } from './_ratelimit.js'
 
 // Статические ссылки Продамуса не могут нести наш идентификатор пользователя
@@ -12,8 +12,8 @@ const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://api.fitproapp.ru'
 // Домен платёжной формы. Тот же, что в уведомлениях (raw.domain).
 const PAYFORM_BASE = 'https://maximathlete.payform.ru/'
 
-// После успешной оплаты Продамус вернёт пользователя сюда.
-const URL_SUCCESS = 'https://t.me/maxim_fitpro_bot'
+// Адрес возврата после оплаты больше не константа — он зависит от того, откуда
+// человек платит (см. returnUrlFor/buildPaymentData в _prodamus.js).
 
 // БАЗА снята с продажи — ручка отказывает на прямой запрос plan:'base', иначе
 // пакет остаётся покупаемым в обход спрятанной пилюли на экране Тарифов.
@@ -48,22 +48,19 @@ export default async function handler(req, res) {
   const plan = req.body?.plan
   if (!PAID_PLANS.has(plan)) return res.status(400).json({ error: 'Неизвестный пакет' })
 
-  // Цену берём с сервера (PLAN_PRICE), не из тела — сумму нельзя доверять
-  // клиенту, по ней вебхук потом определяет пакет.
-  const price = PLAN_PRICE[plan]
-  const tag = `${userId}__${plan}`
+  // Откуда платят — только метка, не адрес: 'web' даёт возврат в приложение,
+  // всё остальное (в том числе отсутствие поля) — прежнее поведение, ссылку на
+  // бота. Разбор и защита — в returnUrlFor, там же объяснено, почему URL из
+  // тела принимать нельзя.
+  const source = req.body?.source
 
-  const data = {
-    do: 'pay',
-    order_id: tag,
-    customer_extra: tag,
-    products: [{ name: `Подписка FitPro — ${PLAN_NAME[plan]}`, price: String(price), quantity: '1' }],
-    urlSuccess: URL_SUCCESS,
-    // Кнопка «вернуться в магазин» на форме. Добавлено ДО подписи — иначе
-    // поле уехало бы в ссылку неподписанным и Продамус её отклонил.
-    urlReturn: URL_SUCCESS,
-  }
+  // Цену и адрес возврата подставляет buildPaymentData — на сервере, не из
+  // тела: сумму доверять клиенту нельзя (по ней вебхук определяет пакет), а
+  // адрес возврата тем более.
+  const data = buildPaymentData({ userId, plan, source })
 
+  // Подпись считается по данным, в которых адрес возврата УЖЕ подставлен —
+  // иначе Продамус отклонит ссылку как неподписанную по этим полям.
   const signature = createSignature(data, secret)
   const url = PAYFORM_BASE + '?' + qs.stringify({ ...data, signature })
 
