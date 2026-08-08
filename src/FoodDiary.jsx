@@ -1033,6 +1033,9 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
                     {picked.kind === 'product' && picked.data.source === 'ai_estimate' && (
                       <div style={{ fontSize: 11, color: COR, marginTop: 6 }}>≈ примерные значения</div>
                     )}
+                    {picked.kind === 'product' && picked.data.source === 'ai_web' && (
+                      <div style={{ fontSize: 11, color: COR, marginTop: 6 }}>Значения из интернета — сверь с упаковкой</div>
+                    )}
                   </div>
 
                   <div style={{ fontSize: 12, color: TXT3, fontWeight: 600, marginBottom: 6 }}>
@@ -1114,7 +1117,12 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
                         <div style={{ fontSize: 11, color: TXT3, marginTop: 1 }}>
                           <span style={{ color: KCAL, fontWeight: 600 }}>{num(p.kcal100)} ккал</span>
                           {' · '}Б {num(p.p100)} · У {num(p.c100)} · Ж {num(p.f100)} / 100 г
-                          {p.source === 'ai_estimate' && <span style={{ color: COR }}> · ≈</span>}
+                          {/* Один значок на оба неуточнённых источника
+                              (ai_estimate, ai_web): в строке списка человеку
+                              нужен один сигнал — «числа не с упаковки». Чем
+                              они отличаются, написано на экране выбора порции,
+                              где решение и принимается. */}
+                          {(p.source === 'ai_estimate' || p.source === 'ai_web') && <span style={{ color: COR }}> · ≈</span>}
                         </div>
                       </div>
                     ))}

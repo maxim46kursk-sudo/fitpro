@@ -47,6 +47,7 @@ const { default: handler } = await import('./api/set-exercise.js')
 const { default: chatHandler } = await import('./api/chat.js')
 const {
   normalizeOffProduct, isValidBarcode, normalizeLabelProduct, parseModelJson,
+  basisToSource, isSoftSource, weakerSources,
 } = await import('./api/_foodProduct.js')
 const {
   scalePer100, scaleProduct, clampGrams, parseGrams, buildEntryName, buildFoodEntry, round1,
@@ -502,19 +503,19 @@ const LBL = { name: 'Творог 5%', brand: 'Простоквашино', kcal
 
 assertEqual('карточка per=100g разбирается как есть',
   normalizeLabelProduct('4600682000129', LBL),
-  { barcode: '4600682000129', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: '100g', basis: 'label' })
+  { barcode: '4600682000129', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: '100g', basis: 'label', sourceUrl: null })
 
 // per='portion' с известным весом порции — пересчёт ×100/portion_g.
 assertEqual('per=portion, порция 200 г → пересчёт на 100 г',
   normalizeLabelProduct('1', { ...LBL, per: 'portion', portion_g: 200, kcal100: 242, p100: 32, c100: 6, f100: 10 }),
-  { barcode: '1', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: 'portion', basis: 'label' })
+  { barcode: '1', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: 'portion', basis: 'label', sourceUrl: null })
 assertEqual('per=portion, порция 30 г → пересчёт вверх',
   normalizeLabelProduct('1', { ...LBL, per: 'portion', portion_g: 30, kcal100: 45, p100: null, c100: null, f100: null }).kcal100, 150)
 // Пересчитать нельзя — числа выбрасываем целиком. Отдать их «как есть» было
 // бы хуже всего: выглядят правдоподобно и молча уедут в общий справочник.
 assertEqual('per=portion без portion_g → все числа null, название остаётся',
   normalizeLabelProduct('1', { ...LBL, per: 'portion', portion_g: null }),
-  { barcode: '1', name: 'Творог 5%', brand: 'Простоквашино', kcal100: null, p100: null, c100: null, f100: null, per: 'portion', basis: 'label' })
+  { barcode: '1', name: 'Творог 5%', brand: 'Простоквашино', kcal100: null, p100: null, c100: null, f100: null, per: 'portion', basis: 'label', sourceUrl: null })
 assertEqual('per=portion с portion_g=0 → числа null (делить нельзя)',
   normalizeLabelProduct('1', { ...LBL, per: 'portion', portion_g: 0 }).kcal100, null)
 assertEqual('per=portion с отрицательным portion_g → числа null',
@@ -541,11 +542,61 @@ assertEqual('basis отсутствует → label (обратная совме
   normalizeLabelProduct('1', { ...LBL }).basis, 'label')
 assertEqual('мусор в basis → label',
   normalizeLabelProduct('1', { ...LBL, basis: 'вроде_бы_прикинул' }).basis, 'label')
+
+// ── basis='web': числа найдены поиском в интернете ────────────────────────
+assertEqual('basis=web проходит как есть',
+  normalizeLabelProduct('1', { ...LBL, basis: 'web' }).basis, 'web')
+// Домен, а не ссылка целиком: он идёт в подпись под числами, кликать по
+// сочинённому моделью URL никто не должен.
+assertEqual('src_url → домен без www',
+  normalizeLabelProduct('1', { ...LBL, basis: 'web', src_url: 'https://www.ozon.ru/product/mayonez-123/?asb=1' }).sourceUrl, 'ozon.ru')
+assertEqual('src_url без схемы тоже даёт домен',
+  normalizeLabelProduct('1', { ...LBL, basis: 'web', src_url: 'lavka.yandex.ru/product/42' }).sourceUrl, 'lavka.yandex.ru')
+assertEqual('невалидный src_url → sourceUrl null, карточка остаётся',
+  normalizeLabelProduct('1', { ...LBL, basis: 'web', src_url: '—' }).sourceUrl, null)
+assertEqual('src_url отсутствует → sourceUrl null',
+  normalizeLabelProduct('1', { ...LBL, basis: 'web' }).sourceUrl, null)
+// javascript:-ссылка не должна доехать до разметки даже как текст домена.
+assertEqual('не http(s)-схема → sourceUrl null',
+  normalizeLabelProduct('1', { ...LBL, basis: 'web', src_url: 'javascript:alert(1)' }).sourceUrl, null)
+// Ссылку при basis='label'/'estimate' игнорируем: там числа НЕ оттуда, и
+// подпись «по данным ozon.ru» была бы враньём.
+assertEqual('src_url при basis=label игнорируется',
+  normalizeLabelProduct('1', { ...LBL, basis: 'label', src_url: 'https://ozon.ru/x' }).sourceUrl, null)
+assertEqual('src_url при basis=estimate игнорируется',
+  normalizeLabelProduct('1', { ...LBL, basis: 'estimate', src_url: 'https://ozon.ru/x' }).sourceUrl, null)
+// Пределы правдоподобия — общие для всех источников, интернет не исключение.
+assertEqual('sanity-пределы действуют и для web',
+  normalizeLabelProduct('1', { ...LBL, basis: 'web', kcal100: 9999 }).kcal100, null)
+
+// ── Ранг источников: кто кого вытесняет ───────────────────────────────────
+// Одно место на весь код: ветка barcode, кэш поиска и save-product ходят
+// сюда, а не сравнивают source по-своему.
+assertEqual('basis=web → source ai_web', basisToSource('web'), 'ai_web')
+assertEqual('basis=estimate → source ai_estimate', basisToSource('estimate'), 'ai_estimate')
+assertEqual('basis=label → source ai_photo', basisToSource('label'), 'ai_photo')
+
+assertEqual('ai_estimate — неуточнённый', isSoftSource('ai_estimate'), true)
+assertEqual('ai_web — неуточнённый', isSoftSource('ai_web'), true)
+assertEqual('ai_photo — точный', isSoftSource('ai_photo'), false)
+assertEqual('off — точный', isSoftSource('off'), false)
+// Строки, заведённые до появления колонки, приезжают с source=null. Осторожное
+// умолчание: неизвестную карточку лучше не тронуть, чем затереть.
+assertEqual('source=null считается точным', isSoftSource(null), false)
+assertEqual('незнакомый source считается точным', isSoftSource('ai_telepathy'), false)
+
+assertEqual('чтение таблицы вытесняет оценку и находку из сети',
+  weakerSources('ai_photo').sort(), ['ai_estimate', 'ai_web'])
+assertEqual('находка в сети вытесняет только оценку',
+  weakerSources('ai_web'), ['ai_estimate'])
+assertEqual('оценка не вытесняет ничего', weakerSources('ai_estimate'), [])
+assertEqual('данные OFF вытесняют оба неточных источника',
+  weakerSources('off').sort(), ['ai_estimate', 'ai_web'])
 // Нишевый товар: модель узнала название, но чисел не знает. Карточка всё
 // равно ценна — КБЖУ впишет человек.
 assertEqual('estimate без чисел: карточка остаётся, числа null',
   normalizeLabelProduct('4600682000129', { name: 'Сыр Козий хутор', brand: 'Козий хутор', basis: 'estimate', kcal100: null, p100: null, c100: null, f100: null, readable: true }),
-  { barcode: '4600682000129', name: 'Сыр Козий хутор', brand: 'Козий хутор', kcal100: null, p100: null, c100: null, f100: null, per: 'unknown', basis: 'estimate' })
+  { barcode: '4600682000129', name: 'Сыр Козий хутор', brand: 'Козий хутор', kcal100: null, p100: null, c100: null, f100: null, per: 'unknown', basis: 'estimate', sourceUrl: null })
 assertEqual('estimate без названия → карточки нет (unreadable)',
   normalizeLabelProduct('1', { name: '', basis: 'estimate', kcal100: 300, readable: true }), null)
 assertEqual('sanity-пределы действуют и для estimate',
@@ -656,7 +707,7 @@ const LABEL_BODY = { type: 'food_label', barcode: '4600682000129', image: TINY_J
   assertEqual('успех: статус 200', res.statusCode, 200)
   assertEqual('успех: ok=true', res.body?.ok, true)
   assertEqual('успех: карточка разобрана', res.body?.product,
-    { barcode: '4600682000129', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: '100g', basis: 'label' })
+    { barcode: '4600682000129', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: '100g', basis: 'label', sourceUrl: null })
   assertEqual('успех: к модели ушёл ровно один запрос', seen.anthropic.length, 1)
   const sent = seen.anthropic[0]
   assertEqual('к модели ушла картинка блоком image', sent.messages[0].content[0].type, 'image')
@@ -665,6 +716,51 @@ const LABEL_BODY = { type: 'food_label', barcode: '4600682000129', image: TINY_J
   report('промт задан сервером, а не клиентом',
     typeof sent.messages[0].content[1].text === 'string' && sent.messages[0].content[1].text.includes('этикетк'),
     JSON.stringify(sent.messages[0].content[1]).slice(0, 200))
+
+  // Поиск в интернете — то, чем модель добирает КБЖУ, когда таблицу на фото не
+  // разобрать. Без инструмента в запросе промт про поиск остаётся мёртвой
+  // буквой, а модель молча возвращается к выдумыванию типичных чисел.
+  const searchTool = (sent.tools || []).find(t => t?.name === 'web_search')
+  report('к модели ушёл инструмент поиска', !!searchTool, JSON.stringify(sent.tools))
+  assertEqual('поиск ограничен по числу запросов', typeof searchTool?.max_uses, 'number')
+  // Штрих-код в промте: по нему находится ровно тот товар, а не соседний
+  // вариант линейки. Подставлять его безопасно — parseLabelInput пропускает
+  // только 8–14 цифр.
+  report('штрих-код подставлен в промт',
+    sent.messages[0].content[1].text.includes('4600682000129'),
+    sent.messages[0].content[1].text.slice(0, 200))
+}
+{
+  // С поиском ответ модели состоит из НЕСКОЛЬКИХ текстовых блоков: сначала она
+  // проговаривает, что собирается искать, и только последний блок — JSON.
+  // Старый разбор брал ПЕРВЫЙ блок и на таком ответе развалился бы.
+  const multiBlock = () => json({
+    content: [
+      { type: 'text', text: 'Таблицу на фото не разобрать, поищу по названию.' },
+      { type: 'server_tool_use', name: 'web_search', input: { query: 'творог 5% КБЖУ' } },
+      { type: 'web_search_tool_result', content: [] },
+      { type: 'text', text: 'Нашёл карточку товара.' },
+      { type: 'text', text: JSON.stringify({ ...LBL, basis: 'web', src_url: 'https://www.ozon.ru/product/tvorog-1' }) },
+    ],
+  })
+  const { res } = await callChat(LABEL_BODY, { anthropic: multiBlock })
+  assertEqual('ответ с поиском: статус 200', res.statusCode, 200)
+  assertEqual('JSON берётся из ПОСЛЕДНЕГО текстового блока, а не первого', res.body?.ok, true)
+  assertEqual('ответ с поиском: basis=web', res.body?.product?.basis, 'web')
+  assertEqual('ответ с поиском: домен источника доехал до клиента', res.body?.product?.sourceUrl, 'ozon.ru')
+}
+{
+  // Ответ оборвался на потолке токенов посреди поиска — JSON не пришёл.
+  // Человеку в этом случае нужен тот же понятный ответ, что и при плохом фото,
+  // а не пятисотка.
+  const truncated = () => json({
+    stop_reason: 'max_tokens',
+    content: [{ type: 'text', text: 'Сейчас проверю данные по этому товару' }],
+  })
+  const { res } = await callChat(LABEL_BODY, { anthropic: truncated })
+  assertEqual('оборванный ответ: статус 200', res.statusCode, 200)
+  assertEqual('оборванный ответ: ok=false, reason=unreadable',
+    [res.body?.ok, res.body?.reason], [false, 'unreadable'])
 }
 {
   // Клиент не должен уметь подсунуть свой промт вместо серверного.
@@ -1027,6 +1123,39 @@ const estRow = extra => ({ barcode: '4600682000129', name: 'Творог ста�
   assertEqual('estimate поверх off: отдана точная карточка', res.body?.product?.source, 'off')
 }
 
+// ── ai_web: средняя ступень между оценкой и чтением таблицы ───────────────
+// Числа найдены поиском по названию. Лучше выдумки, хуже упаковки в руках —
+// и порядок вытеснения должен это отражать в обе стороны.
+{
+  const { res, writes } = await callSave({ ...CARD, basis: 'web' }, { rows: { '4600682000129': estRow() } })
+  assertEqual('web вытесняет ai_estimate: ok + replaced', [res.body?.ok, res.body?.replaced], [true, true])
+  assertEqual('web вытесняет ai_estimate: новый source', writes[0]?.source, 'ai_web')
+}
+{
+  const webRow = { ...estRow({ name: 'Творог из интернета' }), source: 'ai_web' }
+  const { res, writes } = await callSave({ ...CARD, basis: 'label' }, { rows: { '4600682000129': webRow } })
+  assertEqual('label вытесняет ai_web', writes.length, 1)
+  assertEqual('label поверх ai_web: новый source', writes[0]?.source, 'ai_photo')
+  assertEqual('label поверх ai_web: имя обновилось', res.body?.product?.name, 'Творог 5%')
+}
+{
+  const webRow = { ...estRow({ name: 'Творог из интернета' }), source: 'ai_web' }
+  const { res, writes } = await callSave({ ...CARD, basis: 'estimate' }, { rows: { '4600682000129': webRow } })
+  assertEqual('estimate НЕ вытесняет ai_web', writes.length, 0)
+  assertEqual('ai_web остался как был', res.body?.product?.name, 'Творог из интернета')
+}
+{
+  const photoRow = { ...estRow({ name: 'Творог по таблице' }), source: 'ai_photo' }
+  const { res, writes } = await callSave({ ...CARD, basis: 'web' }, { rows: { '4600682000129': photoRow } })
+  assertEqual('web НЕ вытесняет ai_photo', writes.length, 0)
+  assertEqual('ai_photo остался как был при web', res.body?.product?.name, 'Творог по таблице')
+}
+{
+  const { res, writes } = await callSave({ ...CARD, basis: 'web' }, { rows: { '4600682000129': { ...estRow(), source: 'off' } } })
+  assertEqual('web НЕ вытесняет off', writes.length, 0)
+  assertEqual('web поверх off: отдана точная карточка', res.body?.product?.source, 'off')
+}
+
 // ── Ветка barcode: примерная карточка не закрывает поход в OFF ────────────
 console.log('\n── barcode: обновление примерной карточки из OFF ──────────────────')
 
@@ -1105,7 +1234,7 @@ console.log('\n── Сквозной путь: фото → общая баз�
   })
   assertEqual('шаг 1: этикетка распознана', photoRes.body?.ok, true)
   assertEqual('шаг 1: порция 200 г пересчитана на 100 г',
-    photoRes.body?.product, { barcode: '4600682000129', name: 'ТВОРОГ 5%', brand: 'Простоквашино, ООО', kcal100: 121, p100: 16, c100: 3, f100: 5, per: 'portion', basis: 'label' })
+    photoRes.body?.product, { barcode: '4600682000129', name: 'ТВОРОГ 5%', brand: 'Простоквашино, ООО', kcal100: 121, p100: 16, c100: 3, f100: 5, per: 'portion', basis: 'label', sourceUrl: null })
 
   // Шаг 2. Человек на экране подтверждения поправил название и бренд.
   const confirmed = { ...photoRes.body.product, name: 'Творог 5%', brand: 'Простоквашино' }
