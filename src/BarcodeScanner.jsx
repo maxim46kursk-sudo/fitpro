@@ -161,10 +161,18 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
   // Распознанное моделью, приведённое к строкам для полей ввода.
   const [labelForm, setLabelForm] = useState(EMPTY_LABEL)
   const [labelPer, setLabelPer] = useState('100g')
-  // Откуда числа: 'label' — прочитаны с таблицы КБЖУ, 'estimate' — оценка
-  // модели по лицевой стороне упаковки. От этого зависит и плашка на экране
-  // сверки, и source, под которым карточка ляжет в общий справочник.
+  // Откуда числа: 'label' — прочитаны с таблицы КБЖУ на фото, 'web' — найдены
+  // поиском в интернете по названию, 'estimate' — оценка модели. От этого
+  // зависит и плашка на экране сверки, и source, под которым карточка ляжет в
+  // общий справочник.
   const [labelBasis, setLabelBasis] = useState('label')
+  // Откуда взяты числа при basis='web': { name: 'ozon.ru', url: '…' }.
+  // Показываем и имя, и рабочую ссылку — человек должен не просто прочитать
+  // «из интернета», а иметь возможность открыть страницу и убедиться, что это
+  // его товар, ДО того как подтвердит карточку в общий справочник.
+  // Домен уже проверен сервером по белому списку (api/_foodProduct.js,
+  // cleanSourceLink) — сюда произвольная ссылка из ответа модели не доедет.
+  const [labelSource, setLabelSource] = useState(null)
   // Модель опознала продукт, но чисел не дала вовсе (нишевый товар). Тогда
   // поля пустые, и сохранять нечего, пока человек не впишет хотя бы ккал.
   const [labelEmpty, setLabelEmpty] = useState(false)
@@ -449,7 +457,8 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
     const s = v => (v === null || v === undefined ? '' : String(v))
     setLabelForm({ name: p.name || '', brand: p.brand || '', kcal100: s(p.kcal100), p100: s(p.p100), c100: s(p.c100), f100: s(p.f100) })
     setLabelPer(p.per || '100g')
-    setLabelBasis(p.basis === 'estimate' ? 'estimate' : 'label')
+    setLabelBasis(['estimate', 'web'].includes(p.basis) ? p.basis : 'label')
+    setLabelSource(p.sourceName && p.sourceUrl ? { name: p.sourceName, url: p.sourceUrl } : null)
     setLabelEmpty(p.kcal100 === null && p.p100 === null && p.c100 === null && p.f100 === null)
     setStage('confirm')
   }
@@ -645,11 +654,20 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
                 На 100 г: <span style={{ color: KCAL, fontWeight: 700 }}>{num(product.kcal100)} ккал</span>
                 {' · '}Б {num(product.p100)} · У {num(product.c100)} · Ж {num(product.f100)}
               </div>
-              {/* Карточку кто-то завёл по лицевой стороне упаковки — числа в
-                  ней оценка модели, а не данные с этикетки. Молчать об этом
-                  нельзя: человек считает их фактом и заносит в дневник. */}
+              {/* Карточку кто-то завёл, не читая таблицу с упаковки: числа
+                  либо оценка модели, либо находка в интернете по названию.
+                  Молчать об этом нельзя: человек считает их фактом и заносит в
+                  дневник. Две формулировки, а не одна, — разница существенная:
+                  «из интернета» можно проверить, «примерные» проверить нечем. */}
               {product.source === 'ai_estimate' && (
                 <div style={{ fontSize: 11, color: COR, marginTop: 6 }}>≈ примерные значения</div>
+              )}
+              {/* Найденное в интернете помечаем СПОКОЙНО и БЕЗ «≈»: у этих
+                  чисел есть источник, они не прикидка. Ссылку показать уже
+                  нечем — в справочнике хранится только вид источника, не
+                  адрес, — поэтому просто говорим, откуда они родом. */}
+              {product.source === 'ai_web' && (
+                <div style={{ fontSize: 11, color: TXT3, marginTop: 6 }}>По данным карточки магазина</div>
               )}
             </div>
 
@@ -722,6 +740,13 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
                 <div style={{ fontSize: 14, fontWeight: 700, color: COR }}>{photoError}</div>
               </div>
               <button onClick={openPhotoPicker} style={primaryBtn}>Переснять</button>
+              {/* Та же подсказка, что и на экране сверки: сюда человек попадает
+                  после неудачи, и «переснять» без ответа на «как именно» —
+                  предложение повторить то же самое. */}
+              <div style={{ fontSize: 11, color: TXT3, marginTop: 8, textAlign: 'center', lineHeight: 1.5 }}>
+                Точнее всего — снимок таблицы «Пищевая ценность» с обратной стороны.
+                Мелкий шрифт читается нормально, если кадр резкий.
+              </div>
               <button onClick={openManual} style={{ ...ghostBtn, marginTop: 10 }}>Ввести вручную</button>
               <button onClick={restartScan} style={{ ...ghostBtn, marginTop: 10 }}>Сканировать ещё</button>
             </div>
@@ -741,22 +766,42 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
               Эти данные уйдут в общую базу — по ним продукт найдут другие. Поправь, если модель ошиблась.
             </div>
 
-            {/* Числа — оценка модели, а не чтение таблицы. Сказать об этом
-                надо прямо: человек должен понимать, что сверять не с чем, и
-                либо довериться, либо переснять сторону с составом. */}
+            {/* Числа найдены в интернете — это НЕ прикидка, и предупреждать
+                тут не о чем: у значений есть проверяемый источник, и человек
+                может открыть его одним касанием. Поэтому не жёлтая плашка
+                тревоги, а спокойная подпись со ссылкой — тем же синим, что и
+                прочие ссылки приложения.
+                rel обязателен: target=_blank без noopener отдаёт открытой
+                вкладке доступ к window.opener нашей страницы. */}
+            {labelBasis === 'web' && labelSource && (
+              <div style={{ background: `${BLU}14`, border: `1px solid ${BLU}3a`, borderRadius: 10, padding: '10px 12px', marginBottom: 12, fontSize: 12, color: TXT2 }}>
+                Значения по данным{' '}
+                <a href={labelSource.url} target="_blank" rel="noopener noreferrer"
+                  style={{ color: BLU, fontWeight: 600, textDecoration: 'underline' }}>
+                  {labelSource.name}
+                </a>
+                {' — открой и сверь, что это тот же вкус и вес, что у тебя в руках.'}
+              </div>
+            )}
+
+            {/* Числа — оценка модели, а не чтение таблицы и не находка в
+                интернете. Сказать об этом надо прямо: человек должен понимать,
+                что сверять не с чем, и либо довериться, либо переснять сторону
+                с составом. */}
             {labelBasis === 'estimate' && (
               <div style={{ background: `${COR}18`, border: `1px solid ${COR}44`, borderRadius: 10, padding: '10px 12px', marginBottom: 12, fontSize: 12, color: TXT2 }}>
                 {labelEmpty
                   ? 'Продукт опознан, но точных значений нет. Впиши КБЖУ с упаковки — или переснимите сторону с таблицей.'
-                  : 'Значения примерные (по данным ИИ). Если на упаковке есть таблица КБЖУ — сверь или переснимите ту сторону.'}
+                  : 'Значения примерные (по данным ИИ) — в интернете точных не нашлось. Если на упаковке есть таблица КБЖУ — сверь или переснимите ту сторону.'}
               </div>
             )}
 
             {/* per !== '100g' — модель не увидела на упаковке, что таблица
                 приведена к 100 г. Числа могли быть посчитаны с порции, и
-                проверить их глазами тут особенно важно. Для оценки этот случай
-                не возникает: там модель просят сразу давать на 100 г. */}
-            {labelBasis !== 'estimate' && labelPer !== '100g' && (
+                проверить их глазами тут особенно важно. Для 'web' и 'estimate'
+                этот случай не возникает: там модель просят сразу давать на
+                100 г, — плашка только для чтения таблицы с фото. */}
+            {labelBasis === 'label' && labelPer !== '100g' && (
               <div style={{ background: `${COR}18`, border: `1px solid ${COR}44`, borderRadius: 10, padding: '10px 12px', marginBottom: 12, fontSize: 12, color: TXT2 }}>
                 {labelPer === 'portion'
                   ? 'На этикетке значения указаны на порцию — мы пересчитали их на 100 г. Сверь особенно внимательно.'
@@ -802,6 +847,18 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
               {saving ? 'Сохраняю…' : 'Всё верно, сохранить'}
             </button>
             <button onClick={openPhotoPicker} style={{ ...ghostBtn, marginTop: 10 }}>Переснять</button>
+            {/* Подсказка под кнопкой, а не в плашке выше: она нужна ровно в тот
+                момент, когда человек решает, пересниматься ли, — и должна
+                отвечать на вопрос «а зачем». Отвечаем прямо: таблица с обратной
+                стороны даёт ТОЧНЫЕ цифры вместо любых косвенных, и мелкий шрифт
+                этому не помеха, если кадр резкий. Говорим это ВСЕГДА, а не
+                только при прикидке: даже найденное в интернете — про товар с
+                тем же названием, а не про пачку в руках. */}
+            <div style={{ fontSize: 11, color: TXT3, marginTop: 8, textAlign: 'center', lineHeight: 1.5 }}>
+              Точнее всего — снимок таблицы «Пищевая ценность» с обратной стороны.
+              Мелкий шрифт читается нормально, если кадр резкий: держи телефон в 10–15 см
+              и дай камере навестись.
+            </div>
           </div>
         )}
 
