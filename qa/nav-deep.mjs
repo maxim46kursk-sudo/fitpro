@@ -13,7 +13,7 @@ try {
   const b = await chromium.launch({ headless: true })
   const p = await (await b.newContext({ viewport:{width:390,height:844}, locale:'ru-RU' })).newPage()
   await p.goto(BASE, { waitUntil:'networkidle', timeout:60000 })
-  await p.locator('text=Попробовать бесплатно').first().click(); await sleep(700)
+  await p.locator('text=Начать').first().click(); await sleep(700)
   await p.locator('button:visible').filter({ hasText:/^Войти$/ }).first().click().catch(()=>{})
   await p.locator('input[type="email"]:visible').first().fill(u.email)
   await p.locator('input[type="password"]:visible').first().fill(QA_PASSWORD)

@@ -7108,10 +7108,18 @@ function LandingPage({ onEnter, isTelegram, accessError }) {
               Твой персональный<br />тренер всегда<br />рядом
             </h1>
 
+            {/* «Попробовать» читалось как пробный период: человек решал, что
+                дальше придётся платить, и уходил. На СТАРТ (plans.js, level 0)
+                бессрочно доступны дневник тренировок и питания, рационы,
+                аналитика, библиотека и первые 3 тренировки в каждом шаблоне —
+                это не проба, а рабочий бесплатный тариф. */}
             <button onClick={()=>openForm('register')}
-              style={{ padding:'15px 40px',borderRadius:14,border:'none',background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontSize:17,fontWeight:700,cursor:'pointer',boxShadow:`0 10px 32px ${PUR}55`,marginBottom:52 }}>
-              Попробовать бесплатно
+              style={{ padding:'15px 40px',borderRadius:14,border:'none',background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontSize:17,fontWeight:700,cursor:'pointer',boxShadow:`0 10px 32px ${PUR}55` }}>
+              Начать
             </button>
+            <div style={{ fontSize:13,color:TXT3,textAlign:'center',marginTop:10,marginBottom:52 }}>
+              Дневник тренировок и питания — бесплатно, без ограничения по времени
+            </div>
 
             {/* ── AI-персонаж */}
             <div style={{ textAlign:'left',background:'rgba(255,255,255,0.03)',border:`1px solid ${PUR}35`,borderRadius:20,overflow:'hidden',boxShadow:`0 0 48px ${PUR}18` }}>
@@ -7184,8 +7192,11 @@ function LandingPage({ onEnter, isTelegram, accessError }) {
           <div style={{ textAlign:'center',paddingBottom:52 }}>
             <button onClick={()=>openForm('register')}
               style={{ padding:'15px 44px',borderRadius:14,border:'none',background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',fontSize:17,fontWeight:700,cursor:'pointer',boxShadow:`0 10px 32px ${PUR}50` }}>
-              Попробовать бесплатно
+              Начать
             </button>
+            <div style={{ fontSize:13,color:TXT3,textAlign:'center',marginTop:10 }}>
+              Дневник тренировок и питания — бесплатно, без ограничения по времени
+            </div>
           </div>
 
         </div>

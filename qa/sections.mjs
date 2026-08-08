@@ -87,7 +87,7 @@ async function bootstrap(page, user, rec, { withTrial = true } = {}) {
   await page.waitForLoadState('networkidle', { timeout: 40000 }).catch(() => {})
   rec.time('первая загрузка', Date.now() - t0)
 
-  await page.locator('text=Попробовать бесплатно').first().click({ timeout: 20000 }); await sleep(700)
+  await page.locator('text=Начать').first().click({ timeout: 20000 }); await sleep(700)
   const toLogin = page.locator('button:visible').filter({ hasText: /^Войти$/ }).first()
   if (await toLogin.count().catch(() => 0)) { await toLogin.click().catch(() => {}); await sleep(500) }
   await page.locator('input[type="email"]:visible').first().fill(user.email, { timeout: 15000 })

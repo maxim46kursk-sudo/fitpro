@@ -59,7 +59,7 @@ try {
 
   // Вход + пробный
   await page.goto(BASE, { waitUntil: 'networkidle', timeout: 60000 })
-  await page.locator('text=Попробовать бесплатно').first().click(); await sleep(700)
+  await page.locator('text=Начать').first().click(); await sleep(700)
   await page.locator('button:visible').filter({ hasText: /^Войти$/ }).first().click().catch(() => {})
   await page.locator('input[type="email"]:visible').first().fill(user.email)
   await page.locator('input[type="password"]:visible').first().fill(QA_PASSWORD)

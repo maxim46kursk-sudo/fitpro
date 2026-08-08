@@ -26,7 +26,7 @@ try {
     const p = await (await b.newContext({ viewport: { width: w, height: 844 }, locale: 'ru-RU' })).newPage()
     await p.goto(BASE, { waitUntil: 'networkidle', timeout: 60000 })
     await shoot(p, w, '01-лендинг')
-    await p.locator('text=Попробовать бесплатно').first().click(); await sleep(700)
+    await p.locator('text=Начать').first().click(); await sleep(700)
     await p.locator('button:visible').filter({ hasText: /^Войти$/ }).first().click().catch(()=>{})
     await shoot(p, w, '02-форма-входа')
     await p.locator('input[type="email"]:visible').first().fill(u.email)
