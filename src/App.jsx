@@ -11168,12 +11168,19 @@ export default function App() {
       )}
 
       {/* hideButton — скрываем плавающую кнопку AI-ассистента только когда
-          виден именно полный экран активной тренировки (там она была бы
-          лишней, см. исходный комментарий ниже) — НЕ когда тренировка
+          виден именно полный экран АКТИВНОЙ тренировки: там она перекрывает
+          крайние элементы ряда (оценку нагрузки 1-5). НЕ когда тренировка
           просто свёрнута: тогда кнопка возвращается, но приподнятая на
           высоту плашки (extraBottomOffset), чтобы плашка её не перекрыла
-          (известный ранее z-index-баг, явно проверяем каждый раз). */}
-      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} hideButton={isWorkoutForeground||trainerSessionActive} extraBottomOffset={workoutMinimized?MINIMIZED_BAR_H:0} accessLevel={access.level} openPlans={openPlans} programLabelOf={programLabelOf} />
+          (известный ранее z-index-баг, явно проверяем каждый раз).
+
+          Условие — workoutFullscreen (тренировка ИДЁТ и её экран на переднем
+          плане), а не isWorkoutForeground (просто открыта вкладка). Разница
+          стала важна, когда клиент начал стартовать на «Тренировках»: по
+          старому условию кнопка была спрятана на ПЕРВОМ ЖЕ экране, который
+          видит новый пользователь, хотя никакой тренировки ещё нет. Сам
+          комментарий выше это поведение и описывал — разошлась реализация. */}
+      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} hideButton={workoutFullscreen||trainerSessionActive} extraBottomOffset={workoutMinimized?MINIMIZED_BAR_H:0} accessLevel={access.level} openPlans={openPlans} programLabelOf={programLabelOf} />
      </TemplatesContext.Provider>
     </CatalogContext.Provider>
   )
