@@ -662,6 +662,24 @@ const TINY_JPEG_B64 = 'data:image/jpeg;base64,' + 'A'.repeat(200)
 
 const modelSays = obj => ({ content: [{ type: 'text', text: typeof obj === 'string' ? obj : JSON.stringify(obj) }] })
 
+// Ответ модели на шаге 1, когда таблицу с фото прочитать не удалось: название
+// и марка есть, числа — прикидка. Только с таким ответом запускается шаг 2.
+const LBL_ESTIMATE = () => ({ name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: '100g', portion_g: null, basis: 'estimate', readable: true })
+
+// Двухшаговая подменка: на шаг 1 (без tools) отдаёт seen, на шаг 2 (с tools) —
+// found. Различаем шаги по наличию tools в теле, а не по счётчику вызовов:
+// счётчик врал бы, если шага 2 не случилось.
+const twoStep = (seen, found) => body => (body.tools ? json(found) : json(modelSays(seen)))
+
+// Ответ шага 2 «нашёл»: блок поиска + JSON с числами и ссылкой.
+const foundAt = (url, extra = {}) => ({
+  content: [
+    { type: 'server_tool_use', name: 'web_search', input: { query: 'творог 5% пищевая ценность' } },
+    { type: 'web_search_tool_result', content: [] },
+    { type: 'text', text: JSON.stringify({ found: true, kcal100: 121, p100: 16, c100: 3, f100: 5, src_url: url, ...extra }) },
+  ],
+})
+
 // Бесплатный тариф: пакет не оплачен, пробный не активен → effectiveLevel 0.
 const FREE_PROFILE = { plan: 'start', plan_until: null, trial_until: null, role: 'client' }
 
@@ -700,7 +718,11 @@ function stubChat({ anthropic = () => json(modelSays(LBL)), profile = PAID_PROFI
     }
     if (u.host === 'api.anthropic.com') {
       seen.anthropic.push(JSON.parse(opts.body))
-      return anthropic()
+      // Распознавание ходит к модели ДВАЖДЫ: шаг 1 — зрение (без инструментов),
+      // шаг 2 — поиск (с инструментом, без картинки). Отдаём подменке тело
+      // запроса, чтобы тест мог ответить на каждый шаг по-своему: различить их
+      // можно ровно по наличию tools.
+      return anthropic(JSON.parse(opts.body), seen.anthropic.length)
     }
     throw new Error(`неожиданный хост в тесте: ${u.host}`)
   }
@@ -741,39 +763,115 @@ const LABEL_BODY = { type: 'food_label', barcode: '4600682000129', image: TINY_J
     typeof sent.messages[0].content[1].text === 'string' && sent.messages[0].content[1].text.includes('этикетк'),
     JSON.stringify(sent.messages[0].content[1]).slice(0, 200))
 
-  // Поиск в интернете — то, чем модель добирает КБЖУ, когда таблицу на фото не
-  // разобрать. Без инструмента в запросе промт про поиск остаётся мёртвой
-  // буквой, а модель молча возвращается к выдумыванию типичных чисел.
-  const searchTool = (sent.tools || []).find(t => t?.name === 'web_search')
-  report('к модели ушёл инструмент поиска', !!searchTool, JSON.stringify(sent.tools))
-  assertEqual('поиск ограничен по числу запросов', typeof searchTool?.max_uses, 'number')
-  // Штрих-код в промте: по нему находится ровно тот товар, а не соседний
-  // вариант линейки. Подставлять его безопасно — parseLabelInput пропускает
-  // только 8–14 цифр.
-  report('штрих-код подставлен в промт',
-    sent.messages[0].content[1].text.includes('4600682000129'),
-    sent.messages[0].content[1].text.slice(0, 200))
+  // ШАГ 1 — ЗРЕНИЕ, И НИКАКОГО ПОИСКА В НЁМ.
+  //
+  // Это не косметика, а вывод из живой проверки: получив фото И инструмент
+  // поиска в одном запросе, модель на пустом кадре дважды выдумала товар
+  // («Шармэль зефир ванильный», потом «Напиток миндальный Alpro») и приложила
+  // настоящую ссылку на магазин. Без инструмента она на том же кадре стабильно
+  // отвечает readable=false. Инструмент в шаге 1 — это регрессия к выдумкам.
+  assertEqual('шаг 1 идёт БЕЗ инструмента поиска', sent.tools, undefined)
+  report('шаг 1 несёт картинку', sent.messages[0].content.some(c => c.type === 'image'), '')
+  // Штрих-код в промт шага 1 не подставляется: это второй канал, по которому
+  // модель может «узнать» товар, которого не видит.
+  report('штрих-кода в промте зрения нет',
+    !sent.messages[0].content[1].text.includes('4600682000129'),
+    sent.messages[0].content[1].text.slice(0, 160))
+  assertEqual('таблица прочитана → второго запроса не было', seen.anthropic.length, 1)
 }
 {
-  // С поиском ответ модели состоит из НЕСКОЛЬКИХ текстовых блоков: сначала она
-  // проговаривает, что собирается искать, и только последний блок — JSON.
-  // Старый разбор брал ПЕРВЫЙ блок и на таком ответе развалился бы.
-  const multiBlock = () => json({
-    content: [
-      { type: 'text', text: 'Таблицу на фото не разобрать, поищу по названию.' },
-      { type: 'server_tool_use', name: 'web_search', input: { query: 'творог 5% КБЖУ' } },
-      { type: 'web_search_tool_result', content: [] },
-      { type: 'text', text: 'Нашёл карточку товара.' },
-      { type: 'text', text: JSON.stringify({ ...LBL, basis: 'web', src_url: 'https://www.ozon.ru/product/tvorog-1' }) },
-    ],
+  // Полный путь: шаг 1 не разобрал таблицу → шаг 2 нашёл карточку товара.
+  const { res, seen } = await callChat(LABEL_BODY, {
+    profile: PAID_PROFILE,
+    anthropic: twoStep(LBL_ESTIMATE(), foundAt('https://www.ozon.ru/product/tvorog-1')),
   })
-  const { res } = await callChat(LABEL_BODY, { anthropic: multiBlock })
-  assertEqual('ответ с поиском: статус 200', res.statusCode, 200)
-  assertEqual('JSON берётся из ПОСЛЕДНЕГО текстового блока, а не первого', res.body?.ok, true)
-  assertEqual('ответ с поиском: basis=web', res.body?.product?.basis, 'web')
-  assertEqual('ответ с поиском: имя сайта доехало до клиента', res.body?.product?.sourceName, 'ozon.ru')
-  assertEqual('ответ с поиском: ссылка доехала целиком',
-    res.body?.product?.sourceUrl, 'https://www.ozon.ru/product/tvorog-1')
+  assertEqual('прикидка на шаге 1 → шаг 2 состоялся', seen.anthropic.length, 2)
+  assertEqual('поиск с прикидки: статус 200', res.statusCode, 200)
+  assertEqual('поиск с прикидки: basis поднялся до web', res.body?.product?.basis, 'web')
+  assertEqual('имя сайта доехало до клиента', res.body?.product?.sourceName, 'ozon.ru')
+  assertEqual('ссылка доехала целиком', res.body?.product?.sourceUrl, 'https://www.ozon.ru/product/tvorog-1')
+
+  // Шаг 2 — про числа, а не про товар: название и марку прочитали с упаковки
+  // в руках, и они вернее того, как товар назван в магазине.
+  assertEqual('название осталось с упаковки', res.body?.product?.name, 'Творог 5%')
+  assertEqual('марка осталась с упаковки', res.body?.product?.brand, 'Простоквашино')
+
+  const step2 = seen.anthropic[1]
+  report('шаг 2 идёт С инструментом поиска', !!(step2.tools || [])[0], JSON.stringify(step2.tools))
+  report('шаг 2 НЕ несёт картинку — только текст',
+    !step2.messages[0].content.some(c => c.type === 'image'), JSON.stringify(step2.messages[0].content.map(c => c.type)))
+  report('в промт шага 2 подставлено прочитанное название',
+    step2.messages[0].content[0].text.includes('Творог 5%') && step2.messages[0].content[0].text.includes('Простоквашино'),
+    step2.messages[0].content[0].text.slice(0, 200))
+  report('в промт шага 2 подставлен штрих-код',
+    step2.messages[0].content[0].text.includes('4600682000129'), '')
+}
+{
+  // Шаг 2 ответил «не нашёл» — карточка шага 1 остаётся в силе как прикидка.
+  // Ни один исход шага 2 не должен превращаться в отказ распознавания.
+  const notFound = ({ content: [{ type: 'server_tool_use', name: 'web_search', input: {} }, { type: 'text', text: '{"found":false,"kcal100":null,"p100":null,"c100":null,"f100":null,"src_url":null}' }] })
+  const { res } = await callChat(LABEL_BODY, { profile: PAID_PROFILE, anthropic: twoStep(LBL_ESTIMATE(), notFound) })
+  assertEqual('поиск ничего не дал: карточка всё равно отдана', res.body?.ok, true)
+  assertEqual('поиск ничего не дал: basis остался estimate', res.body?.product?.basis, 'estimate')
+  assertEqual('поиск ничего не дал: числа шага 1 сохранены', res.body?.product?.kcal100, 121)
+  assertEqual('поиск ничего не дал: источника нет', res.body?.product?.sourceName, null)
+}
+{
+  // Шаг 2 сказал «нашёл», но ссылка не из белого списка. Верить нечему:
+  // остаёмся на прикидке, чужую ссылку в интерфейс не пускаем.
+  const { res } = await callChat(LABEL_BODY, {
+    profile: PAID_PROFILE,
+    anthropic: twoStep(LBL_ESTIMATE(), foundAt('https://calorizator.ru/product/42')),
+  })
+  assertEqual('чужой домен: basis остался estimate', res.body?.product?.basis, 'estimate')
+  assertEqual('чужой домен: ссылка не доехала', res.body?.product?.sourceUrl, null)
+}
+{
+  // Шаг 2 сказал «нашёл», но без ссылки — то же самое.
+  const { res } = await callChat(LABEL_BODY, {
+    profile: PAID_PROFILE,
+    anthropic: twoStep(LBL_ESTIMATE(), foundAt(null)),
+  })
+  assertEqual('находка без ссылки: basis остался estimate', res.body?.product?.basis, 'estimate')
+}
+{
+  // Пределы правдоподобия действуют и на числа из магазина: 5400 ккал/100 г
+  // из карточки Ozon ничем не лучше 5400 ккал/100 г из головы модели.
+  const { res } = await callChat(LABEL_BODY, {
+    profile: PAID_PROFILE,
+    anthropic: twoStep(LBL_ESTIMATE(), foundAt('https://ozon.ru/p/1', { kcal100: 5400 })),
+  })
+  assertEqual('неправдоподобные числа из магазина отвергнуты', res.body?.product?.basis, 'estimate')
+  assertEqual('при отказе остались числа шага 1', res.body?.product?.kcal100, 121)
+}
+{
+  // Шаг 2 упал (сеть, 500, таймаут) — распознавание обязано это пережить.
+  const boom = () => { throw new Error('сеть отвалилась') }
+  const { res } = await callChat(LABEL_BODY, {
+    profile: PAID_PROFILE,
+    anthropic: body => (body.tools ? boom() : json(modelSays(LBL_ESTIMATE()))),
+  })
+  assertEqual('падение шага 2 не ломает распознавание', res.statusCode, 200)
+  assertEqual('падение шага 2: отдана прикидка шага 1', res.body?.product?.basis, 'estimate')
+}
+{
+  // Живая проверка показала: модель дописывает после JSON ещё блоки —
+  // ссылку на источник, разделитель, вежливое «готово». Правило «берём
+  // последний текстовый блок» на таком ответе отдало бы «не разобрано» при
+  // полностью успешном распознавании. Идём с конца, пока не разберётся.
+  const trailing = {
+    content: [
+      { type: 'server_tool_use', name: 'web_search', input: { query: 'зефир' } },
+      { type: 'web_search_tool_result', content: [] },
+      { type: 'text', text: JSON.stringify({ found: true, kcal100: 322, p100: 1, c100: 79, f100: 0, src_url: 'https://vkusvill.ru/goods/zefir.html' }) },
+      { type: 'text', text: '\n---\nИсточник: страница товара на VkusVill.' },
+      { type: 'text', text: 'Готово.' },
+    ],
+  }
+  const { res } = await callChat(LABEL_BODY, { profile: PAID_PROFILE, anthropic: twoStep(LBL_ESTIMATE(), trailing) })
+  assertEqual('JSON находится, даже если после него ещё два блока', res.body?.ok, true)
+  assertEqual('хвост после JSON не сбивает источник', res.body?.product?.sourceName, 'vkusvill.ru')
+  assertEqual('хвост после JSON не сбивает числа', res.body?.product?.kcal100, 322)
 }
 {
   // Ответ оборвался на потолке токенов посреди поиска — JSON не пришёл.
@@ -794,22 +892,24 @@ const LABEL_BODY = { type: 'food_label', barcode: '4600682000129', image: TINY_J
 // поэтому он не для всех и не всегда. Проверяем ОБА условия отказа: тариф и
 // «продукт уже известен».
 {
-  // Бесплатный СТАРТ: распознавание работает как работало, инструмента в
-  // запросе нет вовсе — не «есть, но просим не пользоваться».
-  const { res, seen } = await callChat(LABEL_BODY, { profile: FREE_PROFILE })
+  // Бесплатный СТАРТ: распознавание работает как работало, но шага 2 не
+  // происходит вовсе — даже когда таблицу не разобрали и уточнять было бы чем.
+  const { res, seen } = await callChat(LABEL_BODY, {
+    profile: FREE_PROFILE,
+    anthropic: twoStep(LBL_ESTIMATE(), foundAt('https://ozon.ru/p/1')),
+  })
   assertEqual('бесплатный: распознавание по-прежнему работает', res.statusCode, 200)
-  assertEqual('бесплатный тариф в поиск не ходит: инструмента нет в запросе',
-    seen.anthropic[0].tools, undefined)
-  // И промт другой: обещать поиск тому, кому он недоступен, нельзя.
-  report('бесплатному промт про поиск не показывают',
-    !seen.anthropic[0].messages[0].content[1].text.includes('web_search'),
-    seen.anthropic[0].messages[0].content[1].text.slice(0, 160))
+  assertEqual('бесплатный тариф в поиск не ходит: второго запроса нет', seen.anthropic.length, 1)
+  assertEqual('бесплатный: остаётся прикидка', res.body?.product?.basis, 'estimate')
   assertEqual('бесплатный: справочник перед поиском даже не читается', seen.cacheLookups.length, 0)
 }
 {
-  // ПРОФИТ: инструмент едет, и ровно в той форме, что описана в задаче.
-  const { seen } = await callChat(LABEL_BODY, { profile: PAID_PROFILE })
-  const tool = (seen.anthropic[0].tools || [])[0]
+  // ПРОФИТ: шаг 2 состоялся, и инструмент в нём ровно той формы, что в задаче.
+  const { seen } = await callChat(LABEL_BODY, {
+    profile: PAID_PROFILE,
+    anthropic: twoStep(LBL_ESTIMATE(), foundAt('https://ozon.ru/p/1')),
+  })
+  const tool = ((seen.anthropic[1] || {}).tools || [])[0]
   assertEqual('ПРОФИТ: инструмент поиска в запросе', tool?.name, 'web_search')
   assertEqual('версия инструмента', tool?.type, 'web_search_20250305')
   assertEqual('число запросов ограничено', tool?.max_uses, 3)
@@ -819,48 +919,64 @@ const LABEL_BODY = { type: 'food_label', barcode: '4600682000129', image: TINY_J
     Array.isArray(tool?.allowed_domains) && tool.allowed_domains.includes('ozon.ru') && tool.allowed_domains.includes('vkusvill.ru'),
     JSON.stringify(tool?.allowed_domains))
   report('в белом списке нет агрегаторов калорийности',
-    !(tool?.allowed_domains || []).some(d => /calorizator|calorie|健康/i.test(d)),
+    !(tool?.allowed_domains || []).some(d => /calorizator|calorie/i.test(d)),
     JSON.stringify(tool?.allowed_domains))
 }
 {
   // Пробный период даёт уровень ПРОФИТ (TRIAL_LEVEL) — значит, и поиск.
   const trial = { plan: 'start', plan_until: null, trial_until: new Date(Date.now() + 86400000).toISOString(), role: 'client' }
-  const { seen } = await callChat(LABEL_BODY, { profile: trial })
-  report('на пробном периоде поиск доступен', !!(seen.anthropic[0].tools || [])[0], JSON.stringify(seen.anthropic[0].tools))
+  const { seen } = await callChat(LABEL_BODY, {
+    profile: trial,
+    anthropic: twoStep(LBL_ESTIMATE(), foundAt('https://ozon.ru/p/1')),
+  })
+  assertEqual('на пробном периоде поиск доступен', seen.anthropic.length, 2)
+}
+{
+  // Таблица с фото прочитана — уточнять её карточкой магазина незачем и
+  // вредно: этикетка в руках вернее любого интернета.
+  const { res, seen } = await callChat(LABEL_BODY, {
+    profile: PAID_PROFILE,
+    anthropic: twoStep({ ...LBL_ESTIMATE(), basis: 'label' }, foundAt('https://ozon.ru/p/1')),
+  })
+  assertEqual('таблица прочитана → поиска нет', seen.anthropic.length, 1)
+  assertEqual('таблица прочитана → basis остался label', res.body?.product?.basis, 'label')
+  assertEqual('таблица прочитана → справочник не читался', seen.cacheLookups.length, 0)
 }
 {
   // Продукт уже лежит в общем справочнике с точным источником — искать нечего,
   // платить за поиск тем более. Фото-режим и так открывается только после
   // промаха, но ручка публичная, и клиент мог прийти напрямую.
   const known = { barcode: '4600682000129', name: 'Творог 5%', source: 'ai_photo' }
-  const { seen } = await callChat(LABEL_BODY, { profile: PAID_PROFILE, cachedRow: known })
+  const { seen } = await callChat(LABEL_BODY, {
+    profile: PAID_PROFILE, cachedRow: known,
+    anthropic: twoStep(LBL_ESTIMATE(), foundAt('https://ozon.ru/p/1')),
+  })
   assertEqual('известный продукт: справочник прочитан', seen.cacheLookups.length, 1)
-  assertEqual('известный продукт: поиск не предлагается', seen.anthropic[0].tools, undefined)
+  assertEqual('известный продукт: поиска не было', seen.anthropic.length, 1)
 }
 {
   // А вот примерная карточка (ai_estimate) поиск НЕ закрывает: ровно её и
   // надо уточнить — в этом вся затея.
   const soft = { barcode: '4600682000129', name: 'Творог 5%', source: 'ai_estimate' }
-  const { seen } = await callChat(LABEL_BODY, { profile: PAID_PROFILE, cachedRow: soft })
-  report('примерная карточка не отменяет поиск', !!(seen.anthropic[0].tools || [])[0], JSON.stringify(seen.anthropic[0].tools))
+  const { seen } = await callChat(LABEL_BODY, {
+    profile: PAID_PROFILE, cachedRow: soft,
+    anthropic: twoStep(LBL_ESTIMATE(), foundAt('https://ozon.ru/p/1')),
+  })
+  assertEqual('примерная карточка не отменяет поиск', seen.anthropic.length, 2)
 }
 {
   // Учёт расхода: своим ключом, и ТОЛЬКО когда поиск реально был.
-  const withSearch = () => json({
-    content: [
-      { type: 'server_tool_use', name: 'web_search', input: { query: 'зефир' } },
-      { type: 'web_search_tool_result', content: [] },
-      { type: 'text', text: JSON.stringify({ ...LBL, basis: 'web', src_url: 'https://ozon.ru/p/1' }) },
-    ],
+  const { seen } = await callChat(LABEL_BODY, {
+    profile: PAID_PROFILE,
+    anthropic: twoStep(LBL_ESTIMATE(), foundAt('https://ozon.ru/p/1')),
   })
-  const { seen } = await callChat(LABEL_BODY, { profile: PAID_PROFILE, anthropic: withSearch })
   report('расход на поиск учтён отдельным счётчиком',
     seen.rpc.includes('incr_feature_usage:food_label_web'), JSON.stringify(seen.rpc))
   report('счётчик снимков при этом тоже цел',
     seen.rpc.includes('incr_feature_usage:food_label'), JSON.stringify(seen.rpc))
 }
 {
-  // Поиска не было — счётчик поисков не трогаем.
+  // Поиска не было (таблица прочиталась с фото) — счётчик поисков не трогаем.
   const { seen } = await callChat(LABEL_BODY, { profile: PAID_PROFILE })
   report('без поиска счётчик поисков не растёт',
     !seen.rpc.includes('incr_feature_usage:food_label_web'), JSON.stringify(seen.rpc))
