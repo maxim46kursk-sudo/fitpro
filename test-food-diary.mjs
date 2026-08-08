@@ -14,7 +14,7 @@
 // Запуск: node test-food-diary.mjs. В сборку не входит.
 
 const {
-  MEALS, MEAL_KEYS, MEAL_ICONS, NO_MEAL, NO_MEAL_LABEL, mealLabel, entryMeal,
+  MEALS, MEAL_KEYS, MEAL_ICONS, NO_MEAL, NO_MEAL_LABEL, mealLabel, entryMeal, normalizeMeal,
   groupByMeal, sumEntries, moveEntry, remainingOf, overBy, pctOf,
   recentProducts, shiftISO, scaleEntryByPortions, clampPortions,
 } = await import('./src/foodMeals.js')
@@ -400,6 +400,60 @@ console.log('\n── Суммы ккал по дням месяца ───�
     monthTotals({ '2026-08-05': [{ kcal: '100.4' }, { kcal: '50.4' }] }, 2026, 7)['2026-08-05'], 151)
 }
 
+
+// ══════════════════════════════════════════════════════════════════════════
+// Приём из маркера ассистента
+// ══════════════════════════════════════════════════════════════════════════
+// Маркер ADD появился раньше колонки food_diary.meal и зашивал приём прямо в
+// название («Завтрак: овсянка 90г»), из-за чего вся еда падала одной строкой
+// в «Без категории». Теперь приём — отдельное поле, но приходит ИЗ ОТВЕТА
+// МОДЕЛИ, то есть снаружи, и до insert обязан пройти белый список: на
+// food_diary.meal висит CHECK, и чужая строка уронила бы запись целиком.
+console.log('\n── Приём из маркера ассистента ─────────────────────────────────')
+for (const key of MEAL_KEYS) {
+  assertEqual(`корректный приём проходит: ${key}`, normalizeMeal(key), key)
+}
+assertEqual('регистр не важен', normalizeMeal('Breakfast'), 'breakfast')
+assertEqual('пробелы по краям срезаются', normalizeMeal('  lunch  '), 'lunch')
+
+// Всё неизвестное — в null, то есть «Без категории». Не выбрасываем запись и
+// не угадываем приём: показать еду без категории честнее, чем потерять её.
+for (const [label, value] of [
+  ['русское название', 'завтрак'],
+  ['выдуманный приём', 'supper'],
+  ['служебный ключ NO_MEAL', NO_MEAL],
+  ['пустая строка', ''],
+  ['пробелы', '   '],
+  ['отсутствует', undefined],
+  ['null', null],
+  ['число', 1],
+  ['объект', { meal: 'lunch' }],
+  ['массив', ['breakfast']],
+]) {
+  assertEqual(`неизвестный приём → null: ${label}`, normalizeMeal(value), null)
+}
+
+// Несколько продуктов одним ответом обязаны стать НЕСКОЛЬКИМИ записями, а не
+// склеиться в одну строку на весь приём — иначе клиент не сможет поправить
+// порцию одного продукта, не тронув соседние.
+const addReply = [
+  '[ADD:{"name":"Овсянка 90г","kcal":330,"p":11,"c":57,"f":6,"meal":"breakfast","date":"2026-08-08"}]',
+  '[ADD:{"name":"Яйца 2шт","kcal":140,"p":13,"c":1,"f":10,"meal":"breakfast","date":"2026-08-08"}]',
+  '[ADD:{"name":"Кофе с молоком 200мл","kcal":60,"p":3,"c":6,"f":2,"meal":"breakfast","date":"2026-08-08"}]',
+].join(' Записал завтрак. ')
+const addParsed = [...addReply.matchAll(/\[ADD:(\{.*?\})\]/g)].map(m => JSON.parse(m[1]))
+assertEqual('три продукта → три отдельные записи', addParsed.length, 3)
+assertEqual('у всех один приём', addParsed.map(e => normalizeMeal(e.meal)), ['breakfast', 'breakfast', 'breakfast'])
+report('ни в одном названии нет префикса приёма',
+  addParsed.every(e => !/^(Завтрак|Обед|Ужин|Перекус)\s*:/i.test(e.name)))
+assertEqual('названия — только продукт с граммовкой',
+  addParsed.map(e => e.name), ['Овсянка 90г', 'Яйца 2шт', 'Кофе с молоком 200мл'])
+
+// Маркер без meal (старый формат либо модель поле не прислала) не должен
+// ломать запись — она просто уходит в «Без категории».
+const legacyAdd = JSON.parse('{"name":"Творог 200г","kcal":200,"p":36,"c":6,"f":2,"date":"2026-08-08"}')
+assertEqual('маркер без meal → null, запись не теряется', normalizeMeal(legacyAdd.meal), null)
+report('запись без meal сохраняет название и КБЖУ', legacyAdd.name === 'Творог 200г' && legacyAdd.kcal === 200)
 
 console.log(`\n${'─'.repeat(68)}\nИтог: ${pass} пройдено, ${fail} провалено`)
 process.exitCode = fail ? 1 : 0

@@ -67,6 +67,7 @@ function removeMarkerRanges(text, markers) {
 }
 import { logError } from './logError'
 import { MAX_TELEGRAM_URL } from './config.js'
+import { normalizeMeal } from './foodMeals.js'
 import { GlassIcon } from './glassIcons'
 
 // Палитра тёмной темы — те же значения, что в App.jsx (продублированы, т.к.
@@ -443,6 +444,13 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
             const { error } = await supabase.from('food_diary').insert({
               user_id: fresh.user.id, date: entry.date || fresh.today,
               name: entry.name,
+              // Приём — через белый список (src/foodMeals.js): значение пришло
+              // из ответа модели, то есть снаружи, а на food_diary.meal висит
+              // CHECK. Чужая строка уронила бы insert, и человек увидел бы
+              // «не удалось сохранить» вместо еды. Неизвестное или
+              // отсутствующее → null, то есть секция «Без категории» — ровно
+              // то, что было до появления приёмов.
+              meal: normalizeMeal(entry.meal),
               kcal: clampNum(entry.kcal, CAL_MIN, CAL_MAX),
               p: clampNum(entry.p, MACRO_MIN, MACRO_MAX),
               c: clampNum(entry.c, MACRO_MIN, MACRO_MAX),
