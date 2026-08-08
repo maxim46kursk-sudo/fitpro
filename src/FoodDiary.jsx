@@ -102,7 +102,7 @@ const isoOf = d => {
 const SEARCH_DEBOUNCE_MS = 300
 const SEARCH_MIN_LEN = 2
 
-export default function FoodDiary({ userId, readOnly = false, readOnlyName = '', onClose, embedded = false }) {
+export default function FoodDiary({ userId, readOnly = false, readOnlyName = '', onClose, embedded = false, headerLeft = null }) {
   // ── Состояние дневника (перенесено из DiaryView без изменений)
   // Инициализация из localStorage-кэша — мгновенный показ до ответа сети
   // (полная загрузка из Supabase ниже перезатирает это, как только придёт
@@ -569,15 +569,27 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
         {(stack.length > 1 || onClose) && (
           <button data-back="1" onClick={goBack} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: TXT3, lineHeight: 1, padding: 0, minHeight: 'unset' }}><GlassIcon name="back" size={26} /></button>
         )}
-        <span style={{ fontSize: 17, fontWeight: 700, color: TXT, flex: 1 }}>
-          {screen.type === GOALS ? 'Норма' : screen.type === SUMMARY ? sectionTitle('Сводка') : sectionTitle('Питание')}
-        </span>
+        {/* Во встроенном режиме на экране дня заголовок не рисуем: он повторял
+            бы название вкладки. Его место занимает переключатель разделов
+            (headerLeft) — шапка остаётся ОДНА, а не два яруса подряд.
+            На подэкранах («Норма», «Сводка») заголовок нужен: там он
+            единственное, что говорит, где ты находишься. */}
+        {embedded && screen.type === DAY && headerLeft
+          ? <div style={{ flex: 1, minWidth: 0 }}>{headerLeft}</div>
+          : (
+            <span style={{ fontSize: 17, fontWeight: 700, color: TXT, flex: 1 }}>
+              {screen.type === GOALS ? 'Норма' : screen.type === SUMMARY ? sectionTitle('Сводка') : sectionTitle('Питание')}
+            </span>
+          )}
         {/* Шестерёнка только на экране дня: на подэкранах ей некуда вести. */}
         {!readOnly && screen.type === DAY && (
           <div style={{ position: 'relative', flexShrink: 0 }}>
-            <button onClick={() => setGearOpen(o => !o)} aria-label="Настройки питания"
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: TXT3, padding: 0, minHeight: 'unset', lineHeight: 1 }}>
-              <GlassIcon name="gear" size={26} />
+            {/* 44x44 — минимальная площадь нажатия, как у прочих кнопок
+                действий в приложении. Иконка была 26 и рядом с соседними
+                выглядела недоделанной. */}
+            <button data-testid="food-gear" onClick={() => setGearOpen(o => !o)} aria-label="Настройки питания"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: TXT3, padding: 0, width: 44, height: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>
+              <GlassIcon name="gear" size={34} />
             </button>
             {gearOpen && (
               <>

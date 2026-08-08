@@ -4870,25 +4870,37 @@ function NutritionTab({ userId }){
   const [tab,setTab]=useState('diary')
   // Тот же вид, что у переключателей внутри самого дневника (tabBtn в
   // FoodDiary.jsx) — вкладка не должна выглядеть как чужой экран.
+  // Активный раздел должен читаться как ВЫБРАННАЯ вкладка. Фон SURF совпадал
+  // с фоном шапки, и активный пункт выглядел просто подписью, а неактивный —
+  // единственной кнопкой; смысл переключателя читался наоборот.
   const btn=active=>({
-    flex:1, padding:'10px 6px', borderRadius:9, border:'none',
-    background:active?SURF:SURF2, color:active?TXT:TXT3,
+    padding:'9px 14px', borderRadius:9, border:'none',
+    background:active?PUR:SURF2, color:active?'#fff':TXT3,
     fontSize:13, fontWeight:active?700:600, cursor:'pointer', minHeight:'unset',
+    whiteSpace:'nowrap',
   })
+  // Переключатель уезжает ВНУТРЬ шапки дневника (проп headerLeft), а не стоит
+  // отдельной строкой над ней: иначе получалось два яруса подряд —
+  // переключатель, а под ним плашка с заголовком «Питание», дублирующим имя
+  // вкладки. Теперь шапка одна: слева разделы, справа шестерёнка.
+  const switcher = (
+    <div style={{ display:'flex', gap:6 }}>
+      <button data-testid="nutrition-tab-diary" onClick={()=>setTab('diary')} style={btn(tab==='diary')}>Дневник</button>
+      <button data-testid="nutrition-tab-plans" onClick={()=>setTab('plans')} style={btn(tab==='plans')}>Рационы</button>
+    </div>
+  )
   return (
     <div>
-      <div style={{ display:'flex', gap:8, padding:'12px 16px 4px' }}>
-        <button data-testid="nutrition-tab-diary" onClick={()=>setTab('diary')} style={btn(tab==='diary')}>Дневник</button>
-        <button data-testid="nutrition-tab-plans" onClick={()=>setTab('plans')} style={btn(tab==='plans')}>Готовые рационы</button>
-      </div>
       {/* Оба раздела ОСТАЮТСЯ СМОНТИРОВАННЫМИ. Дневник держит собственный стек
           экранов (foodNav.js: день → норма → сводка → день из календаря), и
           размонтирование сбрасывало бы его при каждом переключении — человек
-          возвращался бы из «Готовых рационов» не туда, где был. */}
+          возвращался бы из «Рационов» не туда, где был. */}
       <div style={{ display: tab==='diary'?'block':'none' }}>
-        <FoodDiary userId={userId} embedded />
+        <FoodDiary userId={userId} embedded headerLeft={switcher} />
       </div>
+      {/* У «Рационов» своей шапки нет, поэтому переключатель рисуем над ними. */}
       <div style={{ display: tab==='plans'?'block':'none' }}>
+        <div style={{ background:SURF, borderBottom:`1px solid ${HAIR}`, padding:'14px 16px' }}>{switcher}</div>
         <NutritionView userId={userId} />
       </div>
     </div>
@@ -7151,7 +7163,7 @@ function LandingPage({ onEnter, isTelegram, accessError }) {
               {icon:'plate',title:'Умный дневник питания',desc:'Умеет не только считать КБЖУ, но и даёт рекомендации — что на что заменить'},
               {icon:'chart',title:'Достижения',desc:'Аналитика общего тоннажа тренировок, прогресс по каждому упражнению и аналитика питания'},
             ].map((f,i)=>(
-              <div key={i} style={{ background:G,border:GB,borderRadius:16,padding:'20px 18px',display:'flex',gap:14,alignItems:'flex-start' }}>
+              <div key={i} style={{ background:G,border:GB,borderRadius:16,padding:'20px 18px',display:'flex',gap:14,alignItems:'flex-start',textAlign:'left' }}>
                 <GlassIcon name={f.icon} size={34} style={{marginTop:2}} />
                 <div>
                   <div style={{ fontSize:14,fontWeight:700,color:'#fff',marginBottom:6,lineHeight:1.35 }}>{f.title}</div>
@@ -7164,7 +7176,7 @@ function LandingPage({ onEnter, isTelegram, accessError }) {
           {/* ── Акцентная строка */}
           <div style={{ textAlign:'center',marginBottom:28,padding:'22px 20px',background:`linear-gradient(135deg,${PUR}20,${TEA}12)`,border:`1px solid ${PUR}35`,borderRadius:16 }}>
             <div style={{ fontSize:mobile?17:20,fontWeight:800,background:`linear-gradient(135deg,#fff 40%,#b8b3f5)`,WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',lineHeight:1.4 }}>
-              Теперь тренировки станут ещё комфортнее ✨
+              Теперь тренировки станут ещё комфортнее
             </div>
           </div>
 
@@ -10021,6 +10033,17 @@ export default function App() {
   // видно — плашка должна показываться и там (см. задачу про "любой другой
   // путь ухода с экрана тренировки").
   const isWorkoutForeground = nav==='workouts' && !showProfileView && !showSettingsView && !showProfileSheet
+
+  // Тренер ведёт занятие (src/TrainerSession.jsx) — там в правом нижнем углу
+  // стоит секундомер, и плавающая кнопка ассистента перекрывала бы его. Флаг
+  // приходит событием: TrainerSession монтируется глубоко внутри карточки
+  // клиента, и тащить проп через всю цепочку ради одной кнопки незачем.
+  const [trainerSessionActive,setTrainerSessionActive]=useState(false)
+  useEffect(()=>{
+    const h=e=>setTrainerSessionActive(!!e.detail?.active)
+    window.addEventListener('fitpro:trainer-session',h)
+    return()=>window.removeEventListener('fitpro:trainer-session',h)
+  },[])
   // Снимок активной тренировки для плашки (см. onWorkoutMeta в WorkoutsView) —
   // null, когда тренировки нет. Плашка показывается когда снимок есть И
   // тренировка не на переднем плане.
@@ -10843,7 +10866,14 @@ export default function App() {
   // на !user — если сессия уже подтверждена, временный сбой рефреша не должен
   // выбрасывать человека из приложения вообще.
   if(!user&&authError) return <ConnectionErrorView onRetry={()=>{setAuthRetrying(true);setAuthRetryToken(t=>t+1)}} retrying={authRetrying} />
-  if(!user) return <LandingPage onEnter={setUser} isTelegram={isTelegram} accessError={accessAuthError} />
+  // GlassDefs обязателен и здесь. Он объявляет <linearGradient>, на которые
+  // ссылаются ВСЕ GlassIcon; ниже по коду он монтируется в основном layout, но
+  // до него дело не доходит — этот return срабатывает раньше. Без определений
+  // иконки на стартовом экране рисовались пустыми квадратами.
+  if(!user) return (<>
+    <GlassDefs/>
+    <LandingPage onEnter={setUser} isTelegram={isTelegram} accessError={accessAuthError} />
+  </>)
   if(!consentLoaded) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:BG,color:TXT3,fontSize:14}}>Загрузка…</div>
   // Профиль не прочитался и согласия мы за эту сессию так и не подтвердили —
   // честно говорим про связь вместо того, чтобы требовать согласие повторно.
@@ -11132,7 +11162,7 @@ export default function App() {
           просто свёрнута: тогда кнопка возвращается, но приподнятая на
           высоту плашки (extraBottomOffset), чтобы плашка её не перекрыла
           (известный ранее z-index-баг, явно проверяем каждый раз). */}
-      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} hideButton={isWorkoutForeground} extraBottomOffset={workoutMinimized?MINIMIZED_BAR_H:0} accessLevel={access.level} openPlans={openPlans} programLabelOf={programLabelOf} />
+      <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} hideButton={isWorkoutForeground||trainerSessionActive} extraBottomOffset={workoutMinimized?MINIMIZED_BAR_H:0} accessLevel={access.level} openPlans={openPlans} programLabelOf={programLabelOf} />
      </TemplatesContext.Provider>
     </CatalogContext.Provider>
   )

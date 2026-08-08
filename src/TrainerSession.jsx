@@ -163,9 +163,83 @@ export function TrainerSessionsList({ clientId, trainerId, onEdit }) {
 }
 
 // ── Основной экран ──────────────────────────────────────────────────────────
+// ── Секундомер занятия ───────────────────────────────────────────────────────
+// Занимает то место, где на остальных экранах висит плавающая кнопка
+// ассистента: во время занятия тренеру нужны часы, а не чат — он и так говорит
+// с клиентом голосом.
+//
+// Время считаем от МЕТКИ СТАРТА (Date.now()), а не увеличением счётчика на
+// единицу в секунду: setInterval в фоновой вкладке душится браузером, и
+// счётчик отстал бы тем сильнее, чем дольше идёт занятие. Здесь же интервал
+// нужен только чтобы перерисовать — сама величина всегда честная разница.
+function SessionStopwatch() {
+  const [startedAt, setStartedAt] = useState(null)   // null — не запущен
+  const [accumulated, setAccumulated] = useState(0)  // накоплено до последней паузы, мс
+  const [elapsed, setElapsed] = useState(0)          // что показываем, мс
+
+  // Date.now() зовём ТОЛЬКО в эффекте, не в теле рендера: рендер обязан быть
+  // чистым, иначе одно и то же состояние даёт разный результат.
+  useEffect(() => {
+    if (startedAt === null) return
+    // Без немедленного вызова: первый тик придёт через 250 мс, глазу это
+    // незаметно, зато в эффекте нет синхронного setState.
+    const id = setInterval(() => setElapsed(accumulated + (Date.now() - startedAt)), 250)
+    return () => clearInterval(id)
+  }, [startedAt, accumulated])
+
+  const total = Math.floor(elapsed / 1000)
+  const mmss = `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+  const running = startedAt !== null
+
+  const toggle = () => {
+    if (running) {
+      // Показания на паузе фиксирует сам обработчик: эффект их больше не
+      // трогает, а интервал уже снят — без этого на экране осталось бы время
+      // последнего тика, до полусекунды меньше настоящего.
+      const done = accumulated + (Date.now() - startedAt)
+      setAccumulated(done); setElapsed(done); setStartedAt(null)
+    } else setStartedAt(Date.now())
+  }
+  const reset = () => { setStartedAt(null); setAccumulated(0); setElapsed(0) }
+
+  const btn = {
+    border: 'none', borderRadius: 10, cursor: 'pointer',
+    minHeight: 44, minWidth: 44, padding: '0 12px',
+    fontSize: 12.5, fontWeight: 700,
+  }
+  return (
+    <div data-testid="session-stopwatch" style={{
+      position: 'fixed', right: 14, bottom: 'calc(74px + env(safe-area-inset-bottom))', zIndex: 1070,
+      display: 'flex', alignItems: 'center', gap: 8,
+      background: SURF, border: `1px solid ${HAIR}`, borderRadius: 14,
+      padding: '8px 10px', boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
+    }}>
+      <span style={{ fontSize: 17, fontWeight: 800, color: TXT, fontVariantNumeric: 'tabular-nums', minWidth: 56, textAlign: 'center' }}>{mmss}</span>
+      <button data-testid="stopwatch-toggle" onClick={toggle}
+        style={{ ...btn, background: running ? SURF2 : PUR, color: running ? TXT : '#fff' }}>
+        {running ? 'Пауза' : 'Старт'}
+      </button>
+      <button data-testid="stopwatch-reset" onClick={reset}
+        style={{ ...btn, background: 'none', border: `1px solid ${HAIR}`, color: TXT3 }}>
+        Сброс
+      </button>
+    </div>
+  )
+}
+
 export default function TrainerSession({ client, trainerId, catalogExercises = [], editWorkoutId = null, onExit }) {
   const clientId = client?.id
   const [phase, setPhase] = useState(editWorkoutId ? 'session' : 'loading')  // loading | choose | session
+
+  // Пока экран открыт, плавающая кнопка ассистента в App должна быть спрятана:
+  // её место занимает секундомер, и две кнопки в одном углу перекрывали бы друг
+  // друга. Событием, а не пропом — TrainerSession монтируется глубоко внутри
+  // карточки клиента, и протаскивать флаг через всю цепочку ради одной кнопки
+  // не стоит. Тот же приём, что у fitpro:diary-update.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('fitpro:trainer-session', { detail: { active: true } }))
+    return () => window.dispatchEvent(new CustomEvent('fitpro:trainer-session', { detail: { active: false } }))
+  }, [])
   const [starters, setStarters] = useState({ program: null, last: null })
 
   const [workoutId, setWorkoutId] = useState(editWorkoutId)
@@ -724,6 +798,10 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
 
   return (
     <div style={{ paddingBottom:24 }}>
+      {/* Секундомер — только на самом занятии (phase==='session'), не на
+          выборе, с чего начать. Закреплён, поэтому не уезжает при прокрутке
+          длинного списка упражнений. */}
+      <SessionStopwatch />
       {pickerOpen && (
         <ExercisePicker catalogExercises={catalogExercises} onPick={addExercise} onClose={() => setPickerOpen(false)} />
       )}
