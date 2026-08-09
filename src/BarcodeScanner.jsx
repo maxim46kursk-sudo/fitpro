@@ -518,8 +518,22 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
   const scaled = product ? scaleProduct(product, gramsClamped) : null
   const gramsClipped = gramsRaw !== null && gramsClamped !== null && gramsRaw !== gramsClamped
 
+  // Карточка годна к занесению в дневник? Полный набор КБЖУ и не все нули.
+  // Зеркало серверного hasUsableMacros (api/_foodProduct.js) — правило одно, но
+  // проверка нужна с обеих сторон: сервер решает, что писать в общий
+  // справочник, клиент — что показывать и давать нажать.
+  //
+  // Без этой проверки карточка с прочерками вместо цифр (Open Food Facts знает
+  // товар, но не знает пищевую ценность) давала активную кнопку, а в дневник
+  // уезжал ноль калорий. Человек этого не замечает — день просто считается
+  // неправильно.
+  const usable = v => typeof v === 'number' && Number.isFinite(v)
+  const macrosKnown = !!product
+    && [product.kcal100, product.p100, product.c100, product.f100].every(usable)
+    && !(product.kcal100 === 0 && product.p100 === 0 && product.c100 === 0 && product.f100 === 0)
+
   const addToDiary = () => {
-    if (!product || gramsClamped === null) return
+    if (!product || gramsClamped === null || !macrosKnown) return
     onAdd?.(buildFoodEntry(product, gramsClamped), meal)
   }
 
@@ -534,10 +548,18 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
 
   // Поле ввода числа на экране подтверждения — те же стили, что у формы еды
   // в дневнике (App.jsx), чтобы экран не выглядел чужим.
-  // Сохранять нечего, пока в карточке нет ни одного числа: такая строка в
-  // общем справочнике хуже отсутствия — следующий отсканирует и получит пусто.
-  // Требуем только ккал; макросы остаются необязательными, как и раньше.
-  const needsKcal = labelEmpty && parseGrams(labelForm.kcal100) === null
+  // Сохранять нечего, пока в карточке заполнены НЕ ВСЕ четыре числа: такая
+  // строка в общем справочнике хуже отсутствия — следующий отсканирует, увидит
+  // название с прочерками и не сможет ни занести в дневник, ни добраться до
+  // настоящих данных.
+  //
+  // Раньше требовалась одна калорийность, и только когда модель не дала вообще
+  // ничего (labelEmpty). Карточка с белками, но без ккал проезжала насквозь и
+  // ложилась в общую базу — ровно так пустые строки туда и попадали.
+  // Условие зеркалит серверное hasUsableMacros; сервер теперь такую карточку
+  // отвергает 400-м, и кнопка не должна доводить до этого отказа.
+  const labelNums = [labelForm.kcal100, labelForm.p100, labelForm.c100, labelForm.f100].map(parseGrams)
+  const needsKcal = labelNums.some(v => v === null) || labelNums.every(v => v === 0)
 
   const headerTitle =
     stage === 'result' ? 'Порция'
@@ -704,10 +726,23 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
               </div>
             </div>
 
-            <button onClick={addToDiary} disabled={gramsClamped === null}
-              style={{ ...primaryBtn, opacity: gramsClamped === null ? 0.45 : 1, cursor: gramsClamped === null ? 'default' : 'pointer' }}>
+            {/* Цифр нет — объясняем ПОЧЕМУ кнопка погасла и куда идти дальше.
+                Погашенная кнопка без объяснения читается как поломка. */}
+            {!macrosKnown && (
+              <div style={{ background: SURF2, border: `1px solid ${HAIR}`, borderRadius: 12, padding: '12px 14px', marginBottom: 12, fontSize: 15, lineHeight: 1.45, color: TXT }}>
+                Продукт нашёлся, а его КБЖУ — нет. В дневник так записывать нельзя:
+                день посчитается неправильно. Сними таблицу «Пищевая ценность» с упаковки
+                или введи числа вручную.
+              </div>
+            )}
+
+            <button onClick={addToDiary} disabled={gramsClamped === null || !macrosKnown}
+              style={{ ...primaryBtn, opacity: (gramsClamped === null || !macrosKnown) ? 0.45 : 1, cursor: (gramsClamped === null || !macrosKnown) ? 'default' : 'pointer' }}>
               Добавить в дневник
             </button>
+            {!macrosKnown && userId && (
+              <button onClick={openPhotoPicker} style={{ ...ghostBtn, marginTop: 10 }}>Сфотографировать упаковку</button>
+            )}
             <button onClick={restartScan} style={{ ...ghostBtn, marginTop: 10 }}>Сканировать ещё</button>
           </div>
         )}
@@ -838,13 +873,14 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
               <div style={{ fontSize: 12, color: COR, marginBottom: 10, textAlign: 'center' }}>{photoError}</div>
             )}
 
-            {/* Карточка без единого числа в общем справочнике бесполезна —
-                следующий отсканирует её и не получит ничего. Поэтому когда
-                модель чисел не дала, требуем хотя бы калорийность; макросы
-                по-прежнему необязательны. */}
+            {/* Неполная карточка в общем справочнике бесполезна и вредна:
+                следующий отсканирует код, увидит название с прочерками и не
+                сможет ни занести продукт в дневник, ни добраться до настоящих
+                чисел — «уже нашли». Поэтому нужны все четыре. */}
             {needsKcal && (
-              <div style={{ fontSize: 12, color: TXT3, marginBottom: 10, textAlign: 'center' }}>
-                Впиши хотя бы калорийность, чтобы сохранить
+              <div style={{ fontSize: 13, color: TXT2, marginBottom: 10, textAlign: 'center', lineHeight: 1.45 }}>
+                Заполни все четыре числа — калорийность, белки, жиры и углеводы.
+                Неполную карточку сохранить нельзя: по ней потом не посчитать день.
               </div>
             )}
 

@@ -45,10 +45,18 @@ Object.defineProperty(navigator, 'mediaDevices', {
   },
 })
 
+// ?found=empty — штрих-код НАХОДИТСЯ, но карточка без КБЖУ. Так выглядела
+// пустышка из Open Food Facts: название и марка есть, цифр нет. Проверяем, что
+// кнопка «Добавить в дневник» на таком продукте недоступна.
+const found = new URLSearchParams(location.search).get('found')
+const EMPTY_CARD = { barcode: '4607091380101', name: 'Зефир VITAMIN с кусочками брусники', brand: 'Neo botanica', kcal100: null, p100: null, c100: null, f100: null, source: 'off' }
+
 const realFetch = window.fetch.bind(window)
 window.fetch = async (url, opts) => {
   const u = String(url)
-  if (u.includes('action=barcode')) return json({ found: false })
+  if (u.includes('action=barcode')) {
+    return json(found === 'empty' ? { found: true, product: EMPTY_CARD } : { found: false })
+  }
   if (u.includes('/api/chat')) return json({ ok: true, product: { ...PRODUCT, barcode: '4607091380101' } })
   if (u.includes('/auth/v1/')) return json({ access_token: 'stub', user: { id: 'stub' } })
   return realFetch(url, opts)

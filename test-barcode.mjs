@@ -47,7 +47,7 @@ const { default: handler } = await import('./api/set-exercise.js')
 const { default: chatHandler } = await import('./api/chat.js')
 const {
   normalizeOffProduct, isValidBarcode, normalizeLabelProduct, parseModelJson,
-  basisToSource, isSoftSource, weakerSources,
+  basisToSource, isSoftSource, weakerSources, hasUsableMacros,
 } = await import('./api/_foodProduct.js')
 const {
   scalePer100, scaleProduct, clampGrams, parseGrams, buildEntryName, buildFoodEntry, round1,
@@ -375,10 +375,33 @@ const OFF_NUTELLA = {
   // numeric из PostgREST может приехать строкой — клиент не должен получить
   // "3.2" вместо 3.2, иначе пересчёт порции склеит строки.
   const { res } = await call('3017620422003', {
-    cache: { '3017620422003': { barcode: '3017620422003', name: 'X', brand: null, kcal100: '539', p100: '6.3', c100: null, f100: null, source: 'off' } },
+    cache: { '3017620422003': { barcode: '3017620422003', name: 'X', brand: null, kcal100: '539', p100: '6.3', c100: '57.5', f100: '30.9', source: 'off' } },
   })
   assertEqual('кэш: numeric строкой приводится к числу',
-    res.body?.product, { barcode: '3017620422003', name: 'X', brand: null, kcal100: 539, p100: 6.3, c100: null, f100: null, source: 'off' })
+    res.body?.product, { barcode: '3017620422003', name: 'X', brand: null, kcal100: 539, p100: 6.3, c100: 57.5, f100: 30.9, source: 'off' })
+}
+{
+  // ПУСТАЯ СТРОКА В СПРАВОЧНИКЕ — НЕ ПОПАДАНИЕ. Она выглядит находкой и этим
+  // закрывает дорогу и к OFF, и к распознаванию по фото. Идём дальше по
+  // обычной цепочке, а саму строку перезаписываем найденными данными.
+  const { res, writes } = await call('3017620422003', {
+    cache: { '3017620422003': { barcode: '3017620422003', name: 'Пустышка', brand: null, kcal100: null, p100: null, c100: null, f100: null, source: 'off' } },
+    off: { status: 1, product: { product_name: 'Nutella', brands: 'Ferrero', nutriments: { 'energy-kcal_100g': 539, proteins_100g: 6.3, carbohydrates_100g: 57.5, fat_100g: 30.9 } } },
+  })
+  assertEqual('пустая строка в кэше: пошли в OFF, а не отдали её', res.body?.product?.name, 'Nutella')
+  assertEqual('пустая строка в кэше: отдана карточка с числами', res.body?.product?.kcal100, 539)
+  assertEqual('пустая строка в кэше: перезаписана данными OFF', writes.length, 1)
+  assertEqual('пустая строка в кэше: записаны настоящие числа', writes[0]?.kcal100, 539)
+}
+{
+  // Та же пустая строка, но и OFF товара не знает — честное «не найдено»,
+  // после которого клиент предложит снять этикетку.
+  const { res } = await call('3017620422003', {
+    cache: { '3017620422003': { barcode: '3017620422003', name: 'Пустышка', brand: null, kcal100: null, p100: null, c100: null, f100: null, source: 'ai_photo' } },
+    off: { status: 0 },
+  })
+  assertEqual('пустая строка + промах OFF: found=false', res.body?.found, false)
+  assertEqual('пустая строка не подсовывается как запасной вариант', res.body?.product, undefined)
 }
 
 // ── Промах кэша → OFF → запись в кэш
@@ -394,14 +417,43 @@ const OFF_NUTELLA = {
     { barcode: '3017620422003', name: 'Nutella', brand: 'Ferrero', kcal100: 539, p100: 6.3, c100: 57.5, f100: 30.9, source: 'off' })
 }
 {
-  // Карточка без ккал бесполезна для дневника, но кэшировать её нельзя:
-  // это навсегда закрыло бы повторный поход в OFF за дозаполненными данными.
+  // ЖИВОЙ БАГ: в Open Food Facts полно карточек, заведённых одним сканом —
+  // название есть, пищевой ценности нет. Раньше такую карточку отдавали
+  // клиенту с found:true, и человек видел название с прочерками вместо цифр,
+  // активную кнопку «Добавить в дневник» и записывал ноль калорий.
+  // Теперь это ПРОМАХ: клиент получает честное «не найдено» и предложение
+  // снять этикетку, за которой числа действительно есть.
   const { res, writes } = await call('3017620422003', {
     off: { status: 1, product: { product_name: 'Пустая карточка', nutriments: {} } },
   })
-  assertEqual('без ккал: продукт всё равно отдан', res.body?.found, true)
-  assertEqual('без ккал: kcal100 = null', res.body?.product?.kcal100, null)
-  assertEqual('без ккал: в кэш НЕ пишем', writes.length, 0)
+  assertEqual('OFF без КБЖУ: считаем промахом, а не находкой', res.body?.found, false)
+  assertEqual('OFF без КБЖУ: карточку клиенту не отдаём', res.body?.product, undefined)
+  assertEqual('OFF без КБЖУ: в кэш НЕ пишем', writes.length, 0)
+}
+{
+  // Половина набора — тот же промах: занести в дневник нельзя ни с чем из
+  // этого, а «нашли» закрыло бы дорогу к распознаванию по фото.
+  const { res, writes } = await call('3017620422003', {
+    off: { status: 1, product: { product_name: 'Полупустая', nutriments: { 'energy-kcal_100g': 250, proteins_100g: 5 } } },
+  })
+  assertEqual('OFF с половиной макросов: промах', res.body?.found, false)
+  assertEqual('OFF с половиной макросов: в кэш НЕ пишем', writes.length, 0)
+}
+{
+  // Все четыре нуля — не продукт, а незаполненная форма. Съесть 0 ккал / 0 Б /
+  // 0 Ж / 0 У нельзя даже теоретически. При этом ноль в ОТДЕЛЬНОМ поле законен
+  // (у зефира честный ноль жиров) — это проверяется соседним случаем.
+  const { res } = await call('3017620422003', {
+    off: { status: 1, product: { product_name: 'Одни нули', nutriments: { 'energy-kcal_100g': 0, proteins_100g: 0, carbohydrates_100g: 0, fat_100g: 0 } } },
+  })
+  assertEqual('OFF из одних нулей: промах', res.body?.found, false)
+}
+{
+  const { res, writes } = await call('3017620422003', {
+    off: { status: 1, product: { product_name: 'Зефир', nutriments: { 'energy-kcal_100g': 326, proteins_100g: 0.8, carbohydrates_100g: 79, fat_100g: 0 } } },
+  })
+  assertEqual('ноль в одном поле — карточка годная', res.body?.found, true)
+  assertEqual('ноль в одном поле: карточка кэшируется', writes.length, 1)
 }
 
 // ── Не найден
@@ -593,6 +645,24 @@ assertEqual('sanity-пределы действуют и для web',
 assertEqual('basis=web → source ai_web', basisToSource('web'), 'ai_web')
 assertEqual('basis=estimate → source ai_estimate', basisToSource('estimate'), 'ai_estimate')
 assertEqual('basis=label → source ai_photo', basisToSource('label'), 'ai_photo')
+
+// ── Годность карточки: полный набор КБЖУ и не все нули ────────────────────
+// Один предикат на три места (что кэшируем, что считаем попаданием, что даём
+// занести в дневник) — разъедься они, и пустая строка снова просочится.
+const M = (kcal, p, c, f) => ({ kcal100: kcal, p100: p, c100: c, f100: f })
+assertEqual('полный набор — годна', hasUsableMacros(M(326, 0.8, 79, 0.1)), true)
+// Ноль в ОТДЕЛЬНОМ поле законен: у зефира честный ноль жиров.
+assertEqual('ноль жиров — всё ещё годна', hasUsableMacros(M(326, 0.8, 79, 0)), true)
+assertEqual('нет калорийности — негодна', hasUsableMacros(M(null, 0.8, 79, 0.1)), false)
+assertEqual('нет одного макроса — негодна', hasUsableMacros(M(326, 0.8, 79, null)), false)
+assertEqual('нет ничего — негодна', hasUsableMacros(M(null, null, null, null)), false)
+// Все четыре нуля — незаполненная форма, а не продукт.
+assertEqual('одни нули — негодна', hasUsableMacros(M(0, 0, 0, 0)), false)
+// Строки не считаются числами: numeric из PostgREST приезжает строкой, и до
+// предиката его прогоняют через fromRow. Верить строке тут нельзя — иначе
+// пустая строка '' сойдёт за значение.
+assertEqual('строки вместо чисел — негодна', hasUsableMacros(M('326', '0.8', '79', '0.1')), false)
+assertEqual('не объект — негодна', hasUsableMacros(null), false)
 
 assertEqual('ai_estimate — неуточнённый', isSoftSource('ai_estimate'), true)
 assertEqual('ai_web — неуточнённый', isSoftSource('ai_web'), true)
@@ -1311,12 +1381,33 @@ async function callSave(body, opts = {}, reqOpts = {}) {
   assertEqual('гонка 23505: отдали карточку победителя', res.body?.product?.name, 'Успел первым')
 }
 {
+  // Абсурдные значения вычищаются в null — а карточка, из которой после этой
+  // чистки пропало хоть одно число, В СПРАВОЧНИК НЕ ПИШЕТСЯ ВОВСЕ.
+  // Раньше писалась: хватало одного названия, и пустая на вид строка ложилась
+  // в общую базу, откуда её получали все следующие.
   const { res, writes } = await callSave({ ...CARD, kcal100: 99999, p100: -5, c100: '3,5', f100: 'мусор' })
-  assertEqual('абсурд в теле: ккал → null', res.body?.product?.kcal100, null)
-  assertEqual('абсурд в теле: отрицательный белок → null', res.body?.product?.p100, null)
-  assertEqual('абсурд в теле: запятая разбирается', res.body?.product?.c100, 3.5)
-  assertEqual('абсурд в теле: нечисло → null', res.body?.product?.f100, null)
-  assertEqual('в базу ушли уже вычищенные значения', writes[0].kcal100, null)
+  assertEqual('абсурд в теле: карточка отвергнута 400-м', res.statusCode, 400)
+  assertEqual('абсурд в теле: в базу ничего не ушло', writes.length, 0)
+  report('абсурд в теле: сказано, чего не хватает',
+    /калорийность|белки|жиры|углеводы/i.test(res.body?.error || ''), JSON.stringify(res.body))
+}
+{
+  // Запятая по-прежнему разбирается — при ПОЛНОМ наборе карточка проходит.
+  const { res, writes } = await callSave({ ...CARD, kcal100: '250', p100: '5,5', c100: '3,5', f100: '1,2' })
+  assertEqual('запятая разбирается: карточка принята', res.statusCode, 200)
+  assertEqual('запятая разбирается: 5,5 → 5.5', writes[0]?.p100, 5.5)
+}
+{
+  // Не заполнен один макрос — тот же отказ. Это и есть дыра, через которую
+  // пустые строки попадали в справочник: клиент требовал только калорийность.
+  const { res, writes } = await callSave({ ...CARD, f100: null })
+  assertEqual('без одного макроса: карточка отвергнута', res.statusCode, 400)
+  assertEqual('без одного макроса: в базу ничего не ушло', writes.length, 0)
+}
+{
+  // Все четыре нуля — незаполненная форма, а не продукт.
+  const { res } = await callSave({ ...CARD, kcal100: 0, p100: 0, c100: 0, f100: 0 })
+  assertEqual('одни нули: карточка отвергнута', res.statusCode, 400)
 }
 
 // ── Приоритет источников: off/ai_photo точные, ai_estimate уступает ───────

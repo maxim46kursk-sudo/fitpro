@@ -7,7 +7,7 @@ import { rateLimit } from './_ratelimit.js'
 import {
   isValidBarcode, normalizeOffProduct, fromRow, sanitizeMacros,
   cleanText, MAX_NAME_LEN, MAX_BRAND_LEN,
-  basisToSource, isSoftSource, weakerSources,
+  basisToSource, isSoftSource, weakerSources, hasUsableMacros,
 } from './_foodProduct.js'
 
 // Набор колонок карточки, который отдаём клиенту. source в списке обязателен:
@@ -155,10 +155,18 @@ async function handleBarcode(req, res) {
       console.error(`Штрих-код ${code}: ошибка чтения кэша:`, cacheError)
     } else if (cached) {
       const row = fromRow(cached)
-      if (!isSoftSource(row.source)) {
+      // Строка без полного КБЖУ (или из одних нулей) — НЕ попадание, чем бы её
+      // ни завели. Идём дальше по обычной цепочке: OFF, а не найдётся там —
+      // {found:false}, и клиент предложит снять этикетку. Показать такую
+      // карточку значило бы соврать «нашли» и закрыть оба пути к настоящим
+      // числам; её же саму перезапишет upsert ниже, когда данные найдутся.
+      if (!hasUsableMacros(row)) {
+        console.log(`Штрих-код ${code}: в справочнике пустая карточка (source=${row.source}) — считаем промахом`)
+      } else if (!isSoftSource(row.source)) {
         return res.status(200).json({ found: true, product: row, cached: true })
+      } else {
+        cachedSoft = row
       }
-      cachedSoft = row
     }
   }
 
@@ -229,19 +237,25 @@ async function handleBarcode(req, res) {
     return cachedSoft ? fallbackToCached() : res.status(200).json({ found: false })
   }
 
-  // OFF знает товар, но без калорийности, а у нас лежит оценка с числами —
-  // оценка полезнее. Пустая карточка из точного источника хуже заполненной из
-  // примерного: в дневник её всё равно не занести.
-  if (product.kcal100 === null && cachedSoft?.kcal100 !== null && cachedSoft) {
-    return fallbackToCached()
+  // ЭТО И БЫЛ БАГ С ПРОЧЕРКАМИ. В Open Food Facts полно карточек, заведённых
+  // одним сканом: название и марка есть, пищевой ценности нет вовсе. Раньше
+  // такую карточку мы кэшировать не стали (правильно), но КЛИЕНТУ ОТДАВАЛИ с
+  // found:true — и человек видел «Зефир … NEO botanica» с прочерками вместо
+  // цифр, активную кнопку «Добавить в дневник» и записывал ноль калорий.
+  //
+  // Теперь неполная карточка из OFF — такой же промах, как её отсутствие: если
+  // есть оценка с числами, отдаём её, иначе честное {found:false}, после
+  // которого клиент предлагает снять этикетку. Название без цифр не стоит того,
+  // чтобы ради него закрывать дорогу к настоящим данным.
+  if (!hasUsableMacros(product)) {
+    console.log(`Штрих-код ${code}: OFF знает товар, но без полного КБЖУ — считаем промахом`)
+    return cachedSoft ? fallbackToCached() : res.status(200).json({ found: false })
   }
 
   // ── 3. В кэш — только то, что стоит кэшировать
-  // Название И калорийность: карточка без ккал бесполезна для дневника, а
-  // положив её в кэш, мы бы навсегда закрыли себе повторный поход в OFF за
-  // теми же данными — а там их вполне могут дозаполнить завтра. Поэтому такую
-  // карточку отдаём клиенту (пусть он покажет, что нашлось), но не сохраняем.
-  const worthCaching = supabaseAdmin && product.kcal100 !== null
+  // К этому месту карточка уже проверена hasUsableMacros выше, так что условие
+  // осталось про одно: есть ли вообще куда писать.
+  const worthCaching = !!supabaseAdmin
   if (worthCaching) {
     // upsert по barcode, а не insert: параллельный скан того же кода другим
     // пользователем мог опередить нас на доли секунды, и insert упал бы на
@@ -510,6 +524,9 @@ async function cacheOffCards(supabaseAdmin, cards, q) {
     // прочитанные с реальной упаковки, не должны уступать место результату
     // текстового поиска.
     const toWrite = cards.filter(c => {
+      // Без полного КБЖУ не пишем ничего и отсюда: в выдаче поиска OFF
+      // попадаются те же пустышки, что и при поиске по коду.
+      if (!hasUsableMacros(c)) return false
       if (!sourceByCode.has(c.barcode)) return true
       return isSoftSource(sourceByCode.get(c.barcode))
     })
@@ -564,6 +581,18 @@ async function handleSaveProduct(req, res, { supabaseAdmin, userId }) {
   // Те же пределы, что у ветки barcode: тело запроса — источник ничуть не
   // более доверенный, чем открытая база или модель.
   const macros = sanitizeMacros(req.body)
+
+  // БЕЗ ПОЛНОГО КБЖУ В СПРАВОЧНИК НЕ ПИШЕМ. До этой проверки хватало одного
+  // названия: клиент требовал калорийность только когда модель не дала вообще
+  // ни одного числа (labelEmpty), — то есть карточка с белками, но без ккал
+  // проезжала и клиента, и сервер и ложилась в общую базу пустой на вид.
+  //
+  // Проверка именно на сервере, а не только в интерфейсе: ручка публичная, и
+  // строка отсюда достаётся ВСЕМ следующим, кто отсканирует этот код.
+  if (!hasUsableMacros(macros)) {
+    return res.status(400).json({ error: 'Заполни калорийность, белки, жиры и углеводы' })
+  }
+
   const source = basisToSource(req.body?.basis)
   const row = { barcode, name, brand, ...macros, source }
 
