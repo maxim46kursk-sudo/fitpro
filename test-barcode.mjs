@@ -47,7 +47,7 @@ const { default: handler } = await import('./api/set-exercise.js')
 const { default: chatHandler } = await import('./api/chat.js')
 const {
   normalizeOffProduct, isValidBarcode, normalizeLabelProduct, parseModelJson,
-  basisToSource, isSoftSource, weakerSources, hasUsableMacros,
+  basisToSource, isSoftSource, weakerSources, hasUsableMacros, checkMacros,
 } = await import('./api/_foodProduct.js')
 const {
   scalePer100, scaleProduct, clampGrams, parseGrams, buildEntryName, buildFoodEntry, round1,
@@ -584,23 +584,23 @@ assertEqual('битый JSON → null', parseModelJson('{"a":'), null)
 assertEqual('массив вместо объекта → null', parseModelJson('[1,2,3]'), null)
 assertEqual('не строка → null', parseModelJson(null), null)
 
-const LBL = { name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: '100g', portion_g: null, readable: true }
+const LBL = { name: 'Творог 5%', table_quote: 'белки 16 г; жиры 5 г; углеводы 3 г; 121 ккал', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: '100g', portion_g: null, readable: true }
 
 assertEqual('карточка per=100g разбирается как есть',
   normalizeLabelProduct('4600682000129', LBL),
-  { barcode: '4600682000129', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: '100g', basis: 'label', sourceName: null, sourceUrl: null })
+  { barcode: '4600682000129', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: '100g', basis: 'label', sourceName: null, sourceUrl: null, macroIssue: null, tableQuote: 'белки 16 г; жиры 5 г; углеводы 3 г; 121 ккал' })
 
 // per='portion' с известным весом порции — пересчёт ×100/portion_g.
 assertEqual('per=portion, порция 200 г → пересчёт на 100 г',
   normalizeLabelProduct('1', { ...LBL, per: 'portion', portion_g: 200, kcal100: 242, p100: 32, c100: 6, f100: 10 }),
-  { barcode: '1', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: 'portion', basis: 'label', sourceName: null, sourceUrl: null })
+  { barcode: '1', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: 'portion', basis: 'label', sourceName: null, sourceUrl: null, macroIssue: null, tableQuote: 'белки 16 г; жиры 5 г; углеводы 3 г; 121 ккал' })
 assertEqual('per=portion, порция 30 г → пересчёт вверх',
   normalizeLabelProduct('1', { ...LBL, per: 'portion', portion_g: 30, kcal100: 45, p100: null, c100: null, f100: null }).kcal100, 150)
 // Пересчитать нельзя — числа выбрасываем целиком. Отдать их «как есть» было
 // бы хуже всего: выглядят правдоподобно и молча уедут в общий справочник.
 assertEqual('per=portion без portion_g → все числа null, название остаётся',
   normalizeLabelProduct('1', { ...LBL, per: 'portion', portion_g: null }),
-  { barcode: '1', name: 'Творог 5%', brand: 'Простоквашино', kcal100: null, p100: null, c100: null, f100: null, per: 'portion', basis: 'label', sourceName: null, sourceUrl: null })
+  { barcode: '1', name: 'Творог 5%', brand: 'Простоквашино', kcal100: null, p100: null, c100: null, f100: null, per: 'portion', basis: 'label', sourceName: null, sourceUrl: null, macroIssue: null, tableQuote: 'белки 16 г; жиры 5 г; углеводы 3 г; 121 ккал' })
 assertEqual('per=portion с portion_g=0 → числа null (делить нельзя)',
   normalizeLabelProduct('1', { ...LBL, per: 'portion', portion_g: 0 }).kcal100, null)
 assertEqual('per=portion с отрицательным portion_g → числа null',
@@ -697,6 +697,73 @@ assertEqual('одни нули — негодна', hasUsableMacros(M(0, 0, 0, 0
 assertEqual('строки вместо чисел — негодна', hasUsableMacros(M('326', '0.8', '79', '0.1')), false)
 assertEqual('не объект — негодна', hasUsableMacros(null), false)
 
+// ── Сходимость калорийности с макросами (Атвотер: 4/4/9) ──────────────────
+// Живой прогон на 13 товарах дал два случая, когда заведомо неверные числа
+// легли в справочник как ТОЧНЫЕ. Проверка ловит оба.
+{
+  const c = (kcal, p, cb, f) => checkMacros({ kcal100: kcal, p100: p, c100: cb, f100: f })
+
+  // Чипсы: заявлено 749 при расчётных 447 (+68%). 749 ккал/100 г жирнее
+  // чистого жира — физически невозможно.
+  assertEqual('чипсы 749 при макросах на 447 — не принимаем', c(749, 9, 33, 31).ok, false)
+  assertEqual('чипсы: причина — завышено', c(749, 9, 33, 31).kind, 'too_high')
+
+  // Молоко: жиры и углеводы прочитаны переставленными. Отклонение всего −10.6%
+  // и в порог укладывается — ловим не по величине ошибки, а по тому, что обмен
+  // столбцов её резко улучшает (до +2.4%).
+  assertEqual('молоко с перестановкой Ж↔У — не принимаем', c(60, 3.2, 3, 4.7).ok, false)
+  assertEqual('молоко: причина — переставлены столбцы', c(60, 3.2, 3, 4.7).kind, 'swapped')
+  // Оно же, прочитанное правильно, проходит.
+  assertEqual('молоко как на пачке — сходится', c(60, 3.2, 4.7, 3.2).ok, true)
+
+  // Bombbar: 288 при расчётных 220 (+31%). Законно: 33 г пищевых волокон, их
+  // не кладут в углеводы, а энергию они дают. Порог 20% отсёк бы этот товар —
+  // ради него он и поднят до 40%.
+  assertEqual('батончик на волокнах (+31%) — принимаем', c(288, 33, 5.8, 7.2).ok, true)
+
+  // Обычный творог: расчёт сходится с точностью до 0.2%.
+  assertEqual('творог 2% — сходится', c(99, 17, 3.3, 2).ok, true)
+
+  // Занижение до 40% — норма: подсластители и сахарные спирты дают меньше 4/г.
+  assertEqual('занижение на 30% — принимаем', c(70, 5, 15, 1).ok, true)
+  assertEqual('занижение вдвое — не принимаем', c(50, 5, 15, 3).kind, 'too_low')
+
+  // Неполный набор проверять нечем — этим занимается hasUsableMacros.
+  assertEqual('без части чисел проверка не срабатывает', c(500, null, 30, 20).ok, true)
+  // Вода: ноль во всём — сходится тривиально.
+  assertEqual('вода 0/0/0/0 — сходится', c(0, 0, 0, 0).ok, true)
+}
+
+// ── Цитата из таблицы: пропуск для basis='label' ──────────────────────────
+// На снимке ЛИЦЕВОЙ стороны творожка модель вернула basis='label' и выдуманные
+// 124 ккал. Прочитать таблицу и не суметь её процитировать нельзя.
+{
+  const say = extra => normalizeLabelProduct('1', {
+    name: 'Творог 2%', kcal100: 99, p100: 17, c100: 3.3, f100: 2,
+    per: '100g', basis: 'label', readable: true, ...extra,
+  })
+  assertEqual('label без цитаты → понижен до estimate', say({}).basis, 'estimate')
+  assertEqual('label с пустой цитатой → estimate', say({ table_quote: '   ' }).basis, 'estimate')
+  assertEqual('label с цитатой без цифр → estimate', say({ table_quote: 'таблица есть' }).basis, 'estimate')
+  assertEqual('label с настоящей цитатой остаётся label',
+    say({ table_quote: 'белки 17 г; жиры 2 г; углеводы 3,3 г; 99 ккал' }).basis, 'label')
+  assertEqual('цитата доезжает до клиента',
+    say({ table_quote: 'белки 17 г; 99 ккал' }).tableQuote, 'белки 17 г; 99 ккал')
+  // Несходимость понижает даже при живой цитате: цитата доказывает, что таблицу
+  // видели, но не то, что попали в нужную строку.
+  assertEqual('label с цитатой, но не сходится → estimate',
+    normalizeLabelProduct('1', { name: 'Чипсы', kcal100: 749, p100: 9, c100: 33, f100: 31, per: '100g', basis: 'label', table_quote: '749 ккал', readable: true }).basis,
+    'estimate')
+  assertEqual('несходимость доезжает до клиента',
+    normalizeLabelProduct('1', { name: 'Чипсы', kcal100: 749, p100: 9, c100: 33, f100: 31, per: '100g', basis: 'label', table_quote: '749 ккал', readable: true }).macroIssue,
+    'too_high')
+  // Прикидку не понижаем (ниже некуда), но помечаем — интерфейс попросит сверить.
+  assertEqual('прикидка с несходимостью остаётся estimate и помечена',
+    [say({ basis: 'estimate', kcal100: 749, p100: 9, c100: 33, f100: 31 }).basis,
+      say({ basis: 'estimate', kcal100: 749, p100: 9, c100: 33, f100: 31 }).macroIssue],
+    ['estimate', 'too_high'])
+}
+
 assertEqual('ai_estimate — неуточнённый', isSoftSource('ai_estimate'), true)
 assertEqual('ai_web — неуточнённый', isSoftSource('ai_web'), true)
 assertEqual('ai_photo — точный', isSoftSource('ai_photo'), false)
@@ -717,7 +784,7 @@ assertEqual('данные OFF вытесняют оба неточных ист�
 // равно ценна — КБЖУ впишет человек.
 assertEqual('estimate без чисел: карточка остаётся, числа null',
   normalizeLabelProduct('4600682000129', { name: 'Сыр Козий хутор', brand: 'Козий хутор', basis: 'estimate', kcal100: null, p100: null, c100: null, f100: null, readable: true }),
-  { barcode: '4600682000129', name: 'Сыр Козий хутор', brand: 'Козий хутор', kcal100: null, p100: null, c100: null, f100: null, per: 'unknown', basis: 'estimate', sourceName: null, sourceUrl: null })
+  { barcode: '4600682000129', name: 'Сыр Козий хутор', brand: 'Козий хутор', kcal100: null, p100: null, c100: null, f100: null, per: 'unknown', basis: 'estimate', sourceName: null, sourceUrl: null, macroIssue: null, tableQuote: null })
 assertEqual('estimate без названия → карточки нет (unreadable)',
   normalizeLabelProduct('1', { name: '', basis: 'estimate', kcal100: 300, readable: true }), null)
 assertEqual('sanity-пределы действуют и для estimate',
@@ -856,7 +923,7 @@ const LABEL_BODY = { type: 'food_label', barcode: '4600682000129', image: TINY_J
   assertEqual('успех: статус 200', res.statusCode, 200)
   assertEqual('успех: ok=true', res.body?.ok, true)
   assertEqual('успех: карточка разобрана', res.body?.product,
-    { barcode: '4600682000129', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: '100g', basis: 'label', sourceName: null, sourceUrl: null })
+    { barcode: '4600682000129', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5, per: '100g', basis: 'label', sourceName: null, sourceUrl: null, macroIssue: null, tableQuote: 'белки 16 г; жиры 5 г; углеводы 3 г; 121 ккал' })
   assertEqual('успех: к модели ушёл ровно один запрос', seen.anthropic.length, 1)
   const sent = seen.anthropic[0]
   assertEqual('к модели ушла картинка блоком image', sent.messages[0].content[0].type, 'image')
@@ -1066,7 +1133,7 @@ process.env.LABEL_WEB_SEARCH = 'on'
   // вредно: этикетка в руках вернее любого интернета.
   const { res, seen } = await callChat(LABEL_BODY, {
     profile: PAID_PROFILE,
-    anthropic: twoStep({ ...LBL_ESTIMATE(), basis: 'label' }, foundAt('https://ozon.ru/p/1')),
+    anthropic: twoStep({ ...LBL_ESTIMATE(), basis: 'label', table_quote: 'белки 16 г; жиры 5 г; углеводы 3 г; 121 ккал' }, foundAt('https://ozon.ru/p/1')),
   })
   assertEqual('таблица прочитана → поиска нет', seen.anthropic.length, 1)
   assertEqual('таблица прочитана → basis остался label', res.body?.product?.basis, 'label')
@@ -1542,7 +1609,7 @@ const zefir = extra => ({
 // вообще другой вкус линейки. Решать не нам.
 const zefirSecond = {
   barcode: '1647516027856', name: 'Зефир с кусочками брусники', brand: 'NEO botanica',
-  kcal100: 135, p100: 0.4, c100: 34, f100: 0, basis: 'estimate',
+  kcal100: 96, p100: 0.6, c100: 23, f100: 0, basis: 'estimate',
 }
 
 {
@@ -1555,7 +1622,7 @@ const zefirSecond = {
   assertEqual('вопрос: статус 200, а не ошибка', res.statusCode, 200)
   // Обе карточки С ЧИСЛАМИ — по ним человек и видит, что вкусы разные.
   assertEqual('вопрос: показана карточка из базы', res.body?.candidate?.kcal100, 138)
-  assertEqual('вопрос: показано то, что снял человек', res.body?.incoming?.kcal100, 135)
+  assertEqual('вопрос: показано то, что снял человек', res.body?.incoming?.kcal100, 96)
   assertEqual('вопрос: у обеих карточек есть название', [res.body?.candidate?.name, res.body?.incoming?.name],
     ['Зефир с кусочками брусники', 'Зефир с кусочками брусники'])
   assertEqual('вопрос: у обеих есть марка', [res.body?.candidate?.brand, res.body?.incoming?.brand],
@@ -1569,7 +1636,7 @@ const zefirSecond = {
   assertEqual('другой вкус: заведена своя карточка', res.body?.created, true)
   assertEqual('другой вкус: привязки не было', res.body?.linked, undefined)
   assertEqual('другой вкус: одна обычная запись', writes.filter(w => !w.rpc).length, 1)
-  assertEqual('другой вкус: сохранены СВОИ числа', writes[0]?.kcal100, 135)
+  assertEqual('другой вкус: сохранены СВОИ числа', writes[0]?.kcal100, 96)
   assertEqual('другой вкус: чужая карточка не тронута', rows['2627326027856'].barcodes, [])
 }
 {
@@ -1582,6 +1649,31 @@ const zefirSecond = {
   assertEqual('тот же продукт: отданы цифры существующей', res.body?.product?.kcal100, 138)
   assertEqual('тот же продукт: отдан главный код товара', res.body?.product?.barcode, '2627326027856')
   assertEqual('тот же продукт: код дописан в barcodes', rows['2627326027856'].barcodes, ['1647516027856'])
+}
+{
+  // ЦИФРЫ БЛИЗКИ — ВОПРОСА НЕТ. В прогоне на 13 товарах вопрос сработал 12 раз:
+  // в справочнике лежат те же товары под своими кодами, названия совпадают.
+  // Спрашивать надо там, где расходятся ЧИСЛА — это и есть признак другого
+  // вкуса; совпало и то и другое — тот же товар под другим кодом, привязываем
+  // молча.
+  const rows = { '2627326027856': zefir() }               // 138 ккал
+  const { res, writes } = await callSave({ ...zefirSecond, kcal100: 140 }, { rows })  // +1.4%
+  assertEqual('цифры близки: вопроса нет', res.body?.reason, undefined)
+  assertEqual('цифры близки: привязали молча', res.body?.linked, true)
+  assertEqual('цифры близки: новой карточки нет', writes.filter(w => !w.rpc).length, 0)
+  assertEqual('цифры близки: код дописан', rows['2627326027856'].barcodes, ['1647516027856'])
+}
+{
+  // Ровно на границе 10% — ещё молча.
+  const rows = { '2627326027856': zefir() }
+  const { res } = await callSave({ ...zefirSecond, kcal100: 151 }, { rows })   // +9.4%
+  assertEqual('расхождение 9% — вопроса нет', res.body?.linked, true)
+}
+{
+  // Чуть за границей — уже спрашиваем.
+  const rows = { '2627326027856': zefir() }
+  const { res } = await callSave({ ...zefirSecond, kcal100: 155 }, { rows })   // +12.3%
+  assertEqual('расхождение 12% — спрашиваем', res.body?.reason, 'similar_exists')
 }
 {
   // Похожего нет вовсе — вопроса быть не должно, карточка заводится сразу.
@@ -1750,11 +1842,12 @@ console.log('\n── Сквозной путь: фото → общая баз�
     anthropic: () => json(modelSays({
       name: 'ТВОРОГ 5%', brand: 'Простоквашино, ООО', per: 'portion', portion_g: 200,
       kcal100: 242, p100: 32, c100: 6, f100: 10, readable: true,
+      table_quote: 'белки 16 г; жиры 5 г; углеводы 3 г; 121 ккал',
     })),
   })
   assertEqual('шаг 1: этикетка распознана', photoRes.body?.ok, true)
   assertEqual('шаг 1: порция 200 г пересчитана на 100 г',
-    photoRes.body?.product, { barcode: '4600682000129', name: 'ТВОРОГ 5%', brand: 'Простоквашино, ООО', kcal100: 121, p100: 16, c100: 3, f100: 5, per: 'portion', basis: 'label', sourceName: null, sourceUrl: null })
+    photoRes.body?.product, { barcode: '4600682000129', name: 'ТВОРОГ 5%', brand: 'Простоквашино, ООО', kcal100: 121, p100: 16, c100: 3, f100: 5, per: 'portion', basis: 'label', sourceName: null, sourceUrl: null, macroIssue: null, tableQuote: 'белки 16 г; жиры 5 г; углеводы 3 г; 121 ккал' })
 
   // Шаг 2. Человек на экране подтверждения поправил название и бренд.
   const confirmed = { ...photoRes.body.product, name: 'Творог 5%', brand: 'Простоквашино' }

@@ -695,13 +695,35 @@ async function handleSaveProduct(req, res, { supabaseAdmin, userId }) {
       // Худший исход прежний (дубль), а не потеря данных и не ложное слияние.
       console.error(`save-product ${barcode}: не проверить похожие карточки:`, similarError)
     } else if (similar) {
-      console.log(`save-product: ${barcode} «${name}» похож на ${similar.barcode} — спрашиваем человека`)
-      return res.status(200).json({
-        ok: false,
-        reason: 'similar_exists',
-        candidate: fromRow(similar),
-        incoming: { barcode, name, brand, ...macros },
-      })
+      // СПРАШИВАЕМ, ТОЛЬКО ЕСЛИ ЕСТЬ ЗА ЧТО. В прогоне на 13 товарах вопрос
+      // сработал 12 раз — это уже не страховка, а надоедливость: в справочнике
+      // лежат те же товары под своими кодами, названия совпадают, и человек
+      // отвечал бы на один и тот же вопрос почти при каждом сохранении.
+      //
+      // Разные вкусы одной линейки отличаются ЧИСЛАМИ — на них вопрос и нужен.
+      // Совпало название, совпали и цифры — это тот же товар под другим кодом,
+      // спрашивать не о чем: привязываем молча.
+      const a = Number(similar.kcal100), b = Number(macros.kcal100)
+      const close = Number.isFinite(a) && Number.isFinite(b) && a > 0
+        && Math.abs(a - b) / a <= 0.10
+
+      if (!close) {
+        console.log(`save-product: ${barcode} «${name}» похож на ${similar.barcode}, но ${b} против ${a} ккал — спрашиваем`)
+        return res.status(200).json({
+          ok: false,
+          reason: 'similar_exists',
+          candidate: fromRow(similar),
+          incoming: { barcode, name, brand, ...macros },
+        })
+      }
+      console.log(`save-product: ${barcode} «${name}» — тот же товар, что ${similar.barcode} (${b} против ${a} ккал), привязываем молча`)
+      const { data: auto, error: autoError } = await supabaseAdmin
+        .rpc('link_barcode', { p_barcode: barcode, p_name: name, p_brand: brand })
+      if (autoError) {
+        console.error(`save-product ${barcode}: молчаливая привязка не удалась:`, autoError)
+      } else if (auto) {
+        return res.status(200).json({ ok: true, product: fromRow(auto), created: false, linked: true })
+      }
     }
   }
 

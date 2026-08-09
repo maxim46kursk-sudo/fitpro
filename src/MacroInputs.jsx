@@ -68,7 +68,13 @@ function useNarrow() {
 //           'decimal' только клавиатуру. Второй нужен там, где значение может
 //           прийти с запятой (ответ модели), а type="number" такое поле
 //           обнулял бы.
-export default function MacroInputs({ values, onChange, suffix = '', size = 'md', type = 'number' }) {
+// highlightEmpty — подсветить незаполненные поля.
+//
+// Нужно там, где карточку нельзя сохранить, пока не заполнены все четыре
+// числа: у Snickers модель прочитала таблицу, но не разобрала белок, и человек
+// видел погашенную кнопку без единого намёка, ЧЕГО не хватает. Подсвеченная
+// рамка отвечает на этот вопрос быстрее любой подписи.
+export default function MacroInputs({ values, onChange, suffix = '', size = 'md', type = 'number', highlightEmpty = false }) {
   const narrow = useNarrow()
   const sm = size === 'sm'
 
@@ -77,6 +83,7 @@ export default function MacroInputs({ values, onChange, suffix = '', size = 'md'
       {FIELDS.map(f => {
         const key = `${f.key}${suffix}`
         const isKcal = f.key === 'kcal'
+        const empty = highlightEmpty && String(values?.[key] ?? '').trim() === ''
         return (
           <div key={key} style={{ minWidth: 0 }}>
             {/* nowrap + overflow:hidden — страховка на совсем узких экранах и
@@ -97,11 +104,14 @@ export default function MacroInputs({ values, onChange, suffix = '', size = 'md'
                 : {})}
               style={{
                 width: '100%', padding: sm ? '7px 6px' : '10px 8px', fontSize: sm ? 12 : 14,
-                borderRadius: sm ? 7 : 9, border: `1.5px solid ${f.color}44`, outline: 'none',
+                borderRadius: sm ? 7 : 9, outline: 'none',
+                // Пустое и обязательное — рамка в полный цвет поля и заметно
+                // толще: видно боковым зрением, куда ткнуть.
+                border: empty ? `2px solid ${f.color}` : `1.5px solid ${f.color}44`,
                 boxSizing: 'border-box', color: TXT, background: SURF2, textAlign: 'center',
               }}
               onFocus={e => e.target.style.borderColor = f.color}
-              onBlur={e => e.target.style.borderColor = `${f.color}44`}
+              onBlur={e => e.target.style.borderColor = empty ? f.color : `${f.color}44`}
             />
           </div>
         )

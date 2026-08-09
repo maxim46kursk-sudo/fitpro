@@ -185,6 +185,11 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
   // { candidate, incoming }. Решить, дубль это или другой вкус линейки, может
   // только человек с пачкой в руках — см. стадию 'similar'.
   const [similar, setSimilar] = useState(null)
+  // Калорийность не сошлась с макросами: 'swapped' — похоже, жиры и углеводы
+  // переставлены местами, 'too_high'/'too_low' — просто не сходится. Сервер
+  // такие числа уже понизил до примерных; здесь остаётся объяснить человеку,
+  // что именно проверить.
+  const [macroIssue, setMacroIssue] = useState(null)
 
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
@@ -463,6 +468,7 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
     setLabelPer(p.per || '100g')
     setLabelBasis(['estimate', 'web'].includes(p.basis) ? p.basis : 'label')
     setLabelSource(p.sourceName && p.sourceUrl ? { name: p.sourceName, url: p.sourceUrl } : null)
+    setMacroIssue(p.macroIssue || null)
     setLabelEmpty(p.kcal100 === null && p.p100 === null && p.c100 === null && p.f100 === null)
     setStage('confirm')
   }
@@ -907,6 +913,20 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
               </div>
             )}
 
+            {/* Калорийность не сошлась с макросами по Атвотеру (4/4/9).
+                Это НЕ придирка: у чипсов так вылезли 749 ккал при макросах на
+                447, у молока — переставленные местами жиры и углеводы.
+                Переставленное не чиним молча: какой столбец какой, знает только
+                человек с пачкой в руках, а угадывать за него — то же самое, что
+                оставить ошибку. */}
+            {macroIssue && (
+              <div style={{ background: `${COR}18`, border: `1px solid ${COR}55`, borderRadius: 12, padding: '12px 14px', marginBottom: 12, fontSize: 15, lineHeight: 1.45, color: TXT }}>
+                {macroIssue === 'swapped'
+                  ? 'Кажется, жиры и углеводы перепутаны местами — по калорийности сходится, если поменять их. Проверь по таблице на упаковке и поправь, или переснимите её покрупнее.'
+                  : 'Калорийность не сходится с белками, жирами и углеводами. Проверь числа по таблице на упаковке — где-то съехала строка.'}
+              </div>
+            )}
+
             {/* Числа — оценка модели, а не чтение таблицы.
                 Плашка СПОКОЙНАЯ, а не тревожно-жёлтая: это не ошибка и не сбой,
                 а нормальный исход, когда таблицы не было в кадре. Оранжевый тут
@@ -953,7 +973,7 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
                 человек правит их с телефонной клавиатуры, где легко ввести
                 запятую — type="number" такое поле молча обнулил бы. */}
             <div style={{ marginBottom: 16 }}>
-              <MacroInputs suffix="100" type="decimal" values={labelForm}
+              <MacroInputs suffix="100" type="decimal" values={labelForm} highlightEmpty={needsKcal}
                 onChange={(k, v) => setLabelForm(f => ({ ...f, [k]: v }))} />
             </div>
 
