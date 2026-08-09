@@ -190,6 +190,10 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
   // такие числа уже понизил до примерных; здесь остаётся объяснить человеку,
   // что именно проверить.
   const [macroIssue, setMacroIssue] = useState(null)
+  // Съёмка ничего не дала, но карточка на этот код уже была — на экране лежат
+  // ПРЕЖНИЕ цифры, а не результат этого снимка. Молчать об этом нельзя: человек
+  // решит, что таблица прочиталась, и подтвердит чужую прикидку как точную.
+  const [keptPrevious, setKeptPrevious] = useState(false)
 
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
@@ -469,6 +473,7 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
     setLabelBasis(['estimate', 'web'].includes(p.basis) ? p.basis : 'label')
     setLabelSource(p.sourceName && p.sourceUrl ? { name: p.sourceName, url: p.sourceUrl } : null)
     setMacroIssue(p.macroIssue || null)
+    setKeptPrevious(json.keptPrevious === true)
     setLabelEmpty(p.kcal100 === null && p.p100 === null && p.c100 === null && p.f100 === null)
     setStage('confirm')
   }
@@ -910,6 +915,15 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
                   {labelSource.name}
                 </a>
                 {' — открой и сверь, что это тот же вкус и вес, что у тебя в руках.'}
+              </div>
+            )}
+
+            {/* Съёмка не дала пригодных чисел, но карточка уже была — на
+                экране прежние цифры. Говорим прямо и сразу даём выход. */}
+            {keptPrevious && (
+              <div style={{ background: SURF2, border: `1px solid ${HAIR}`, borderRadius: 12, padding: '12px 14px', marginBottom: 12, fontSize: 15, lineHeight: 1.45, color: TXT }}>
+                Таблицу разобрать не смог, оставил прежние цифры.
+                Переснимите резче — так, чтобы таблица занимала весь кадр, — или поправьте числа руками.
               </div>
             )}
 

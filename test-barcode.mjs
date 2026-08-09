@@ -742,9 +742,10 @@ assertEqual('не объект — негодна', hasUsableMacros(null), false
     name: 'Творог 2%', kcal100: 99, p100: 17, c100: 3.3, f100: 2,
     per: '100g', basis: 'label', readable: true, ...extra,
   })
-  assertEqual('label без цитаты → понижен до estimate', say({}).basis, 'estimate')
-  assertEqual('label с пустой цитатой → estimate', say({ table_quote: '   ' }).basis, 'estimate')
-  assertEqual('label с цитатой без цифр → estimate', say({ table_quote: 'таблица есть' }).basis, 'estimate')
+  // ЦИТАТА БОЛЬШЕ НЕ ПРОПУСК. Верно прочитанная таблица без цитаты
+  // отвергалась зря — решает сходимость, а не наличие цитаты.
+  assertEqual('label без цитаты, но числа сходятся → остаётся label', say({}).basis, 'label')
+  assertEqual('label с пустой цитатой и сходимостью → label', say({ table_quote: '   ' }).basis, 'label')
   assertEqual('label с настоящей цитатой остаётся label',
     say({ table_quote: 'белки 17 г; жиры 2 г; углеводы 3,3 г; 99 ккал' }).basis, 'label')
   assertEqual('цитата доезжает до клиента',
@@ -762,6 +763,33 @@ assertEqual('не объект — негодна', hasUsableMacros(null), false
     [say({ basis: 'estimate', kcal100: 749, p100: 9, c100: 33, f100: 31 }).basis,
       say({ basis: 'estimate', kcal100: 749, p100: 9, c100: 33, f100: 31 }).macroIssue],
     ['estimate', 'too_high'])
+}
+
+// ── Вес отдельным полем ───────────────────────────────────────────────────
+// Двух попыток вписать вес внутрь названия не хватило: он терялся у пяти
+// товаров из тринадцати оба раза. Отдельное поле надёжнее инструкции.
+{
+  const say = extra => normalizeLabelProduct('1', {
+    name: 'Зефир ванильный', kcal100: 326, p100: 0.8, c100: 79, f100: 0,
+    per: '100g', basis: 'estimate', readable: true, ...extra,
+  })
+  assertEqual('вес приклеивается к названию', say({ net_weight: '255 г' }).name, 'Зефир ванильный 255 г')
+  assertEqual('вес без пробела нормализуется', say({ net_weight: '255г' }).name, 'Зефир ванильный 255 г')
+  assertEqual('мультиупаковка', say({ net_weight: '5x80 г' }).name, 'Зефир ванильный 5 × 80 г')
+  assertEqual('объём в мл', say({ net_weight: '330 мл' }).name, 'Зефир ванильный 330 мл')
+  // Не видно на упаковке — поле пустое, ничего не выдумываем и не дописываем.
+  assertEqual('без веса название не меняется', say({}).name, 'Зефир ванильный')
+  assertEqual('пустой вес не приклеивается', say({ net_weight: '' }).name, 'Зефир ванильный')
+  // Мусор вместо веса в НАЗВАНИЕ товара пускать нельзя — оно ищется людьми.
+  assertEqual('мусор вместо веса отбрасывается', say({ net_weight: 'выгодная упаковка' }).name, 'Зефир ванильный')
+  assertEqual('«примерно полкило» — не вес', say({ net_weight: 'примерно полкило' }).name, 'Зефир ванильный')
+  // Модель уже вписала вес в название — второй раз не приписываем.
+  assertEqual('дубля веса не будет',
+    normalizeLabelProduct('1', { name: 'Зефир ванильный 255 г', net_weight: '255 г', kcal100: 326, p100: 0.8, c100: 79, f100: 0, per: '100g', basis: 'estimate', readable: true }).name,
+    'Зефир ванильный 255 г')
+  assertEqual('дубля не будет и при слитном написании',
+    normalizeLabelProduct('1', { name: 'Зефир ванильный 255г', net_weight: '255 г', kcal100: 326, p100: 0.8, c100: 79, f100: 0, per: '100g', basis: 'estimate', readable: true }).name,
+    'Зефир ванильный 255г')
 }
 
 assertEqual('ai_estimate — неуточнённый', isSoftSource('ai_estimate'), true)
@@ -1069,6 +1097,41 @@ process.env.LABEL_WEB_SEARCH = 'on'
   assertEqual('JSON находится, даже если после него ещё два блока', res.body?.ok, true)
   assertEqual('хвост после JSON не сбивает источник', res.body?.product?.sourceName, 'vkusvill.ru')
   assertEqual('хвост после JSON не сбивает числа', res.body?.product?.kcal100, 322)
+}
+
+// ── Неудачная съёмка не отбирает то, что уже было ─────────────────────────
+// У творожка «снимок таблицы» оказался фотографией открытой пачки: строгие
+// проверки честно отвергли всё, и человек остался без цифр, хотя прикидка у
+// него уже была. Терять полученное нельзя.
+{
+  const known = { barcode: '4600682000129', name: 'Творог 2%', brand: 'Простоквашино', kcal100: 99, p100: 17, c100: 3.3, f100: 2, source: 'ai_estimate' }
+  const unreadable = () => json(modelSays({ readable: false }))
+  const { res } = await callChat(LABEL_BODY, { profile: PAID_PROFILE, cachedRow: known, anthropic: unreadable })
+  assertEqual('съёмка не удалась, но карточка была: отдана она', res.body?.ok, true)
+  assertEqual('отданы прежние числа', res.body?.product?.kcal100, 99)
+  assertEqual('помечено, что это прежняя карточка', res.body?.keptPrevious, true)
+  assertEqual('прежняя прикидка так и осталась прикидкой', res.body?.product?.basis, 'estimate')
+}
+{
+  // Разобралось, но чисел нет вовсе — тот же случай: прежние не теряем.
+  const known = { barcode: '4600682000129', name: 'Творог 2%', brand: 'Простоквашино', kcal100: 99, p100: 17, c100: 3.3, f100: 2, source: 'ai_photo' }
+  const empty = () => json(modelSays({ name: 'Творог', kcal100: null, p100: null, c100: null, f100: null, basis: 'estimate', readable: true }))
+  const { res } = await callChat(LABEL_BODY, { profile: PAID_PROFILE, cachedRow: known, anthropic: empty })
+  assertEqual('пустые числа: отдана прежняя карточка', res.body?.keptPrevious, true)
+  assertEqual('точная прежняя осталась точной', res.body?.product?.basis, 'label')
+}
+{
+  // Прежней карточки НЕТ — терять нечего, честный отказ как раньше.
+  const { res } = await callChat(LABEL_BODY, { profile: PAID_PROFILE, anthropic: () => json(modelSays({ readable: false })) })
+  assertEqual('прежней карточки нет: обычный отказ', [res.body?.ok, res.body?.reason], [false, 'unreadable'])
+  assertEqual('отказ не помечен как сохранение прежнего', res.body?.keptPrevious, undefined)
+}
+{
+  // Съёмка удалась — прежняя карточка ни при чём, отдаём новое.
+  const known = { barcode: '4600682000129', name: 'Творог 2%', brand: 'Простоквашино', kcal100: 99, p100: 17, c100: 3.3, f100: 2, source: 'ai_estimate' }
+  const { res } = await callChat(LABEL_BODY, { profile: PAID_PROFILE, cachedRow: known })
+  assertEqual('удачная съёмка: прежнее не подставляется', res.body?.keptPrevious, undefined)
+  assertEqual('удачная съёмка: числа из ответа модели', res.body?.product?.kcal100, 121)
 }
 {
   // Ответ оборвался на потолке токенов посреди поиска — JSON не пришёл.

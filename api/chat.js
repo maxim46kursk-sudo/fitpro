@@ -6,7 +6,7 @@ import { rateLimit } from './_ratelimit.js'
 // обеих ручках. Файл с подчёркиванием — не serverless-функция.
 import {
   parseModelJson, normalizeLabelProduct, isValidBarcode, isSoftSource,
-  cleanSourceLink, sanitizeMacros,
+  cleanSourceLink, sanitizeMacros, hasUsableMacros, fromRow,
 } from './_foodProduct.js'
 
 // Потолок времени выполнения функции. Без него Vercel рубит ответ по короткому
@@ -219,7 +219,7 @@ const USAGE_KEY_SEARCH = 'food_label_web'
 const LABEL_PROMPT = `На фото — упаковка продукта питания. Это может быть ЛЮБАЯ сторона упаковки: лицевая с названием или обратная с таблицей пищевой ценности.
 
 Ответь СТРОГО одним JSON-объектом, без markdown-обёртки и без пояснений:
-{"name": string, "brand": string|null, "kcal100": number|null, "p100": number|null, "c100": number|null, "f100": number|null, "per": "100g"|"portion"|"unknown", "portion_g": number|null, "basis": "label"|"estimate", "table_quote": string|null, "readable": true|false}
+{"name": string, "brand": string|null, "net_weight": string|null, "kcal100": number|null, "p100": number|null, "c100": number|null, "f100": number|null, "per": "100g"|"portion"|"unknown", "portion_g": number|null, "basis": "label"|"estimate", "table_quote": string|null, "readable": true|false}
 
 Действуй по порядку:
 
@@ -239,12 +239,15 @@ const LABEL_PROMPT = `На фото — упаковка продукта пит
 Поля:
 - name — ПОЛНОЕ название с пачки, ПО-РУССКИ. Это самое важное поле: по нему продукт потом отличают от соседей по полке, и его человек видит у себя в дневнике.
   ЯЗЫК. Название пиши по-русски. Есть русская сторона упаковки или русский стикер импортёра — бери оттуда дословно. Нет — переведи: «Maïs sans sucres ajoutés» → «Кукуруза сладкая без сахара», «Naturally Brewed Soy Sauce» → «Соевый соус натурального брожения». МАРКУ (brand) НЕ переводи и не транслитерируй: Pringles, Kikkoman, Bombbar так и остаются латиницей.
-  ВКУС, ЛИНЕЙКА, ЖИРНОСТЬ И ВЕС — ЧАСТЬ НАЗВАНИЯ, а не деталь и не украшение. Выброси их — и разные товары станут неотличимы.
-  ВЕС ИЛИ ОБЪЁМ ОБЯЗАТЕЛЕН, если он напечатан на упаковке и виден в кадре: «165 г», «950 мл», «5 × 80 г». Ищи его специально — обычно он внизу лицевой стороны, некрупно. Не видно — не пиши и не выдумывай.
-  Правильно: «VITAMIN зефир с кусочками брусники 255 г», «Активиа черника 2.9% 130 г», «Чипсы Original 165 г», «Соевый соус натурального брожения 150 мл».
-  Неправильно: «Зефир с кусочками брусники» (у той же марки есть зефир с другими ягодами — их не различить), «Активиа» (вкусов десяток), «Original» (ни вида продукта, ни веса), «Naturally Brewed Soy Sauce» (не по-русски).
+  ВКУС, ЛИНЕЙКА И ЖИРНОСТЬ — ЧАСТЬ НАЗВАНИЯ, а не деталь и не украшение. Выброси их — и разные товары станут неотличимы. ВЕС в name писать НЕ надо: для него отдельное поле net_weight, его допишут без тебя.
+  Правильно: «VITAMIN зефир с кусочками брусники», «Активиа черника 2.9%», «Чипсы Original», «Соевый соус натурального брожения».
+  Неправильно: «Зефир с кусочками брусники» (у той же марки есть зефир с другими ягодами — их не различить), «Активиа» (вкусов десяток), «Original» (нет вида продукта), «Naturally Brewed Soy Sauce» (не по-русски).
   Что НЕ берём: КАПС (пиши обычными буквами), «БЗМЖ», «ГОСТ», «ТУ», «новинка», «premium», «без ГМО», рекламные обещания.
 - brand — торговая марка отдельно от названия («Простоквашино», «NEO botanica», «Домик в деревне»). Если марки не видно — null. Марку в name не дублируй.
+- net_weight — МАССА НЕТТО ИЛИ ОБЪЁМ, как напечатано на упаковке, одной короткой строкой: «255 г», «950 мл», «0,5 л», «5 × 80 г», «12 шт».
+  Ищи его специально: обычно внизу лицевой стороны, некрупно, иногда рядом со знаком EAC или в углу. Это отдельный вопрос, а не часть названия — ответь на него отдельно.
+  Пиши ТОЛЬКО то, что видишь напечатанным. Не видно, закрыто пальцем, обрезано кадром — null. Не считай вес по размеру пачки и не бери его из своих знаний о товаре.
+  Не путай с массой порции из таблицы («в 60 г») и с количеством в мультиупаковке без единиц.
 - kcal100/p100/c100/f100 — калорийность (ккал), белки, углеводы, жиры (граммы).
 - per — на какой вес приведены числа: "100g" — на 100 г продукта, "portion" — на порцию/упаковку, "unknown" — не указано. При basis="estimate" давай значения на 100 г и per="100g".
 - portion_g — вес порции в граммах, если per="portion" и вес указан. Иначе null.
@@ -317,15 +320,23 @@ function parseLabelInput(req) {
 // Упавший запрос к базе не должен уронить распознавание, за которое человек
 // уже отдал одну из своих суточных попыток.
 async function alreadyKnown(supabaseAdmin, barcode) {
-  if (!supabaseAdmin) return false
+  const row = await existingCard(supabaseAdmin, barcode)
+  return !!row && !isSoftSource(row.source)
+}
+
+// Карточка на этот штрих-код, какая бы ни была. Нужна двум местам: проверке
+// «искать ли в интернете» выше и спасению прежних цифр ниже.
+async function existingCard(supabaseAdmin, barcode) {
+  if (!supabaseAdmin) return null
   try {
     const { data, error } = await supabaseAdmin
-      .from('food_products').select('source').eq('barcode', barcode).maybeSingle()
-    if (error || !data) return false
-    return !isSoftSource(data.source)
+      .from('food_products')
+      .select('barcode,name,brand,kcal100,p100,c100,f100,source')
+      .eq('barcode', barcode).maybeSingle()
+    return error ? null : data
   } catch (e) {
-    console.error(`Этикетка ${barcode}: не проверить справочник перед поиском:`, e?.message)
-    return false
+    console.error(`Этикетка ${barcode}: не прочитать справочник:`, e?.message)
+    return null
   }
 }
 
@@ -447,6 +458,29 @@ async function handleFoodLabel(req, res, { userId, barcode, image, paid, supabas
   // выдать 5400 ккал/100 г, отрицательный белок или JSON не той формы — эти
   // числа поедут в ОБЩИЙ справочник, из которого их потом будут брать все.
   const product = normalizeLabelProduct(barcode, seen.parsed)
+
+  // НОВАЯ ПОПЫТКА НЕ ДАЛА ЦИФР — НО ПРЕЖНИЕ ЕСТЬ.
+  //
+  // Живой случай: у творожка «снимок таблицы» оказался фотографией открытой
+  // пачки. Строгие проверки честно отвергли всё — и человек остался вообще без
+  // цифр, хотя прикидка с лицевой стороны у него уже была. Терять то, что уже
+  // получено, нельзя: неудачная пересъёмка не должна стоить дороже, чем ничего.
+  //
+  // Отдаём прежнюю карточку и прямо говорим, что это она, а не результат
+  // съёмки. Условие широкое намеренно: и когда не разобралось вообще, и когда
+  // разобралось, но без пригодных чисел.
+  if (!product || !hasUsableMacros(product)) {
+    const prev = await existingCard(supabaseAdmin, barcode)
+    if (prev && hasUsableMacros(fromRow(prev))) {
+      console.log(`Этикетка ${barcode} (${userId}): не разобрана, оставляем прежнюю карточку «${prev.name}»`)
+      return res.status(200).json({
+        ok: true,
+        product: { ...fromRow(prev), basis: isSoftSource(prev.source) ? 'estimate' : 'label', per: '100g', macroIssue: null, tableQuote: null, sourceName: null, sourceUrl: null },
+        keptPrevious: true,
+      })
+    }
+  }
+
   if (!product) {
     // Один ответ на три случая — модель не разобрала ничего, названия нет,
     // вернула не JSON: пользователю во всех трёх нужно ровно одно и то же —
