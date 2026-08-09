@@ -57,3 +57,8 @@ fitpro_security_3.md
 # Скриншоты проверок вёрстки (qa/confirm-card.html) — артефакты прогона,
 # в репозитории им делать нечего.
 qa/shots/
+
+# Фотографии товаров для прогонов (qa/photos) — бинарники, качаются скриптом.
+qa/photos/
+qa/_pool*.json
+qa/_codes.json
