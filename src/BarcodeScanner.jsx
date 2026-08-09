@@ -181,6 +181,10 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
   // «Карточку успел завести кто-то другой» — показываем на экране порции,
   // иначе расхождение с набранными числами выглядит как потеря правки.
   const [productNote, setProductNote] = useState(null)
+  // Найденный сервером товар с таким же названием и маркой под другим кодом:
+  // { candidate, incoming }. Решить, дубль это или другой вкус линейки, может
+  // только человек с пачкой в руках — см. стадию 'similar'.
+  const [similar, setSimilar] = useState(null)
 
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
@@ -464,7 +468,12 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
   }
 
   // ── Подтверждённая карточка → в общий справочник → сразу к порции
-  const saveProduct = async () => {
+  //
+  // answer — ответ на вопрос «тот же продукт или другой вкус», если сервер его
+  // задал. Без ответа сервер спрашивает; с ответом — делает то, что выбрал
+  // человек. Первый вызов идёт без него намеренно: пока не знаем, есть ли
+  // похожая карточка, спрашивать не о чем.
+  const saveProduct = async (answer = null) => {
     if (saving) return
     if (!String(labelForm.name).trim()) { setPhotoError('Впиши название продукта'); return }
     setSaving(true)
@@ -480,7 +489,14 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
           // basis, а НЕ source: какой источник записать, решает сервер
           // (api/_foodProduct.js, basisToSource). Клиент, объявляющий свою
           // карточку точной, навсегда закрыл бы её от обновления из OFF.
-          body: JSON.stringify({ barcode: scannedCode, basis: labelBasis, ...labelForm }),
+          body: JSON.stringify({
+            barcode: scannedCode, basis: labelBasis, ...labelForm,
+            // Ровно одно из двух и только после ответа человека: sameAs —
+            // «тот же продукт», привязать код к найденной карточке; distinct —
+            // «другой вкус», завести свою несмотря на совпадение названия.
+            ...(answer === 'same' ? { sameAs: similar?.candidate?.barcode } : {}),
+            ...(answer === 'distinct' ? { distinct: true } : {}),
+          }),
         })
       } catch {
         setPhotoError('Нет связи с сервером. Проверь интернет и попробуй ещё раз.')
@@ -491,16 +507,34 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
         return
       }
       const json = await res.json().catch(() => null)
+
+      // Нашёлся товар с таким же названием и маркой под другим кодом. Сервер
+      // НЕ решает за человека: у производителя бывает линейка вкусов, которые
+      // модель называет одинаково, и молчаливое слияние подставило бы чужие
+      // КБЖУ незаметно. Показываем обе карточки рядом и спрашиваем.
+      if (json?.reason === 'similar_exists' && json.candidate) {
+        setSimilar({ candidate: json.candidate, incoming: json.incoming })
+        setStage('similar')
+        return
+      }
+
       if (!json?.ok || !json.product) {
         setPhotoError('Не удалось сохранить продукт. Попробуй ещё раз.')
         return
       }
-      // created:false — карточку на этот штрих-код кто-то завёл раньше нас, и
-      // сервер вернул ЕЁ, а не нашу (данные OFF и чужой труд не перезаписываем).
-      // Молча подменять числа под носом нельзя — говорим прямо.
-      setProductNote(json.created === false
-        ? 'Карточку на этот штрих-код уже завели раньше — используем её данные.'
-        : null)
+      // Числа на экране порции могут отличаться от только что подтверждённых —
+      // молча подменять их под носом нельзя, объясняем причину. Причины две и
+      // они разные:
+      //  • linked — тот же товар уже есть под ДРУГИМ штрих-кодом (у одной пачки
+      //    их бывает несколько), и мы привязали код к нему, а не завели дубль
+      //    со своими цифрами;
+      //  • created:false — карточку на ЭТОТ код кто-то завёл раньше нас, и
+      //    сервер вернул её (данные OFF и чужой труд не перезаписываем).
+      setProductNote(
+        json.linked ? 'Такой продукт уже есть в базе под другим штрих-кодом — привязали код к нему и взяли его цифры.'
+          : json.created === false ? 'Карточку на этот штрих-код уже завели раньше — используем её данные.'
+            : null,
+      )
       setProduct(json.product)
       setGrams(String(GRAMS_DEFAULT))
       setStage('result')
@@ -565,8 +599,9 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
     stage === 'result' ? 'Порция'
       : stage === 'manual' ? 'Ввод штрих-кода'
         : stage === 'confirm' ? 'Проверь данные'
-          : stage === 'photo' ? 'Этикетка'
-            : 'Сканирование'
+          : stage === 'similar' ? 'Похожий продукт'
+            : stage === 'photo' ? 'Этикетка'
+              : 'Сканирование'
 
   return createPortal(
     <div style={overlay}>
@@ -794,6 +829,59 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
         )}
 
         {/* ── Сверка распознанного с этикеткой */}
+        {/* ── Тот же продукт или другой вкус: решает человек
+            Совпало название и марка — но у производителя бывает линейка
+            вкусов, которые модель называет одинаково. Слить их молча значило бы
+            подставить чужие КБЖУ незаметно: числа выглядят правдоподобно, и
+            сверить их не с чем. Поэтому обе карточки показываем РЯДОМ и с
+            цифрами — по ним разница видна сразу, — и спрашиваем прямо. */}
+        {stage === 'similar' && similar && (
+          <div style={pad}>
+            <div style={{ fontSize: 15, lineHeight: 1.45, color: TXT, marginBottom: 4 }}>
+              В базе уже есть продукт с таким же названием и маркой.
+            </div>
+            <div style={{ fontSize: 13, color: TXT2, marginBottom: 14, lineHeight: 1.45 }}>
+              У одного производителя бывает несколько вкусов с почти одинаковыми названиями.
+              Сравни цифры с пачкой: это тот же продукт или другой?
+            </div>
+
+            {[
+              ['Уже в базе', similar.candidate],
+              ['То, что ты снял', similar.incoming],
+            ].map(([title, card]) => (
+              <div key={title} style={{ background: SURF, border: `1px solid ${HAIR}`, borderRadius: 12, padding: '12px 14px', marginBottom: 10 }}>
+                <div style={{ fontSize: 11, color: TXT3, fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.4 }}>{title}</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: TXT }}>{card?.name}</div>
+                {card?.brand && <div style={{ fontSize: 13, color: TXT2, marginBottom: 6 }}>{card.brand}</div>}
+                <div style={{ fontSize: 13, color: TXT2, marginTop: 6 }}>
+                  На 100 г: <span style={{ color: KCAL, fontWeight: 700 }}>{num(card?.kcal100)} ккал</span>
+                  {' · '}Б {num(card?.p100)} · У {num(card?.c100)} · Ж {num(card?.f100)}
+                </div>
+              </div>
+            ))}
+
+            <button onClick={() => saveProduct('same')} disabled={saving}
+              style={{ ...primaryBtn, marginTop: 6, opacity: saving ? 0.5 : 1 }}>
+              {saving ? 'Сохраняю…' : 'Это тот же продукт'}
+            </button>
+            <div style={{ fontSize: 12, color: TXT3, margin: '6px 0 12px', textAlign: 'center', lineHeight: 1.45 }}>
+              Привяжем этот штрих-код к карточке из базы и возьмём её цифры
+            </div>
+
+            <button onClick={() => saveProduct('distinct')} disabled={saving}
+              style={{ ...ghostBtn, opacity: saving ? 0.5 : 1 }}>
+              Это другой вкус
+            </button>
+            <div style={{ fontSize: 12, color: TXT3, marginTop: 6, textAlign: 'center', lineHeight: 1.45 }}>
+              Заведём отдельную карточку с теми цифрами, что ты подтвердил
+            </div>
+
+            <button onClick={() => { setSimilar(null); setStage('confirm') }} style={{ ...ghostBtn, marginTop: 12 }}>
+              Назад к данным
+            </button>
+          </div>
+        )}
+
         {stage === 'confirm' && (
           <div style={pad}>
             <div style={{ fontSize: 13, color: TXT2, marginBottom: 4 }}>Проверь, совпадает ли с этикеткой</div>

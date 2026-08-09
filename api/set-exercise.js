@@ -145,11 +145,35 @@ async function handleBarcode(req, res) {
   // без похода наружу.
   let cachedSoft = null
   if (supabaseAdmin) {
-    const { data: cached, error: cacheError } = await supabaseAdmin
+    let { data: cached, error: cacheError } = await supabaseAdmin
       .from('food_products')
       .select(CARD_COLUMNS)
       .eq('barcode', code)
       .maybeSingle()
+
+    // Промах по главному коду — пробуем дополнительные (food_products.barcodes,
+    // см. sql/2026-08-09_food_products_aliases.sql). Один товар физически
+    // бывает под несколькими кодами: у того зефира их два, оба с верной
+    // контрольной суммой.
+    //
+    // ВТОРЫМ запросом, а не переписанным первым, и это осознанно: обращение по
+    // первичному ключу остаётся самым быстрым путём и работает как работало, а
+    // лишний поход по GIN-индексу случается только на промахе — там, где мы и
+    // так собирались в сеть за Open Food Facts, то есть на порядок дороже.
+    if (!cacheError && !cached) {
+      const alias = await supabaseAdmin
+        .from('food_products')
+        .select(CARD_COLUMNS)
+        .contains('barcodes', [code])
+        .maybeSingle()
+      if (alias.error) {
+        console.error(`Штрих-код ${code}: ошибка поиска по дополнительным кодам:`, alias.error)
+      } else if (alias.data) {
+        console.log(`Штрих-код ${code}: найден как дополнительный код карточки ${alias.data.barcode}`)
+        cached = alias.data
+      }
+    }
+
     if (cacheError) {
       // Кэш отвалился — не повод отказывать пользователю, идём в OFF.
       console.error(`Штрих-код ${code}: ошибка чтения кэша:`, cacheError)
@@ -640,6 +664,72 @@ async function handleSaveProduct(req, res, { supabaseAdmin, userId }) {
     return res.status(500).json({ error: 'Не удалось сохранить продукт' })
   }
   if (existing) return resolveExisting(existing)
+
+  // ── Тот же товар под другим кодом — ИЛИ другой вкус той же линейки?
+  //
+  // Карточки на этот код нет, но товар с таким же названием и маркой может уже
+  // лежать под другим штрих-кодом. Один товар физически бывает под несколькими
+  // кодами (у того зефира их два, у обоих верна контрольная сумма), и заводить
+  // на каждый свою карточку с разными числами — плохо.
+  //
+  // НО СОВПАДЕНИЕ НАЗВАНИЯ ДУБЛЯ НЕ ДОКАЗЫВАЕТ, и это главное здесь. У
+  // производителя линейка вкусов, а модель, читая пачку, называет их
+  // одинаково: в справочнике есть две строки «Зефир с кусочками брусники»
+  // NEO botanica с разными числами — и это РАЗНЫЕ вкусы. Слив их
+  // автоматически, мы подставили бы человеку чужие КБЖУ, причём незаметно:
+  // числа выглядят правдоподобно, сверить их не с чем.
+  //
+  // Поэтому сервер не решает, а СПРАШИВАЕТ: отдаёт обе карточки клиенту, тот
+  // показывает их рядом и задаёт прямой вопрос — тот же продукт или другой
+  // вкус. Ответ возвращается сюда явным полем:
+  //   sameAs  — «тот же»: привязываем код к существующей карточке;
+  //   distinct — «другой»: заводим свою, несмотря на совпадение названия.
+  const sameAs = String(req.body?.sameAs ?? '').trim()
+  const distinct = req.body?.distinct === true
+
+  if (!sameAs && !distinct) {
+    const { data: similar, error: similarError } = await supabaseAdmin
+      .rpc('find_product_by_name', { p_barcode: barcode, p_name: name, p_brand: brand })
+    if (similarError) {
+      // Не удалось проверить — не повод терять карточку: заводим обычным путём.
+      // Худший исход прежний (дубль), а не потеря данных и не ложное слияние.
+      console.error(`save-product ${barcode}: не проверить похожие карточки:`, similarError)
+    } else if (similar) {
+      console.log(`save-product: ${barcode} «${name}» похож на ${similar.barcode} — спрашиваем человека`)
+      return res.status(200).json({
+        ok: false,
+        reason: 'similar_exists',
+        candidate: fromRow(similar),
+        incoming: { barcode, name, brand, ...macros },
+      })
+    }
+  }
+
+  if (sameAs) {
+    // Человек подтвердил, что это тот же продукт. Привязка атомарная, внутри
+    // link_barcode: читать «есть ли такой товар» и дописывать код двумя
+    // запросами нельзя — двое, сканирующие одну пачку одновременно, оба
+    // увидели бы «нет» и завели по карточке.
+    //
+    // Числа, которые человек только что подтвердил, при этом отбрасываются, и
+    // это намеренно: в справочнике уже есть значение, на которое могли
+    // сослаться чужие записи в дневниках, и менять его задним числом из-за
+    // нового скана нельзя. Уточнять цифры существующей карточки — работа
+    // правила приоритета источников (resolveExisting), а не привязки кода.
+    const { data: linked, error: linkError } = await supabaseAdmin
+      .rpc('link_barcode', { p_barcode: barcode, p_name: name, p_brand: brand })
+    if (linkError) {
+      console.error(`save-product ${barcode}: не удалось привязать код:`, linkError)
+      return res.status(500).json({ error: 'Не удалось сохранить продукт' })
+    }
+    if (linked) {
+      console.log(`save-product: пользователь ${userId} привязал код ${barcode} к карточке ${linked.barcode} «${name}»`)
+      return res.status(200).json({ ok: true, product: fromRow(linked), created: false, linked: true })
+    }
+    // Карточка исчезла между вопросом и ответом (её могли удалить). Не ошибка:
+    // заводим свою обычным путём ниже.
+    console.log(`save-product: ${barcode} — карточка для привязки не найдена, заводим новую`)
+  }
 
   // insert, а НЕ upsert: upsert по определению перезаписал бы чужую карточку,
   // а нам нужно ровно обратное — проиграть гонку молча.

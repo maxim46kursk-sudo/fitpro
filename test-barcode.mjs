@@ -284,6 +284,15 @@ function stubFetch({ cache = {}, off = null, offFail = null }) {
     const u = new URL(String(url))
     if (u.host === SUPA_HOST) {
       if ((opts.method || 'GET') === 'GET') {
+        // Поиск по ДОПОЛНИТЕЛЬНОМУ коду: .contains('barcodes', [code]) уходит
+        // в PostgREST как barcodes=cs.{код}. Отдельная ветка, потому что это
+        // второй запрос ветки barcode, и он ходит не по первичному ключу.
+        const cs = u.searchParams.get('barcodes') || ''
+        if (cs) {
+          const code = cs.replace(/^cs\.\{/, '').replace(/\}$/, '')
+          const row = Object.values(cache).find(r => (r.barcodes || []).includes(code))
+          return json(row ? [row] : [])
+        }
         const eq = u.searchParams.get('barcode') || ''
         const code = eq.replace(/^eq\./, '')
         const row = cache[code]
@@ -379,6 +388,30 @@ const OFF_NUTELLA = {
   })
   assertEqual('кэш: numeric строкой приводится к числу',
     res.body?.product, { barcode: '3017620422003', name: 'X', brand: null, kcal100: 539, p100: 6.3, c100: 57.5, f100: 30.9, source: 'off' })
+}
+{
+  // Скан дал ДРУГОЙ код того же товара. По первичному ключу промах, но код
+  // записан в barcodes существующей карточки — отдаём её, в OFF не ходим.
+  const { res, writes } = await call('1647516027856', {
+    cache: {
+      '2627326027856': {
+        barcode: '2627326027856', name: 'Зефир с кусочками брусники', brand: 'NEO botanica',
+        kcal100: 138, p100: 0.4, c100: 34, f100: 0, source: 'off', barcodes: ['1647516027856'],
+      },
+    },
+  })
+  assertEqual('дополнительный код: товар найден', res.body?.found, true)
+  assertEqual('дополнительный код: отданы цифры карточки', res.body?.product?.kcal100, 138)
+  assertEqual('дополнительный код: отдан главный код товара', res.body?.product?.barcode, '2627326027856')
+  assertEqual('дополнительный код: второй карточки не заводим', writes.length, 0)
+}
+{
+  // Кода нет ни в первичном ключе, ни в barcodes — обычный промах, идём в OFF.
+  const { res } = await call('9999999999999', {
+    cache: { '2627326027856': { barcode: '2627326027856', name: 'Зефир', brand: null, kcal100: 138, p100: 0.4, c100: 34, f100: 0, source: 'off', barcodes: ['1647516027856'] } },
+    off: { status: 0 },
+  })
+  assertEqual('чужой код не цепляется к чужим barcodes', res.body?.found, false)
 }
 {
   // ПУСТАЯ СТРОКА В СПРАВОЧНИКЕ — НЕ ПОПАДАНИЕ. Она выглядит находкой и этим
@@ -1280,12 +1313,39 @@ console.log('\n── Handler /api/set-exercise?action=save-product ────
 const CARD = { barcode: '4600682000129', name: 'Творог 5%', brand: 'Простоквашино', kcal100: 121, p100: 16, c100: 3, f100: 5 }
 
 // Подмена сети set-exercise: auth + чтение/запись food_products.
-function stubSave({ rows = {}, insertFails = null, uid = TEST_UID } = {}) {
+function stubSave({ rows = {}, insertFails = null, uid = TEST_UID, linkFails = false, findFails = false } = {}) {
   const writes = []
   globalThis.fetch = async (url, opts = {}) => {
     const u = new URL(String(url))
     if (u.host !== SUPA_HOST) throw new Error(`неожиданный хост: ${u.host}`)
     if (u.pathname.startsWith('/auth/v1/user')) return json({ id: uid, aud: 'authenticated' })
+
+    // Обе функции ищут одинаково — по названию и марке без учёта регистра и
+    // краевых пробелов, среди чужих кодов. Сортировка кандидатов в стабе не
+    // воспроизводится: в тестах совпадение всегда одно.
+    const norm = v => String(v ?? '').trim().toLowerCase()
+    const findByName = (p_barcode, p_name, p_brand) => Object.values(rows).find(r =>
+      r.barcode !== p_barcode && norm(r.name) === norm(p_name) && norm(r.brand) === norm(p_brand))
+
+    // find_product_by_name — ТОЛЬКО чтение: находит кандидата, чтобы спросить
+    // человека. Ничего не меняет и ничего не решает.
+    if (u.pathname === '/rest/v1/rpc/find_product_by_name') {
+      if (findFails) return json({ message: 'find failed' }, 500)
+      const { p_barcode, p_name, p_brand } = JSON.parse(opts.body)
+      return json(findByName(p_barcode, p_name, p_brand) || null)
+    }
+
+    // link_barcode — привязка ещё одного кода к существующей карточке. Зовётся
+    // только после того, как человек ответил «это тот же продукт».
+    if (u.pathname === '/rest/v1/rpc/link_barcode') {
+      if (linkFails) return json({ message: 'link failed' }, 500)
+      const { p_barcode, p_name, p_brand } = JSON.parse(opts.body)
+      const hit = findByName(p_barcode, p_name, p_brand)
+      if (!hit) return json(null)
+      hit.barcodes = [...(hit.barcodes || []), p_barcode]
+      writes.push({ rpc: 'link_barcode', barcode: p_barcode, to: hit.barcode })
+      return json(hit)
+    }
     if (u.pathname.startsWith('/rest/v1/food_products')) {
       // .single() в supabase-js просит у PostgREST один ОБЪЕКТ
       // (Accept: application/vnd.pgrst.object+json) и массив не разворачивает;
@@ -1463,6 +1523,124 @@ const estRow = extra => ({ barcode: '4600682000129', name: 'Творог ста�
   const { res, writes } = await callSave({ ...CARD, basis: 'estimate' }, { rows: { '4600682000129': { ...estRow(), source: 'off' } } })
   assertEqual('estimate НЕ вытесняет off', writes.length, 0)
   assertEqual('estimate поверх off: отдана точная карточка', res.body?.product?.source, 'off')
+}
+
+// ── Похожий товар: спрашиваем человека, а не сливаем молча ────────────────
+//
+// Совпало название и марка — это ЕЩЁ НЕ ДУБЛЬ. У производителя линейка вкусов,
+// которые модель называет одинаково: в базе прямо сейчас две строки «Зефир с
+// кусочками брусники» NEO botanica с разными числами, и это РАЗНЫЕ вкусы.
+// Автоматическое слияние подставило бы человеку чужие КБЖУ незаметно — числа
+// выглядят правдоподобно, сверить их не с чем.
+console.log('\n── save-product: похожий товар — вопрос, а не слияние ─────────────')
+
+const zefir = extra => ({
+  barcode: '2627326027856', name: 'Зефир с кусочками брусники', brand: 'NEO botanica',
+  kcal100: 138, p100: 0.4, c100: 34, f100: 0, source: 'ai_estimate', barcodes: [], ...extra,
+})
+// Та же марка и то же название, другой код, другие числа — но, возможно, это
+// вообще другой вкус линейки. Решать не нам.
+const zefirSecond = {
+  barcode: '1647516027856', name: 'Зефир с кусочками брусники', brand: 'NEO botanica',
+  kcal100: 135, p100: 0.4, c100: 34, f100: 0, basis: 'estimate',
+}
+
+{
+  // ГЛАВНОЕ: молча не сливаем и молча не заводим — спрашиваем.
+  const rows = { '2627326027856': zefir() }
+  const { res, writes } = await callSave(zefirSecond, { rows })
+  assertEqual('одинаковое название: молча НЕ сливается', res.body?.linked, undefined)
+  assertEqual('одинаковое название: молча НЕ заводится', writes.length, 0)
+  assertEqual('одинаковое название: сервер задал вопрос', res.body?.reason, 'similar_exists')
+  assertEqual('вопрос: статус 200, а не ошибка', res.statusCode, 200)
+  // Обе карточки С ЧИСЛАМИ — по ним человек и видит, что вкусы разные.
+  assertEqual('вопрос: показана карточка из базы', res.body?.candidate?.kcal100, 138)
+  assertEqual('вопрос: показано то, что снял человек', res.body?.incoming?.kcal100, 135)
+  assertEqual('вопрос: у обеих карточек есть название', [res.body?.candidate?.name, res.body?.incoming?.name],
+    ['Зефир с кусочками брусники', 'Зефир с кусочками брусники'])
+  assertEqual('вопрос: у обеих есть марка', [res.body?.candidate?.brand, res.body?.incoming?.brand],
+    ['NEO botanica', 'NEO botanica'])
+  assertEqual('вопрос: код так и не привязан', rows['2627326027856'].barcodes, [])
+}
+{
+  // Человек ответил «ДРУГОЙ ВКУС» → отдельная карточка со СВОИМИ числами.
+  const rows = { '2627326027856': zefir() }
+  const { res, writes } = await callSave({ ...zefirSecond, distinct: true }, { rows })
+  assertEqual('другой вкус: заведена своя карточка', res.body?.created, true)
+  assertEqual('другой вкус: привязки не было', res.body?.linked, undefined)
+  assertEqual('другой вкус: одна обычная запись', writes.filter(w => !w.rpc).length, 1)
+  assertEqual('другой вкус: сохранены СВОИ числа', writes[0]?.kcal100, 135)
+  assertEqual('другой вкус: чужая карточка не тронута', rows['2627326027856'].barcodes, [])
+}
+{
+  // Человек ответил «ТОТ ЖЕ» → код привязан к существующей карточке.
+  const rows = { '2627326027856': zefir() }
+  const { res, writes } = await callSave({ ...zefirSecond, sameAs: '2627326027856' }, { rows })
+  assertEqual('тот же продукт: привязано, а не заведено', res.body?.linked, true)
+  assertEqual('тот же продукт: created=false', res.body?.created, false)
+  assertEqual('тот же продукт: новой карточки нет', writes.filter(w => !w.rpc).length, 0)
+  assertEqual('тот же продукт: отданы цифры существующей', res.body?.product?.kcal100, 138)
+  assertEqual('тот же продукт: отдан главный код товара', res.body?.product?.barcode, '2627326027856')
+  assertEqual('тот же продукт: код дописан в barcodes', rows['2627326027856'].barcodes, ['1647516027856'])
+}
+{
+  // Похожего нет вовсе — вопроса быть не должно, карточка заводится сразу.
+  const { res, writes } = await callSave(zefirSecond, { rows: {} })
+  assertEqual('похожего нет: вопроса нет', res.body?.reason, undefined)
+  assertEqual('похожего нет: карточка заведена сразу', res.body?.created, true)
+  assertEqual('похожего нет: одна запись', writes.filter(w => !w.rpc).length, 1)
+}
+{
+  // Другое название той же марки — не похожий товар, вопроса нет.
+  const rows = { '2627326027856': zefir() }
+  const { res } = await callSave({ ...zefirSecond, name: 'Зефир ванильный' }, { rows })
+  assertEqual('другое название: вопроса нет', res.body?.reason, undefined)
+  assertEqual('другое название: карточка заведена', res.body?.created, true)
+}
+{
+  // То же название, другая марка — тоже разные товары.
+  const rows = { '2627326027856': zefir() }
+  const { res } = await callSave({ ...zefirSecond, brand: 'Шармэль' }, { rows })
+  assertEqual('другая марка: вопроса нет', res.body?.created, true)
+}
+{
+  // Регистр и краевые пробелы значения не имеют — иначе «NEO botanica» и
+  // «Neo Botanica » разъехались бы, и вопрос бы не задался вовсе.
+  const rows = { '2627326027856': zefir() }
+  const { res } = await callSave({ ...zefirSecond, name: '  зефир С КУСОЧКАМИ брусники ', brand: 'neo BOTANICA' }, { rows })
+  assertEqual('вопрос не зависит от регистра и пробелов', res.body?.reason, 'similar_exists')
+}
+{
+  // Карточка на ЭТОТ код уже есть — вопрос не при делах, работает прежнее
+  // правило приоритета источников.
+  const rows = { '2627326027856': zefir() }
+  const { res, writes } = await callSave({ ...zefirSecond, barcode: '2627326027856' }, { rows })
+  assertEqual('свой код уже есть: вопроса нет', res.body?.reason, undefined)
+  assertEqual('свой код уже есть: estimate не вытесняет estimate', writes.length, 0)
+  assertEqual('свой код уже есть: отдана существующая', res.body?.product?.kcal100, 138)
+}
+{
+  // Проверка похожих упала — карточку не теряем и НЕ сливаем вслепую:
+  // заводим свою. Худший исход — дубль, а не подмена чисел.
+  const rows = { '2627326027856': zefir() }
+  const { res, writes } = await callSave(zefirSecond, { rows, findFails: true })
+  assertEqual('сбой проверки: карточка заведена', res.body?.created, true)
+  assertEqual('сбой проверки: запись прошла', writes.filter(w => !w.rpc).length, 1)
+}
+{
+  // Ответ «тот же», но карточка исчезла между вопросом и ответом — не ошибка:
+  // заводим свою.
+  const { res, writes } = await callSave({ ...zefirSecond, sameAs: '2627326027856' }, { rows: {} })
+  assertEqual('карточка исчезла: заведена своя', res.body?.created, true)
+  assertEqual('карточка исчезла: запись прошла', writes.filter(w => !w.rpc).length, 1)
+}
+{
+  // Неполные КБЖУ отвергаются ДО вопроса: спрашивать не о чем, если карточку
+  // всё равно нельзя сохранить.
+  const rows = { '2627326027856': zefir() }
+  const { res, writes } = await callSave({ ...zefirSecond, f100: null }, { rows })
+  assertEqual('неполная карточка: 400 вместо вопроса', res.statusCode, 400)
+  assertEqual('неполная карточка: ни записи, ни привязки', writes.length, 0)
 }
 
 // ── ai_web: средняя ступень между оценкой и чтением таблицы ───────────────
