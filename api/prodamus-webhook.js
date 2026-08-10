@@ -120,13 +120,35 @@ export default async function handler(req, res) {
   const paymentStatus = data.payment_status != null ? String(data.payment_status) : ''
   const sumNum = Number(data.sum)
 
-  // Без order_num нет ключа идемпотентности (UNIQUE(provider_order_num) —
-  // защита от replay), поэтому НЕ начисляем и не пишем в журнал: два таких
-  // уведомления с NULL прошли бы UNIQUE и могли начислить дважды. Боевые
-  // уведомления Prodamus всегда несут непустой order_num — реальный поток не
-  // затрагивается. Отвечаем 200, чтобы Prodamus не зациклил ретраи.
-  if (!orderNum || !orderNum.trim()) {
-    console.error('Prodamus webhook: уведомление без order_num — пропускаем без начисления')
+  // ── КЛЮЧ ИДЕМПОТЕНТНОСТИ. Живой сбой, стоивший двух оплат.
+  //
+  // Здесь стоял order_num — и это было неверно. Продамус присылает ДВА разных
+  // поля, и они значат разное:
+  //   order_num — НАШ ярлык `userId__план`, который мы сами положили в ссылку;
+  //               Продамус возвращает его эхом. Он ОДИНАКОВ у всех покупок
+  //               одного тарифа одним человеком;
+  //   order_id  — СОБСТВЕННЫЙ номер платежа Продамуса (47568192). Уникален у
+  //               каждой оплаты, повторяется только при ретрае того же
+  //               уведомления.
+  //
+  // На provider_order_num стоит UNIQUE, поэтому со старым ключом ВТОРАЯ ПОКУПКА
+  // ТОГО ЖЕ ТАРИФА молча отбрасывалась как повтор: деньги списаны, строки в
+  // журнале нет, пакет не начислен. Это касалось не только служебного test50 —
+  // так же терялось бы любое ежемесячное ПРОДЛЕНИЕ ПРОФИТ или ПРЕМИУМ. Ошибка
+  // лежала спящей, потому что до сих пор все платежи в проде были от разных
+  // людей и каждый покупал по одному разу.
+  //
+  // Правильный ключ — order_id: ретрай одного уведомления он по-прежнему
+  // отбрасывает (номер тот же), а новую оплату пропускает (номер другой).
+  // order_num оставлен запасным вариантом: у части старых потоков (оплата по
+  // статической ссылке из бота) приходил именно он.
+  const dedupKey = (orderId && orderId.trim()) || (orderNum && orderNum.trim()) || null
+
+  // Совсем без ключа не начисляем и не пишем: два таких уведомления с NULL
+  // прошли бы UNIQUE и могли начислить дважды. Отвечаем 200, чтобы Prodamus не
+  // зациклил ретраи.
+  if (!dedupKey) {
+    console.error('Prodamus webhook: уведомление без order_id и order_num — пропускаем без начисления')
     return res.status(200).send('OK')
   }
 
@@ -179,7 +201,7 @@ export default async function handler(req, res) {
   // UNIQUE(provider_order_num). Повтор того же order_num → уведомление уже
   // обработано, второй раз НЕ начисляем.
   const { error: insErr } = await supabaseAdmin.from('payments').insert({
-    provider_order_num: orderNum,
+    provider_order_num: dedupKey,
     order_id: orderId,
     user_id: userId,
     plan: accruePlan ? accruePlan.plan : (planFromAmount || null),
@@ -189,7 +211,16 @@ export default async function handler(req, res) {
   })
   if (insErr) {
     if (insErr.code === '23505') {
-      console.log(`Prodamus webhook: повторное уведомление order_num=${orderNum}, пропускаем`)
+      // ОТБРОШЕННЫЙ ПОВТОР ТЕПЕРЬ ВИДЕН В ЖУРНАЛЕ. Раньше эта ветка молчала в
+      // консоль Vercel, и когда она сработала не по делу (см. ключ выше),
+      // пропажу платежа пришлось искать руками по отсутствию строки.
+      //
+      // С правильным ключом сюда попадают только настоящие ретраи одного
+      // уведомления — событие редкое, канал не зашумит. А если ветка вдруг
+      // снова начнёт глотать живые оплаты, это будет видно сразу.
+      reportError('api:prodamus:duplicate',
+        [`Prodamus webhook: повторное уведомление ${dedupKey}, пропускаем`],
+        { message: `повтор платежа ${dedupKey} отброшен как уже обработанный`, userId })
       return res.status(200).send('OK')
     }
     reportError('api:prodamus:payment', ['Prodamus webhook: ошибка записи в журнал платежей:', insErr], { message: insErr?.message, status: 500 })

@@ -194,9 +194,17 @@ console.log('\n── Вебхук: 50 ₽ → сутки ───────�
 
 // Уведомление Продамуса приходит form-urlencoded и подписывается тем же
 // алгоритмом, что и наша исходящая ссылка.
-async function callWebhook({ sum, userId, currentUntil = null, coachId = null, role = 'client' }) {
+// order_num — НАШ ярлык, одинаковый у всех покупок одного тарифа одним
+// человеком (Продамус возвращает его эхом). order_id — номер платежа
+// Продамуса, у каждой оплаты свой. Умолчания подобраны так, чтобы повторить
+// боевое уведомление один в один: именно на разнице этих двух полей и
+// сломалось начисление.
+let payNo = 0
+async function callWebhook({ sum, userId, currentUntil = null, coachId = null, role = 'client',
+  orderNum = null, orderId = null, seen = null }) {
   const body = {
-    order_num: `ord-${sum}-${Math.floor(sum * 7)}`,
+    order_num: orderNum !== null ? orderNum : `${userId}__x`,
+    order_id: orderId !== null ? orderId : String(47000000 + (++payNo)),
     sum: String(sum),
     payment_status: 'success',
     customer_extra: `${userId}__x`,
@@ -207,6 +215,9 @@ async function callWebhook({ sum, userId, currentUntil = null, coachId = null, r
   const raw = new URLSearchParams(body).toString()
 
   const writes = []
+  // seen — общий на несколько вызовов набор уже занятых ключей. Так
+  // воспроизводится UNIQUE(provider_order_num): вторая вставка того же ключа
+  // отвечает 23505, как настоящий PostgREST.
   globalThis.fetch = async (url, opts = {}) => {
     const u = new URL(String(url))
     if (u.pathname.startsWith('/rest/v1/profiles')) {
@@ -214,7 +225,18 @@ async function callWebhook({ sum, userId, currentUntil = null, coachId = null, r
       writes.push(JSON.parse(opts.body))
       return json([{ id: userId, plan: JSON.parse(opts.body).plan, coach_id: coachId }])
     }
-    if (u.pathname.startsWith('/rest/v1/payments')) { writes.push({ payments: JSON.parse(opts.body) }); return json([{}]) }
+    if (u.pathname.startsWith('/rest/v1/payments')) {
+      const row = JSON.parse(opts.body)
+      if (seen) {
+        if (seen.has(row.provider_order_num)) {
+          return json({ code: '23505', message: 'duplicate key value violates unique constraint' }, 409)
+        }
+        seen.add(row.provider_order_num)
+      }
+      writes.push({ payments: row })
+      return json([{}])
+    }
+    if (u.pathname.startsWith('/rest/v1/error_log')) { writes.push({ errorLog: JSON.parse(opts.body) }); return json([{ id: 1 }]) }
     if (u.pathname.startsWith('/auth/v1/')) return json({ user: { id: userId } })
     return json([])
   }
@@ -228,6 +250,11 @@ async function callWebhook({ sum, userId, currentUntil = null, coachId = null, r
   const res = mockRes()
   res.send = b => { res.body = b; return res }
   await webhook(req, res)
+  // Такт до снятия подмены: журналирование ошибок намеренно НЕ ждут (ручка
+  // обязана ответить Продамусу немедленно), поэтому его запись уходит уже
+  // после возврата из обработчика. Без этой паузы стенд возвращал бы сеть на
+  // место раньше, чем строка успеет отправиться, и проверка журнала врала бы.
+  await new Promise(r => setTimeout(r, 60))
   restore()
   return { res, writes }
 }
@@ -262,6 +289,77 @@ async function callWebhook({ sum, userId, currentUntil = null, coachId = null, r
   // Сумма, которой нет в таблице, по-прежнему ничего не начисляет.
   const { writes } = await callWebhook({ sum: 70, userId: CLIENT })
   assertEqual('70 ₽ ничего не начисляет', writes.filter(w => w.plan).length, 0)
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// 3б. Повторная покупка и идемпотентность
+// ══════════════════════════════════════════════════════════════════════════
+//
+// РАЗДЕЛ ПОЯВИЛСЯ ПОСЛЕ ЖИВОГО СБОЯ, и нашёл его именно служебный тариф —
+// ровно за этим он и заводился. Вторая оплата test50 молча пропала: ключом
+// идемпотентности был order_num, то есть НАШ ярлык `userId__план`, одинаковый
+// у всех покупок одного тарифа одним человеком. UNIQUE отбивал вторую оплату
+// как повтор — деньги списаны, строки нет, пакет не начислен.
+//
+// Касалось это не только test50: так же терялось бы любое ежемесячное
+// продление ПРОФИТ или ПРЕМИУМ. До сих пор не всплывало лишь потому, что в
+// проде все платежи были от разных людей и каждый покупал по одному разу.
+console.log('\n── Повторная покупка не должна теряться ───────────────────────────')
+{
+  // ГЛАВНЫЙ ТЕСТ. Тот же человек, тот же тариф, тот же наш ярлык — но РАЗНЫЕ
+  // номера платежей. Обе оплаты обязаны начислиться.
+  const seen = new Set()
+  const tag = `${TRAINER}__test50`
+  const a = await callWebhook({ sum: 50, userId: TRAINER, orderNum: tag, orderId: '47568192', seen })
+  const b = await callWebhook({ sum: 50, userId: TRAINER, orderNum: tag, orderId: '47568777', seen })
+  assertEqual('первая оплата начислена', !!a.writes.find(w => w.plan), true)
+  assertEqual('ВТОРАЯ ОПЛАТА ТОГО ЖЕ ТАРИФА ТОЖЕ НАЧИСЛЕНА', !!b.writes.find(w => w.plan), true)
+  assertEqual('в журнал платежей легли обе строки', seen.size, 2)
+  assertEqual('ключом идемпотентности стал номер Продамуса, а не наш ярлык',
+    [...seen], ['47568192', '47568777'])
+}
+{
+  // А вот РЕТРАЙ одного уведомления по-прежнему отбрасывается: номер платежа
+  // тот же. Ровно от этого защита и нужна.
+  const seen = new Set()
+  const same = { sum: 50, userId: TRAINER, orderNum: `${TRAINER}__test50`, orderId: '47568192', seen }
+  const a = await callWebhook(same)
+  const b = await callWebhook(same)
+  assertEqual('ретрай: первая начислена', !!a.writes.find(w => w.plan), true)
+  assertEqual('ретрай: вторая ОТБРОШЕНА', !!b.writes.find(w => w.plan), false)
+  assertEqual('ретрай: строка в журнале платежей одна', seen.size, 1)
+  report('отброшенный повтор виден в журнале ошибок',
+    !!b.writes.find(w => w.errorLog?.context === 'api:prodamus:duplicate'),
+    JSON.stringify(b.writes.map(w => w.errorLog?.context).filter(Boolean)))
+}
+{
+  // Продление боевого пакета — то же правило. Здесь оно важнее всего: это
+  // обычная ежемесячная оплата, и терять её нельзя.
+  const seen = new Set()
+  const tag = `${CLIENT}__profit`
+  const until = new Date(Date.now() + 5 * 86400000).toISOString()
+  const a = await callWebhook({ sum: 2990, userId: CLIENT, orderNum: tag, orderId: '47100001', seen })
+  const b = await callWebhook({ sum: 2990, userId: CLIENT, orderNum: tag, orderId: '47100002', currentUntil: until, seen })
+  assertEqual('первая покупка ПРОФИТ начислена', !!a.writes.find(w => w.plan), true)
+  assertEqual('ПРОДЛЕНИЕ ПРОФИТ начислено, а не потеряно', !!b.writes.find(w => w.plan), true)
+  const days = (new Date(b.writes.find(w => w.plan).plan_until).getTime() - Date.now()) / 86400000
+  report('продление прибавило 30 дней к остатку, а не затёрло', days > 34.9 && days < 35.1, `дней: ${days.toFixed(2)}`)
+}
+{
+  // Старые потоки (оплата по статической ссылке из бота) присылали только
+  // order_num — запасной вариант обязан работать.
+  const seen = new Set()
+  const { writes } = await callWebhook({ sum: 2990, userId: CLIENT, orderNum: 'tg8755931090-single-1785568654', orderId: '', seen })
+  assertEqual('без order_id ключом становится order_num', [...seen], ['tg8755931090-single-1785568654'])
+  assertEqual('и пакет всё равно начислен', !!writes.find(w => w.plan), true)
+}
+{
+  // Ни того ни другого — не начисляем вовсе: два таких уведомления прошли бы
+  // UNIQUE и начислили дважды.
+  const seen = new Set()
+  const { writes } = await callWebhook({ sum: 2990, userId: CLIENT, orderNum: '', orderId: '', seen })
+  assertEqual('без обоих ключей: ничего не записано', seen.size, 0)
+  assertEqual('без обоих ключей: пакет не начислен', !!writes.find(w => w.plan), false)
 }
 
 // ══════════════════════════════════════════════════════════════════════════
