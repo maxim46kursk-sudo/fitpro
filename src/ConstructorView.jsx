@@ -1,10 +1,13 @@
-// Конструктор тренировок с прогрессией — ЗАМОРОЖЕН, не подключён к
-// приложению (см. docs/CONSTRUCTOR_FROZEN.md для полного описания и причин
-// заморозки). Этот файл больше никуда не импортируется — код рабочий и
-// оставлен как есть для возможного возврата, но не используется.
+// Конструктор тренировок с прогрессией — размораживается по этапам (см.
+// docs/CONSTRUCTOR_FROZEN.md). Этап 1: экран снова в навигации, но вход к нему
+// открыт ТОЛЬКО тренеру (см. App.jsx), а упражнение больше нельзя ввести
+// текстом — только выбрать из каталога EXERCISES (programs.js). Именно
+// свободный ввод и был причиной заморозки: о произвольном названии неоткуда
+// узнать тип упражнения. Каталог этот вопрос закрывает — одностороннее
+// упражнение опознаётся по нему и получает свою схему повторов
+// (ONE_SIDED_SCHEMES, constructorPhases.js).
 //
-// Изначально жил прямо в App.jsx, вынесен в отдельный файл при заморозке,
-// чтобы не раздувать App.jsx мёртвым кодом. Логика и разметка не менялись.
+// Изначально экран жил прямо в App.jsx, вынесен в отдельный файл при заморозке.
 //
 // Отдельный от AI-чата и от основного дневника (workouts/workout_sets)
 // режим: персональный список упражнений клиента (constructor_exercises) +
@@ -12,26 +15,36 @@
 // и никакого маркера SET_PROGRAM здесь нет — только детерминированный расчёт
 // через реальный движок прогрессии (buildExerciseAggregates/
 // computeTargetWeight из src/workoutPrompt.js, 1ПМ + таблица {10,7,5,3,2} +
-// откат, протестировано в test-progression-personas.js, 41/41) — движок не
-// меняем, только подключаем. Прогрессия ключится СТРОГО по exercise_id
-// (передаём его как "exercise" в подходы для агрегатора) — совпадение
-// названий не участвует в расчёте вообще, только в мягком предупреждении о
-// дубле при создании упражнения (см. fuzzyMatch.js).
+// откат, протестировано в test-progression-personas.js) — движок не меняем,
+// только подключаем. Прогрессия ключится СТРОГО по exercise_id (передаём его
+// как "exercise" в подходы для агрегатора) — совпадение названий в расчёте не
+// участвует; название нужно ровно для одного — связать личную запись клиента
+// с каталогом (см. exerciseProfile).
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from './supabase.js'
-import { EXERCISES } from './programs.js'
 import { computeTargetWeight } from './workoutPrompt.js'
 import { GlassIcon } from './glassIcons'
-import { findSimilarExercise, normalizeExerciseName } from './fuzzyMatch.js'
-import { getUpcomingScheme, hasHardStreak, computeHardStreakTarget, buildConstructorSessions } from './constructorPhases.js'
+import {
+  getUpcomingScheme, hasHardStreak, computeHardStreakTarget, buildConstructorSessions,
+  exerciseProfile, filterCatalog, catalogGroups, findByCatalogName, baselineSetCount,
+  CATALOG_OTHER_GROUP,
+} from './constructorPhases.js'
 
 const PUR = '#7F77DD'
+
+// Подписи групп мышц для фильтра каталога — ключи те же, что отдаёт
+// muscleGroup (exerciseMeta.js), плюс 'other' для упражнений, которым
+// эвристика группу не назначила (см. catalogGroup).
+const GROUP_LABELS = {
+  legs: 'Ноги', back: 'Спина', chest: 'Грудь', shoulders: 'Плечи',
+  arms: 'Руки', abs: 'Пресс', cardio: 'Кардио', [CATALOG_OTHER_GROUP]: 'Другое',
+}
 
 const RATING_HINT = 'Оцени, насколько было тяжело — без этого ассистент не сможет подобрать следующий вес.'
 const CONSTRUCTOR_INFO_TEXT = {
   title: 'Как это работает',
-  body: 'Добавь упражнения, которые тебе нравятся — с любым названием. После каждого отметь вес, повторы и оценку усилия. В следующий раз ассистент подскажет рабочий вес и число повторений для прогресса.\n\nПервая тренировка каждого упражнения — стартовый замер: веса задаёшь ты. Дальше рекомендации считает ассистент.\n\nСовет: первыми лучше ставить базовые упражнения.',
+  body: 'Выбери упражнения из каталога — по названию или через фильтр по группе мышц. После каждого отметь вес, повторы и оценку усилия. В следующий раз ассистент подскажет рабочий вес и число повторений для прогресса.\n\nПервая тренировка каждого упражнения — стартовый замер: веса задаёшь ты. Дальше рекомендации считает ассистент.\n\nОдносторонние упражнения (выпады, работа одной ногой или рукой) идут по своей схеме — 2 подхода вместо 4. Тип упражнения ассистент берёт из каталога, вручную его указывать не нужно.\n\nСовет: первыми лучше ставить базовые упражнения.',
   why: 'Мышцы растут от постепенного увеличения нагрузки и работы близко к отказу. Ассистент рассчитывает прогрессию по твоим оценкам усилия — вес и повторы подбираются автоматически от тренировки к тренировке.',
   mandatory: 'Оценка усилия обязательна — без неё ассистент не сможет подобрать следующий вес.',
 }
@@ -51,13 +64,12 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
   const [exercises, setExercises] = useState(() => {
     try { return JSON.parse(localStorage.getItem('fitpro_constructor_exercises') || '[]') } catch { return [] }
   })
-  const [sessionExercises, setSessionExercises] = useState([]) // [{exerciseId,name,isBaseline,phase,isDeload,rating,sets:[{kg,reps}]}]
+  const [sessionExercises, setSessionExercises] = useState([]) // [{exerciseId,name,profile,isBaseline,phase,isDeload,rating,sets:[{kg,reps}]}]
   const [ratingTouchedIds, setRatingTouchedIds] = useState({})
   const [pickOpen, setPickOpen] = useState(false)
   const [pickQuery, setPickQuery] = useState('')
-  const [showAdd, setShowAdd] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [duplicateCandidate, setDuplicateCandidate] = useState(null) // {name, match}
+  const [pickGroup, setPickGroup] = useState(null) // ключ группы мышц или null = все
+  const [addingName, setAddingName] = useState(null) // название, по которому сейчас создаётся личная запись
   const [showInfo, setShowInfo] = useState(false)
   const [infoWhyOpen, setInfoWhyOpen] = useState(false)
   const [showExitConfirm, setShowExitConfirm] = useState(false)
@@ -107,14 +119,19 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
   // счётчика отката. Откат в Конструкторе — свой, одноразовый −15%
   // (computeHardStreakTarget/hasHardStreak); buildDeload из workoutPrompt.js
   // (используется только чатом) здесь не участвует вообще.
+  // Тип упражнения (одностороннее или нет) приходит ИЗ КАТАЛОГА по названию
+  // личной записи — exerciseProfile. Для старых строк со свободным названием
+  // (каталог их не знает) profile.fromCatalog === false: считаем как раньше,
+  // 4 подхода, никакого нового типа им не приписываем.
   const fetchRecommendationFor = async (ex) => {
-    const emptySets = () => Array.from({ length: 4 }, () => ({ kg: '', reps: '' }))
+    const profile = exerciseProfile(ex.name)
+    const emptySets = () => Array.from({ length: baselineSetCount(profile.oneSided) }, () => ({ kg: '', reps: '' }))
     const { data, error } = await supabase.from('constructor_sets').select('*').eq('exercise_id', ex.id).eq('user_id', userId).order('id')
-    if (error) { console.error('Конструктор: ошибка загрузки истории упражнения:', error); return { isBaseline: true, phase: null, isDeload: false, sets: emptySets() } }
+    if (error) { console.error('Конструктор: ошибка загрузки истории упражнения:', error); return { profile, isBaseline: true, phase: null, isDeload: false, sets: emptySets() } }
     const history = data || []
     const sessions = buildConstructorSessions(history)
-    const scheme = getUpcomingScheme(sessions)
-    if (scheme.isBaseline || !sessions.length) return { isBaseline: true, phase: null, isDeload: false, sets: emptySets() }
+    const scheme = getUpcomingScheme(sessions, { oneSided: profile.oneSided })
+    if (scheme.isBaseline || !sessions.length) return { profile, isBaseline: true, phase: null, isDeload: false, sets: emptySets() }
     const lastSession = sessions[sessions.length - 1]
     const anchorSet = lastSession.workingSets[lastSession.workingSets.length - 1]
     const hard = hasHardStreak(sessions)
@@ -124,7 +141,7 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
         : computeTargetWeight(anchorSet, lastSession.effRatings, reps, null)
       return { kg: target?.kg != null ? String(target.kg) : '', reps: String(reps) }
     })
-    return { isBaseline: false, phase: scheme.phase, isDeload: hard, sets }
+    return { profile, isBaseline: false, phase: scheme.phase, isDeload: hard, sets }
   }
 
   // Сброс истории одного упражнения ("Начать заново") — удаляет ТОЛЬКО его
@@ -135,18 +152,18 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
     const { error } = await supabase.from('constructor_sets')
       .delete().eq('exercise_id', ex.exerciseId).eq('user_id', userId)
     if (error) { console.error('Конструктор: ошибка сброса истории упражнения:', error); return }
-    const { isBaseline, phase, isDeload, sets } = await fetchRecommendationFor({ id: ex.exerciseId, name: ex.name })
+    const { profile, isBaseline, phase, isDeload, sets } = await fetchRecommendationFor({ id: ex.exerciseId, name: ex.name })
     setSessionExercises(list => list.map(se =>
-      se.exerciseId === ex.exerciseId ? { ...se, isBaseline, phase, isDeload, rating: '', sets } : se
+      se.exerciseId === ex.exerciseId ? { ...se, profile, isBaseline, phase, isDeload, rating: '', sets } : se
     ))
   }
 
   const addExerciseToSession = async (ex) => {
-    setPickOpen(false); setPickQuery('')
+    setPickOpen(false); setPickQuery(''); setPickGroup(null)
     if (sessionExercises.some(se => se.exerciseId === ex.id)) return
-    const { isBaseline, phase, isDeload, sets } = await fetchRecommendationFor(ex)
+    const { profile, isBaseline, phase, isDeload, sets } = await fetchRecommendationFor(ex)
     setSessionExercises(list => [...list, {
-      exerciseId: ex.id, name: ex.name, isBaseline, phase, isDeload, rating: '', sets,
+      exerciseId: ex.id, name: ex.name, profile, isBaseline, phase, isDeload, rating: '', sets,
     }])
   }
 
@@ -179,10 +196,12 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
     return { ...se, sets: se.sets.map((s, i) => i === setIdx ? { ...s, [field]: value } : s) }
   }))
 
+  // Личная запись клиента заводится ТОЛЬКО под каталожным названием — оно же
+  // и есть ссылка на каталог (отдельной колонки в constructor_exercises нет,
+  // схема не менялась). Свободного ввода названия больше нет вообще.
   const createExercise = async (name) => {
-    const trimmed = name.trim()
-    if (!trimmed || !userId) return null
-    const { data, error } = await supabase.from('constructor_exercises').insert({ user_id: userId, name: trimmed }).select('*').single()
+    if (!name || !userId) return null
+    const { data, error } = await supabase.from('constructor_exercises').insert({ user_id: userId, name }).select('*').single()
     if (error) { console.error('Конструктор: ошибка создания упражнения:', error); return null }
     setExercises(list => {
       const updated = [...list, data]
@@ -192,39 +211,18 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
     return data
   }
 
-  const handleAddSubmit = () => {
-    const trimmed = newName.trim()
-    if (!trimmed) return
-    const match = findSimilarExercise(trimmed, exercises)
-    if (match) { setDuplicateCandidate({ name: trimmed, match }); return }
-    finishAdd(trimmed)
-  }
-  const finishAdd = async (name) => {
-    const created = await createExercise(name)
-    setShowAdd(false); setNewName(''); setDuplicateCandidate(null)
-    if (created) addExerciseToSession(created)
-  }
-  const useExisting = (ex) => {
-    setShowAdd(false); setNewName(''); setDuplicateCandidate(null)
-    addExerciseToSession(ex)
-  }
-
-  // Выбор упражнения из ОБЩЕЙ библиотеки приложения (EXERCISES) — витрина
-  // для поиска, сама прогрессия по ней никогда не считается. Первый раз
-  // заводим личную запись в constructor_exercises — дальше история и вес
-  // ведутся по её exercise_id, не по названию и не по id библиотеки. Если
-  // findSimilarExercise находит похожую личную запись — показываем ту же
-  // модалку "Это оно / новое", что и при ручном создании (duplicateCandidate),
-  // а не молча переиспользуем: иначе ложноотрицательный матч (разное число
-  // слов слегка за порогом) тихо форкает exercise_id и обрывает историю —
-  // ровно баг, который и чинит эта правка.
-  const [addingLibraryName, setAddingLibraryName] = useState(null)
-  const selectLibraryExercise = async (libEx) => {
-    const match = findSimilarExercise(libEx.n, exercises)
-    if (match) { setDuplicateCandidate({ name: libEx.n, match }); return }
-    setAddingLibraryName(libEx.n)
-    const created = await createExercise(libEx.n)
-    setAddingLibraryName(null)
+  // Выбор упражнения из каталога (EXERCISES) — единственный способ завести
+  // упражнение. Защита от дублей вместо fuzzyMatch: смотрим, нет ли уже личной
+  // записи ровно с этим каталожным названием (findByCatalogName). Есть —
+  // переиспользуем её exercise_id, и история упражнения продолжается, а не
+  // форкается. Нечёткое сравнение здесь больше не нужно: названия приходят из
+  // одного и того же списка, "присед"/"Приседания" разойтись уже не могут.
+  const selectCatalogExercise = async (catEx) => {
+    const existing = findByCatalogName(catEx.n, exercises)
+    if (existing) { addExerciseToSession(existing); return }
+    setAddingName(catEx.n)
+    const created = await createExercise(catEx.n)
+    setAddingName(null)
     if (created) addExerciseToSession(created)
   }
 
@@ -304,23 +302,21 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
     await commitSession()
   }
 
-  // Поиск сравнивает НОРМАЛИЗОВАННЫЕ строки (normalizeExerciseName из
-  // fuzzyMatch.js — регистр, цифры/кг, лишние пробелы уже не мешают:
-  // "выпады" = "Выпады" = "выпады 20кг" находятся одним и тем же запросом).
-  // Личный список — фильтруется всегда (в т.ч. при пустом запросе, тогда
-  // показывается целиком, как раньше). Общая библиотека подключается только
-  // от 2 символов реального ввода и дедуплицируется против уже имеющихся
-  // личных упражнений (findSimilarExercise — та же фаззи-логика, что и при
-  // дедупе на выборе/создании, чтобы список не показывал как "из библиотеки"
-  // то, что у пользователя уже есть под другим написанием).
-  const rawQuery = pickQuery.trim()
-  const normQuery = normalizeExerciseName(rawQuery)
-  const personalMatches = normQuery
-    ? exercises.filter(ex => normalizeExerciseName(ex.name).includes(normQuery))
-    : exercises
-  const libraryMatches = rawQuery.length >= 2 && normQuery
-    ? EXERCISES.filter(ex => normalizeExerciseName(ex.n).includes(normQuery) && !findSimilarExercise(ex.n, exercises))
-    : []
+  // Каталог — поиск по названию + фильтр по группе мышц (filterCatalog,
+  // constructorPhases.js). Показывается всегда, в том числе при пустом запросе.
+  const catalogMatches = filterCatalog(pickQuery, pickGroup)
+  const groups = catalogGroups()
+
+  // Старые личные упражнения со свободными названиями (каталог их не знает).
+  // Их не прячем и не переименовываем — клиент может продолжить по ним
+  // тренироваться, прогрессия у них прежняя, 4 подхода. Заводить новые такие
+  // записи больше нельзя, поэтому у списка нет ни поля ввода, ни фильтра по
+  // группе (muscleGroup для произвольного названия ненадёжен).
+  const legacyExercises = exercises.filter(ex => !exerciseProfile(ex.name).fromCatalog)
+  const legacyQuery = pickQuery.trim().toLowerCase()
+  const legacyMatches = legacyQuery
+    ? legacyExercises.filter(ex => (ex.name || '').toLowerCase().includes(legacyQuery))
+    : legacyExercises
 
   return createPortal(
     <div style={{ position: 'fixed', inset: 0, background: '#111', zIndex: 1000, display: 'flex', flexDirection: 'column', color: '#fff' }}>
@@ -379,7 +375,7 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
         {sessionExercises.length === 0 ? (
           <div style={{ textAlign: 'center', marginTop: 40 }}>
             <div style={{ fontSize: 18, fontWeight: 600, color: '#fff', marginBottom: 8 }}>Добавь упражнение</div>
-            <div style={{ fontSize: 14, color: '#9ca3af', lineHeight: 1.7 }}>Нажми «+», чтобы выбрать упражнение из своего списка.</div>
+            <div style={{ fontSize: 14, color: '#9ca3af', lineHeight: 1.7 }}>Нажми «+», чтобы выбрать упражнение из каталога.</div>
           </div>
         ) : sessionExercises.map(se => (
           <div key={se.exerciseId} style={{ marginBottom: 14, background: '#1f2937', borderRadius: 10, padding: '12px 14px' }}>
@@ -393,6 +389,15 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
                 )}
                 <button onClick={() => removeSessionExercise(se.exerciseId)} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: 16, cursor: 'pointer', padding: 0 }}><GlassIcon name="close" size={20} /></button>
               </div>
+            </div>
+            {/* Тип упражнения — из каталога, клиент его не задаёт. Строка нужна
+                прежде всего затем, чтобы было видно, ПОЧЕМУ у одностороннего
+                упражнения 2 подхода, а не 4, и чтобы старая запись со
+                свободным названием честно называлась старой. */}
+            <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 6 }}>
+              {se.profile?.fromCatalog
+                ? `${se.profile.muscle}${se.profile.equipment ? ` · ${se.profile.equipment}` : ''}${se.profile.oneSided ? ' · одностороннее' : ''}`
+                : 'Добавлено вручную раньше — тип упражнения неизвестен'}
             </div>
             {se.isBaseline && (
               <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 10 }}>
@@ -468,97 +473,67 @@ export default function ConstructorView({ userId, sessionMeta, onClearSessionMet
         <div style={{ width: 42 }} />
       </div>
 
-      {/* Пикер упражнений из личного списка */}
+      {/* Пикер упражнений — каталог приложения (EXERCISES), поиск + фильтр по
+          группе мышц. Свободного ввода названия здесь больше нет. */}
       {pickOpen && (
         <div style={{ position: 'absolute', inset: 0, background: '#111', zIndex: 200, display: 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '16px 18px 12px', borderBottom: '1px solid #2a2a2a', flexShrink: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <span style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>Мои упражнения</span>
-              <button onClick={() => { setPickOpen(false); setPickQuery('') }} style={{ background: 'none', border: 'none', color: '#9ca3af', fontSize: 20, cursor: 'pointer' }}><GlassIcon name="close" size={20} /></button>
+              <span style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>Каталог упражнений</span>
+              <button onClick={() => { setPickOpen(false); setPickQuery(''); setPickGroup(null) }} style={{ background: 'none', border: 'none', color: '#9ca3af', fontSize: 20, cursor: 'pointer' }}><GlassIcon name="close" size={20} /></button>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input value={pickQuery} onChange={e => setPickQuery(e.target.value)} placeholder="Поиск упражнения..."
-                style={{ flex: 1, padding: '9px 12px', fontSize: 13, borderRadius: 8, border: '1px solid #374151', background: '#2a2a2e', color: '#fff', boxSizing: 'border-box' }} />
-              <button onClick={() => { setShowAdd(true); setNewName('') }}
-                style={{ padding: '9px 13px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: 'none', background: sessionColor, color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                Новое +
-              </button>
+            <input value={pickQuery} onChange={e => setPickQuery(e.target.value)} placeholder="Поиск по названию..."
+              style={{ width: '100%', padding: '9px 12px', fontSize: 13, borderRadius: 8, border: '1px solid #374151', background: '#2a2a2e', color: '#fff', boxSizing: 'border-box' }} />
+            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', marginTop: 10, paddingBottom: 2 }}>
+              {[null, ...groups].map(g => {
+                const active = pickGroup === g
+                return (
+                  <button key={g || 'all'} onClick={() => setPickGroup(g)}
+                    style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 16, whiteSpace: 'nowrap', cursor: 'pointer', border: `1px solid ${active ? sessionColor : '#374151'}`, background: active ? sessionColor : 'none', color: active ? '#fff' : '#9ca3af' }}>
+                    {g === null ? 'Все' : (GROUP_LABELS[g] || g)}
+                  </button>
+                )
+              })}
             </div>
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            {personalMatches.length === 0 && libraryMatches.length === 0 && (
+            {catalogMatches.length === 0 && legacyMatches.length === 0 && (
               <div style={{ textAlign: 'center', color: '#6b7280', marginTop: 40, fontSize: 13 }}>Ничего не найдено</div>
             )}
-            {personalMatches.map(ex => {
+            {catalogMatches.map(ex => {
+              const personal = findByCatalogName(ex.n, exercises)
+              const already = personal && sessionExercises.some(se => se.exerciseId === personal.id)
+              const creating = addingName === ex.n
+              const profile = exerciseProfile(ex.n)
+              return (
+                <button key={`c-${ex.n}`} onClick={() => !already && !creating && selectCatalogExercise(ex)} disabled={already || creating}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, width: '100%', padding: '13px 18px', background: 'none', border: 'none', borderBottom: '1px solid #1f2937', cursor: already || creating ? 'default' : 'pointer', textAlign: 'left', opacity: already ? 0.4 : creating ? 0.5 : 1 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: '#fff' }}>{ex.n}</div>
+                    <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>
+                      {ex.m}{ex.eq ? ` · ${ex.eq}` : ''}{profile.oneSided ? ' · одностороннее' : ''}
+                    </div>
+                  </div>
+                  {creating ? <span style={{ color: '#9ca3af', fontSize: 18 }}>…</span> : <GlassIcon name={already ? 'check' : 'plus'} size={20} />}
+                </button>
+              )
+            })}
+            {legacyMatches.length > 0 && (
+              <div style={{ padding: '14px 18px 6px', fontSize: 10, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 1 }}>Раньше добавлено вручную</div>
+            )}
+            {legacyMatches.map(ex => {
               const already = sessionExercises.some(se => se.exerciseId === ex.id)
               return (
-                <button key={`p-${ex.id}`} onClick={() => !already && addExerciseToSession(ex)} disabled={already}
+                <button key={`o-${ex.id}`} onClick={() => !already && addExerciseToSession(ex)} disabled={already}
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '13px 18px', background: 'none', border: 'none', borderBottom: '1px solid #1f2937', cursor: already ? 'default' : 'pointer', textAlign: 'left', opacity: already ? 0.4 : 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: '#fff' }}>{ex.name}</div>
-                  <GlassIcon name={already ? "check" : "plus"} size={20} />
-                </button>
-              )
-            })}
-            {libraryMatches.length > 0 && (
-              <div style={{ padding: '10px 18px 6px', fontSize: 10, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 1 }}>Библиотека упражнений</div>
-            )}
-            {libraryMatches.map(ex => {
-              const creating = addingLibraryName === ex.n
-              return (
-                <button key={`l-${ex.n}`} onClick={() => !creating && selectLibraryExercise(ex)} disabled={creating}
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '13px 18px', background: 'none', border: 'none', borderBottom: '1px solid #1f2937', cursor: creating ? 'default' : 'pointer', textAlign: 'left', opacity: creating ? 0.5 : 1 }}>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 500, color: '#fff' }}>{ex.n}</div>
-                    <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>{ex.m}{ex.eq ? ` · ${ex.eq}` : ''}</div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: '#fff' }}>{ex.name}</div>
+                    <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>Не из каталога — тип упражнения неизвестен</div>
                   </div>
-                  <span style={{ color: '#9ca3af', fontSize: 18, fontWeight: 300 }}>{creating ? '…' : '+'}</span>
+                  <GlassIcon name={already ? 'check' : 'plus'} size={20} />
                 </button>
               )
             })}
-            {pickQuery.trim() && (
-              <button onClick={() => { setNewName(pickQuery.trim()); setShowAdd(true) }}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '13px 18px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
-                <span style={{ color: sessionColor, fontSize: 16, fontWeight: 700 }}>+</span>
-                <span style={{ fontSize: 13, color: sessionColor, fontWeight: 600 }}>Новое: «{pickQuery.trim()}»</span>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Новое упражнение (создание в личном списке) */}
-      {showAdd && !duplicateCandidate && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }}
-          onClick={() => { setShowAdd(false); setNewName('') }}>
-          <div style={{ background: '#1c1c1e', borderRadius: 14, padding: '22px 20px 18px', width: 300, boxShadow: '0 16px 48px rgba(0,0,0,0.6)' }}
-            onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <span style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>Новое упражнение</span>
-              <button onClick={() => { setShowAdd(false); setNewName('') }} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: 18, cursor: 'pointer' }}><GlassIcon name="close" size={20} /></button>
-            </div>
-            <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 5 }}>Название</div>
-            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Назови как удобно" autoFocus
-              style={{ width: '100%', padding: '10px 12px', fontSize: 13, borderRadius: 8, border: '1px solid #374151', background: '#2a2a2e', color: '#fff', boxSizing: 'border-box', outline: 'none' }}
-              onKeyDown={e => e.key === 'Enter' && handleAddSubmit()} />
-            <button onClick={handleAddSubmit} style={{ width: '100%', marginTop: 16, padding: '12px', borderRadius: 9, border: 'none', background: sessionColor, color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Добавить</button>
-          </div>
-        </div>
-      )}
-
-      {/* Мягкое предупреждение о похожем упражнении — не блокирует */}
-      {duplicateCandidate && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 310, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }}
-          onClick={() => setDuplicateCandidate(null)}>
-          <div style={{ background: '#1c1c1e', borderRadius: 14, padding: '22px 20px', width: 300, boxShadow: '0 16px 48px rgba(0,0,0,0.6)', textAlign: 'center' }}
-            onClick={e => e.stopPropagation()}>
-            <div style={{ display:'flex', justifyContent:'center', marginBottom: 10 }}><GlassIcon name="question" size={32} /></div>
-            <div style={{ fontSize: 14, color: '#fff', lineHeight: 1.6, marginBottom: 20 }}>
-              У тебя уже есть «{duplicateCandidate.match.name}». Это оно или новое упражнение?
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <button onClick={() => useExisting(duplicateCandidate.match)} style={{ padding: '12px', borderRadius: 9, border: 'none', background: sessionColor, color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Это оно</button>
-              <button onClick={() => finishAdd(duplicateCandidate.name)} style={{ padding: '12px', borderRadius: 9, border: '1px solid #374151', background: 'none', color: '#9ca3af', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>Нет, создать новое</button>
-            </div>
           </div>
         </div>
       )}

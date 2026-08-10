@@ -22,6 +22,11 @@ import { VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, ef
 import { clampNum } from './nutrition.js'
 import FoodDiary from './FoodDiary.jsx'
 import HubCard from './HubCard.jsx'
+// Конструктор тренировок — размораживается по этапам (docs/CONSTRUCTOR_FROZEN.md).
+// Этап 1: экран снова в навигации, но вход к нему открыт ТОЛЬКО тренеру (см.
+// кнопку в WorkoutsView и case 'constructor' в renderOther) — клиент его не
+// видит и попасть в него не может.
+import ConstructorView from './ConstructorView.jsx'
 import './App.css'
 
 // ── Тёмная тема (единая палитра, шаг 1: каркас + экран «Тренировки»).
@@ -1984,7 +1989,7 @@ const makeDefaultFolderSlots=(folders=FOLDERS,programsMap=PROGRAMS_MAP)=>{
 // приходит отдельно, в accessLevel.
 // accessLevel — уровень пакета: тренировки 4–12 в шаблонах требуют БАЗУ (1),
 // в СТАРТ (0) открыты только первые FREE_SLOTS.
-function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, hasTrainer, coachSubExpired = false, accessLevel = 0, openPlans, exerciseVideos = {}, userRole = 'client', setExerciseVideos }) {
+function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, hasTrainer, coachSubExpired = false, accessLevel = 0, openPlans, exerciseVideos = {}, userRole = 'client', setExerciseVideos, onOpenConstructor }) {
   const { exercises: catalogExercises } = useContext(CatalogContext)
   // Шаблоны программ — из базы (program_templates) с запасным вариантом из кода.
   // folderKeys — КЛЮЧИ (profiles.program, префиксы workouts держатся за них),
@@ -4384,6 +4389,16 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         <button onClick={createProgram}
           style={{ width:'100%', marginBottom:10, padding:'12px', fontSize:13, borderRadius:12, border:`1.5px dashed ${PUR}66`, background:`${PUR}0d`, color:PUR, cursor:'pointer', fontWeight:700 }}>
           + Программа
+        </button>
+      )}
+      {/* Конструктор — только тренеру (этап 1 разморозки, см.
+          docs/CONSTRUCTOR_FROZEN.md). Клиент этой кнопки не видит, и другого
+          входа в конструктор нет: сам экран тоже закрыт ролью, см.
+          case 'constructor' в renderOther (App). */}
+      {isTrainer&&(
+        <button data-testid="constructor-open" onClick={onOpenConstructor}
+          style={{ width:'100%', marginBottom:10, padding:'12px', fontSize:13, borderRadius:12, border:`1.5px dashed ${PUR}66`, background:`${PUR}0d`, color:PUR, cursor:'pointer', fontWeight:700 }}>
+          Конструктор
         </button>
       )}
 
@@ -10701,6 +10716,15 @@ export default function App() {
 
   const [editTarget,setEditTarget]=useState(null)
 
+  // Шапка сессии Конструктора (название/цвет/дата) — ConstructorView читает её
+  // как sessionMeta. Заводится в момент открытия конструктора и сбрасывается
+  // на выходе из него.
+  const [pendingConstructorMeta,setPendingConstructorMeta]=useState(null)
+  const openConstructor=()=>{
+    setPendingConstructorMeta({ name:'Конструктор', color:PUR, date:new Date().toISOString().slice(0,10) })
+    handleNav('constructor')
+  }
+
   // Переход по нижнему меню во время активной тренировки — НЕ спрашивает
   // подтверждения (раньше здесь был window.confirm "Прогресс будет
   // потерян" — неверно, клиент не просил ничего выкидывать, он просто
@@ -10928,6 +10952,13 @@ export default function App() {
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} userId={user?.id} />
       case 'nutrition': return <NutritionTab userId={user?.id} />
       case 'library':   return <LibraryView customExercises={customExercises} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} workoutHistory={workoutHistory} />
+      // Конструктор — только тренеру (этап 1 разморозки, см.
+      // docs/CONSTRUCTOR_FROZEN.md). Проверка роли ровно та же, что у
+      // тренерских экранов выше; клиенту здесь возвращается null, даже если он
+      // как-то окажется на этом nav — кнопки входа он всё равно не видит.
+      case 'constructor': return userRole==='trainer'
+        ? <ConstructorView userId={user?.id} sessionMeta={pendingConstructorMeta} onClearSessionMeta={()=>setPendingConstructorMeta(null)} onWorkoutComplete={handleWorkoutComplete} setNav={handleNav} />
+        : null
       case 'progress':  return <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} accessLevel={access.level} openPlans={openPlans} />
       default:          return null
     }
@@ -10945,7 +10976,7 @@ export default function App() {
   const renderMain=()=>(
     <>
       <div data-testid="screen-workouts" style={{ display: nav==='workouts' ? 'block' : 'none' }}>
-        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} hasTrainer={hasCoach} coachSubExpired={coachSubExpired} accessLevel={access.level} openPlans={openPlans} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} />
+        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} hasTrainer={hasCoach} coachSubExpired={coachSubExpired} accessLevel={access.level} openPlans={openPlans} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} onOpenConstructor={openConstructor} />
       </div>
       {nav!=='workouts'&&renderOther()}
     </>

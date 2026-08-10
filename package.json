@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node test-progression.mjs && node test-nutrition.mjs && node test-barcode.mjs && node test-error-log.mjs && node test-food-diary.mjs && node test-food-basics.mjs && node test-off-import.mjs && node test-auth-state.mjs && node test-auth-session.mjs && node test-telegram-auth.mjs && node test-prodamus.mjs && node test-plan-test50.mjs",
+    "test": "node test-progression.mjs && node test-constructor.mjs && node test-nutrition.mjs && node test-barcode.mjs && node test-error-log.mjs && node test-food-diary.mjs && node test-food-basics.mjs && node test-off-import.mjs && node test-auth-state.mjs && node test-auth-session.mjs && node test-telegram-auth.mjs && node test-prodamus.mjs && node test-plan-test50.mjs",
     "export": "node scripts/build-export.mjs"
   },
   "dependencies": {
