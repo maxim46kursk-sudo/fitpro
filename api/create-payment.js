@@ -1,6 +1,6 @@
 import qs from 'qs'
 import { createClient } from '@supabase/supabase-js'
-import { createSignature, buildPaymentData } from './_prodamus.js'
+import { createSignature, buildPaymentData, STAFF_PLANS } from './_prodamus.js'
 import { rateLimit } from './_ratelimit.js'
 
 // Статические ссылки Продамуса не могут нести наш идентификатор пользователя
@@ -17,7 +17,12 @@ const PAYFORM_BASE = 'https://maximathlete.payform.ru/'
 
 // БАЗА снята с продажи — ручка отказывает на прямой запрос plan:'base', иначе
 // пакет остаётся покупаемым в обход спрятанной пилюли на экране Тарифов.
-const PAID_PLANS = new Set(['profit', 'premium'])
+//
+// test50 — служебный тариф проверки оплаты. В списке покупаемых он есть, но
+// ниже стоит проверка роли: спрятанная пилюля на экране Тарифов от прямого
+// POST не защищает, а 50 ₽ за сутки ПРОФИТ — слишком дешёвый способ обойти
+// прайс. Отсюда правило: скрытие в интерфейсе — удобство, отказ здесь — защита.
+const PAID_PLANS = new Set(['profit', 'premium', 'test50'])
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -47,6 +52,23 @@ export default async function handler(req, res) {
 
   const plan = req.body?.plan
   if (!PAID_PLANS.has(plan)) return res.status(400).json({ error: 'Неизвестный пакет' })
+
+  // Служебный тариф — только тренеру. Роль читаем ИЗ БАЗЫ service_role-ключом,
+  // а не из тела и не из метаданных токена: и то и другое клиент подставляет
+  // сам. Ответ намеренно тот же, что на несуществующий пакет, — знать о
+  // служебном тарифе постороннему незачем.
+  if (STAFF_PLANS.has(plan)) {
+    const { data: me, error: roleErr } = await supabaseAdmin
+      .from('profiles').select('role').eq('id', userId).maybeSingle()
+    if (roleErr) {
+      console.error(`create-payment: ошибка чтения роли ${userId}:`, roleErr)
+      return res.status(500).json({ error: 'Не удалось проверить доступ' })
+    }
+    if (me?.role !== 'trainer') {
+      console.warn(`create-payment: ${userId} просит служебный тариф ${plan}, но он не тренер`)
+      return res.status(400).json({ error: 'Неизвестный пакет' })
+    }
+  }
 
   // Откуда платят — только метка, не адрес: 'web' даёт возврат в приложение,
   // всё остальное (в том числе отсутствие поля) — прежнее поведение, ссылку на

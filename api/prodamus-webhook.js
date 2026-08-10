@@ -21,11 +21,25 @@ const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://api.fitproapp.ru'
 // по ним больше нечего. Ранее купившим доступ сохраняет их profiles.plan='base'.
 // Только БОЕВЫЕ суммы: тестовые (60/70) убраны — иначе платёж на 70 ₽ мимо
 // нашей ссылки начислил бы ПРЕМИУМ.
+// 50 — служебный тариф test50 (проверка живой оплаты). Сумма настоящая: он и
+// нужен затем, чтобы деньги прошли по боевым рельсам.
+//
+// ⚠ ПОБОЧНОЕ СЛЕДСТВИЕ, ПРО КОТОРОЕ НАДО ЗНАТЬ: определение пакета идёт по
+// сумме, поэтому ЛЮБОЙ платёж ровно на 50 ₽ через эту кассу — хоть мимо нашей
+// ссылки — начислит сутки уровня ПРОФИТ. Раньше по той же причине убрали
+// тестовые 60 и 70: платёж на 70 ₽ начислял ПРЕМИУМ. Здесь цена ущерба —
+// одни сутки; за 60 и 70 давали месяц, и это была совсем другая история.
 const AMOUNT_TO_PLAN = {
-  2990: 'profit', 9990: 'premium',
+  2990: 'profit', 9990: 'premium', 50: 'test50',
 }
 
-const PLAN_DAYS = 30
+// Срок пакета в днях. Правило то же, что на клиенте (src/plans.js,
+// daysOfPlan): у тарифа либо свой срок, либо общее умолчание. Таблица здесь
+// копией, а не импортом из src/ — по той же причине, что и цены в
+// _prodamus.js: api/ и src/ собираются раздельно. Расхождение стережёт тест.
+export const PLAN_DAYS_DEFAULT = 30
+export const PLAN_DAYS_BY_KEY = { test50: 1 }
+const daysForPlan = key => PLAN_DAYS_BY_KEY[key] || PLAN_DAYS_DEFAULT
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 // Подпись — общая с исходящей ссылкой (api/_prodamus.js): один алгоритм,
@@ -188,13 +202,18 @@ export default async function handler(req, res) {
     return res.status(200).send('OK')
   }
 
-  // ── Начисление: продлеваем от максимума (сейчас, текущий plan_until) на 30
-  // дней, чтобы оплата во время активной подписки прибавляла срок, а не
+  // ── Начисление: продлеваем от максимума (сейчас, текущий plan_until) на срок
+  // пакета, чтобы оплата во время активной подписки прибавляла срок, а не
   // затирала его. plan/plan_until пишет service_role — триггер это разрешает.
+  //
+  // Срок берётся по ключу пакета — ЭТО ЕДИНСТВЕННОЕ, чем служебный test50
+  // отличается от боевых. Отдельной ветки под него здесь нет и быть не должно:
+  // весь смысл служебного тарифа в том, что он идёт общим путём, а значит
+  // проверяет именно тот код, который начисляет настоящие покупки.
   const now = Date.now()
   const currentUntilMs = accruePlan.currentUntil ? new Date(accruePlan.currentUntil).getTime() : 0
   const baseMs = Math.max(now, Number.isFinite(currentUntilMs) ? currentUntilMs : 0)
-  const newUntil = new Date(baseMs + PLAN_DAYS * 24 * 60 * 60 * 1000).toISOString()
+  const newUntil = new Date(baseMs + daysForPlan(accruePlan.plan) * 24 * 60 * 60 * 1000).toISOString()
 
   const updateFields = { plan: accruePlan.plan, plan_until: newUntil }
 

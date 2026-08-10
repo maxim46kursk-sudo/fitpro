@@ -16,7 +16,7 @@ import { GlassDefs, GlassIcon } from './glassIcons'
 import { MuscleDefs } from './muscleIcons'
 import { muscleGroup, equipment } from './exerciseMeta'
 import { POLICY_VERSION, POLICY_SECTIONS, CONSENT_SECTIONS, CONSENT_CHECKBOX, DATA_ATTRIBUTION } from './legalText'
-import { PLANS, VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, effectiveAccess } from './plans'
+import { VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, effectiveAccess, visiblePlans, daysOfPlan, PLAN_DAYS_DEFAULT } from './plans'
 // clampNum нужен полям профиля (вес/рост). Пределы питания уехали вместе с
 // разделом в src/FoodDiary.jsx.
 import { clampNum } from './nutrition.js'
@@ -8374,7 +8374,8 @@ function PlansView({ user, onClose, hideBack, onChanged }) {
     if(!user?.id)return
     setLoading(true);setLoadError(false)
     const{data,error}=await supabase.from('profiles')
-      .select('plan,plan_until,trial_until,trial_used,coach_id').eq('id',user.id).single()
+      // role нужен, чтобы решить, показывать ли служебные тарифы (staff).
+      .select('plan,plan_until,trial_until,trial_used,coach_id,role').eq('id',user.id).single()
     if(error){
       console.error('Не удалось загрузить статус подписки:',error)
       setLoadError(true)
@@ -8507,7 +8508,11 @@ function PlansView({ user, onClose, hideBack, onChanged }) {
   }
 
   // Пилюли переключателя: все пакеты + VIP отдельным псевдо-тарифом.
-  const planTabs=[...PLANS.filter(p=>!p.hidden).map(p=>({key:p.key,name:p.name})),{key:'vip',name:VIP.name}]
+  // staff-тарифы (служебный тест оплаты) видит ТОЛЬКО тренер — та же проверка
+  // роли, что открывает тренерские экраны. Клиенту тренера её мало: role у него
+  // 'client', и пилюля не появится. Это удобство, не защита: отказ на покупку
+  // служебного тарифа стоит на сервере (api/create-payment.js).
+  const planTabs=[...visiblePlans(profile?.role).map(p=>({key:p.key,name:p.name})),{key:'vip',name:VIP.name}]
   const isVip=selectedKey==='vip'
   const selectedPlan=isVip?null:planByKey(selectedKey)
   // Уровень для подсветки списка. У VIP горят все пункты (VIP_LEVEL выше всех).
@@ -8621,6 +8626,17 @@ function PlansView({ user, onClose, hideBack, onChanged }) {
             )}
           </div>
 
+          {/* Служебный тариф подписан прямо на карточке и заметно. Без этого
+              «ТЕСТ 50» рядом с ПРОФИТ за 2990 читается как акция, а не как
+              инструмент проверки оплаты, — и однажды его нажмут не думая. */}
+          {!isVip&&selectedPlan.staff&&(
+            <div style={{
+              fontSize:12.5,fontWeight:700,color:COR,background:`${COR}18`,
+              border:`1px solid ${COR}44`,borderRadius:10,padding:'8px 11px',
+              marginTop:-2,marginBottom:12,lineHeight:1.45,
+            }}>{selectedPlan.tagline}</div>
+          )}
+
           {/* Срок — только когда он реально есть: у бесплатного СТАРТА
               effectiveAccess отдаёт until:null, и строка не рисуется. */}
           {isCurrent&&access.until&&(
@@ -8640,7 +8656,12 @@ function PlansView({ user, onClose, hideBack, onChanged }) {
                   <span style={{fontSize:16,color:TXT3,textDecoration:'line-through'}}>{TEST_MODE?selectedPlan.price:selectedPlan.oldPrice} ₽</span>
                 )}
                 <span style={{fontSize:26,fontWeight:800,color:TXT}}>{priceOf(selectedPlan)} ₽</span>
-                <span style={{fontSize:13,color:TXT3}}>/ мес</span>
+                {/* Период берётся из тарифа, а не зашит словом «мес»: у
+                    служебного test50 срок сутки, и подпись «/ мес» рядом с
+                    ценой 50 ₽ была бы прямым враньём о том, что покупаешь. */}
+                <span style={{fontSize:13,color:TXT3}}>
+                  {daysOfPlan(selectedPlan.key)===PLAN_DAYS_DEFAULT?'/ мес':`/ ${daysOfPlan(selectedPlan.key)} дн.`}
+                </span>
               </div>
               {TEST_MODE&&(
                 <div style={{fontSize:11.5,color:COR,marginTop:4}}>тестовая цена на время запуска</div>
