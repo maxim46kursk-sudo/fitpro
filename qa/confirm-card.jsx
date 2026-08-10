@@ -58,18 +58,7 @@ window.fetch = async (url, opts) => {
     return json(found === 'empty' ? { found: true, product: EMPTY_CARD } : { found: false })
   }
   if (u.includes('/api/chat')) return json({ ok: true, product: { ...PRODUCT, barcode: '4607091380101' } })
-  // ?similar=1 — сервер нашёл товар с таким же названием и маркой и спрашивает,
-  // тот же это продукт или другой вкус.
   if (u.includes('save-product')) {
-    const body = JSON.parse(opts.body)
-    if (new URLSearchParams(location.search).get('similar') && !body.sameAs && !body.distinct) {
-      return json({
-        ok: false,
-        reason: 'similar_exists',
-        candidate: { barcode: '2627326027856', name: 'Зефир с кусочками брусники', brand: 'NEO botanica', kcal100: 138, p100: 0.4, c100: 34, f100: 0 },
-        incoming: { barcode: '1647516027856', name: 'Зефир с кусочками брусники', brand: 'NEO botanica', kcal100: 135, p100: 0.4, c100: 34, f100: 0 },
-      })
-    }
     return json({ ok: true, created: true, product: { ...PRODUCT, barcode: '1647516027856' } })
   }
   if (u.includes('/auth/v1/')) return json({ access_token: 'stub', user: { id: 'stub' } })

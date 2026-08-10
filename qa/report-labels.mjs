@@ -10,7 +10,7 @@ const kbju = p => (p ? `${n(p.kcal100)}/${n(p.p100)}/${n(p.f100)}/${n(p.c100)}` 
 const diffPct = (a, b) => (typeof a === 'number' && typeof b === 'number' && b ? Math.round(Math.abs(a - b) / b * 1000) / 10 : null)
 
 const rows = []
-let big = 0, asked = 0, truncated = 0
+let big = 0, truncated = 0
 for (const p of SET) {
   const r = R[String(p.n)]
   if (!r) continue
@@ -20,7 +20,6 @@ for (const p of SET) {
   const dEst = diffPct(est?.kcal100, p.ref.kcal100)
   const dLab = diffPct(lab?.kcal100, p.ref.kcal100)
   if (dEst !== null && dEst > 10) big++
-  if (r.saveFront?.asked || r.saveNutri?.asked) asked++
 
   // Обрезка названия: во что превратилось то, что напечатано на пачке.
   const packName = `${p.name} ${p.quantity}`.toLowerCase()
@@ -38,7 +37,6 @@ for (const p of SET) {
     dEst: dEst === null ? '—' : `${dEst}%`,
     dLab: dLab === null ? '—' : `${dLab}%`,
     db: fin ? `${fin.source} ${kbju(fin)}` : 'нет строки',
-    asked: r.saveFront?.asked || r.saveNutri?.asked ? 'да' : 'нет',
     lostWeight,
   })
 }
@@ -51,7 +49,6 @@ for (const r of rows) {
 
 console.log(`\nтоваров в прогоне: ${rows.length}`)
 console.log(`прикидка разошлась с эталоном больше 10%: ${big} из ${rows.filter(r => r.dEst !== '—').length}`)
-console.log(`вопрос про похожие сработал: на ${asked} товарах`)
 console.log(`потеряли вес в названии: ${truncated}`)
 console.log(`\nбез строки в базе: ${rows.filter(r => r.db === 'нет строки').map(r => r.n).join(', ') || 'нет'}`)
 console.log(`точные не вытеснили прикидку: ${rows.filter(r => r.db.startsWith('ai_estimate')).map(r => r.n).join(', ') || 'нет'}`)

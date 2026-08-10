@@ -47,20 +47,13 @@ const post = (path, body) => fetch(`${BASE}${path}`, {
   body: JSON.stringify(body),
 }).then(async r => ({ status: r.status, body: await r.json().catch(() => null) }))
 
-// Сохранение карточки с ответом на вопрос о похожем товаре.
-//
-// Вопрос срабатывает часто: в справочнике уже лежат те же товары под своими
-// настоящими кодами, а прогон идёт по синтетическим. Отвечаем «другой вкус» —
-// это правда: карточка заводится на другой штрих-код, и подменять ей числа
-// чужими было бы неверно. Факт вопроса записываем: сам по себе он проверяемый
-// результат.
-async function saveCard(barcode, q) {
-  const body = { barcode, basis: q.basis, name: q.name, brand: q.brand, kcal100: q.kcal100, p100: q.p100, c100: q.c100, f100: q.f100 }
-  const first = await post('/api/set-exercise?action=save-product', body)
-  if (first.body?.reason !== 'similar_exists') return { ...first, asked: false }
-  const second = await post('/api/set-exercise?action=save-product', { ...body, distinct: true })
-  return { ...second, asked: true, candidate: first.body?.candidate }
-}
+// Сохранение карточки — один запрос. Второго шага (ответа на вопрос «тот же
+// продукт или другой вкус») больше нет: ветку сняли, карточка всегда заводится
+// на тот код, который отсканировали.
+const saveCard = (barcode, q) => post('/api/set-exercise?action=save-product', {
+  barcode, basis: q.basis, name: q.name, brand: q.brand,
+  kcal100: q.kcal100, p100: q.p100, c100: q.c100, f100: q.f100,
+})
 
 const scan = code => fetch(`${BASE}/api/set-exercise?action=barcode&code=${code}`)
   .then(async r => ({ status: r.status, body: await r.json().catch(() => null) }))
@@ -81,8 +74,8 @@ for (const p of SET) {
   // 2. Сохранение прикидки
   if (front.body?.product) {
     const s = await saveCard(p.barcode, front.body.product)
-    R.saveFront = { status: s.status, created: s.body?.created, asked: s.asked, candidate: s.candidate?.name, error: s.body?.error }
-    console.log(`   сохранение прикидки: ${s.status} created=${s.body?.created} вопрос=${s.asked ? 'был' : 'нет'} ${s.body?.error || ''}`)
+    R.saveFront = { status: s.status, created: s.body?.created, error: s.body?.error }
+    console.log(`   сохранение прикидки: ${s.status} created=${s.body?.created} ${s.body?.error || ''}`)
     save()
   }
 
@@ -101,8 +94,8 @@ for (const p of SET) {
   // 5. Сохранение точных
   if (nutri.body?.product) {
     const s = await saveCard(p.barcode, nutri.body.product)
-    R.saveNutri = { status: s.status, created: s.body?.created, replaced: s.body?.replaced, asked: s.asked, error: s.body?.error }
-    console.log(`   сохранение точных: ${s.status} replaced=${s.body?.replaced} вопрос=${s.asked ? 'был' : 'нет'} ${s.body?.error || ''}`)
+    R.saveNutri = { status: s.status, created: s.body?.created, replaced: s.body?.replaced, error: s.body?.error }
+    console.log(`   сохранение точных: ${s.status} replaced=${s.body?.replaced} ${s.body?.error || ''}`)
     save()
   }
 
