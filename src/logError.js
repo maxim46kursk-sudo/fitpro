@@ -15,6 +15,11 @@ import { supabase } from './supabase'
 // НЕ пользовательский ввод: details у Postgres умеет содержать значения строки
 // («Key (user_id, date)=(...) already exists»).
 //
+// КУДА ПИШЕТ: сначала в ручку /api/set-exercise?action=log-error — она кладёт
+// строку и СРАЗУ будит тренера в Telegram (api/_logError.js). Не вышло —
+// прямая вставка в error_log под своей сессией, как было раньше: без сигнала,
+// но с записью.
+//
 // ГЛАВНОЕ ПРО НАДЁЖНОСТЬ: журналирование не имеет права ломать интерфейс.
 // Функция никогда не бросает, ничего не возвращает и не предназначена для
 // await — вызывающий код продолжает работу немедленно, запись уходит фоном.
@@ -45,6 +50,25 @@ export function logError(context, { message, status, details } = {}) {
         const userId = session?.user?.id
         if (!userId) return
 
+        // ── Сначала через ручку: она не только пишет строку, но и БУДИТ
+        // ТРЕНЕРА. Прямая вставка из браузера этого не умеет и уметь не может —
+        // токен бота на клиенте держать нельзя, а читать чужие строки журнала
+        // (чтобы понять, кричали ли уже про этот context) клиенту не даёт RLS.
+        //
+        // Ответа не ждём дольше необходимого и не разбираем: журналирование не
+        // имеет права тормозить интерфейс.
+        try {
+          const res = await fetch('/api/set-exercise?action=log-error', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+            body: JSON.stringify({ context, message, status }),
+          })
+          if (res.ok) return
+        } catch { /* сети нет или ручка легла — падаем на запасной путь ниже */ }
+
+        // ── Запасной путь: прямая вставка, как было до появления ручки.
+        // Сигнала не будет, но СТРОКА В ЖУРНАЛЕ БУДЕТ — а это главное. Сбой
+        // самой ручки как раз тот случай, когда терять запись обиднее всего.
         const statusNum = Number(status)
         await supabase.from('error_log').insert({
           user_id: userId,

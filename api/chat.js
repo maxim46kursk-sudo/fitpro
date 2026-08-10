@@ -1,6 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import { effectiveLevel, AI_MIN_LEVEL } from './_access.js'
 import { rateLimit } from './_ratelimit.js'
+// Журнал ошибок + мгновенное уведомление тренеру. Файл с подчёркиванием —
+// не serverless-функция.
+import { reportError } from './_logError.js'
 // Разбор ответа модели про этикетку — общий код с api/set-exercise.js, где
 // живёт справочник food_products. Пределы правдоподобия должны совпадать в
 // обеих ручках. Файл с подчёркиванием — не serverless-функция.
@@ -363,12 +366,14 @@ async function askModel(body, { label, barcode, userId }) {
     })
     if (!response.ok) {
       const detail = await response.text().catch(() => '')
-      console.error(`Этикетка ${barcode} (${userId}): ${label} — Anthropic ответил ${response.status}: ${detail.slice(0, 300)}`)
+      reportError('api:chat:label', [`Этикетка ${barcode} (${userId}): ${label} — Anthropic ответил ${response.status}: ${detail.slice(0, 300)}`],
+        { message: `Anthropic ${response.status} (${label})`, status: response.status, userId })
       return null
     }
     data = await response.json()
   } catch (err) {
-    console.error(`Этикетка ${barcode} (${userId}): ${label} — запрос к Anthropic не удался:`, err)
+    reportError('api:chat:label', [`Этикетка ${barcode} (${userId}): ${label} — запрос к Anthropic не удался:`, err],
+      { message: `Anthropic недоступен (${label}): ${err?.message}`, userId })
     return null
   } finally {
     clearTimeout(timeoutId)
@@ -567,7 +572,8 @@ export default async function handler(req, res) {
   if (!serviceRoleKey) {
     // Fail closed: без ключа уровень не проверить, а пускать всех к платной
     // функции нельзя. Ошибка громкая — чинится настройкой переменной.
-    console.error('SUPABASE_SERVICE_ROLE_KEY не настроен — проверка пакета невозможна')
+    reportError('api:chat:config', ['SUPABASE_SERVICE_ROLE_KEY не настроен — проверка пакета невозможна'],
+      { message: 'SUPABASE_SERVICE_ROLE_KEY не настроен', status: 500 })
     return res.status(500).json({ error: 'Сервер не настроен' })
   }
 
@@ -578,7 +584,8 @@ export default async function handler(req, res) {
     .eq('id', data.user.id)
     .maybeSingle()
   if (profileError) {
-    console.error(`ИИ-ассистент ${data.user.id}: ошибка чтения пакета:`, profileError)
+    reportError('api:chat:profile', [`ИИ-ассистент ${data.user.id}: ошибка чтения пакета:`, profileError],
+      { message: profileError?.message, status: 500, userId: data.user.id })
     return res.status(500).json({ error: 'Не удалось проверить доступ' })
   }
   const isFoodLabel = req.body?.type === 'food_label'
@@ -710,7 +717,8 @@ export default async function handler(req, res) {
     const responseData = await response.json()
     res.status(response.status).json(responseData)
   } catch (err) {
-    console.error(`ИИ-ассистент ${data.user.id}: запрос к Anthropic не удался:`, err)
+    reportError('api:chat:anthropic', [`ИИ-ассистент ${data.user.id}: запрос к Anthropic не удался:`, err],
+      { message: `Anthropic недоступен: ${err?.message}`, status: 503, userId: data.user.id })
     res.status(503).json({ error: 'ИИ-ассистент сейчас перегружен, попробуй ещё раз через минуту' })
   } finally {
     clearTimeout(timeoutId)

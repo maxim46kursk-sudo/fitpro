@@ -1,5 +1,8 @@
 import qs from 'qs'
 import { createClient } from '@supabase/supabase-js'
+// Журнал ошибок + мгновенное уведомление тренеру. Файл с подчёркиванием —
+// не serverless-функция.
+import { reportError } from './_logError.js'
 import { verifySignature } from './_prodamus.js'
 
 // Вебхук уведомлений Продамуса. Тело подписано, поэтому НЕ даём Vercel его
@@ -62,12 +65,12 @@ export default async function handler(req, res) {
 
   const secret = process.env.PRODAMUS_SECRET_KEY
   if (!secret) {
-    console.error('PRODAMUS_SECRET_KEY не настроен — уведомление принять нельзя')
+    reportError('api:prodamus:config', ['PRODAMUS_SECRET_KEY не настроен — уведомление принять нельзя'], { message: 'PRODAMUS_SECRET_KEY не настроен', status: 500 })
     return res.status(500).send('Server not configured')
   }
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!serviceRoleKey) {
-    console.error('SUPABASE_SERVICE_ROLE_KEY не настроен')
+    reportError('api:prodamus:config', ['SUPABASE_SERVICE_ROLE_KEY не настроен'], { message: 'SUPABASE_SERVICE_ROLE_KEY не настроен', status: 500 })
     return res.status(500).send('Server not configured')
   }
 
@@ -175,7 +178,7 @@ export default async function handler(req, res) {
       console.log(`Prodamus webhook: повторное уведомление order_num=${orderNum}, пропускаем`)
       return res.status(200).send('OK')
     }
-    console.error('Prodamus webhook: ошибка записи в журнал платежей:', insErr)
+    reportError('api:prodamus:payment', ['Prodamus webhook: ошибка записи в журнал платежей:', insErr], { message: insErr?.message, status: 500 })
     return res.status(500).send('Journal error')
   }
 
@@ -224,7 +227,7 @@ export default async function handler(req, res) {
   if (updErr) {
     // Платёж уже в журнале со статусом success — начисление можно будет
     // доиграть вручную по журналу. 200, чтобы Продамус не слал повторы.
-    console.error(`Prodamus webhook: платёж ${orderNum} записан, но НЕ удалось начислить пакет пользователю ${userId}:`, updErr)
+    reportError('api:prodamus:grant', [`Prodamus webhook: платёж ${orderNum} записан, но НЕ удалось начислить пакет пользователю ${userId}:`, updErr], { message: `платёж записан, пакет НЕ начислен: ${updErr?.message}`, status: 500, userId: userId })
     return res.status(200).send('OK')
   }
 
@@ -234,7 +237,7 @@ export default async function handler(req, res) {
     } else {
       // Пакет начислен, но привязка не легла — почти наверняка её срезал
       // триггер. Громко, чтобы не искать потом «почему клиент не появился».
-      console.error(`Prodamus webhook: coach_id для ${userId} НЕ записан (в базе ${updated?.coach_id ?? 'null'}) — проверь guard_profile_privileged`)
+      reportError('api:prodamus:coach', [`Prodamus webhook: coach_id для ${userId} НЕ записан (в базе ${updated?.coach_id ?? 'null'}) — проверь guard_profile_privileged`], { message: 'coach_id не записан — проверь guard_profile_privileged', userId: userId })
     }
   }
 

@@ -9,6 +9,9 @@ import {
   cleanText, MAX_NAME_LEN, MAX_BRAND_LEN,
   basisToSource, isSoftSource, weakerSources, hasUsableMacros,
 } from './_foodProduct.js'
+// Журнал ошибок + мгновенное уведомление тренеру. Файл с подчёркиванием —
+// не serverless-функция.
+import { logServerError, reportError } from './_logError.js'
 
 // Набор колонок карточки, который отдаём клиенту. source в списке обязателен:
 // от него зависит и решение сервера (идти ли за обновлением в OFF), и пометка
@@ -403,7 +406,7 @@ async function handleFoodSearch(req, res) {
     // Без ключа искать негде: справочник закрыт RLS и грантами, клиент к нему
     // не ходит. Пустой результат тут был бы враньём — честнее сказать, что
     // поиск сломан, чем «ничего не нашлось».
-    console.error('SUPABASE_SERVICE_ROLE_KEY не настроен — ветка food-search не работает')
+    reportError('api:set-exercise:config', ['SUPABASE_SERVICE_ROLE_KEY не настроен — ветка food-search не работает'], { message: 'SUPABASE_SERVICE_ROLE_KEY не настроен (food-search)', status: 500 })
     return res.status(500).json({ error: 'Поиск временно недоступен' })
   }
   const supabaseAdmin = createClient(SUPABASE_URL, serviceRoleKey)
@@ -644,7 +647,7 @@ async function handleSaveProduct(req, res, { supabaseAdmin, userId }) {
       .select(CARD_COLUMNS)
       .maybeSingle()
     if (upgradeError) {
-      console.error(`save-product ${barcode}: ошибка замены менее точной карточки:`, upgradeError)
+      reportError('api:save-product', [`save-product ${barcode}: ошибка замены менее точной карточки:`, upgradeError], { message: upgradeError?.message, status: 500, userId: userId })
       return res.status(500).json({ error: 'Не удалось сохранить продукт' })
     }
     // upgraded пуст — значит, гонку мы проиграли и source уже не тот, что мы
@@ -660,7 +663,7 @@ async function handleSaveProduct(req, res, { supabaseAdmin, userId }) {
   // Сначала смотрим, не завёл ли кто карточку раньше.
   const { data: existing, error: readError } = await readCard()
   if (readError) {
-    console.error(`save-product ${barcode}: ошибка чтения справочника:`, readError)
+    reportError('api:save-product', [`save-product ${barcode}: ошибка чтения справочника:`, readError], { message: readError?.message, status: 500, userId: userId })
     return res.status(500).json({ error: 'Не удалось сохранить продукт' })
   }
   if (existing) return resolveExisting(existing)
@@ -703,7 +706,7 @@ async function handleSaveProduct(req, res, { supabaseAdmin, userId }) {
       const { data: raced } = await readCard()
       if (raced) return resolveExisting(raced)
     }
-    console.error(`save-product ${barcode}: ошибка записи:`, writeError)
+    reportError('api:save-product', [`save-product ${barcode}: ошибка записи:`, writeError], { message: writeError?.message, status: 500, userId: userId })
     return res.status(500).json({ error: 'Не удалось сохранить продукт' })
   }
 
@@ -742,7 +745,7 @@ export default async function handler(req, res) {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!serviceRoleKey) {
     // Fail closed: без ключа ни роль проверить, ни записать. Ошибка громкая.
-    console.error('SUPABASE_SERVICE_ROLE_KEY не настроен — управление каталогом невозможно')
+    reportError('api:set-exercise:config', ['SUPABASE_SERVICE_ROLE_KEY не настроен — управление каталогом невозможно'], { message: 'SUPABASE_SERVICE_ROLE_KEY не настроен (каталог)', status: 500 })
     return res.status(500).json({ error: 'Сервер не настроен' })
   }
   const supabaseAdmin = createClient(SUPABASE_URL, serviceRoleKey)
@@ -754,12 +757,40 @@ export default async function handler(req, res) {
     return handleSaveProduct(req, res, { supabaseAdmin, userId })
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // ВЕТКА ?action=log-error: клиент сообщает о своей ошибке.
+  //
+  // Раньше src/logError.js писал в error_log НАПРЯМУЮ под сессией
+  // пользователя. Запись при этом появлялась, но мгновенного сигнала не было:
+  // уведомление умеет отправлять только сервер — у него токен бота и права
+  // читать журнал целиком. Поэтому клиент теперь стучится сюда, а прямая
+  // вставка осталась у него запасным путём на случай, если ручка недоступна.
+  //
+  // Тоже ветка ОБЫЧНОГО пользователя: стоит выше проверки роли, ниже проверки
+  // токена. Аноним сюда не пишет — иначе журнал стал бы открытой свалкой.
+  //
+  // Свой ключ rate limit и свой лимит: сломанный клиент в цикле перерисовки
+  // способен звать это десятки раз в секунду, и такой поток не должен ни
+  // выжигать лимит сохранения продуктов, ни забивать журнал.
+  // ══════════════════════════════════════════════════════════════════════════
+  if (req.query?.action === 'log-error') {
+    if (!rateLimit(req, res, { name: 'log-error', limit: 20, subject: userId })) return
+    await logServerError(cleanText(req.body?.context, 100) || 'ui:unknown', {
+      message: req.body?.message,
+      status: req.body?.status,
+      userId,
+    })
+    // Всегда 200 и пустое тело: клиенту нечего делать с результатом
+    // журналирования, а отказ он всё равно проглотит.
+    return res.status(200).json({ ok: true })
+  }
+
   // ── Дальше только тренерское. Роль читаем из базы service_role-ключом, а не
   // из тела. Всё, что ниже этой черты, обязано оставаться ниже неё.
   const { data: me, error: meErr } = await supabaseAdmin
     .from('profiles').select('role').eq('id', userId).maybeSingle()
   if (meErr) {
-    console.error(`set-exercise: ошибка чтения профиля ${userId}:`, meErr)
+    reportError('api:set-exercise:profile', [`set-exercise: ошибка чтения профиля ${userId}:`, meErr], { message: meErr?.message, status: 500, userId: userId })
     return res.status(500).json({ error: 'Не удалось проверить доступ' })
   }
   if (me?.role !== 'trainer') return res.status(403).json({ error: 'Доступно только тренеру' })
@@ -778,7 +809,7 @@ export default async function handler(req, res) {
       const { error } = await supabaseAdmin.from('program_templates')
         .update({ hidden: true, updated_at: new Date().toISOString() }).eq('key', key)
       if (error) {
-        console.error(`set-exercise: ошибка скрытия шаблона «${key}»:`, error)
+        reportError('api:set-exercise:template', [`set-exercise: ошибка скрытия шаблона «${key}»:`, error], { message: error?.message, status: 500, userId: userId })
         return res.status(500).json({ error: 'Не удалось скрыть программу' })
       }
       console.log(`set-exercise: тренер ${userId} скрыл шаблон «${key}»`)
@@ -823,7 +854,7 @@ export default async function handler(req, res) {
       updated_at: new Date().toISOString(),
     }, { onConflict: 'key' })
     if (error) {
-      console.error(`set-exercise: ошибка сохранения шаблона «${key}»:`, error)
+      reportError('api:set-exercise:template', [`set-exercise: ошибка сохранения шаблона «${key}»:`, error], { message: error?.message, status: 500, userId: userId })
       return res.status(500).json({ error: 'Не удалось сохранить программу' })
     }
     console.log(`set-exercise: тренер ${userId} сохранил шаблон «${key}» (${structure.length} слотов)`)
@@ -836,7 +867,7 @@ export default async function handler(req, res) {
   if (action === 'delete') {
     const { error } = await supabaseAdmin.from('catalog_exercises').delete().eq('name', name)
     if (error) {
-      console.error(`set-exercise: ошибка удаления «${name}»:`, error)
+      reportError('api:set-exercise:catalog', [`set-exercise: ошибка удаления «${name}»:`, error], { message: error?.message, status: 500, userId: userId })
       return res.status(500).json({ error: 'Не удалось удалить упражнение' })
     }
     console.log(`set-exercise: тренер ${userId} удалил «${name}»`)
@@ -858,7 +889,7 @@ export default async function handler(req, res) {
     }
     const { error } = await supabaseAdmin.from('catalog_exercises').upsert(row, { onConflict: 'name' })
     if (error) {
-      console.error(`set-exercise: ошибка сохранения «${name}»:`, error)
+      reportError('api:set-exercise:catalog', [`set-exercise: ошибка сохранения «${name}»:`, error], { message: error?.message, status: 500, userId: userId })
       return res.status(500).json({ error: 'Не удалось сохранить упражнение' })
     }
     console.log(`set-exercise: тренер ${userId} сохранил «${name}»`)
@@ -873,7 +904,7 @@ export default async function handler(req, res) {
     const context = ['default', 'zal', 'dom'].includes(req.body?.context) ? req.body.context : 'default'
     const { error } = await supabaseAdmin.from('exercise_videos').delete().eq('exercise_name', name).eq('context', context)
     if (error) {
-      console.error(`set-exercise: ошибка снятия видео (${name}/${context}):`, error)
+      reportError('api:set-exercise:video', [`set-exercise: ошибка снятия видео (${name}/${context}):`, error], { message: error?.message, status: 500, userId: userId })
       return res.status(500).json({ error: 'Не удалось снять видео' })
     }
     console.log(`set-exercise: тренер ${userId} снял видео с «${name}» (${context})`)
@@ -895,7 +926,7 @@ export default async function handler(req, res) {
       updated_at: new Date().toISOString(),
     }, { onConflict: 'exercise_name,context' })
     if (error) {
-      console.error(`set-exercise: ошибка назначения видео (${name}):`, error)
+      reportError('api:set-exercise:video', [`set-exercise: ошибка назначения видео (${name}):`, error], { message: error?.message, status: 500, userId: userId })
       return res.status(500).json({ error: 'Не удалось назначить видео' })
     }
     console.log(`set-exercise: тренер ${userId} назначил видео «${name}»`)
@@ -914,7 +945,7 @@ export default async function handler(req, res) {
       updated_at: new Date().toISOString(),
     }, { onConflict: 'name' })
     if (error) {
-      console.error(`set-exercise: ошибка сохранения техники «${name}»:`, error)
+      reportError('api:set-exercise:catalog', [`set-exercise: ошибка сохранения техники «${name}»:`, error], { message: error?.message, status: 500, userId: userId })
       return res.status(500).json({ error: 'Не удалось сохранить технику' })
     }
     console.log(`set-exercise: тренер ${userId} обновил технику «${name}»`)

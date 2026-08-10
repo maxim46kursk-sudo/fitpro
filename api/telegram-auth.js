@@ -1,5 +1,8 @@
 import crypto from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
+// Журнал ошибок + мгновенное уведомление тренеру. Файл с подчёркиванием —
+// не serverless-функция.
+import { reportError } from './_logError.js'
 import { rateLimit } from './_ratelimit.js'
 
 // URL несекретен, тот же безопасный fallback, что и в api/chat.js.
@@ -68,7 +71,7 @@ const syntheticEmail = tgId => `tg${tgId}@telegram.fitpro`
 async function issueOtp(admin, email) {
   const { data, error } = await admin.auth.admin.generateLink({ type: 'magiclink', email })
   if (error || !data?.properties?.email_otp) {
-    console.error('telegram-auth: ошибка выдачи одноразового кода:', error)
+    reportError('api:telegram-auth', ['telegram-auth: ошибка выдачи одноразового кода:', error], { message: error?.message, status: 500 })
     return null
   }
   return { otp: data.properties.email_otp, userId: data?.user?.id || null }
@@ -111,7 +114,7 @@ export async function resolveTelegramAccount(admin, tgUser) {
     // НЕ проваливаемся в ветку 2. Если поиск сломался, а аккаунт на самом деле
     // есть, ветка 2 завела бы дубль — то есть человек потерял бы свою историю
     // из-за сетевой ошибки. Лучше честно отказать: он повторит вход.
-    console.error('telegram-auth: ошибка поиска профиля по tg_id:', lookupErr)
+    reportError('api:telegram-auth', ['telegram-auth: ошибка поиска профиля по tg_id:', lookupErr], { message: lookupErr?.message, status: 500 })
     return { ok: false, status: 500, error: 'Не удалось проверить аккаунт' }
   }
 
@@ -151,7 +154,7 @@ export async function resolveTelegramAccount(admin, tgUser) {
   const alreadyExists = createError && (createError.code === 'email_exists' || /already.*(registered|exists)/i.test(createError.message || ''))
   const isNewAccount = !createError
   if (createError && !alreadyExists) {
-    console.error('telegram-auth: ошибка создания пользователя:', createError)
+    reportError('api:telegram-auth', ['telegram-auth: ошибка создания пользователя:', createError], { message: createError?.message, status: 500 })
     return { ok: false, status: 500, error: 'Не удалось создать пользователя' }
   }
 
@@ -225,7 +228,7 @@ export default async function handler(req, res) {
   if (req.body?.action === 'redeem_access') {
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     if (!serviceKey) {
-      console.error('SUPABASE_SERVICE_ROLE_KEY не настроен — вход по ссылке невозможен')
+      reportError('api:telegram-auth:config', ['SUPABASE_SERVICE_ROLE_KEY не настроен — вход по ссылке невозможен'], { message: 'SUPABASE_SERVICE_ROLE_KEY не настроен (вход по ссылке)', status: 500 })
       return res.status(500).json({ error: 'Сервер не настроен' })
     }
     // Один нейтральный текст на все причины отказа: по разнице ответов иначе
@@ -245,7 +248,7 @@ export default async function handler(req, res) {
       .eq('token_hash', tokenHash)
       .maybeSingle()
     if (rowErr) {
-      console.error('Ошибка поиска ссылки доступа:', rowErr)
+      reportError('api:telegram-auth:access', ['Ошибка поиска ссылки доступа:', rowErr], { message: rowErr?.message, status: 500 })
       return res.status(500).json({ error: 'Не удалось проверить ссылку' })
     }
     if (!row) return res.status(401).json(denied)
@@ -291,7 +294,7 @@ export default async function handler(req, res) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!botToken || !serviceRoleKey) {
-    console.error('TELEGRAM_BOT_TOKEN или SUPABASE_SERVICE_ROLE_KEY не настроены')
+    reportError('api:telegram-auth:config', ['TELEGRAM_BOT_TOKEN или SUPABASE_SERVICE_ROLE_KEY не настроены'], { message: 'TELEGRAM_BOT_TOKEN или SUPABASE_SERVICE_ROLE_KEY не настроены', status: 500 })
     return res.status(500).json({ error: 'Сервер не настроен' })
   }
 

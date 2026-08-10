@@ -1,5 +1,8 @@
 import crypto from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
+// Журнал ошибок + мгновенное уведомление тренеру. Файл с подчёркиванием —
+// не serverless-функция.
+import { reportError } from './_logError.js'
 
 // Отправка напоминаний от бота по расписанию. Дёргается кроном, поэтому
 // защищено секретом (cron знает REMINDERS_CRON_SECRET). Идемпотентность в
@@ -230,7 +233,7 @@ export default async function handler(req, res) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!botToken || !serviceRoleKey) {
-    console.error('send-reminders: не настроены TELEGRAM_BOT_TOKEN или SUPABASE_SERVICE_ROLE_KEY')
+    reportError('api:send-reminders:config', ['send-reminders: не настроены TELEGRAM_BOT_TOKEN или SUPABASE_SERVICE_ROLE_KEY'], { message: 'не настроены TELEGRAM_BOT_TOKEN или SUPABASE_SERVICE_ROLE_KEY', status: 500 })
     return res.status(500).json({ error: 'Сервер не настроен' })
   }
   const supabaseAdmin = createClient(SUPABASE_URL, serviceRoleKey)
@@ -247,7 +250,7 @@ export default async function handler(req, res) {
   const { data: profiles, error: profErr } = await supabaseAdmin
     .from('profiles').select('id, notifs').not('notifs', 'is', null)
   if (profErr) {
-    console.error('send-reminders: ошибка чтения профилей:', profErr)
+    reportError('api:send-reminders', ['send-reminders: ошибка чтения профилей:', profErr], { message: profErr?.message, status: 500 })
     return res.status(500).json({ error: 'Не удалось прочитать профили' })
   }
 
