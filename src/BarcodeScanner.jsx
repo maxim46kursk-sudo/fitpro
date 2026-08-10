@@ -223,6 +223,11 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
   // не в момент своего создания. Через состояние он был бы всегда false —
   // useCallback([]) замкнул бы первое значение.
   const torchOkRef = useRef(false)
+  // Четыре числа в том виде, в каком они впервые легли на экран сверки. По ним
+  // при сохранении решается, правил человек цифры или подтвердил чужие, —
+  // отсюда и source карточки. В ref, а не в состоянии: на отрисовку это не
+  // влияет, а лишние перерисовки формы ввода ни к чему.
+  const shownNumsRef = useRef([null, null, null, null])
 
   // ГЛАВНОЕ В ЭТОМ ФАЙЛЕ. Треки MediaStream живут независимо от React: если их
   // не остановить явно, камера остаётся занятой после закрытия оверлея — в
@@ -568,7 +573,36 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
     // в пустую строку, чтобы человек сразу видел, что вписать.
     const p = json.product
     const s = v => (v === null || v === undefined ? '' : String(v))
-    setLabelForm({ name: p.name || '', brand: p.brand || '', kcal100: s(p.kcal100), p100: s(p.p100), c100: s(p.c100), f100: s(p.f100) })
+
+    // НЕТ ОДНОЙ СТРОКИ В ТАБЛИЦЕ — ЭТО НЕ ПРОБЕЛ, А НОЛЬ. У воды нет ни белков,
+    // ни жиров, ни углеводов; у растительного масла нет углеводов; строку
+    // «жиры 0 г» производители сплошь и рядом просто не печатают. Модель в
+    // таком случае честно отдаёт null, и раньше человек упирался в погасшую
+    // кнопку с требованием заполнить то, чего на пачке нет.
+    //
+    // Подставляем 0 ВИДИМО, в само поле ввода: человек читает нули, сверяет с
+    // пачкой и правит, если жиры там всё-таки есть. Молчаливая подстановка при
+    // отправке была бы хуже — она решает за него и ничего не показывает.
+    //
+    // Только когда калорийность распознана: если её нет, нулями будет нечего
+    // поверять, а «все четыре null» — это отдельный случай (labelEmpty ниже),
+    // где модель узнала продукт, но не увидела цифр вовсе. Там поля остаются
+    // пустыми, и просьба вписать КБЖУ честна.
+    //
+    // Страховка — проверка Атвотера на сервере: если жиры на деле есть, а в
+    // поле 0, калорийность не сойдётся с макросами и плашка предупредит.
+    const macro = v => (v === null || v === undefined ? (p.kcal100 === null ? '' : '0') : String(v))
+    const form = {
+      name: p.name || '', brand: p.brand || '',
+      kcal100: s(p.kcal100), p100: macro(p.p100), c100: macro(p.c100), f100: macro(p.f100),
+    }
+    setLabelForm(form)
+
+    // Что человек УВИДЕЛ на экране сверки — отправная точка для решения, правил
+    // он числа или нет (см. saveProduct). Именно увиденное, а не сырой ответ
+    // модели: подставленные выше нули придумали мы, и если человек их не
+    // тронул, точной карточка от этого не стала.
+    shownNumsRef.current = [form.kcal100, form.p100, form.c100, form.f100].map(parseGrams)
     setLabelPer(p.per || '100g')
     setLabelBasis(['estimate', 'web'].includes(p.basis) ? p.basis : 'label')
     setLabelSource(p.sourceName && p.sourceUrl ? { name: p.sourceName, url: p.sourceUrl } : null)
@@ -592,6 +626,30 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) { setPhotoError('Сессия истекла. Войди заново и повтори.'); return }
+
+      // ЧЕЛОВЕК ПЕРЕПИСАЛ ЦИФРЫ С ПАЧКИ — ЭТО УЖЕ НЕ ПРИКИДКА.
+      //
+      // Раньше basis уезжал таким, каким его выставила модель, и карточка,
+      // где все четыре числа переписаны с этикетки вручную, ложилась в общий
+      // справочник как ai_estimate — с пометкой «≈ примерные значения» и правом
+      // быть вытесненной чьей угодно следующей прикидкой. Обидно вдвойне:
+      // человек сделал самую точную работу из возможных, а результат помечен
+      // как догадка.
+      //
+      // Признак правки — расхождение с тем, что лежало в полях при открытии
+      // экрана (shownNumsRef). Сравниваем ЧИСЛА, а не строки: «5.0» и «5» — одно
+      // и то же, и объявлять это правкой было бы враньём в другую сторону.
+      //
+      // Сверяемся именно с показанным, а не с сырым ответом модели: нули,
+      // подставленные нами вместо ненапечатанных строк таблицы, придумали мы, и
+      // если человек их не тронул — карточка от этого точной не стала.
+      //
+      // Имя и бренд НЕ учитываются намеренно: поправить опечатку в названии —
+      // не то же самое, что сверить числа с упаковкой.
+      const nowNums = [labelForm.kcal100, labelForm.p100, labelForm.c100, labelForm.f100].map(parseGrams)
+      const edited = nowNums.some((v, i) => v !== shownNumsRef.current[i])
+      const basis = edited ? 'label' : labelBasis
+
       let res
       try {
         res = await fetch('/api/set-exercise?action=save-product', {
@@ -600,7 +658,7 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
           // basis, а НЕ source: какой источник записать, решает сервер
           // (api/_foodProduct.js, basisToSource). Клиент, объявляющий свою
           // карточку точной, навсегда закрыл бы её от обновления из OFF.
-          body: JSON.stringify({ barcode: scannedCode, basis: labelBasis, ...labelForm }),
+          body: JSON.stringify({ barcode: scannedCode, basis, ...labelForm }),
         })
       } catch {
         setPhotoError('Нет связи с сервером. Проверь интернет и попробуй ещё раз.')
@@ -640,7 +698,7 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
   const scaled = product ? scaleProduct(product, gramsClamped) : null
   const gramsClipped = gramsRaw !== null && gramsClamped !== null && gramsRaw !== gramsClamped
 
-  // Карточка годна к занесению в дневник? Полный набор КБЖУ и не все нули.
+  // Карточка годна к занесению в дневник? Известны все четыре числа.
   // Зеркало серверного hasUsableMacros (api/_foodProduct.js) — правило одно, но
   // проверка нужна с обеих сторон: сервер решает, что писать в общий
   // справочник, клиент — что показывать и давать нажать.
@@ -649,10 +707,13 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
   // товар, но не знает пищевую ценность) давала активную кнопку, а в дневник
   // уезжал ноль калорий. Человек этого не замечает — день просто считается
   // неправильно.
+  //
+  // Все нули при этом ЗАКОННЫ и кнопку не гасят: вода и чай без сахара —
+  // настоящие 0/0/0/0. Отсутствие числа приезжает как null, и его ловит
+  // проверка выше; ноль — это ответ, а не молчание.
   const usable = v => typeof v === 'number' && Number.isFinite(v)
   const macrosKnown = !!product
     && [product.kcal100, product.p100, product.c100, product.f100].every(usable)
-    && !(product.kcal100 === 0 && product.p100 === 0 && product.c100 === 0 && product.f100 === 0)
 
   const addToDiary = () => {
     if (!product || gramsClamped === null || !macrosKnown) return
@@ -680,8 +741,14 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
   // ложилась в общую базу — ровно так пустые строки туда и попадали.
   // Условие зеркалит серверное hasUsableMacros; сервер теперь такую карточку
   // отвергает 400-м, и кнопка не должна доводить до этого отказа.
+  //
+  // ЧЕТЫРЕ НУЛЯ КНОПКУ БОЛЬШЕ НЕ ГАСЯТ — это была третья копия того же
+  // ошибочного правила (первые две в hasUsableMacros и macrosKnown). Из-за неё
+  // человек, сфотографировавший бутылку воды, упирался в мёртвую кнопку и
+  // требование «заполни все четыре числа» — при том что все четыре заполнены,
+  // просто нулями. Пустое поле по-прежнему даёт null и кнопку гасит.
   const labelNums = [labelForm.kcal100, labelForm.p100, labelForm.c100, labelForm.f100].map(parseGrams)
-  const needsKcal = labelNums.some(v => v === null) || labelNums.every(v => v === 0)
+  const needsKcal = labelNums.some(v => v === null)
 
   const headerTitle =
     stage === 'result' ? 'Порция'
@@ -820,21 +887,16 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
                 На 100 г: <span style={{ color: KCAL, fontWeight: 700 }}>{num(product.kcal100)} ккал</span>
                 {' · '}Б {num(product.p100)} · У {num(product.c100)} · Ж {num(product.f100)}
               </div>
-              {/* Карточку кто-то завёл, не читая таблицу с упаковки: числа
-                  либо оценка модели, либо находка в интернете по названию.
-                  Молчать об этом нельзя: человек считает их фактом и заносит в
-                  дневник. Две формулировки, а не одна, — разница существенная:
-                  «из интернета» можно проверить, «примерные» проверить нечем. */}
-              {product.source === 'ai_estimate' && (
-                <div style={{ fontSize: 11, color: COR, marginTop: 6 }}>≈ примерные значения</div>
-              )}
-              {/* Найденное в интернете помечаем СПОКОЙНО и БЕЗ «≈»: у этих
-                  чисел есть источник, они не прикидка. Ссылку показать уже
-                  нечем — в справочнике хранится только вид источника, не
-                  адрес, — поэтому просто говорим, откуда они родом. */}
-              {product.source === 'ai_web' && (
-                <div style={{ fontSize: 11, color: TXT3, marginTop: 6 }}>По данным карточки магазина</div>
-              )}
+              {/* ПОМЕТОК О ПРОИСХОЖДЕНИИ ЦИФР ЗДЕСЬ НЕТ И БЫТЬ НЕ ДОЛЖНО.
+                  Стояли «≈ примерные значения» и «По данным карточки магазина» —
+                  убраны. Человек отсканировал код и нашёл товар в справочнике;
+                  откуда у нас взялись числа — ai_estimate, ai_web или чтение
+                  таблицы, — наша внутренняя кухня, а не его забота.
+                  Пометка на экране СВЕРКИ (ниже, stage 'confirm') остаётся: там
+                  она про действие — сверь с пачкой перед тем, как это уйдёт в
+                  общую базу, — а не ярлык на чужой карточке.
+                  Поле source, ранги источников и вытеснение прикидок данными
+                  OFF работают как работали: это правка интерфейса. */}
             </div>
 
             <div style={{ fontSize: 12, color: TXT3, fontWeight: 600, marginBottom: 6 }}>Вес порции, г</div>

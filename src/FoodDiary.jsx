@@ -1030,14 +1030,10 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
                         {' · '}Б {picked.data.p} · У {picked.data.c} · Ж {picked.data.f}
                       </div>
                     )}
-                    {picked.kind === 'product' && picked.data.source === 'ai_estimate' && (
-                      <div style={{ fontSize: 11, color: COR, marginTop: 6 }}>≈ примерные значения</div>
-                    )}
-                    {/* Без «≈» и без тревожного цвета: у этих чисел есть
-                        источник, они не прикидка (см. BarcodeScanner). */}
-                    {picked.kind === 'product' && picked.data.source === 'ai_web' && (
-                      <div style={{ fontSize: 11, color: TXT3, marginTop: 6 }}>По данным карточки магазина</div>
-                    )}
+                    {/* Пометок о происхождении цифр здесь нет: человек нашёл
+                        товар в справочнике, и откуда у нас взялись числа —
+                        наша внутренняя кухня. То же самое убрано на экране
+                        порции в BarcodeScanner.jsx, правило одно на оба места. */}
                   </div>
 
                   <div style={{ fontSize: 12, color: TXT3, fontWeight: 600, marginBottom: 6 }}>
@@ -1119,11 +1115,8 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
                         <div style={{ fontSize: 11, color: TXT3, marginTop: 1 }}>
                           <span style={{ color: KCAL, fontWeight: 600 }}>{num(p.kcal100)} ккал</span>
                           {' · '}Б {num(p.p100)} · У {num(p.c100)} · Ж {num(p.f100)} / 100 г
-                          {/* «≈» — ТОЛЬКО у прикидки. Найденное в интернете
-                              этим значком не метим: у тех чисел есть источник,
-                              и ставить им знак приблизительности значило бы
-                              врать в другую сторону. */}
-                          {p.source === 'ai_estimate' && <span style={{ color: COR }}> · ≈</span>}
+                          {/* Значка «≈» у прикидки здесь тоже больше нет —
+                              см. комментарий на экране порции выше. */}
                         </div>
                       </div>
                     ))}
