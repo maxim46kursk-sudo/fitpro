@@ -87,6 +87,16 @@ function loadZxing() {
         hints.set(DecodeHintType.POSSIBLE_FORMATS, [
           BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E,
         ])
+        // TRY_HARDER — второй, куда более дотошный проход по кадру: ридер
+        // пробует больше линий развёртки и оба направления чтения. Это заметно
+        // поднимает шанс на мятой плёнке, бликах и коде, снятом под углом, —
+        // то есть ровно на том, как выглядит пачка в руке у полки.
+        //
+        // Цена — лишний такт процессора на кадр. Она нам по карману: тик идёт
+        // раз в POLL_MS (300 мс) и следующий не стартует, пока считается
+        // предыдущий (busyRef), так что в худшем случае мы просто пропустим
+        // кадр, а не устроим очередь.
+        hints.set(DecodeHintType.TRY_HARDER, true)
         return new BrowserMultiFormatOneDReader(hints)
       })
       .catch(e => { zxingPromise = null; throw e })
@@ -190,6 +200,13 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
   // ПРЕЖНИЕ цифры, а не результат этого снимка. Молчать об этом нельзя: человек
   // решит, что таблица прочиталась, и подтвердит чужую прикидку как точную.
   const [keptPrevious, setKeptPrevious] = useState(false)
+  // Фонарик: есть ли он у этой камеры вообще и горит ли сейчас. Кнопку
+  // показываем ТОЛЬКО когда трек сам заявил о поддержке (getCapabilities().torch)
+  // — на ноутбуке и в большинстве десктопных браузеров её не будет вовсе.
+  // Неживая кнопка хуже отсутствующей: человек жмёт, ничего не происходит, и
+  // он решает, что сломан сканер.
+  const [torchAvailable, setTorchAvailable] = useState(false)
+  const [torchOn, setTorchOn] = useState(false)
 
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
@@ -199,6 +216,13 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
   const fileInputRef = useRef(null)
   const busyRef = useRef(false)   // тик ещё считает предыдущий кадр
   const doneRef = useRef(false)   // код уже распознан — больше не смотрим
+  // Видеотрек текущего потока — по нему переключается фонарик. Отдельно от
+  // streamRef, потому что нужен из обработчика нажатия, а не только из эффекта.
+  const trackRef = useRef(null)
+  // Зеркало torchAvailable в ref: stopCamera читает его в момент остановки, а
+  // не в момент своего создания. Через состояние он был бы всегда false —
+  // useCallback([]) замкнул бы первое значение.
+  const torchOkRef = useRef(false)
 
   // ГЛАВНОЕ В ЭТОМ ФАЙЛЕ. Треки MediaStream живут независимо от React: если их
   // не остановить явно, камера остаётся занятой после закрытия оверлея — в
@@ -210,9 +234,30 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
     const stream = streamRef.current
     if (stream) {
-      for (const track of stream.getTracks()) { try { track.stop() } catch { /* трек уже мёртв */ } }
+      for (const track of stream.getTracks()) {
+        // ФОНАРИК ГАСИМ ДО stop(), И ТОЛЬКО ЕСЛИ ОН ЗДЕСЬ ЕСТЬ. На части
+        // Android остановка трека не выключает подсветку — телефон убирают в
+        // карман с горящим фонарём. После stop() трек уже мёртв, и погасить
+        // его нечем, поэтому порядок здесь не косметический.
+        //
+        // Проверка torchOkRef важна вторым: без неё мы дёргали бы
+        // applyConstraints на каждой камере при каждой остановке, в том числе
+        // на десктопе, где этот путь сейчас просто работает.
+        //
+        // Без await — stopCamera синхронная и зовётся из cleanup эффекта.
+        // Обещание всё равно ловим: несбывшийся applyConstraints иначе
+        // всплывает unhandled rejection в консоли.
+        if (torchOkRef.current && track.kind === 'video') {
+          try { track.applyConstraints({ advanced: [{ torch: false }] })?.catch?.(() => {}) } catch { /* не умеет */ }
+        }
+        try { track.stop() } catch { /* трек уже мёртв */ }
+      }
       streamRef.current = null
     }
+    trackRef.current = null
+    torchOkRef.current = false
+    setTorchAvailable(false)
+    setTorchOn(false)
     const v = videoRef.current
     if (v) {
       try { v.pause() } catch { /* не начинал играть */ }
@@ -336,7 +381,23 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
         // facingMode:'environment' — задняя камера. Не exact: на ноутбуке и
         // части WebView задней камеры нет, и exact уронил бы сканер там, где
         // фронтальной вполне хватает.
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        //
+        // РАЗРЕШЕНИЕ ПРОСИМ ЯВНО. Без width/height браузер выдаёт поток по
+        // своему умолчанию — а это 640×480. Штрих-код в такой кадр попадает
+        // полосками в считанные пиксели шириной, и декодер честно не находит
+        // ничего: дело не в нём, а в том, что в кадре информации уже нет.
+        //
+        // ideal, а НЕ exact и не min — по той же причине, что и facingMode:
+        // там, где 1920×1080 не выдаст никто (веб-камера ноутбука, старый
+        // WebView), должно отдаться лучшее из возможного. exact бросил бы
+        // OverconstrainedError, и сканер ушёл бы в ручной ввод на ровном месте.
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+        })
       } catch (e) {
         if (!cancelled) { setCameraError(cameraErrorText(e)); setStage('manual') }
         return
@@ -350,6 +411,32 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
       v.srcObject = stream
       // play() отвергается, если элемент успели убрать; для нас это не ошибка.
       try { await v.play() } catch { /* размонтировались */ }
+
+      // ── Донастройка трека: автофокус и фонарик
+      //
+      // ВСЁ, ЧТО НИЖЕ, — НЕОБЯЗАТЕЛЬНОЕ УЛУЧШЕНИЕ. Ни один отказ здесь не имеет
+      // права уронить сканер: focusMode и torch не описаны в основном стандарте
+      // MediaTrackConstraints, их поддержка кончается ровно на Android Chrome, а
+      // на десктопе и в iOS Safari applyConstraints на них либо молча ничего не
+      // делает, либо отклоняет обещание. Поэтому каждый вызов — в своём
+      // try/catch, отказ проглатывается, поток остаётся тем же.
+      const track = stream.getVideoTracks()[0] || null
+      trackRef.current = track
+
+      // Непрерывный автофокус. Часть Android-камер по умолчанию держит фокус
+      // фиксированным, и с 10–15 см — то есть с того расстояния, с которого
+      // человек и подносит пачку, — картинка размыта. Полоски штрих-кода
+      // сливаются, и декодеру опять нечего читать.
+      try {
+        await track?.applyConstraints({ advanced: [{ focusMode: 'continuous' }] })
+      } catch { /* камера не умеет управлять фокусом — снимаем как есть */ }
+
+      // Фонарик показываем, только если трек сам о нём заявил. getCapabilities
+      // нет в Safari вовсе — отсюда и вызов через ?., и try/catch поверх.
+      let torchSupported = false
+      try { torchSupported = Boolean(track?.getCapabilities?.().torch) } catch { /* нет такого API */ }
+      torchOkRef.current = torchSupported
+      if (!cancelled) { setTorchAvailable(torchSupported); setTorchOn(false) }
 
       // Выбор декодера: системный, если он есть и умеет наши форматы, иначе
       // @zxing. Решение принимается один раз и переживает перезапуск камеры.
@@ -374,6 +461,23 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
 
     return () => { cancelled = true; stopCamera() }
   }, [stage, scanToken, lookup, stopCamera])
+
+  // Переключение фонарика. Если камера соврала о поддержке (getCapabilities
+  // сказал torch, а applyConstraints отказал) — убираем кнопку совсем, вместо
+  // того чтобы оставить её мёртвой на экране.
+  const toggleTorch = async () => {
+    const track = trackRef.current
+    if (!track) return
+    const next = !torchOn
+    try {
+      await track.applyConstraints({ advanced: [{ torch: next }] })
+      setTorchOn(next)
+    } catch {
+      torchOkRef.current = false
+      setTorchAvailable(false)
+      setTorchOn(false)
+    }
+  }
 
   const restartScan = () => {
     setProduct(null)
@@ -630,6 +734,28 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
               <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
                 <div style={{ width: '76%', maxWidth: 320, height: 130, border: `2px solid ${PUR}`, borderRadius: 14, boxShadow: '0 0 0 100vmax rgba(0,0,0,0.45)' }} />
               </div>
+              {/* Фонарик — под нижним краем рамки прицела (её половина высоты
+                  65px плюс отступ), чтобы палец не закрывал сам код.
+                  Кнопки нет вовсе, когда камера не заявила о поддержке:
+                  на десктопе этот блок не отрисуется никогда. */}
+              {torchAvailable && (
+                <button
+                  onClick={toggleTorch}
+                  aria-label={torchOn ? 'Выключить фонарик' : 'Включить фонарик'}
+                  aria-pressed={torchOn}
+                  style={{
+                    position: 'absolute', left: '50%', top: 'calc(50% + 79px)', transform: 'translateX(-50%)',
+                    display: 'flex', alignItems: 'center', gap: 7,
+                    padding: '9px 16px', borderRadius: 999, minHeight: 'unset', cursor: 'pointer',
+                    border: `1px solid ${torchOn ? COR : HAIR}`,
+                    background: torchOn ? 'rgba(255,159,10,0.18)' : 'rgba(0,0,0,0.55)',
+                    color: torchOn ? COR : TXT,
+                    fontSize: 13, fontWeight: 600,
+                  }}>
+                  <GlassIcon name="bulb" size={18} />
+                  {torchOn ? 'Фонарик включён' : 'Фонарик'}
+                </button>
+              )}
             </div>
             <canvas ref={canvasRef} style={{ display: 'none' }} />
             <div style={{ padding: '14px 16px 24px' }}>
