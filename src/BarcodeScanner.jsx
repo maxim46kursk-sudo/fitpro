@@ -48,6 +48,11 @@ const NATIVE_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e']
 // реже — человек успевает решить, что сканер завис.
 const POLL_MS = 300
 
+// Сколько держится зелёная вспышка рамки после поимки кода — и, ровно на
+// столько же, отложен переход к поиску (см. onCode). Меньше 200 мс глаз
+// принимает за подёргивание, больше 300 — уже ощутимая пауза перед ответом.
+const CATCH_FLASH_MS = 250
+
 const isValidCode = c => /^[0-9]{8,14}$/.test(c)
 
 // Системный детектор есть в Chrome на Android. Проверяем именно наличие
@@ -207,6 +212,10 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
   // он решает, что сломан сканер.
   const [torchAvailable, setTorchAvailable] = useState(false)
   const [torchOn, setTorchOn] = useState(false)
+  // Код пойман — рамка прицела на мгновение зеленеет. Отклик нужен потому, что
+  // сейчас у человека нет НИКАКОГО признака успеха: камера как смотрела, так и
+  // смотрит, а экран поиска появляется не сразу.
+  const [caught, setCaught] = useState(false)
 
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
@@ -228,6 +237,9 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
   // отсюда и source карточки. В ref, а не в состоянии: на отрисовку это не
   // влияет, а лишние перерисовки формы ввода ни к чему.
   const shownNumsRef = useRef([null, null, null, null])
+  // Таймер вспышки рамки. В ref, чтобы снять его при закрытии оверлея: иначе
+  // поиск ушёл бы уже после того, как человек нажал «закрыть».
+  const flashTimerRef = useRef(null)
 
   // ГЛАВНОЕ В ЭТОМ ФАЙЛЕ. Треки MediaStream живут независимо от React: если их
   // не остановить явно, камера остаётся занятой после закрытия оверлея — в
@@ -343,7 +355,35 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
       if (doneRef.current || cancelled) return
       doneRef.current = true
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
-      lookup(code)
+
+      // Короткий толчок в руку. Главный отклик из трёх: он доходит и когда
+      // человек смотрит на пачку, а не на экран. 80 мс — это «тук», а не
+      // жужжание; длиннее читается как ошибка.
+      //
+      // vibrate нет в iOS Safari вовсе, а в части WebView он объявлен, но
+      // бросает. Поэтому и ?., и try/catch: отсутствие отклика не повод ронять
+      // сканирование.
+      try { navigator.vibrate?.(80) } catch { /* нет вибромотора или API */ }
+
+      setCaught(true)
+
+      // ЗАЧЕМ ЗДЕСЬ ЗАДЕРЖКА, ХОТЯ ПРОСИЛИ БЕЗ НЕЁ.
+      //
+      // lookup первым же делом синхронно зовёт setStage('lookup'), а React
+      // складывает его в один пакет с setCaught выше. Пакет отрисовывается
+      // РАЗ: к моменту первой отрисовки stage уже 'lookup', блок камеры вместе
+      // с рамкой размонтирован — и зелёная рамка не показывается НИ ОДНОГО
+      // кадра. «Мигнуть в последние кадры» не выйдет: последних кадров у неё
+      // нет, переход происходит внутри той же задачи.
+      //
+      // Поэтому переход отложен ровно на длительность вспышки. 250 мс на фоне
+      // самого поиска (сотни миллисекунд сети) не читаются как задержка, зато
+      // отклик становится настоящим, а не только вибрацией. Сам lookup не
+      // тронут — отложен только его вызов.
+      flashTimerRef.current = setTimeout(() => {
+        flashTimerRef.current = null
+        lookup(code)
+      }, CATCH_FLASH_MS)
     }
 
     const readFrame = async () => {
@@ -461,10 +501,19 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
         }
       }
       if (cancelled) return
+      // Новый запуск камеры — рамка снова «ищет». Сброс здесь, а не в теле
+      // эффекта: setState прямо в синхронном теле — то, на что справедливо
+      // ругается react-hooks/set-state-in-effect.
+      setCaught(false)
       pollRef.current = setInterval(readFrame, POLL_MS)
     })()
 
-    return () => { cancelled = true; stopCamera() }
+    return () => {
+      cancelled = true
+      // Вспышка ещё горит, а оверлей уже закрывают — поиск запускать незачем.
+      if (flashTimerRef.current) { clearTimeout(flashTimerRef.current); flashTimerRef.current = null }
+      stopCamera()
+    }
   }, [stage, scanToken, lookup, stopCamera])
 
   // Переключение фонарика. Если камера соврала о поддержке (getCapabilities
@@ -488,6 +537,7 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
     setProduct(null)
     setLookupError(null)
     setCameraError(null)
+    setCaught(false)
     setScanToken(t => t + 1)
     setStage('scan')
   }
@@ -787,6 +837,18 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
         {/* ── Камера */}
         {stage === 'scan' && (
           <>
+            {/* Пока код не пойман, рамка медленно дышит — это читается как «я
+                ищу», в отличие от неподвижной рамки, которую легко принять за
+                зависший экран. Два цикла в секунду были бы суетой; две секунды
+                на цикл — спокойное дыхание.
+                prefers-reduced-motion уважается всерьёз: анимация выключается
+                совсем, а не замедляется. Тем, кому от движения на экране плохо,
+                медленное движение не лучше быстрого. */}
+            <style>{`
+              @keyframes aim-pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.42 } }
+              .aim-hunting { animation: aim-pulse 2s ease-in-out infinite; }
+              @media (prefers-reduced-motion: reduce) { .aim-hunting { animation: none } }
+            `}</style>
             <div style={{ padding: '14px 16px 10px', textAlign: 'center', fontSize: 14, fontWeight: 600, color: TXT }}>
               Наведи камеру на штрих-код
             </div>
@@ -797,9 +859,24 @@ export default function BarcodeScanner({ onClose, onAdd, userId, meal = null }) 
               <video ref={videoRef} playsInline muted autoPlay
                 style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
               {/* Рамка прицела: подсказывает, куда попасть, и ничего не режет —
-                  распознаём мы весь кадр целиком. */}
+                  распознаём мы весь кадр целиком.
+                  ДВА ЭЛЕМЕНТА, А НЕ ОДИН, И ЭТО НЕ ИЗЛИШЕСТВО: затемнение вокруг
+                  сделано box-shadow'ом на 100vmax, то есть принадлежит тому же
+                  элементу, что и рамка. Пульсируй мы его прозрачностью — вместе
+                  с рамкой мигал бы весь экран. Поэтому затемнение осталось на
+                  внешнем элементе и стоит неподвижно, а дышит только рамка. */}
               <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                <div style={{ width: '76%', maxWidth: 320, height: 130, border: `2px solid ${PUR}`, borderRadius: 14, boxShadow: '0 0 0 100vmax rgba(0,0,0,0.45)' }} />
+                <div style={{ width: '76%', maxWidth: 320, height: 130, borderRadius: 14, boxShadow: '0 0 0 100vmax rgba(0,0,0,0.45)', position: 'relative' }}>
+                  <div
+                    data-aim-frame={caught ? 'caught' : 'hunting'}
+                    className={caught ? undefined : 'aim-hunting'}
+                    style={{
+                      position: 'absolute', inset: 0, borderRadius: 14,
+                      border: `2px solid ${caught ? TEA : PUR}`,
+                      background: caught ? 'rgba(48,209,88,0.16)' : 'transparent',
+                    }}
+                  />
+                </div>
               </div>
               {/* Фонарик — под нижним краем рамки прицела (её половина высоты
                   65px плюс отступ), чтобы палец не закрывал сам код.

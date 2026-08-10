@@ -53,10 +53,11 @@ try {
   })
 
   // Открывает стенд и ждёт, пока сканер поднимет камеру.
-  const open = async (mode) => {
+  const open = async (mode, { reducedMotion } = {}) => {
     const ctx = await browser.newContext({
       viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
       permissions: ['camera'],
+      ...(reducedMotion ? { reducedMotion } : {}),
     })
     const page = await ctx.newPage()
     const pageErrors = []
@@ -129,6 +130,70 @@ try {
     check('plain', 'кнопки фонарика нет (десктоп его не заявляет)', !s.text.includes('Фонарик'))
     check('plain', 'страница без ошибок', pageErrors.length === 0 && s.cam.errors.length === 0,
       [...pageErrors, ...s.cam.errors].join('; ') || 'ошибок нет')
+    await ctx.close()
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // ОТКЛИК НА ПОИМКУ КОДА
+  // ════════════════════════════════════════════════════════════════════════
+  console.log('\n── mode=plain&catch=1: код пойман — вибрация и зелёная рамка ──')
+  {
+    const { ctx, page, pageErrors } = await open('plain&catch=1')
+    // Ждём, пока путь дойдёт до конца: поимка → вспышка → поиск → «не найдено».
+    await page.getByText('Продукт не найден', { exact: false }).waitFor({ timeout: 20000 }).catch(() => {})
+    const s = await snapshot(page)
+    const frames = s.cam.frames
+
+    check('catch', 'вибрация вызвана', s.cam.vibrate.length > 0, JSON.stringify(s.cam.vibrate))
+    check('catch', 'вибрация ровно на 80 мс', s.cam.vibrate[0] === 80, String(s.cam.vibrate[0]))
+    check('catch', 'вибрация сработала один раз, а не на каждый тик', s.cam.vibrate.length === 1)
+
+    // Рамка сначала «ищет» (фиолетовая, с анимацией), потом «поймала»
+    // (зелёная, без анимации). Смотрим весь записанный список состояний:
+    // вспышка живёт 250 мс, одним опросом её легко проспать.
+    const hunting = frames.filter(f => f.startsWith('hunting|'))
+    const caught = frames.filter(f => f.startsWith('caught|'))
+    check('catch', 'до поимки рамка была «ищет»', hunting.length > 0, frames[0])
+    check('catch', 'ПОСЛЕ ПОИМКИ РАМКА СТАЛА ЗЕЛЁНОЙ', caught.length > 0,
+      caught[0] || `состояний рамки записано: ${frames.length} — ${frames.join(' → ')}`)
+    check('catch', 'зелёный именно #30D158', (caught[0] || '').includes('rgb(48, 209, 88)'), caught[0] || '—')
+    check('catch', 'у пойманной рамки зелёная подложка',
+      /caught\|[^|]+\|rgba\(48, 209, 88/.test(caught[0] || ''), caught[0] || '—')
+    check('catch', 'до поимки рамка фиолетовая', (hunting[0] || '').includes('rgb(124, 122, 240)'), hunting[0] || '—')
+    check('catch', 'пока ищем — рамка пульсирует', (hunting[0] || '').endsWith('|aim-pulse'), hunting[0] || '—')
+    check('catch', 'после поимки пульсация выключена', (caught[0] || '').endsWith('|none'), caught[0] || '—')
+    check('catch', 'поиск всё-таки запустился', s.cam.events.includes('lookup'))
+    check('catch', 'страница без ошибок', pageErrors.length === 0 && s.cam.errors.length === 0,
+      [...pageErrors, ...s.cam.errors].join('; ') || 'ошибок нет')
+    await ctx.close()
+  }
+
+  console.log('\n── mode=fail&catch=1: vibrate нет вовсе — ничего не падает ──')
+  {
+    const { ctx, page, pageErrors } = await open('fail&catch=1')
+    await page.getByText('Продукт не найден', { exact: false }).waitFor({ timeout: 20000 }).catch(() => {})
+    const s = await snapshot(page)
+    const noVibrate = await page.evaluate(() => typeof navigator.vibrate)
+
+    check('fail', 'navigator.vibrate в этом окружении отсутствует', noVibrate === 'undefined', noVibrate)
+    check('fail', 'отсутствие vibrate ничего не уронило',
+      pageErrors.length === 0 && s.cam.errors.length === 0, [...pageErrors, ...s.cam.errors].join('; ') || 'ошибок нет')
+    check('fail', 'рамка всё равно позеленела', s.cam.frames.some(f => f.startsWith('caught|')))
+    check('fail', 'поиск всё равно запустился', s.cam.events.includes('lookup'))
+    await ctx.close()
+  }
+
+  console.log('\n── prefers-reduced-motion: reduce — пульсация выключена ──')
+  {
+    const { ctx, page, pageErrors } = await open('plain', { reducedMotion: 'reduce' })
+    await page.waitForTimeout(700)
+    const s = await snapshot(page)
+    const hunting = s.cam.frames.filter(f => f.startsWith('hunting|'))
+
+    check('reduced', 'рамка на месте и «ищет»', hunting.length > 0, s.cam.frames.join(' → ') || 'рамки нет')
+    check('reduced', 'ПУЛЬСАЦИИ НЕТ', (hunting[0] || '').endsWith('|none'), hunting[0] || '—')
+    check('reduced', 'цвет рамки прежний, фиолетовый', (hunting[0] || '').includes('rgb(124, 122, 240)'), hunting[0] || '—')
+    check('reduced', 'страница без ошибок', pageErrors.length === 0 && s.cam.errors.length === 0)
     await ctx.close()
   }
 
