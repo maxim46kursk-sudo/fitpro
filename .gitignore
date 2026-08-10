@@ -62,3 +62,7 @@ qa/shots/
 qa/photos/
 qa/_pool*.json
 qa/_codes.json
+
+# Манифест отката импорта OFF (scripts/off-upload.mjs) — снимок ПРЕЖНИХ строк
+# боевой базы. В репозиторий ему нельзя: это данные прода, а не код.
+scripts/off-import-manifest.json
