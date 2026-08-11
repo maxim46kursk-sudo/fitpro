@@ -10094,8 +10094,11 @@ export default function App() {
   const [workoutMeta,setWorkoutMeta]=useState(null) // {wName,wColor,startedAt} | null
   const workoutMinimized = !!workoutMeta && !isWorkoutForeground
   // Активная тренировка на весь экран (мобайл) — прячем общий хедер App и
-  // отдаём его место контенту (см. мобильный layout ниже).
-  const workoutFullscreen = !!workoutMeta && isWorkoutForeground
+  // отдаём его место контенту (см. мобильный layout ниже). Конструктор — такой
+  // же экран выполнения тренировки, поэтому ведёт себя так же: без этого его
+  // шапка уезжала под общий хедер приложения, а кнопка ассистента налезала на
+  // нижнюю панель (у тренировки по шаблону обе проблемы решены этим флагом).
+  const workoutFullscreen = (!!workoutMeta && isWorkoutForeground) || nav==='constructor'
   // Открыть свёрнутую тренировку — закрывает все оверлеи, которые могли её
   // загородить (см. isWorkoutForeground), и возвращает nav на 'workouts'.
   const reopenWorkout=()=>{

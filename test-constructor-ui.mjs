@@ -97,15 +97,46 @@ try {
   check(S1, 'на пустом экране кнопка «Завершить» заблокирована',
     await p.locator(tid('constructor-finish')).isDisabled())
 
-  // ── Секундомер ─────────────────────────────────────────────────────────
+  // Экран больше не портал — нижнее меню приложения на нём видно, как и на
+  // тренировке по шаблону.
+  check(S1, 'нижнее меню приложения остаётся видимым',
+    await p.locator(tid('tab-workouts')).isVisible().catch(() => false))
+  // Время сессии в шапке — идёт с момента открытия.
+  await sleep(2200)
+  const sessionTimer = await p.locator(tid('constructor-session-timer')).innerText()
+  check(S1, 'в шапке идёт время сессии', /⏱ 00:00:0[1-9]/.test(sessionTimer), sessionTimer)
+  // Шапка не должна уезжать под общий хедер приложения: в конструктор входят
+  // кнопкой в самом низу промотанного списка, и без флага полноэкранного
+  // режима заголовок оказывался за верхней границей (см. workoutFullscreen).
+  const headTop = (await p.locator(tid('constructor-session-timer')).boundingBox())?.y ?? -1
+  check(S1, 'шапка целиком на экране, не уехала под хедер приложения', headTop > 0, `y=${headTop}`)
+  const headerCovered = await p.locator(tid('constructor-session-timer')).evaluate(el => {
+    const r = el.getBoundingClientRect()
+    const top = document.elementFromPoint(r.left + 5, r.top + r.height / 2)
+    return !el.contains(top) && top !== el
+  })
+  check(S1, 'шапку ничем не перекрывает', headerCovered === false)
+
+  // ── Секундомер (компактная строка, зелёный «Старт») ────────────────────
   const S2 = 'Секундомер'
-  await p.locator(tid('constructor-sw-toggle')).tap(); await sleep(1600)
-  const running = await p.locator(tid('constructor-sw-toggle')).innerText()
-  check(S2, 'старт запускает отсчёт', /Стоп/.test(running), `на кнопке: ${running}`)
-  await p.locator(tid('constructor-sw-toggle')).tap(); await sleep(400)
+  const swBtn = p.locator(tid('constructor-sw-toggle'))
+  const swBg = await swBtn.evaluate(el => getComputedStyle(el).backgroundColor)
+  check(S2, '«Старт» зелёный, как на тренировке по шаблону', swBg === 'rgb(48, 209, 88)', swBg)
+  await swBtn.tap(); await sleep(1200)
+  check(S2, 'старт запускает отсчёт', /Стоп/.test(await swBtn.innerText()))
+  // Перерисовка раз в секунду и не выровнена с моментом нажатия (та же модель,
+  // что в эталоне), поэтому ждём появления ненулевого времени, а не спим
+  // фиксированно.
+  let ticked = ''
+  for (let i = 0; i < 8; i++) {
+    ticked = await p.locator(tid('constructor-sw-time')).innerText()
+    if (/⏱ 00:00:0[1-9]/.test(ticked)) break
+    await sleep(500)
+  }
+  check(S2, 'секундомер отсчитал время', /⏱ 00:00:0[1-9]/.test(ticked), ticked)
+  await swBtn.tap(); await sleep(400)
   await p.locator(tid('constructor-sw-reset')).tap(); await sleep(400)
-  const zeroed = await p.locator(tid('constructor-screen')).innerText()
-  check(S2, 'сброс возвращает 00:00:00', zeroed.includes('00:00:00'))
+  check(S2, 'сброс возвращает 00:00:00', (await p.locator(tid('constructor-sw-time')).innerText()).includes('00:00:00'))
 
   // ── Каталог: поиск и фильтр ────────────────────────────────────────────
   const S3 = 'Каталог'
@@ -167,19 +198,50 @@ try {
   check(S5, 'поля веса/повторов принимают ввод',
     (await kg.first().inputValue()) === '40' && (await reps.first().inputValue()) === '20')
 
-  // ── Оценка усилия ──────────────────────────────────────────────────────
-  const S6 = 'Оценка усилия'
+  // ── Оценка нагрузки: на подход, квадраты 44×44, подписи ────────────────
+  const S6 = 'Оценка нагрузки'
+  // Блок оценки — только под рабочими подходами (последние два), как в эталоне.
+  const ratingRows = await p.locator(tid('constructor-rating-1')).count()
+  check(S6, 'оценка стоит под рабочими подходами, а не одна на упражнение',
+    ratingRows === 2, `блоков оценки: ${ratingRows}`)
+  const box = await p.locator(tid('constructor-rating-1')).first().boundingBox()
+  check(S6, 'кнопки-квадраты 44×44', Math.round(box.width) === 44 && Math.round(box.height) === 44,
+    `${box && Math.round(box.width)}×${box && Math.round(box.height)}`)
+  const captions = await p.locator(tid('constructor-ex-card')).first().innerText()
+  check(S6, 'подписи «легко» и «на пределе» на месте',
+    /легко/.test(captions) && /на пределе/.test(captions))
+
   await p.locator(tid('constructor-finish')).tap(); await sleep(900)
-  check(S6, 'без оценки «Завершить» не сохраняет, а подсвечивает требование',
-    await p.locator(tid('constructor-ex-card')).count() === 1)
+  check(S6, 'без оценки «Завершить» не сохраняет и не показывает выбор даты',
+    !(await p.locator(tid('constructor-save-date')).isVisible().catch(() => false)))
 
-  await p.locator(tid('constructor-rating-4')).tap(); await sleep(500)
-  const ratingSize = await p.locator(tid('constructor-rating-4')).evaluate(el => el.style.fontSize)
-  check(S6, 'выбранная оценка выделяется', ratingSize === '22px', `font-size=${ratingSize}`)
+  // Проставляем оценку каждому рабочему подходу.
+  for (let i = 0; i < ratingRows; i++) { await p.locator(tid('constructor-rating-4')).nth(i).tap(); await sleep(300) }
+  const chosenBg = await p.locator(tid('constructor-rating-4')).first().evaluate(el => getComputedStyle(el).backgroundColor)
+  check(S6, 'выбранная оценка подсвечена акцентом', chosenBg === 'rgb(124, 122, 240)', chosenBg)
 
-  // ── Завершение ─────────────────────────────────────────────────────────
+  // ── Завершить упражнение и вернуть в правку ────────────────────────────
+  const S6b = 'Завершение упражнения'
+  await p.locator(tid('constructor-ex-done')).tap(); await sleep(700)
+  const doneText = await p.locator(tid('constructor-ex-card')).first().innerText()
+  check(S6b, '«Завершить упражнение» сворачивает карточку в сводку с тоннажем',
+    /Выполнено/.test(doneText) && /Тоннаж/.test(doneText), doneText.replace(/\s+/g, ' ').slice(0, 80))
+  check(S6b, 'в свёрнутой карточке полей ввода нет', await p.locator(tid('constructor-kg')).count() === 0)
+  await p.locator(tid('constructor-ex-edit')).tap(); await sleep(700)
+  check(S6b, '«↩ Редактировать» возвращает поля', await p.locator(tid('constructor-kg')).count() === setsBefore)
+
+  // ── Комментарий к тренировке ───────────────────────────────────────────
+  const S6c = 'Комментарий'
+  await p.locator(tid('constructor-comment')).fill('Проверка механики')
+  check(S6c, 'комментарий к тренировке вводится',
+    (await p.locator(tid('constructor-comment')).inputValue()) === 'Проверка механики')
+
+  // ── Завершение: сначала выбор даты, как в эталоне ──────────────────────
   const S7 = 'Завершение'
-  await p.locator(tid('constructor-finish')).tap()
+  await p.locator(tid('constructor-finish')).tap(); await sleep(800)
+  check(S7, '«Завершить» спрашивает дату сохранения',
+    await p.locator(tid('constructor-save-date')).isVisible())
+  await p.locator(tid('constructor-save-confirm')).tap()
   // commitSession пишет подходы ПО ОДНОМУ (см. ConstructorView), поэтому
   // читать базу на первом же ненулевом ответе нельзя — поймаешь середину
   // записи. Ждём именно ожидаемого числа строк.
@@ -211,6 +273,12 @@ try {
     !/Первый замер/.test(secondCard), secondCard.replace(/\s+/g, ' ').slice(0, 90))
   check(S8, 'у упражнения с историей появился сброс «↺»',
     await p.locator(tid('constructor-ex-reset')).count() === 1)
+  // Рекомендация показана ОТДЕЛЬНОЙ подписью под подходом, а не только числом
+  // в поле — как «реком. X кг» на тренировке по шаблону.
+  const recCount = await p.locator(tid('constructor-rec')).count()
+  check(S8, 'под подходами стоит подпись «реком. X кг»', recCount > 0, `подписей: ${recCount}`)
+  check(S8, 'подпись совпадает с числом, подставленным в поле веса',
+    (await p.locator(tid('constructor-rec')).first().innerText()).includes(await p.locator(tid('constructor-kg')).first().inputValue()))
 
   // ── Закрытие экрана ────────────────────────────────────────────────────
   const S9 = 'Закрытие'

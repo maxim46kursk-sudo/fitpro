@@ -43,3 +43,19 @@ export const SHADOW_PRIMARY = '0 10px 26px rgba(124,122,240,.4)'
 
 // Главная кнопка действия — тот же градиент, что у «Завершить» в WorkoutsView.
 export const GRADIENT_PRIMARY = `linear-gradient(180deg, ${ACCENT2}, ${PUR})`
+
+// ── Экран выполнения тренировки ─────────────────────────────────────────
+// Цвета, которые до сих пор жили литералами внутри WorkoutsView (App.jsx).
+// Вынесены сюда, когда по этому экрану равнялся Конструктор: у двух экранов
+// одного назначения значения обязаны быть одни и те же. Значения взяты с
+// эталона как есть.
+export const HEADER_MUTED = 'rgba(255,255,255,0.7)'  // подпись на цветной плите шапки
+export const HEADER_BTN = 'rgba(0,0,0,0.25)'         // кнопки на цветной плите шапки
+export const TIMER_DIGITS = '#EDEBFF'                // цифры секундомера
+export const ON_TEA = '#04310f'                      // текст на зелёной кнопке «Старт»
+export const SUCCESS = '#16a34a'                     // «Завершить упражнение»
+export const DONE_TXT = '#4ade80'                    // название и тоннаж завершённого упражнения
+export const DONE_BG = '#0d2010'                     // фон карточки завершённого упражнения
+export const DONE_BORDER = '#14532d'                 // рамка карточки завершённого упражнения
+export const GRADIENT_BADGE = `linear-gradient(135deg, ${PUR}, #5b56c9)` // номер упражнения
+export const SHADOW_RATING = '0 6px 16px rgba(124,122,240,.4)'           // выбранная оценка
