@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 're
 import { supabase } from './supabase'
 import { buildSystemPrompt } from './aiPrompt'
 import { buildWorkoutSystemPrompt, extractBalancedJson } from './workoutPrompt'
+// window.confirm заблокирован в Telegram WebView — см. src/uiCompat.js.
+import { askConfirm } from './uiCompat.js'
 
 // Те же жёсткие пределы, что и в App.jsx (формы питания/профиля) — маленькие
 // константы, дублировать нормально (тот же принцип, что и у localTodayISO
@@ -473,9 +475,12 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
         // DEL — может быть несколько записей за раз. Промпт требует спросить
         // "да" перед массовым удалением, но это только текстовая инструкция
         // модели — при её ошибке или инъекции в чат ничего не мешает ей сразу
-        // прислать пачку DEL. Страховка в коде: при 2+ маркерах — обязательный
-        // window.confirm, при отмене ни одна запись не удаляется. Одиночный
+        // прислать пачку DEL. Страховка в коде: при 2+ маркерах — обязательное
+        // подтверждение, при отмене ни одна запись не удаляется. Одиночный
         // DEL (ровно 1) — как раньше, без подтверждения, это не "массовое".
+        // askConfirm, а не window.confirm: внутри Telegram последний
+        // заблокирован и молча возвращал false — страховка превращалась в
+        // "массовое удаление никогда не работает" (см. src/uiCompat.js).
         const delMarkers = extractMarkers(text, 'DEL')
         if (delMarkers.length) {
           let deleted = false
@@ -483,7 +488,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
           if (delMarkers.some(mk => !mk.data)) console.warn('AI-ассистент по питанию прислал битый маркер DEL — пропущен')
           const parsedDels = delMarkers.filter(mk => mk.data).map(mk => mk.data)
           const delConfirmed = parsedDels.length < 2
-            || window.confirm(`Удалить ${parsedDels.length} записей из дневника? Это безвозвратно.`)
+            || await askConfirm(`Удалить ${parsedDels.length} записей из дневника? Это безвозвратно.`)
           if (delConfirmed) {
             for (const del of parsedDels) {
               const { error } = await supabase.from('food_diary').delete()
@@ -507,7 +512,8 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
         // сразу (несколько дат за раз). Та же страховка, что и у DEL выше:
         // промпт просит модель спросить "да" словами, но это не защита от бага
         // модели или инъекции — в коде это безвозвратное массовое удаление,
-        // поэтому window.confirm обязателен всегда, при любом числе маркеров.
+        // поэтому подтверждение обязательно всегда, при любом числе маркеров.
+        // Через askConfirm — window.confirm внутри Telegram заблокирован.
         const clearMarkers = extractMarkers(text, 'CLEAR')
         if (clearMarkers.length) {
           let cleared = false
@@ -516,7 +522,7 @@ const AIAssistant = forwardRef(function AIAssistant({ isMobile = false, onGoToWo
           const parsedClears = clearMarkers.filter(mk => mk.data).map(mk => mk.data)
           if (parsedClears.length) {
             const dates = parsedClears.map(c => c.date || fresh.today).join(', ')
-            const clearConfirmed = window.confirm(`Очистить дневник питания за ${dates}? Записи удалятся безвозвратно.`)
+            const clearConfirmed = await askConfirm(`Очистить дневник питания за ${dates}? Записи удалятся безвозвратно.`)
             if (clearConfirmed) {
               for (const clear of parsedClears) {
                 const { error } = await supabase.from('food_diary').delete()

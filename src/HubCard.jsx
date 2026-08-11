@@ -36,9 +36,11 @@ export default function HubCard({
   topRight,           // произвольный слот справа сверху (шестерёнка тренера)
   locked = false,     // раздел закрыт тарифом: приглушаем и меняем шеврон на замок
   style = {},
+  testId,             // data-testid для сквозных прогонов (qa/, test-mobile-menus.mjs)
 }) {
   return (
     <div
+      data-testid={testId}
       onClick={onClick}
       style={{
         position: 'relative',

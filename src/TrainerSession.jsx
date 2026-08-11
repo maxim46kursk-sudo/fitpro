@@ -24,6 +24,8 @@ import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabase.js'
 import { parseTemplateSets } from './workoutPrompt.js'
 import { GlassIcon } from './glassIcons'
 import { logError } from './logError'
+// window.confirm заблокирован в Telegram WebView — см. src/uiCompat.js.
+import { askConfirm } from './uiCompat.js'
 
 // Палитра — копия из App.jsx (см. шапку). Значения обязаны совпадать.
 const BG = '#0b0b0d'
@@ -507,7 +509,7 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
   const removeExercise = async (exKey) => {
     const ex = exercises.find(e => e.key === exKey)
     if (!ex) return
-    if (!window.confirm(`Убрать «${ex.name}» из тренировки?`)) return
+    if (!await askConfirm(`Убрать «${ex.name}» из тренировки?`)) return
     const ids = ex.sets.map(s => s.id).filter(Boolean)
     setExercises(list => list.filter(e => e.key !== exKey))
     for (const k of [...pendingRef.current.keys()]) if (k.startsWith(`${exKey}:`)) pendingRef.current.delete(k)

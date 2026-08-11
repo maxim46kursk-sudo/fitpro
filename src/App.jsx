@@ -22,6 +22,10 @@ import { VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, ef
 import { clampNum } from './nutrition.js'
 import FoodDiary from './FoodDiary.jsx'
 import HubCard from './HubCard.jsx'
+// Совместимость с телефоном: закрытие меню тапом мимо без плёнки-перехватчика
+// и подтверждение действия, работающее внутри Telegram (window.confirm там
+// заблокирован). Подробности и причины — в src/uiCompat.js.
+import { useCloseOnOutsideTap, askConfirm } from './uiCompat.js'
 // Конструктор тренировок — размораживается по этапам (docs/CONSTRUCTOR_FROZEN.md).
 // Этап 1: экран снова в навигации, но вход к нему открыт ТОЛЬКО тренеру (см.
 // кнопку в WorkoutsView и case 'constructor' в renderOther) — клиент его не
@@ -925,7 +929,7 @@ function ClientsView({ setSC, setNav, userId }) {
               <PBar v={c.progress} color={c.progress>70?TEA:PUR} />
             </div>
             {c.isLocal&&(
-              <button onClick={e=>{e.stopPropagation();if(window.confirm(`Удалить клиента ${c.name}?`))deleteLocal(c.id)}}
+              <button onClick={async e=>{e.stopPropagation();if(await askConfirm(`Удалить клиента ${c.name}?`))deleteLocal(c.id)}}
                 style={{ position:'absolute',top:10,right:10,background:'none',border:'none',color:TXT3,fontSize:16,cursor:'pointer',lineHeight:1,padding:4 }}><GlassIcon name="close" size={26} /></button>
             )}
           </Card>
@@ -1012,7 +1016,7 @@ function RealClientDetail({ client, goBack, trainerId }) {
   const [issueError,setIssueError]=useState('')
   const issueAccess=async()=>{
     if(issuing)return
-    if(!window.confirm('Выдать новую ссылку для входа?\n\nСтарая ссылка сразу перестанет работать — если клиент уже пользуется ей, отправь ему новую.'))return
+    if(!await askConfirm('Выдать новую ссылку для входа?\n\nСтарая ссылка сразу перестанет работать — если клиент уже пользуется ей, отправь ему новую.'))return
     setIssuing(true);setIssueError('')
     try{
       const{data:sessionData}=await supabase.auth.getSession()
@@ -1256,8 +1260,8 @@ function ProgramEditor({ client, trainerId }) {
   // markImmediate перед каждым дискретным изменением: ввод закончен, ждать
   // секунду нечего. Сам вызов сохранения делает эффект автосохранения — он
   // увидит флаг и запишет без задержки.
-  const removeWorkout=(wi)=>{
-    if(!window.confirm('Удалить тренировку из программы?'))return
+  const removeWorkout=async(wi)=>{
+    if(!await askConfirm('Удалить тренировку из программы?'))return
     markImmediate()
     setWorkouts(w=>w.filter((_,i)=>i!==wi))
   }
@@ -1371,14 +1375,14 @@ function ProgramEditor({ client, trainerId }) {
     })),
   })
   const toggleCopyDate=key=>setCopySel(s=>s.includes(key)?s.filter(k=>k!==key):[...s,key])
-  const applyCopy=()=>{
+  const applyCopy=async()=>{
     const src=workouts[copyWi]
     if(!src||!copySel.length){setCopyWi(null);setCopySel([]);return}
     const next=[...workouts]
     for(const key of copySel){
       const idx=next.findIndex(x=>x.date===key)
       if(idx>=0){
-        if(!window.confirm(`На ${dateWords(key)} уже есть тренировка. Заменить её копией?`))continue
+        if(!await askConfirm(`На ${dateWords(key)} уже есть тренировка. Заменить её копией?`))continue
         next[idx]=cloneWorkout(src,key)
       }else next.push(cloneWorkout(src,key))
     }
@@ -1387,12 +1391,12 @@ function ProgramEditor({ client, trainerId }) {
     setCopyWi(null);setCopySel([])
   }
   // Назначить дату тренировке без даты (перенос старой программы в календарь).
-  const assignDate=key=>{
+  const assignDate=async key=>{
     const wi=assignWi
     const target=workouts[wi]
     if(!target){setAssignWi(null);return}
     const conflict=workouts.some((x,i)=>x.date===key&&i!==wi)
-    if(conflict&&!window.confirm(`На ${dateWords(key)} уже есть тренировка. Заменить её?`))return
+    if(conflict&&!await askConfirm(`На ${dateWords(key)} уже есть тренировка. Заменить её?`))return
     markImmediate()
     setWorkouts(w=>w.filter((x,i)=>!(x.date===key&&i!==wi)).map(x=>x===target?{...x,date:key}:x))
     setAssignWi(null)
@@ -2029,6 +2033,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const [openSlotId,setOpenSlotId]=useState(null)
   const [openSlotHeaderMenu,setOpenSlotHeaderMenu]=useState(false)
   const [openExMenu,setOpenExMenu]=useState(null)
+  // Закрытие по тапу мимо — общим хуком, без прозрачной плёнки поверх меню
+  // (см. useCloseOnOutsideTap в src/uiCompat.js и комментарий в DiaryView).
+  const slotHeaderMenuRef=useRef(null)
+  const exMenuRef=useRef(null)
+  useCloseOnOutsideTap(slotHeaderMenuRef,openSlotHeaderMenu?()=>setOpenSlotHeaderMenu(false):null)
+  useCloseOnOutsideTap(exMenuRef,openExMenu!=null?()=>setOpenExMenu(null):null)
   const [folderSlots,setFolderSlots]=useState(()=>makeDefaultFolderSlots(folderKeys,templateStructures))
   const [playVideo,setPlayVideo]=useState(null)
   const [editingSlotTitle,setEditingSlotTitle]=useState(null) // {id,title}
@@ -3897,19 +3907,16 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               <div style={{ fontSize:17, fontWeight:700, color:TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{currentSlot.title}</div>
               <div style={{ fontSize:11, color:TXT3 }}>{currentSlot.exercises.length} {plural(currentSlot.exercises.length,'упражнение','упражнения','упражнений')}</div>
             </div>
-            <div style={{ position:'relative' }}>
-              <button onClick={e=>{e.stopPropagation();setOpenSlotHeaderMenu(v=>!v)}}
+            <div ref={slotHeaderMenuRef} style={{ position:'relative' }}>
+              <button data-testid="slot-header-menu-trigger" onClick={e=>{e.stopPropagation();setOpenSlotHeaderMenu(v=>!v)}}
                 style={{ background:'none',border:`1px solid ${HAIR}`,borderRadius:7,fontSize:16,cursor:'pointer',color:TXT3,padding:'2px 8px',minHeight:'unset',lineHeight:1.4,letterSpacing:1 }}>⋯</button>
               {openSlotHeaderMenu&&(
-                <>
-                  <div onClick={()=>setOpenSlotHeaderMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
-                  <div style={{ position:'absolute',top:34,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:180,overflow:'hidden',border:`1px solid ${HAIR}` }}>
-                    <button onClick={()=>{setOpenSlotHeaderMenu(false);setEditingSlotTitle({id:currentSlot.id,title:currentSlot.title})}}
-                      style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:`1px solid ${HAIR}`,background:'transparent',cursor:'pointer',textAlign:'left',color:TXT,fontSize:13 }}>✏️ Редактировать</button>
-                    <button onClick={()=>{setOpenSlotHeaderMenu(false);if(window.confirm(`Удалить тренировку «${currentSlot.title}»?`))deleteSlot(currentSlot.id)}}
-                      style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:'#ef4444',fontSize:13 }}>🗑 Удалить</button>
-                  </div>
-                </>
+                <div data-testid="slot-header-menu" style={{ position:'absolute',top:34,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:180,overflow:'hidden',border:`1px solid ${HAIR}` }}>
+                  <button data-testid="slot-header-menu-edit" onClick={()=>{setOpenSlotHeaderMenu(false);setEditingSlotTitle({id:currentSlot.id,title:currentSlot.title})}}
+                    style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:`1px solid ${HAIR}`,background:'transparent',cursor:'pointer',textAlign:'left',color:TXT,fontSize:13 }}>✏️ Редактировать</button>
+                  <button data-testid="slot-header-menu-delete" onClick={async()=>{setOpenSlotHeaderMenu(false);if(await askConfirm(`Удалить тренировку «${currentSlot.title}»?`))deleteSlot(currentSlot.id)}}
+                    style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:'#ef4444',fontSize:13 }}>🗑 Удалить</button>
+                </div>
               )}
             </div>
           </div>
@@ -3946,19 +3953,16 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                       <ExMeta name={ex.name} style={{ marginTop:-2, marginBottom:3 }} />
                       {ex.sets&&<div style={{ fontSize:12, color:TXT3, lineHeight:1.7 }}>{ex.sets}</div>}
                     </div>
-                    <div style={{ position:'relative',flexShrink:0 }}>
-                      <button onClick={e=>{e.stopPropagation();setOpenExMenu(openExMenu===ex.id?null:ex.id)}}
+                    <div ref={openExMenu===ex.id?exMenuRef:null} style={{ position:'relative',flexShrink:0 }}>
+                      <button data-testid={`ex-menu-trigger-${ex.id}`} onClick={e=>{e.stopPropagation();setOpenExMenu(openExMenu===ex.id?null:ex.id)}}
                         style={{ width:36,height:36,borderRadius:9,background:SURF2,border:'none',cursor:'pointer',fontSize:17,color:TXT3,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,letterSpacing:1,minHeight:'unset' }}>⋯</button>
                       {openExMenu===ex.id&&(
-                        <>
-                          <div onClick={()=>setOpenExMenu(null)} style={{ position:'fixed',inset:0,zIndex:19 }} />
-                          <div style={{ position:'absolute',top:40,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:180,overflow:'hidden',border:`1px solid ${HAIR}` }}>
-                            <button onClick={()=>{setOpenExMenu(null);setEditingExercise({slotId:currentSlot.id,exId:ex.id,name:ex.name,sets:ex.sets})}}
-                              style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:`1px solid ${HAIR}`,background:'transparent',cursor:'pointer',textAlign:'left',color:TXT,fontSize:13 }}>✏️ Редактировать</button>
-                            <button onClick={()=>{setOpenExMenu(null);deleteExercise(currentSlot.id,ex.id)}}
-                              style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:'#ef4444',fontSize:13 }}>🗑 Удалить</button>
-                          </div>
-                        </>
+                        <div data-testid="ex-menu" style={{ position:'absolute',top:40,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:180,overflow:'hidden',border:`1px solid ${HAIR}` }}>
+                          <button data-testid="ex-menu-edit" onClick={()=>{setOpenExMenu(null);setEditingExercise({slotId:currentSlot.id,exId:ex.id,name:ex.name,sets:ex.sets})}}
+                            style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:`1px solid ${HAIR}`,background:'transparent',cursor:'pointer',textAlign:'left',color:TXT,fontSize:13 }}>✏️ Редактировать</button>
+                          <button data-testid="ex-menu-delete" onClick={()=>{setOpenExMenu(null);deleteExercise(currentSlot.id,ex.id)}}
+                            style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:'#ef4444',fontSize:13 }}>🗑 Удалить</button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -4143,7 +4147,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               // клик не открывает слот, а показывает подсказку про пакет.
               const locked=isSlotLocked(slot.slotNum)
               return (
-                <div key={slot.id} style={{ background:SURF, borderRadius:20, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', marginBottom:10, display:'flex', flexDirection:'column', alignItems:'center', padding:'16px 16px 14px', cursor:'pointer', position:'relative', opacity:locked?0.55:1 }}
+                <div key={slot.id} data-testid={`program-slot-${slot.slotNum}`} style={{ background:SURF, borderRadius:20, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', marginBottom:10, display:'flex', flexDirection:'column', alignItems:'center', padding:'16px 16px 14px', cursor:'pointer', position:'relative', opacity:locked?0.55:1 }}
                   onClick={()=>{if(locked){setShowSlotLock(true);return}setOpenSlotId(slot.id)}}>
                   <div style={{ position:'absolute', top:14, left:14, width:36, height:36, borderRadius:'50%', background:locked?SURF2:(ec>0?PUR:SURF2), display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:locked?TXT3:(ec>0?'#fff':TXT3) }}>
                     {slot.slotNum}
@@ -4368,6 +4372,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         const isSelected=selectedProgram===folder
         return (
           <HubCard key={folder}
+            testId={`program-folder-${folder}`}
             icon={folderIcon(folder)}
             title={t.label}
             subtitle={`${slotsArr.length} тренировок · ${totalEx} упр.${totalVids>0?` · ${totalVids} видео`:''}`}
@@ -5205,8 +5210,8 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
   },[displayName,context,slots])
 
   const addSlot=()=>setSlots(s=>{const n=[...s,{exercises:[]}];setOpenSlot(n.length-1);return n})
-  const removeSlot=si=>{
-    if(!window.confirm('Удалить тренировку из программы?'))return
+  const removeSlot=async si=>{
+    if(!await askConfirm('Удалить тренировку из программы?'))return
     setSlots(s=>s.filter((_,i)=>i!==si))
     setOpenSlot(o=>o===si?null:(o!=null&&o>si?o-1:o))
   }
@@ -5237,7 +5242,7 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
     if(publishing)return
     const structure=slots.map(sl=>(sl.exercises||[]).filter(ex=>ex.name).map((ex,i)=>({num:i+1,name:ex.name,sets:serializeSets(ex.sets)})))
     if(structure.length<1){flashErr('Нужна хотя бы одна тренировка');return}
-    if(!window.confirm('Программа изменится у всех клиентов, которые по ней тренируются. Опубликовать?'))return
+    if(!await askConfirm('Программа изменится у всех клиентов, которые по ней тренируются. Опубликовать?'))return
     setPublishing(true);setPubState('saving')
     try{
       const token=await authToken()
@@ -5254,7 +5259,7 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
   }
   const hideProgram=async()=>{
     if(publishing)return
-    if(!window.confirm('Скрыть программу из приложения? Клиенты, которые её выбрали, останутся на ней, но новым она не показывается.'))return
+    if(!await askConfirm('Скрыть программу из приложения? Клиенты, которые её выбрали, останутся на ней, но новым она не показывается.'))return
     setPublishing(true)
     try{
       const token=await authToken()
@@ -5269,8 +5274,8 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
     }catch(e){console.error('Скрытие шаблона:',e);flashErr('Сбой сети, повтори')}
     finally{setPublishing(false)}
   }
-  const tryClose=()=>{
-    if(dirtyRef.current&&!window.confirm('Есть неопубликованные изменения. Уйти без сохранения?'))return
+  const tryClose=async()=>{
+    if(dirtyRef.current&&!await askConfirm('Есть неопубликованные изменения. Уйти без сохранения?'))return
     onClose?.()
   }
 
@@ -5828,7 +5833,7 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
               style={{ flex:1, padding:'10px', fontSize:13, fontWeight:600, borderRadius:9, border:`1px solid ${HAIR}`, background:'none', color:TXT, cursor:'pointer' }}>
               Изменить
             </button>
-            <button onClick={()=>{if(window.confirm('Упражнение исчезнет из библиотеки и из всех списков выбора. Записи в дневнике клиентов останутся. Удалить?'))hideExercise(sel.n)}} disabled={busy}
+            <button onClick={async()=>{if(await askConfirm('Упражнение исчезнет из библиотеки и из всех списков выбора. Записи в дневнике клиентов останутся. Удалить?'))hideExercise(sel.n)}} disabled={busy}
               style={{ flex:1, padding:'10px', fontSize:13, fontWeight:600, borderRadius:9, border:`1px solid ${HAIR}`, background:'none', color:'#ef4444', cursor:busy?'default':'pointer' }}>
               Удалить из приложения
             </button>
@@ -6036,6 +6041,23 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const [showWorkoutMenu,setShowWorkoutMenu]=useState(false)
   const [openCardMenu,setOpenCardMenu]=useState(null)
   const [openSelWorkoutMenu,setOpenSelWorkoutMenu]=useState(false)
+  // Выпадающие меню Дневника закрываются тапом мимо через общий хук
+  // (useCloseOnOutsideTap, src/uiCompat.js), а не прозрачной плёнкой на весь
+  // экран, как раньше: на телефоне плёнка перехватывала тап ПО ПУНКТУ меню и
+  // пункт не срабатывал. Ref ставится на обёртку вместе с кнопкой-триггером —
+  // иначе тап по триггеру закрывал бы меню хуком и тут же открывал обработчиком
+  // самой кнопки. У меню внутри списка (карточка тренировки) ref получает
+  // только открытая карточка — открыта всегда максимум одна.
+  const tonPeriodMenuRef=useRef(null)
+  const exPeriodMenuRef=useRef(null)
+  const selWorkoutMenuRef=useRef(null)
+  const workoutMenuRef=useRef(null)
+  const cardMenuRef=useRef(null)
+  useCloseOnOutsideTap(tonPeriodMenuRef,showTonPeriodMenu?()=>setShowTonPeriodMenu(false):null)
+  useCloseOnOutsideTap(exPeriodMenuRef,showExPeriodMenu?()=>setShowExPeriodMenu(false):null)
+  useCloseOnOutsideTap(selWorkoutMenuRef,openSelWorkoutMenu?()=>setOpenSelWorkoutMenu(false):null)
+  useCloseOnOutsideTap(workoutMenuRef,showWorkoutMenu?()=>setShowWorkoutMenu(false):null)
+  useCloseOnOutsideTap(cardMenuRef,openCardMenu!=null?()=>setOpenCardMenu(null):null)
   const [showScheduleForm,setShowScheduleForm]=useState(false)
   const [scheduleForm,setScheduleForm]=useState({name:'',date:''})
   const [plannedWorkouts,setPlannedWorkouts]=useState(()=>{try{return JSON.parse(localStorage.getItem('fitpro_planned')||'[]')}catch{return[]}})
@@ -6149,19 +6171,16 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:BG,zIndex:1000,display:'flex',flexDirection:'column' }}>
         <BackBtn label={sectionTitle('Общий тоннаж')} onBack={()=>setSection(null)} right={
-          <div style={{ position:'relative' }}>
-            <button onClick={()=>setShowTonPeriodMenu(v=>!v)}
+          <div ref={tonPeriodMenuRef} style={{ position:'relative' }}>
+            <button data-testid="ton-period-trigger" onClick={()=>setShowTonPeriodMenu(v=>!v)}
               style={{ width:34,height:34,borderRadius:9,border:`1px solid ${HAIR}`,background:period!=='7'||customFrom||customTo?`${PUR}11`:SURF2,cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:period!=='7'||customFrom||customTo?PUR:TXT3,minHeight:'unset' }}><GlassIcon name="calendar" size={26} /></button>
             {showTonPeriodMenu&&(
-              <>
-                <div onClick={()=>setShowTonPeriodMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
-                <div style={{ position:'absolute',top:40,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:160,overflow:'hidden',border:`1px solid ${HAIR}` }}>
-                  {TON_PERIOD_OPTIONS.map((p,idx)=>(
-                    <button key={p.k} onClick={()=>{setPeriod(p.k);if(p.k!=='custom'){setCustomFrom('');setCustomTo('')}setShowTonPeriodMenu(false);setSelectedTonBar(null)}}
-                      style={{ display:'block',width:'100%',padding:'10px 15px',border:'none',borderTop:idx>0?`1px solid ${HAIR}`:'none',background:period===p.k?`${PUR}11`:'transparent',cursor:'pointer',textAlign:'left',color:period===p.k?PUR:TXT,fontSize:13,fontWeight:period===p.k?600:400 }}>{p.l}</button>
-                  ))}
-                </div>
-              </>
+              <div data-testid="ton-period-menu" style={{ position:'absolute',top:40,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:160,overflow:'hidden',border:`1px solid ${HAIR}` }}>
+                {TON_PERIOD_OPTIONS.map((p,idx)=>(
+                  <button key={p.k} data-testid={`ton-period-${p.k}`} onClick={()=>{setPeriod(p.k);if(p.k!=='custom'){setCustomFrom('');setCustomTo('')}setShowTonPeriodMenu(false);setSelectedTonBar(null)}}
+                    style={{ display:'block',width:'100%',padding:'10px 15px',border:'none',borderTop:idx>0?`1px solid ${HAIR}`:'none',background:period===p.k?`${PUR}11`:'transparent',cursor:'pointer',textAlign:'left',color:period===p.k?PUR:TXT,fontSize:13,fontWeight:period===p.k?600:400 }}>{p.l}</button>
+                ))}
+              </div>
             )}
           </div>
         } />
@@ -6202,7 +6221,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                     const bh=Math.max(10,Math.round((w.ton/chartMaxTon)*(CHART_BAR_H-22)))
                     const on=selectedTonBar===i
                     return(
-                      <div key={i} onClick={()=>setSelectedTonBar(on?null:i)}
+                      <div key={i} data-testid={`ton-bar-${i}`} onClick={()=>setSelectedTonBar(on?null:i)}
                         style={{ flex:1,display:'flex',flexDirection:'column',justifyContent:'flex-end',alignItems:'center',height:'100%',minWidth:0,cursor:'pointer' }}>
                         {(!manyBars||on)&&<div style={{ fontSize:11,fontWeight:on?700:600,color:on?PUR:`${PUR}99`,marginBottom:4,textAlign:'center',lineHeight:1,whiteSpace:'nowrap' }}>{w.ton}</div>}
                         <div style={{ width:'68%',height:bh,background:on?PUR:`${PUR}55`,borderRadius:'3px 3px 0 0',transition:'background 0.12s' }} />
@@ -6233,19 +6252,16 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                   <div style={{ fontSize:14,fontWeight:600,color:TXT }}>{fmtFull(selW.date)}</div>
                   <div style={{ fontSize:12,color:TXT3,marginTop:2 }}>{selW.name}</div>
                 </div>
-                <div style={{ position:'relative' }}>
-                  {!readOnly&&<button onClick={e=>{e.stopPropagation();setOpenSelWorkoutMenu(v=>!v)}}
+                <div ref={selWorkoutMenuRef} style={{ position:'relative' }}>
+                  {!readOnly&&<button data-testid="selw-menu-trigger" onClick={e=>{e.stopPropagation();setOpenSelWorkoutMenu(v=>!v)}}
                     style={{ width:30,height:30,borderRadius:8,border:`1px solid ${HAIR}`,background:SURF2,cursor:'pointer',fontSize:17,color:TXT3,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,letterSpacing:1,minHeight:'unset' }}>⋯</button>}
                   {!readOnly&&openSelWorkoutMenu&&(
-                    <>
-                      <div onClick={()=>setOpenSelWorkoutMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
-                      <div style={{ position:'absolute',top:34,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:180,overflow:'hidden',border:`1px solid ${HAIR}` }}>
-                        <button onClick={()=>{setOpenSelWorkoutMenu(false);if(onEditWorkout)onEditWorkout(workoutHistory[selW.histIdx],selW.histIdx)}}
-                          style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:`1px solid ${HAIR}`,background:'transparent',cursor:'pointer',textAlign:'left',color:TXT,fontSize:13 }}>✏️ Редактировать</button>
-                        <button onClick={()=>{setOpenSelWorkoutMenu(false);if(window.confirm('Удалить тренировку?')){onDeleteWorkout(selW.histIdx);setSelIdx(null)}}}
-                          style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:'#ef4444',fontSize:13 }}>🗑 Удалить</button>
-                      </div>
-                    </>
+                    <div data-testid="selw-menu" style={{ position:'absolute',top:34,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:180,overflow:'hidden',border:`1px solid ${HAIR}` }}>
+                      <button data-testid="selw-menu-edit" onClick={()=>{setOpenSelWorkoutMenu(false);if(onEditWorkout)onEditWorkout(workoutHistory[selW.histIdx],selW.histIdx)}}
+                        style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',borderBottom:`1px solid ${HAIR}`,background:'transparent',cursor:'pointer',textAlign:'left',color:TXT,fontSize:13 }}>✏️ Редактировать</button>
+                      <button data-testid="selw-menu-delete" onClick={async()=>{setOpenSelWorkoutMenu(false);if(await askConfirm('Удалить тренировку?')){onDeleteWorkout(selW.histIdx);setSelIdx(null)}}}
+                        style={{ display:'flex',alignItems:'center',gap:8,width:'100%',padding:'11px 15px',border:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:'#ef4444',fontSize:13 }}>🗑 Удалить</button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -6323,19 +6339,16 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     return createPortal(
       <div style={{ position:'fixed',inset:0,background:BG,zIndex:1000,display:'flex',flexDirection:'column' }}>
         <BackBtn label={sectionTitle('Прогресс по упражнениям')} onBack={()=>setSection(null)} right={
-          <div style={{ position:'relative' }}>
-            <button onClick={()=>setShowExPeriodMenu(v=>!v)}
+          <div ref={exPeriodMenuRef} style={{ position:'relative' }}>
+            <button data-testid="ex-period-trigger" onClick={()=>setShowExPeriodMenu(v=>!v)}
               style={{ width:34,height:34,borderRadius:9,border:`1px solid ${HAIR}`,background:exPeriod!=='all'?`${PUR}11`:SURF2,cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',color:exPeriod!=='all'?PUR:TXT3,minHeight:'unset' }}><GlassIcon name="calendar" size={26} /></button>
             {showExPeriodMenu&&(
-              <>
-                <div onClick={()=>setShowExPeriodMenu(false)} style={{ position:'fixed',inset:0,zIndex:19 }} />
-                <div style={{ position:'absolute',top:40,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:160,overflow:'hidden',border:`1px solid ${HAIR}` }}>
-                  {PERIOD_OPTIONS.map((p,idx)=>(
-                    <button key={p.k} onClick={()=>{setExPeriod(p.k);if(p.k!=='custom'){setExCustomFrom('');setExCustomTo('')}setShowExPeriodMenu(false);setSelectedEx(null);setActiveBar(null)}}
-                      style={{ display:'block',width:'100%',padding:'10px 15px',border:'none',borderTop:idx>0?`1px solid ${HAIR}`:'none',background:exPeriod===p.k?`${PUR}11`:'transparent',cursor:'pointer',textAlign:'left',color:exPeriod===p.k?PUR:TXT,fontSize:13,fontWeight:exPeriod===p.k?600:400 }}>{p.l}</button>
-                  ))}
-                </div>
-              </>
+              <div data-testid="ex-period-menu" style={{ position:'absolute',top:40,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:160,overflow:'hidden',border:`1px solid ${HAIR}` }}>
+                {PERIOD_OPTIONS.map((p,idx)=>(
+                  <button key={p.k} data-testid={`ex-period-${p.k}`} onClick={()=>{setExPeriod(p.k);if(p.k!=='custom'){setExCustomFrom('');setExCustomTo('')}setShowExPeriodMenu(false);setSelectedEx(null);setActiveBar(null)}}
+                    style={{ display:'block',width:'100%',padding:'10px 15px',border:'none',borderTop:idx>0?`1px solid ${HAIR}`:'none',background:exPeriod===p.k?`${PUR}11`:'transparent',cursor:'pointer',textAlign:'left',color:exPeriod===p.k?PUR:TXT,fontSize:13,fontWeight:exPeriod===p.k?600:400 }}>{p.l}</button>
+                ))}
+              </div>
             )}
           </div>
         } />
@@ -6458,7 +6471,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                           <button onClick={e=>{e.stopPropagation();if(onEditWorkout)onEditWorkout(workoutHistory[activeRec.histIdx],activeRec.histIdx)}}
                             title="Редактировать"
                             style={{ width:30,height:30,borderRadius:8,border:`1px solid ${HAIR}`,background:SURF2,cursor:'pointer',fontSize:13,color:TXT3,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}><GlassIcon name="pen" size={26} /></button>
-                          <button onClick={e=>{e.stopPropagation();if(window.confirm('Удалить тренировку?')){onDeleteWorkout(activeRec.histIdx)}}}
+                          <button onClick={async e=>{e.stopPropagation();if(await askConfirm('Удалить тренировку?')){onDeleteWorkout(activeRec.histIdx)}}}
                             title="Удалить"
                             style={{ width:30,height:30,borderRadius:8,border:'1px solid #fecaca',background:'#fef2f2',cursor:'pointer',fontSize:13,color:'#ef4444',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}><GlassIcon name="trash" size={26} /></button>
                         </div>
@@ -6571,7 +6584,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
       setTemplatesLoading(false)
     }
     const deleteTemplate=async(tpl)=>{
-      if(!window.confirm(`Удалить шаблон «${tpl.name}»?`))return
+      if(!await askConfirm(`Удалить шаблон «${tpl.name}»?`))return
       if(userId&&tpl.id!=null){
         const{error}=await supabase.from('workout_templates').delete().eq('id',tpl.id)
         if(error){console.error('Ошибка удаления шаблона:',error);flashFoodSaveError();return} // список не меняем
@@ -6637,34 +6650,31 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
             <button data-back="1" onClick={()=>{setSection(null);setShowWorkoutMenu(false);setOpenCardMenu(null)}} style={{ background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset' }}><GlassIcon name="back" size={26} /></button>
             <span style={{ fontSize:17,fontWeight:700,color:TXT }}>{sectionTitle('Мои тренировки','Тренировки')}</span>
           </div>
-          {!readOnly&&<div style={{ position:'relative' }}>
-            <button onClick={()=>{setShowWorkoutMenu(v=>!v);setOpenCardMenu(null)}}
+          {!readOnly&&<div ref={workoutMenuRef} style={{ position:'relative' }}>
+            <button data-testid="workout-menu-trigger" onClick={()=>{setShowWorkoutMenu(v=>!v);setOpenCardMenu(null)}}
               style={{ width:36,height:36,borderRadius:10,background:PUR,border:'none',color:'#fff',fontSize:26,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,fontWeight:300 }}>+</button>
             {showWorkoutMenu&&(
-              <>
-                <div onClick={()=>setShowWorkoutMenu(false)} style={{ position:'fixed',inset:0,zIndex:10 }} />
-                <div style={{ position:'absolute',top:42,right:0,background:SURF,borderRadius:13,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:228,overflow:'hidden',border:`1px solid ${HAIR}` }}>
-                  {[
-                    {ic:'calendar',label:'Запланировать тренировку',sub:'Назначить дату'},
-                    {ic:'play',label:'Начать тренировку',sub:'Запустить прямо сейчас',key:'start'},
-                    {ic:'check',label:'Добавить выполненную',sub:'Записать прошедшую',key:'done'},
-                    {ic:'template',label:'Шаблон тренировки',sub:'Выбрать из готовых',key:'template'},
-                  ].map((item,idx)=>(
-                    <button key={idx} onClick={()=>{
-                      setShowWorkoutMenu(false)
-                      if(item.key==='template'){openTemplatePicker()}
-                      else if(item.key){if(onWorkoutAction)onWorkoutAction(item.key)}
-                      else{setShowScheduleForm(true)}
-                    }} style={{ display:'flex',alignItems:'center',gap:11,width:'100%',padding:'11px 15px',border:'none',borderTop:idx>0?`1px solid ${HAIR}`:'none',background:'transparent',cursor:'pointer',textAlign:'left' }}>
-                      <GlassIcon name={item.ic} size={26} />
-                      <div>
-                        <div style={{ fontSize:13,fontWeight:500,color:TXT }}>{item.label}</div>
-                        <div style={{ fontSize:11,color:TXT3 }}>{item.sub}</div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </>
+              <div data-testid="workout-menu" style={{ position:'absolute',top:42,right:0,background:SURF,borderRadius:13,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:228,overflow:'hidden',border:`1px solid ${HAIR}` }}>
+                {[
+                  {ic:'calendar',label:'Запланировать тренировку',sub:'Назначить дату',test:'plan'},
+                  {ic:'play',label:'Начать тренировку',sub:'Запустить прямо сейчас',key:'start',test:'start'},
+                  {ic:'check',label:'Добавить выполненную',sub:'Записать прошедшую',key:'done',test:'done'},
+                  {ic:'template',label:'Шаблон тренировки',sub:'Выбрать из готовых',key:'template',test:'template'},
+                ].map((item,idx)=>(
+                  <button key={idx} data-testid={`workout-menu-${item.test}`} onClick={()=>{
+                    setShowWorkoutMenu(false)
+                    if(item.key==='template'){openTemplatePicker()}
+                    else if(item.key){if(onWorkoutAction)onWorkoutAction(item.key)}
+                    else{setShowScheduleForm(true)}
+                  }} style={{ display:'flex',alignItems:'center',gap:11,width:'100%',padding:'11px 15px',border:'none',borderTop:idx>0?`1px solid ${HAIR}`:'none',background:'transparent',cursor:'pointer',textAlign:'left' }}>
+                    <GlassIcon name={item.ic} size={26} />
+                    <div>
+                      <div style={{ fontSize:13,fontWeight:500,color:TXT }}>{item.label}</div>
+                      <div style={{ fontSize:11,color:TXT3 }}>{item.sub}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
             )}
           </div>}
         </div>
@@ -6719,8 +6729,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
             </div>
           ):sorted.map((w,i)=>(
             <div key={i} style={{ marginBottom:8,position:'relative' }}>
-              {openCardMenu===i&&<div onClick={()=>setOpenCardMenu(null)} style={{ position:'fixed',inset:0,zIndex:10 }} />}
-              <div style={{ background:SURF,borderRadius:13,boxShadow:'0 1px 4px rgba(0,0,0,0.07)',padding:'14px 16px',cursor:'pointer',border:selIdx===i?`1.5px solid ${PUR}33`:'1.5px solid transparent' }}
+              <div data-testid={`workout-card-${i}`} style={{ background:SURF,borderRadius:13,boxShadow:'0 1px 4px rgba(0,0,0,0.07)',padding:'14px 16px',cursor:'pointer',border:selIdx===i?`1.5px solid ${PUR}33`:'1.5px solid transparent' }}
                 onClick={()=>{setSelIdx(selIdx===i?null:i);setOpenCardMenu(null)}}>
                 <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start' }}>
                   <div style={{ flex:1,minWidth:0 }}>
@@ -6739,24 +6748,24 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                       <div style={{ fontSize:10,color:TXT3 }}>тоннаж</div>
                     </div>
                     {/* Три точки */}
-                    {!readOnly&&<div style={{ position:'relative' }}>
-                      <button onClick={e=>{e.stopPropagation();setOpenCardMenu(openCardMenu===i?null:i);setShowWorkoutMenu(false)}}
+                    {!readOnly&&<div ref={openCardMenu===i?cardMenuRef:null} style={{ position:'relative' }}>
+                      <button data-testid={`card-menu-trigger-${i}`} onClick={e=>{e.stopPropagation();setOpenCardMenu(openCardMenu===i?null:i);setShowWorkoutMenu(false)}}
                         style={{ width:28,height:28,borderRadius:7,border:`1px solid ${HAIR}`,background:SURF2,cursor:'pointer',fontSize:17,color:TXT3,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,letterSpacing:1 }}>⋯</button>
                       {openCardMenu===i&&(
-                        <div onClick={e=>e.stopPropagation()} style={{ position:'absolute',top:34,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:200,overflow:'hidden',border:`1px solid ${HAIR}` }}>
+                        <div data-testid="card-menu" onClick={e=>e.stopPropagation()} style={{ position:'absolute',top:34,right:0,background:SURF,borderRadius:12,boxShadow:'0 6px 24px rgba(0,0,0,0.14)',zIndex:20,minWidth:200,overflow:'hidden',border:`1px solid ${HAIR}` }}>
                           {[
-                            {ic:'pen',label:'Редактировать тренировку'},
-                            {ic:'copy',label:'Копировать тренировку'},
-                            {ic:'template',label:'Сделать шаблон'},
-                            {ic:'trash',label:'Удалить тренировку',danger:true},
+                            {ic:'pen',label:'Редактировать тренировку',test:'edit'},
+                            {ic:'copy',label:'Копировать тренировку',test:'copy'},
+                            {ic:'template',label:'Сделать шаблон',test:'template'},
+                            {ic:'trash',label:'Удалить тренировку',danger:true,test:'delete'},
                           ].map((item,idx)=>(
-                            <button key={idx} onClick={()=>{
+                            <button key={idx} data-testid={`card-menu-${item.test}`} onClick={async()=>{
                               setOpenCardMenu(null)
                               if(item.label==='Редактировать тренировку'){if(onEditWorkout)onEditWorkout(workoutHistory[w.histIdx],w.histIdx)}
                               else if(item.label==='Копировать тренировку'){if(onCopyWorkout)onCopyWorkout(workoutHistory[w.histIdx])}
                               else if(item.label==='Сделать шаблон'){saveTemplate(workoutHistory[w.histIdx])}
                               else if(item.label==='Удалить тренировку'){
-                                if(window.confirm(`Удалить тренировку «${w.name}»?`)){if(onDeleteWorkout)onDeleteWorkout(w.histIdx);setSelIdx(null)}
+                                if(await askConfirm(`Удалить тренировку «${w.name}»?`)){if(onDeleteWorkout)onDeleteWorkout(w.histIdx);setSelIdx(null)}
                               }
                             }} style={{ display:'flex',alignItems:'center',gap:10,width:'100%',padding:'11px 15px',border:'none',borderTop:idx>0?`1px solid ${HAIR}`:'none',background:'transparent',cursor:'pointer',textAlign:'left',color:item.danger?'#ef4444':TXT,fontSize:13 }}>
                               <GlassIcon name={item.ic} size={26} />{item.label}
@@ -6955,6 +6964,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
         const locked=f.key==='exercises'&&exercisesLocked
         return (
         <HubCard key={f.key}
+          testId={`diary-section-${f.key}`}
           icon={f.ic}
           title={f.label}
           subtitle={locked?'Доступно в пакете БАЗА':f.sub}
@@ -10567,7 +10577,11 @@ export default function App() {
   // размонтируются вместе с LandingPage, иначе при повторном входе ДРУГИМ
   // пользователем на этом же табе мелькнули бы чужие старые данные до того,
   // как отработает загрузка из Supabase (см. задачу про источник правды).
-  const performLogout = () => {
+  // async — из-за askConfirm ниже (Telegram отвечает колбэком, не синхронно).
+  // Возвращаемое значение никто не использует: все вызовы — из onClick и
+  // onDecline, «выстрелил и забыл», поэтому порядок действий после
+  // подтверждения не изменился.
+  const performLogout = async () => {
     // Несохранённая тренировка (workoutId==null, не синтетическая копия из
     // базы — тот же фильтр, что в migrateLocalWorkoutHistoryToSupabase) живёт
     // только в localStorage/памяти; clearFitproData() ниже стирает её
@@ -10577,7 +10591,7 @@ export default function App() {
       w.workoutId == null && !w.fromSupabaseFallback && !(w.name === 'Тренировка' && !w.comment && w.duration == null)
     ).length
     if (unsavedCount > 0) {
-      const ok = window.confirm(`У тебя ${unsavedCount} ${plural(unsavedCount,'несохранённая тренировка','несохранённые тренировки','несохранённых тренировок')} — они ещё не попали в базу (возможно, не было интернета). Если выйти сейчас, они потеряются. Выйти всё равно?`)
+      const ok = await askConfirm(`У тебя ${unsavedCount} ${plural(unsavedCount,'несохранённая тренировка','несохранённые тренировки','несохранённых тренировок')} — они ещё не попали в базу (возможно, не было интернета). Если выйти сейчас, они потеряются. Выйти всё равно?`)
       if (!ok) return
     }
     setUser(null)
