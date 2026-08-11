@@ -23,21 +23,10 @@ import {
   GRAMS_DEFAULT, GRAMS_MIN, GRAMS_MAX,
 } from './nutrition.js'
 
-// Те же токены тёмной темы, что в App.jsx. Скопированы, а не импортированы —
-// ровно как в TrainerSession.jsx и AIAssistant.jsx: App.jsx подгружает этот
-// файл лениво, обратный импорт замкнул бы зависимость в кольцо.
-const BG = '#0b0b0d'
-const SURF = '#1c1c1e'
-const SURF2 = '#2c2c2e'
-const HAIR = 'rgba(255,255,255,0.12)'
-const TXT = '#ffffff'
-const TXT2 = 'rgba(235,235,245,0.62)'
-const TXT3 = 'rgba(235,235,245,0.30)'
-const PUR = '#7C7AF0'
-const TEA = '#30D158'
-const BLU = '#0A84FF'
-const COR = '#FF9F0A'
-const KCAL = '#BF5AF2'
+// Токены тёмной темы — из src/theme.js (раньше здесь лежала их копия: из
+// App.jsx импортировать нельзя, он подгружает этот файл лениво и получилось бы
+// кольцо; theme.js ни от кого не зависит и такой проблемы не создаёт).
+import { BG, SURF, SURF2, HAIR, TXT, TXT2, TXT3, PUR, TEA, BLU, COR, KCAL } from './theme.js'
 
 // Форматы товарных штрих-кодов. Названия — как их принимает системный
 // BarcodeDetector; для @zxing те же четыре формата перечислены отдельно

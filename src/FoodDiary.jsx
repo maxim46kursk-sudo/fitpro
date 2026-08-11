@@ -39,22 +39,10 @@ import {
 // делать в основном бандле.
 const BarcodeScanner = lazy(() => import('./BarcodeScanner.jsx'))
 
-// Те же токены тёмной темы, что в App.jsx. Скопированы, а не импортированы:
-// App.jsx импортирует этот файл, обратный импорт замкнул бы зависимость в
-// кольцо. Тот же приём в TrainerSession.jsx, AIAssistant.jsx, BarcodeScanner.jsx.
-const BG = '#0b0b0d'
-const SURF = '#1c1c1e'
-const SURF2 = '#2c2c2e'
-const HAIR = 'rgba(255,255,255,0.12)'
-const TXT = '#ffffff'
-const TXT2 = 'rgba(235,235,245,0.62)'
-const TXT3 = 'rgba(235,235,245,0.30)'
-const PUR = '#7C7AF0'
-const ACCENT2 = '#9D96FF'
-const TEA = '#30D158'
-const BLU = '#0A84FF'
-const COR = '#FF9F0A'
-const KCAL = '#BF5AF2'
+// Токены тёмной темы — из src/theme.js. Раньше это была копия значений из
+// App.jsx (он импортирует этот файл, обратный импорт замкнул бы кольцо);
+// theme.js ничего не импортирует, поэтому подходит всем экранам сразу.
+import { BG, SURF, SURF2, HAIR, TXT, TXT2, TXT3, PUR, ACCENT2, TEA, BLU, COR, KCAL } from './theme.js'
 
 // Подвал «нет нужного» — три кнопки в родном стиле приложения: ровно те же
 // размеры и цвета, что у табов режимов в калькуляторе 1ПМ (App.jsx, tabBtn).

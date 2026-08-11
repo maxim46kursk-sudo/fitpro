@@ -15,15 +15,10 @@
 
 import { GlassIcon } from './glassIcons'
 
-// Те же токены тёмной темы, что в App.jsx. Скопированы по той же причине, что
-// и в остальных вынесенных файлах: App.jsx импортирует этот модуль, обратный
-// импорт замкнул бы зависимость в кольцо.
-const SURF = '#1c1c1e'
-const SURF2 = '#2c2c2e'
-const HAIR = 'rgba(255,255,255,0.12)'
-const TXT = '#ffffff'
-const TXT3 = 'rgba(235,235,245,0.30)'
-const PUR = '#7C7AF0'
+// Токены тёмной темы — из src/theme.js (раньше здесь была их копия: App.jsx
+// импортирует этот модуль, обратный импорт замкнул бы кольцо; theme.js ни от
+// кого не зависит и такой проблемы не создаёт).
+import { SURF, SURF2, HAIR, TXT, TXT3, PUR } from './theme.js'
 
 export default function HubCard({
   icon,

@@ -72,16 +72,11 @@ import { MAX_TELEGRAM_URL } from './config.js'
 import { normalizeMeal } from './foodMeals.js'
 import { GlassIcon } from './glassIcons'
 
-// Палитра тёмной темы — те же значения, что в App.jsx (продублированы, т.к.
-// этот компонент их не импортирует).
-const BG = '#0b0b0d'
-const SURF = '#1c1c1e'
-const SURF2 = '#2c2c2e'
-const HAIR = 'rgba(255,255,255,0.12)'
-const TXT = '#ffffff'
-const TXT2 = 'rgba(235,235,245,0.62)'
-const TXT3 = 'rgba(235,235,245,0.30)'
-const PUR = '#7C7AF0'
+// Палитра — из src/theme.js. Раньше здесь лежала копия значений из App.jsx:
+// импортировать оттуда нельзя (App.jsx сам подтягивает этот файл, вышло бы
+// кольцо), а копии со временем расходятся. theme.js ничего не импортирует,
+// поэтому кольца не создаёт и годится всем экранам сразу.
+import { BG, SURF, SURF2, HAIR, TXT, TXT2, TXT3, PUR } from './theme.js'
 
 const HINTS = ['Какой рацион мне подойдёт?', 'Что съесть после тренировки?', 'Можно ли мне алкоголь?']
 const HINTS_WORKOUT = ['Правда, что от приседаний ноги станут огромными?', 'Как правильно дышать при жиме лёжа?', 'Сколько отдыхать между подходами?']

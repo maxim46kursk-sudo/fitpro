@@ -22,6 +22,7 @@ import { VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, ef
 import { clampNum } from './nutrition.js'
 import FoodDiary from './FoodDiary.jsx'
 import HubCard from './HubCard.jsx'
+import { BG, SURF, SURF2, SEP, HAIR, TXT, TXT2, TXT3, PUR, ACCENT2, TEA, BLU, COR, KCAL, DANGER } from './theme.js'
 // Совместимость с телефоном: закрытие меню тапом мимо без плёнки-перехватчика
 // и подтверждение действия, работающее внутри Telegram (window.confirm там
 // заблокирован). Подробности и причины — в src/uiCompat.js.
@@ -33,24 +34,10 @@ import { useCloseOnOutsideTap, askConfirm } from './uiCompat.js'
 import ConstructorView from './ConstructorView.jsx'
 import './App.css'
 
-// ── Тёмная тема (единая палитра, шаг 1: каркас + экран «Тренировки»).
-// Акцентные имена (PUR/TEA/BLU/COR) сохранены — переопределены на новые
-// значения, чтобы новый цвет подхватился везде, где они уже используются.
-const BG = '#0b0b0d'                    // фон страницы
-const SURF = '#1c1c1e'                  // карточки/поверхности
-const SURF2 = '#2c2c2e'                 // вложенное/инпуты
-const SEP = 'rgba(255,255,255,0.09)'    // разделители
-const HAIR = 'rgba(255,255,255,0.12)'   // тонкие границы
-const TXT = '#ffffff'                   // основной текст
-const TXT2 = 'rgba(235,235,245,0.62)'   // вторичный текст
-const TXT3 = 'rgba(235,235,245,0.30)'   // приглушённый текст
-const PUR = '#7C7AF0'                    // акцент
-const ACCENT2 = '#9D96FF'               // акцент (ярче, активные состояния)
-const TEA = '#30D158'                    // зелёный / белок
-const BLU = '#0A84FF'                    // синий / углеводы
-const COR = '#FF9F0A'                    // оранжевый / жиры
-const KCAL = '#BF5AF2'                   // калории
-const DANGER = '#FF453A'                 // ошибки / удаление
+// Палитра переехала в src/theme.js — она нужна не только App.jsx, но и
+// вынесенным экранам, которые раньше держали её копии. Значения при переносе
+// не менялись. Имена оставлены прежними, поэтому ниже по файлу ничего править
+// не пришлось.
 
 const clearFitproData = () => {
   Object.keys(localStorage)

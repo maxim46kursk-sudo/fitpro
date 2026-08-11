@@ -27,17 +27,10 @@ import { logError } from './logError'
 // window.confirm заблокирован в Telegram WebView — см. src/uiCompat.js.
 import { askConfirm } from './uiCompat.js'
 
-// Палитра — копия из App.jsx (см. шапку). Значения обязаны совпадать.
-const BG = '#0b0b0d'
-const SURF = '#1c1c1e'
-const SURF2 = '#2c2c2e'
-const HAIR = 'rgba(255,255,255,0.12)'
-const TXT = '#ffffff'
-const TXT2 = 'rgba(235,235,245,0.62)'
-const TXT3 = 'rgba(235,235,245,0.30)'
-const PUR = '#7C7AF0'
-const ACCENT2 = '#9D96FF'
-const TEA = '#30D158'
+// Палитра — из src/theme.js. Раньше здесь лежала копия значений из App.jsx с
+// припиской «обязаны совпадать» — теперь совпадение обеспечено тем, что
+// значение одно (theme.js ничего не импортирует, кольца не создаёт).
+import { BG, SURF, SURF2, HAIR, TXT, TXT2, TXT3, PUR, ACCENT2, TEA } from './theme.js'
 
 const MONTHS_GEN = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря']
 const pad2 = n => String(n).padStart(2, '0')
