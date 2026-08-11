@@ -1,56 +1,104 @@
-// Фазы Конструктора (ConstructorView) — вторая ось прогрессии поверх
-// 1ПМ-движка (buildExerciseAggregates/computeTargetWeight в workoutPrompt.js,
-// который здесь переиспользуется БЕЗ изменений). Чат и WorkoutsView этот файл
-// не импортируют и о нём не знают — шаблонные программы живут своей жизнью.
+// Фазы/ступени тяжести для Конструктора (ConstructorView в App.jsx) — вторая
+// ось прогрессии поверх 1ПМ-движка (buildExerciseAggregates/computeTargetWeight
+// в workoutPrompt.js, который здесь переиспользуется БЕЗ изменений). Чат и
+// WorkoutsView этот файл не импортируют и о нём не знают.
 //
 // Единица — не тоннаж, а 1ПМ (Эпли, oneRepMax.js). Раскладка на 4 подхода —
-// готовая схема повторов по фазе, вес каждого подхода — обратный расчёт от
-// 1ПМ под повторы именно этого подхода (weightForReps).
-//
-// ── СХЕМЫ ПОВТОРОВ, редакция 11.08.2026 (решение владельца методики) ──────
-// Ступени тяжести (лёгкая/средняя/тяжёлая) УПРАЗДНЕНЫ у обеих категорий: на
-// фазу приходится ровно одна схема, малого цикла больше нет. Двусторонние
-// идут РОВНО, без снижения внутри тренировки; односторонние — со снижением от
-// подхода к подходу. Большой цикл (ротация фаз), рост по оценкам, откат −15% и
-// группировка сессий не менялись.
+// готовые схемы повторов по фазе/ступени, вес каждого подхода — обратный
+// расчёт от 1ПМ под повторы именно этого подхода (weightForReps).
 import { oneRepMax, weightForReps, roundToPlate } from './oneRepMax.js'
 import { EXERCISES, isOneSidedExercise } from './programs.js'
 import { muscleGroup } from './exerciseMeta.js'
 
 export const PHASE_ORDER = ['volume', 'development', 'strength']
+export const STEP_ORDER = ['light', 'medium', 'heavy']
+
 export const PHASE_LABELS = { volume: 'Объём', development: 'Развитие', strength: 'Сила' }
+export const STEP_LABELS = { light: 'лёгкая', medium: 'средняя', heavy: 'тяжёлая' }
 
-// Двусторонние: ровная схема, все подходы одинаковые (Σ 96 / 80 / 64).
+// Готовые раскладки 4 подходов по фазе/ступени.
 export const PHASE_SCHEMES = {
-  volume: [24, 24, 24, 24],
-  development: [20, 20, 20, 20],
-  strength: [16, 16, 16, 16],
+  volume:      { light: [20, 20, 20, 20], medium: [20, 20, 15, 15], heavy: [20, 15, 15, 15] },
+  development: { light: [15, 12, 12, 12], medium: [15, 12, 12, 10], heavy: [15, 12, 10, 10] },
+  strength:    { light: [12, 10, 8, 6],   medium: [10, 8, 8, 8],    heavy: [10, 8, 6, 6] },
 }
 
-// Односторонние (выпады, работа одной ногой/рукой): столько же подходов, но со
-// снижением повторов внутри тренировки (Σ 54 / 44 / 36).
+// Раскладка для ОДНОСТОРОННИХ упражнений (выпады, работа одной ногой/рукой) —
+// одна схема на фазу вместо 3×3 выше, ровно как записано в
+// docs/CONSTRUCTOR_FROZEN.md: «Объём 15-12, Развитие 12-10, Сила 10-8, вместо
+// обычных 4 подходов». Дефис там — разделитель ПОДХОДОВ (та же нотация, что
+// «20-20-20-20» в таблице фаз), поэтому одностороннее упражнение идёт в 2
+// подхода: клиент делает каждый на обе стороны.
+//
+// Ступени тяжести (малый цикл) для односторонних НЕ определены — методика даёт
+// по одной схеме на фазу. Поэтому у односторонних работает только большой цикл
+// (ротация фаз), а step возвращается null: возвращать «лёгкую/среднюю/тяжёлую»,
+// которая ни на что не влияет, значило бы врать вызывающему. Сама ротация фаз,
+// группировка сессий и откат −15% — общие с обычными упражнениями, ни одна
+// строка той логики ниже не меняется.
 export const ONE_SIDED_SCHEMES = {
-  volume: [15, 14, 13, 12],
-  development: [12, 11, 11, 10],
-  strength: [10, 9, 9, 8],
+  volume: [15, 12],
+  development: [12, 10],
+  strength: [10, 8],
 }
 
-const schemesFor = oneSided => (oneSided ? ONE_SIDED_SCHEMES : PHASE_SCHEMES)
-const sumOf = reps => reps.reduce((a, b) => a + b, 0)
-// Суммы фаз нигде не зашиты числами — считаются из самих схем, поэтому правка
-// схемы автоматически двигает и классификацию замера.
-export const phaseSum = (phase, oneSided = false) => sumOf(schemesFor(oneSided)[phase])
+const schemeSum = (phase, step) => PHASE_SCHEMES[phase][step].reduce((a, b) => a + b, 0)
+const oneSidedSum = phase => ONE_SIDED_SCHEMES[phase].reduce((a, b) => a + b, 0)
 
-// Стартовая фаза по сумме повторов baseline-замера. Раньше у двусторонних были
-// коридоры (три ступени — три суммы на фазу, между ними промежутки); теперь на
-// фазу приходится ровно одно число, поэтому коридор вырождается в точку, и
-// правило одно на обе категории: ближайшая по расстоянию сумма фазы. При
-// равном расстоянии побеждает первая по PHASE_ORDER — то есть более объёмная,
-// округление в сторону более лёгкой по весу схемы.
-export function classifyStartPhase(sumReps, oneSided = false) {
+// Коридоры суммы 4 повторов по фазам — не пересекаются (Сила 30-36, Развитие
+// 47-51, Объём 65-80). Ниже/выше/в зазоре между коридорами — ближайший край.
+const PHASE_CORRIDORS = { volume: [65, 80], development: [47, 51], strength: [30, 36] }
+
+function classifyPhaseFromSum(sumReps) {
+  for (const phase of PHASE_ORDER) {
+    const [lo, hi] = PHASE_CORRIDORS[phase]
+    if (sumReps >= lo && sumReps <= hi) return phase
+  }
+  // За пределами всех коридоров (или в зазоре между ними) — ближайший по
+  // расстоянию до края. На точном равенстве расстояний (возможно только при
+  // сумме=58, ровно между Объёмом и Развитием) побеждает первый проверенный
+  // по PHASE_ORDER — Объём; выбор произвольный, реальный ввод так точно
+  // никогда не ляжет.
   let best = null, bestDist = Infinity
   for (const phase of PHASE_ORDER) {
-    const dist = Math.abs(phaseSum(phase, oneSided) - sumReps)
+    const [lo, hi] = PHASE_CORRIDORS[phase]
+    const dist = sumReps < lo ? lo - sumReps : sumReps - hi
+    if (dist < bestDist) { bestDist = dist; best = phase }
+  }
+  return best
+}
+
+// Ступень внутри фазы — наименьшая схема-сумма, которая ещё >= фактической
+// суммы (это одно правило разом даёт «округление вверх к более лёгкой» на
+// 48→49, «выше лёгкой→лёгкая» и «ниже тяжёлой→тяжёлая» без отдельных веток).
+function classifyStepFromSum(phase, sumReps) {
+  let bestStep = null, bestSum = Infinity
+  for (const step of STEP_ORDER) {
+    const sum = schemeSum(phase, step)
+    if (sum >= sumReps && sum < bestSum) { bestSum = sum; bestStep = step }
+  }
+  return bestStep || 'light'
+}
+
+export function classifyStartPhaseAndStep(sumReps) {
+  const phase = classifyPhaseFromSum(sumReps)
+  const step = classifyStepFromSum(phase, sumReps)
+  return { phase, step }
+}
+
+// Стартовая фаза одностороннего упражнения. Коридоры сумм выше (Объём 65-80 и
+// т.д.) посчитаны для 4 подходов и к 2-подходной раскладке неприменимы: любой
+// реальный замер односторонних (сумма ~18-27) провалился бы в Силу. Здесь тот
+// же принцип «ближайший край», но по суммам самих односторонних схем
+// (Объём 27, Развитие 22, Сила 18) — ступеней у них нет, значит и коридоров
+// внутри фазы тоже, сравнивать не с чем, кроме единственной суммы фазы.
+// Единственное равное расстояние на целых суммах — 20 (ровно между Развитием
+// 22 и Силой 18); там, как и в classifyPhaseFromSum, побеждает первая по
+// PHASE_ORDER, то есть Развитие — округление в сторону более лёгкой схемы.
+export function classifyOneSidedStartPhase(sumReps) {
+  let best = null, bestDist = Infinity
+  for (const phase of PHASE_ORDER) {
+    const dist = Math.abs(oneSidedSum(phase) - sumReps)
     if (dist < bestDist) { bestDist = dist; best = phase }
   }
   return best
@@ -109,25 +157,46 @@ function phaseAt(startPhase, i) {
   return PHASE_ORDER[(startIdx + i) % 3]
 }
 
+// Сколько раз конкретная фаза уже встретилась в тренировках 0..i включительно.
+function occurrenceNum(startPhase, phase, i) {
+  let count = 0
+  for (let j = 0; j <= i; j++) if (phaseAt(startPhase, j) === phase) count++
+  return count
+}
+
+// Малый цикл — своя ступень на фазу, растёт при каждом появлении фазы
+// (лёгкая→средняя→тяжёлая→снова лёгкая). У стартовой фазы 1-е появление —
+// это сама baseline-тренировка (index 0), её ступень уже известна из суммы.
+// У остальных двух фаз 1-е появление всегда лёгкая (истории ещё нет).
+function stepAtOccurrence(startStep, isStartPhase, occurrence) {
+  const baseIdx = isStartPhase ? STEP_ORDER.indexOf(startStep) : 0
+  return STEP_ORDER[(baseIdx + occurrence - 1) % 3]
+}
+
 // Раскладка на СЛЕДУЮЩУЮ (ещё не проведённую) тренировку упражнения.
 // sessions — результат buildConstructorSessions (index 0 — baseline, первая
 // тренировка, которую клиент заполнил сам полностью вручную).
 //
 // oneSided — тип упражнения, приходит ИЗ КАТАЛОГА (см. exerciseProfile ниже),
-// а не угадывается здесь. Отличается только таблица схем: ротация фаз, откат и
-// всё остальное у обеих категорий общее.
-//
-// step — всегда null: ступеней тяжести в методике больше нет (редакция
-// 11.08.2026). Поле оставлено в ответе, чтобы вызывающему не пришлось гадать,
-// пропало оно или просто не посчиталось.
+// а не угадывается здесь. Умолчание false — ровно прежнее поведение, поэтому
+// все старые вызовы (и старые строки constructor_exercises со свободными
+// названиями, которых каталог не знает) считаются как раньше, 4 подхода.
 export function getUpcomingScheme(sessions, { oneSided = false } = {}) {
   if (!sessions || sessions.length === 0) return { isBaseline: true }
   const baseline = sessions[0]
   const sumReps = baseline.sets.reduce((sum, s) => sum + (Number(s.reps) || 0), 0)
   const i = sessions.length // индекс тренировки, которую сейчас собираем
-  const startPhase = classifyStartPhase(sumReps, oneSided)
+  if (oneSided) {
+    const startPhase = classifyOneSidedStartPhase(sumReps)
+    const phase = phaseAt(startPhase, i)
+    return { isBaseline: false, phase, step: null, reps: ONE_SIDED_SCHEMES[phase], oneSided: true }
+  }
+  const { phase: startPhase, step: startStep } = classifyStartPhaseAndStep(sumReps)
   const phase = phaseAt(startPhase, i)
-  return { isBaseline: false, phase, step: null, reps: schemesFor(oneSided)[phase], oneSided }
+  const isStartPhase = phase === startPhase
+  const occurrence = occurrenceNum(startPhase, phase, i)
+  const step = stepAtOccurrence(startStep, isStartPhase, occurrence)
+  return { isBaseline: false, phase, step, reps: PHASE_SCHEMES[phase][step] }
 }
 
 // Откат −15% one-shot (только Конструктор — buildDeload в workoutPrompt.js,
@@ -233,7 +302,7 @@ export function exerciseProfile(name) {
 // повторов замера, и замер обязан быть той же длины, что и схемы, с которыми
 // его сравнивают.
 export function baselineSetCount(oneSided) {
-  return schemesFor(oneSided).volume.length
+  return oneSided ? ONE_SIDED_SCHEMES.volume.length : PHASE_SCHEMES.volume.light.length
 }
 
 const normalizeQuery = s => (s || '').toLowerCase().replace(/ё/g, 'е').trim()

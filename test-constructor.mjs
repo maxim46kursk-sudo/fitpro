@@ -29,7 +29,7 @@
 
 import { readFileSync } from 'node:fs'
 import {
-  getUpcomingScheme, classifyStartPhase, phaseSum, buildConstructorSessions,
+  getUpcomingScheme, classifyOneSidedStartPhase, buildConstructorSessions,
   exerciseProfile, filterCatalog, catalogGroups, findByCatalogName, baselineSetCount,
   catalogGroup, catalogExercise, hasHardStreak,
   ONE_SIDED_SCHEMES, PHASE_SCHEMES, PHASE_ORDER, CATALOG_OTHER_GROUP,
@@ -164,34 +164,16 @@ check(S2, 'по сохранённому названию упражнение �
 // ─────────────────────────────────────────────────────────────────────────
 // 3. Одностороннее получает свою схему повторов
 // ─────────────────────────────────────────────────────────────────────────
-const S3 = 'Схемы повторов'
+const S3 = 'Схема односторонних'
 
-// Редакция 11.08.2026 (решение владельца методики): ступеней тяжести больше
-// нет ни у кого, на фазу приходится одна схема. Двусторонние идут ровно,
-// односторонние — со снижением внутри тренировки.
-eq(S3, 'двусторонние, Объём — ровные 24', PHASE_SCHEMES.volume, [24, 24, 24, 24])
-eq(S3, 'двусторонние, Развитие — ровные 20', PHASE_SCHEMES.development, [20, 20, 20, 20])
-eq(S3, 'двусторонние, Сила — ровные 16', PHASE_SCHEMES.strength, [16, 16, 16, 16])
-check(S3, 'у двусторонних внутри тренировки снижения нет',
-  PHASE_ORDER.every(p => new Set(PHASE_SCHEMES[p]).size === 1))
-
-eq(S3, 'односторонние, Объём — 15·14·13·12', ONE_SIDED_SCHEMES.volume, [15, 14, 13, 12])
-eq(S3, 'односторонние, Развитие — 12·11·11·10', ONE_SIDED_SCHEMES.development, [12, 11, 11, 10])
-eq(S3, 'односторонние, Сила — 10·9·9·8', ONE_SIDED_SCHEMES.strength, [10, 9, 9, 8])
-check(S3, 'у односторонних повторы к концу тренировки снижаются',
-  PHASE_ORDER.every(p => ONE_SIDED_SCHEMES[p].every((r, i, a) => i === 0 || r <= a[i - 1])
-    && ONE_SIDED_SCHEMES[p][0] > ONE_SIDED_SCHEMES[p][3]))
-
-check(S3, 'подходов везде по 4 — и у двусторонних, и у односторонних',
-  PHASE_ORDER.every(p => PHASE_SCHEMES[p].length === 4 && ONE_SIDED_SCHEMES[p].length === 4))
-eq(S3, 'baseline-замер — 4 строки в обоих случаях',
-  [baselineSetCount(true), baselineSetCount(false)], [4, 4])
-
-// Суммы фаз считаются из самих схем, а не зашиты числами.
-eq(S3, 'суммы двусторонних — 96 / 80 / 64',
-  PHASE_ORDER.map(p => phaseSum(p)), [96, 80, 64])
-eq(S3, 'суммы односторонних — 54 / 44 / 36',
-  PHASE_ORDER.map(p => phaseSum(p, true)), [54, 44, 36])
+eq(S3, 'Объём — 15-12 (из документа)', ONE_SIDED_SCHEMES.volume, [15, 12])
+eq(S3, 'Развитие — 12-10 (из документа)', ONE_SIDED_SCHEMES.development, [12, 10])
+eq(S3, 'Сила — 10-8 (из документа)', ONE_SIDED_SCHEMES.strength, [10, 8])
+check(S3, 'у односторонних 2 подхода вместо обычных 4',
+  PHASE_ORDER.every(p => ONE_SIDED_SCHEMES[p].length === 2) &&
+  PHASE_ORDER.every(p => PHASE_SCHEMES[p].light.length === 4))
+eq(S3, 'baseline-замер одностороннего — тоже 2 строки (сумма сравнима со схемами)',
+  [baselineSetCount(true), baselineSetCount(false)], [2, 4])
 
 // Сессии собираются существующим buildConstructorSessions — его не трогали.
 let seq = 0
@@ -201,54 +183,40 @@ const session = (reps, rating, date = '2026-08-01') =>
 const sessionsOf = (...days) => buildConstructorSessions(days.flatMap((reps, i) =>
   session(reps, 3, `2026-08-0${i + 1}`)))
 
-// Стартовая фаза — ближайшая сумма фазы. Коридоров больше нет: на фазу одно
-// число, поэтому правило одно на обе категории.
-eq(S3, 'двусторонний замер Σ96 → Объём', classifyStartPhase(96), 'volume')
-eq(S3, 'двусторонний замер Σ80 → Развитие', classifyStartPhase(80), 'development')
-eq(S3, 'двусторонний замер Σ64 → Сила', classifyStartPhase(64), 'strength')
-eq(S3, 'двусторонний замер выше всех схем (150) → ближайший Объём', classifyStartPhase(150), 'volume')
-eq(S3, 'двусторонний замер ниже всех схем (10) → ближайшая Сила', classifyStartPhase(10), 'strength')
-eq(S3, 'двусторонний замер ровно между Объёмом и Развитием (88) → более объёмная',
-  classifyStartPhase(88), 'volume')
-
-eq(S3, 'односторонний замер Σ54 → Объём', classifyStartPhase(54, true), 'volume')
-eq(S3, 'односторонний замер Σ44 → Развитие', classifyStartPhase(44, true), 'development')
-eq(S3, 'односторонний замер Σ36 → Сила', classifyStartPhase(36, true), 'strength')
-eq(S3, 'односторонний замер ровно между Развитием и Силой (40) → более объёмное',
-  classifyStartPhase(40, true), 'development')
-// Категории считаются по своим таблицам: одна и та же сумма даёт разные фазы.
-eq(S3, 'сумма 54 у двустороннего — это уже Сила, а у одностороннего Объём',
-  [classifyStartPhase(54), classifyStartPhase(54, true)], ['strength', 'volume'])
+// Стартовая фаза одностороннего — по сумме 2 подходов (27/22/18), а не по
+// коридорам четырёхподходных схем (там любая такая сумма была бы «Сила»).
+eq(S3, 'замер 15+12=27 → стартовая фаза Объём', classifyOneSidedStartPhase(27), 'volume')
+eq(S3, 'замер 12+10=22 → стартовая фаза Развитие', classifyOneSidedStartPhase(22), 'development')
+eq(S3, 'замер 10+8=18 → стартовая фаза Сила', classifyOneSidedStartPhase(18), 'strength')
+eq(S3, 'замер выше всех схем (40) → ближайшая, Объём', classifyOneSidedStartPhase(40), 'volume')
+eq(S3, 'замер ниже всех схем (5) → ближайшая, Сила', classifyOneSidedStartPhase(5), 'strength')
+eq(S3, 'замер между Объёмом и Развитием (24) → ближайшее Развитие', classifyOneSidedStartPhase(24), 'development')
+eq(S3, 'замер ровно посередине Развития и Силы (20) → более лёгкая, Развитие',
+  classifyOneSidedStartPhase(20), 'development')
 
 // Одна проведённая тренировка (baseline) → схема на следующую.
-const afterVolume = getUpcomingScheme(sessionsOf([15, 14, 13, 12]), { oneSided: true })
-eq(S3, 'после одностороннего замера Σ54 следующая тренировка — Развитие 12·11·11·10',
-  [afterVolume.phase, afterVolume.reps], ['development', [12, 11, 11, 10]])
+const afterVolume = getUpcomingScheme(sessionsOf([15, 12]), { oneSided: true })
+eq(S3, 'после замера 15/12 следующая тренировка — Развитие 12-10',
+  [afterVolume.phase, afterVolume.reps], ['development', [12, 10]])
 check(S3, 'схема помечена как односторонняя', afterVolume.oneSided === true)
-eq(S3, 'ступени тяжести нет — step=null', afterVolume.step, null)
+eq(S3, 'ступени тяжести у односторонних нет — step=null, а не выдуманная «лёгкая»',
+  afterVolume.step, null)
 
-const afterTwoSided = getUpcomingScheme(sessionsOf([24, 24, 24, 24]))
-eq(S3, 'после двустороннего замера Σ96 следующая тренировка — Развитие 20·20·20·20',
-  [afterTwoSided.phase, afterTwoSided.reps], ['development', [20, 20, 20, 20]])
-eq(S3, 'у двусторонних ступени тоже нет — step=null', afterTwoSided.step, null)
-
-// Большой цикл — та же ротация фаз, её не меняли.
-const rot = [1, 2, 3, 4].map(n => getUpcomingScheme(sessionsOf(...Array(n).fill([15, 14, 13, 12])), { oneSided: true }))
+// Большой цикл — та же ротация фаз, что и у обычных упражнений (логику не
+// переписывали, она общая).
+const rot = [1, 2, 3, 4].map(n => getUpcomingScheme(sessionsOf(...Array(n).fill([15, 12])), { oneSided: true }))
 eq(S3, 'фазы ротируются по кругу от стартовой: Развитие → Сила → Объём → Развитие',
   rot.map(r => r.phase), ['development', 'strength', 'volume', 'development'])
-eq(S3, 'повторы каждой фазы — из односторонней таблицы',
-  rot.map(r => r.reps), [[12, 11, 11, 10], [10, 9, 9, 8], [15, 14, 13, 12], [12, 11, 11, 10]])
+eq(S3, 'повторы каждой фазы — из односторонней таблицы, а не из 3×3',
+  rot.map(r => r.reps), [[12, 10], [10, 8], [15, 12], [12, 10]])
 
-const rotTwo = [1, 2, 3, 4].map(n => getUpcomingScheme(sessionsOf(...Array(n).fill([24, 24, 24, 24]))))
-eq(S3, 'у двусторонних ротация та же',
-  rotTwo.map(r => r.phase), ['development', 'strength', 'volume', 'development'])
-eq(S3, 'повторы каждой фазы — из двусторонней таблицы',
-  rotTwo.map(r => r.reps), [[20, 20, 20, 20], [16, 16, 16, 16], [24, 24, 24, 24], [20, 20, 20, 20]])
-
-// Флаг односторонности меняет ТОЛЬКО таблицу схем.
-const asRegular = getUpcomingScheme(sessionsOf([15, 14, 13, 12]))
-eq(S3, 'тот же замер без флага — двусторонняя схема', asRegular.reps.length, 4)
-check(S3, 'и она ровная', new Set(asRegular.reps).size === 1)
+// То же упражнение без флага одностороннего считается по-старому — значит
+// флаг действительно единственное, что меняется.
+const asRegular = getUpcomingScheme(sessionsOf([15, 12]))
+eq(S3, 'без флага одностороннего — прежняя четырёхподходная схема',
+  asRegular.reps.length, 4)
+check(S3, 'без флага одностороннего ступень тяжести на месте',
+  ['light', 'medium', 'heavy'].includes(asRegular.step))
 
 // Первая тренировка упражнения — замер в любом случае.
 check(S3, 'истории нет → baseline, схему не навязываем',
@@ -256,9 +224,9 @@ check(S3, 'истории нет → baseline, схему не навязыва�
 
 // Откат −15% общий, отдельной ветки для односторонних в нём нет.
 const hardHistory = buildConstructorSessions([
-  ...session([15, 14, 13, 12], 3, '2026-08-01'),
-  ...session([12, 11, 11, 10], 5, '2026-08-03'),
-  ...session([12, 11, 11, 10], 5, '2026-08-05'),
+  ...session([15, 12], 3, '2026-08-01'),
+  ...session([12, 10], 5, '2026-08-03'),
+  ...session([12, 10], 5, '2026-08-05'),
 ])
 check(S3, 'две тяжёлые подряд на одностороннем — откат срабатывает так же',
   hasHardStreak(hardHistory) === true)
@@ -271,8 +239,9 @@ const S4 = 'Старые упражнения'
 const legacySessions = sessionsOf([20, 20, 20, 20])
 const legacyProfile = exerciseProfile('Присед в смите как у Кости')
 const legacyScheme = getUpcomingScheme(legacySessions, { oneSided: legacyProfile.oneSided })
-eq(S4, 'старое название считается как двустороннее — 4 подхода', legacyScheme.reps.length, 4)
-check(S4, 'и получает ровную схему, как все двусторонние', new Set(legacyScheme.reps).size === 1)
+eq(S4, 'старое название считается как раньше — 4 подхода', legacyScheme.reps.length, 4)
+check(S4, 'у старого названия остаётся ступень тяжести (прежняя логика целиком)',
+  ['light', 'medium', 'heavy'].includes(legacyScheme.step))
 check(S4, 'старому названию не приписывают тип «одностороннее»', legacyProfile.oneSided === false)
 
 // Даже если в свободном названии есть слово «выпады» — оно НЕ из каталога,
