@@ -115,7 +115,20 @@ export function useCamera({ enabled = true, facingMode = 'user' } = {}) {
         streamRef.current = mediaStream
         setStream(mediaStream)
         const described = describeTrack(track, list)
-        logEvent('camera.ready', described)
+        /**
+         * В ЖУРНАЛ — БЕЗ МЕТКИ И БЕЗ deviceId.
+         *
+         * Метка камеры почти всегда содержит модель устройства («Galaxy A54
+         * front camera»), а deviceId — устойчивый отпечаток этого устройства.
+         * Вместе они опознают человека надёжнее, чем нужно для разбора жалоб на
+         * картинку. Всё техническое остаётся: разрешение, частота кадров,
+         * фронтальная или тыловая, зум и его пределы — по ним и разбирают
+         * «зум», «кроп» и «рвано».
+         *
+         * describeTrack продолжает отдавать полный набор: метка нужна выбору
+         * камеры в диагностической панели, и она никуда не уезжает.
+         */
+        logEvent('camera.ready', logSafeCamera(described))
         if (
           (described.frameRate != null && described.frameRate < MIN_FRAME_RATE) ||
           (described.width != null && described.width < MIN_WIDTH)
@@ -195,6 +208,19 @@ function pickBetterFrontCamera(track, list) {
     (d) => d.deviceId !== current && !SUSPICIOUS_LABEL.test(d.label),
   )
   return alternative?.deviceId || null
+}
+
+/**
+ * То же описание камеры, но без того, что опознаёт устройство и человека.
+ * Экспортируется ради теста: правило «метки в журнале нет» должно быть
+ * проверяемым, а не обещанным в комментарии.
+ */
+export function logSafeCamera(info) {
+  if (!info) return null
+  const { label, deviceId, ...safe } = info
+  void label
+  void deviceId
+  return safe
 }
 
 function describeTrack(track, list) {

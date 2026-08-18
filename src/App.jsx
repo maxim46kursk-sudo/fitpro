@@ -87,6 +87,24 @@ const MOTION_KEY = (() => {
  * создаёт, и из него в корневой контекст страницы выпадают два `position:fixed`
  * слоя раздела.
  */
+/**
+ * КУДА РАЗДЕЛ ШЛЁТ СВОЙ ЖУРНАЛ. Ветка существующей ручки — новых файлов в api/
+ * заводить нельзя, там потолок тарифа. Личность приёмник берёт из токена, а не
+ * из тела, поэтому токен добывается на каждую отправку: он живёт около часа, а
+ * тренировку человек держит открытой дольше.
+ */
+const MOTION_LOG = {
+  endpoint: '/api/set-exercise?action=motion-log',
+  token: async () => {
+    try {
+      const { data } = await supabase.auth.getSession()
+      return data?.session?.access_token || null
+    } catch {
+      return null
+    }
+  },
+}
+
 function MotionOverlay({ onExit }) {
   return createPortal(
     <div
@@ -128,7 +146,7 @@ function MotionOverlay({ onExit }) {
             Загружаю тренировку…
           </div>
         }>
-        <MotionApp onExit={onExit} />
+        <MotionApp onExit={onExit} log={MOTION_LOG} />
       </Suspense>
     </div>,
     document.body,

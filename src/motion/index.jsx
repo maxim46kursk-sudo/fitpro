@@ -26,6 +26,7 @@ import { noteScreen } from './debug/errorReporter.js'
 import { recordFrame } from './debug/recorder.js'
 import { isCalibrating, subscribeCalibration } from './debug/calibrationMode.js'
 import { openMotion } from './lifecycle.js'
+import { configureLogShipper } from './debug/logShipper.js'
 import './motion.css'
 
 /**
@@ -48,8 +49,11 @@ import './motion.css'
  *   его не двигает: хозяин знает про своего человека больше, чем localStorage.
  * @param {string} [props.tier] уровень по умолчанию вместо DEFAULT_TIER.
  * @param {boolean} [props.paused] отпустить камеру, не размонтируя раздел.
+ * @param {{endpoint: string, token: () => Promise<string|null>}} [props.log]
+ *   куда слать журнал и как получить токен. Не задан — журнал ведёт себя как в
+ *   своём проекте: модуль про хозяина ничего не знает (см. logShipper).
  */
-export default function MotionApp({ onExit, day, tier, paused = false } = {}) {
+export default function MotionApp({ onExit, day, tier, paused = false, log = null } = {}) {
   /**
    * Ключ перезапуска после падения. ErrorBoundary раньше предлагал
    * `location.reload()` — внутри FitPro это перезагрузка ВСЕГО приложения и
@@ -68,6 +72,7 @@ export default function MotionApp({ onExit, day, tier, paused = false } = {}) {
       <MotionAppInner
         key={attempt}
         onExit={onExit}
+        log={log}
         dayOverride={day}
         tierOverride={tier}
         paused={paused}
@@ -132,7 +137,7 @@ function readBlockMode() {
   }
 }
 
-function MotionAppInner({ onExit, dayOverride, tierOverride, paused }) {
+function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log }) {
   // calibration | setup | levels | room | workout | result
   // выбор уровня и настройка под себя — только в игре
   const [screen, setScreen] = useState('calibration')
@@ -237,7 +242,17 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused }) {
    * прошлое закрытие. Обе половины лежат в одном месте — см. lifecycle.js:
    * порознь они расходятся молча.
    */
-  useEffect(() => openMotion(), [])
+  useEffect(() => {
+    // Приёмник настраивается до открытия: сама настройка и включает отправку
+    // (см. configureLogShipper), а сброс состояния на открытии её уважает.
+    const unconfigure = log ? configureLogShipper(log) : null
+    const close = openMotion()
+    return () => {
+      close()
+      unconfigure?.()
+    }
+    // журнал задаётся хозяином один раз на всё время жизни раздела
+  }, [])
 
   /**
    * Экран запоминается для строки ошибки. Сообщение вроде «t is undefined» без
