@@ -63,7 +63,15 @@ export function configureSync(api) {
 /** Собрать прогресс устройства в один объект — то, что уедет в базу. */
 export function collectProgress() {
   return {
-    [STAMP]: readRaw(`${KEYS.challenge}.stamp`) || new Date().toISOString(),
+    /**
+     * Отметки нет — значит она НЕИЗВЕСТНА, а не «сейчас».
+     *
+     * Подставь мы сюда текущее время, пустой кэш нового устройства оказывался бы
+     * свежее сервера и побеждал бы в сравнении: человек заходил со второго
+     * телефона и получал чистый лист вместо своего челленджа, а следующая
+     * отправка уносила эту пустоту наверх. Именно так и вышло на прогоне.
+     */
+    [STAMP]: readRaw(`${KEYS.challenge}.stamp`) || null,
     challenge: readJson(KEYS.challenge),
     attempts: readJson(KEYS.challengeAttempts),
     unlocked: readRaw(KEYS.challengeUnlocked) === '1',

@@ -313,3 +313,43 @@ describe('отправка переживает закрытие раздела'
     expect(saveProgress).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('пустое устройство не считается свежим', () => {
+  it('КЭШ БЕЗ ОТМЕТКИ ВРЕМЕНИ ПРОИГРЫВАЕТ СЕРВЕРУ', async () => {
+    /**
+     * Найдено прогоном: человек заходил со второго телефона и получал чистый
+     * лист вместо своего челленджа. Отметка времени у пустого кэша ставилась
+     * «сейчас», он оказывался свежее сервера и побеждал — а следующая отправка
+     * уносила эту пустоту наверх.
+     */
+    const сервер = {
+      updatedAt: '2026-08-01T10:00:00Z',
+      challenge: { day: 9, done: [{ day: 8, at: 'позавчера' }] },
+      best: 5000,
+    }
+    configureSync({
+      load: async () => ({ progress: сервер, attempts: [] }),
+      saveProgress: async () => {},
+      saveAttempts: async () => {},
+    })
+
+    await hydrate('человек-А')
+
+    expect(readJson(KEYS.challenge)).toEqual(сервер.challenge)
+    expect(readRaw(KEYS.best)).toBe('5000')
+  })
+
+  it('а устройство с более поздней отметкой — побеждает', async () => {
+    writeJson(KEYS.challenge, { day: 20, done: [{ day: 19, at: 'вчера' }] })
+    writeRaw('fitpro-motion.challenge.v1.stamp', '2026-08-10T10:00:00Z')
+    configureSync({
+      load: async () => ({ progress: { updatedAt: '2026-08-01T10:00:00Z', challenge: { day: 3, done: [] } }, attempts: [] }),
+      saveProgress: async () => {},
+      saveAttempts: async () => {},
+    })
+
+    await hydrate('человек-А')
+
+    expect(readJson(KEYS.challenge).day).toBe(20)
+  })
+})
