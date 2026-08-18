@@ -272,10 +272,26 @@ export async function push({ force = false } = {}) {
       (r) => force || !knownAttempts.has(`${r.day}:${r.tier}:${r.attempt_no}`),
     )
 
+    /**
+     * ПУСТОЙ КЭШ — НЕ КОМАНДА «СОТРИ ВСЁ».
+     *
+     * Отправлять его наверх нельзя ни при каких условиях. Пустым он бывает у
+     * человека, который раздел ещё не открывал, у только что вошедшего на чужом
+     * телефоне (кэш стёрт как чужой) и у того, чья загрузка не удалась. Во всех
+     * трёх случаях на сервере может лежать настоящий прогресс, и запись поверх
+     * него означает потерю тридцати дней.
+     *
+     * Ровно это и случилось на первом прогоне: попытка легла в базу, а через
+     * двадцать секунд пустой payload со второго устройства затёр прогресс.
+     * Затирать прогресс имеет право только сам прогресс.
+     */
+    const пусто = !hasLocalProgress(payload)
+    if (пусто && !rows.length) return
+
     for (let attempt = 0; attempt <= RETRY_MS.length; attempt += 1) {
       try {
         if (rows.length) await backend.saveAttempts(rows)
-        await backend.saveProgress(payload)
+        if (!пусто) await backend.saveProgress(payload)
         for (const r of rows) knownAttempts.add(`${r.day}:${r.tier}:${r.attempt_no}`)
         return
       } catch (error) {

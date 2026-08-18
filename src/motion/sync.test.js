@@ -257,3 +257,34 @@ describe('сеть отвалилась посреди тренировки', ()
     vi.useRealTimers()
   })
 })
+
+describe('пустое не затирает полное', () => {
+  it('ПУСТОЙ КЭШ НАВЕРХ НЕ УЕЗЖАЕТ', async () => {
+    /**
+     * Найдено прогоном на боевом адресе: попытка легла в базу, а через двадцать
+     * секунд пустой payload со второго устройства затёр прогресс. Пустым кэш
+     * бывает у того, кто раздел не открывал, у вошедшего на чужом телефоне и у
+     * того, чья загрузка не удалась, — и во всех трёх случаях на сервере может
+     * лежать настоящий прогресс.
+     */
+    const saveProgress = vi.fn(async () => {})
+    const saveAttempts = vi.fn(async () => {})
+    configureSync({ load: async () => null, saveProgress, saveAttempts })
+
+    await push()
+
+    expect(saveProgress).not.toHaveBeenCalled()
+    expect(saveAttempts).not.toHaveBeenCalled()
+  })
+
+  it('появился прогресс — уезжает как обычно', async () => {
+    writeJson(KEYS.challenge, { day: 5, done: [{ day: 4, at: 'вчера' }] })
+    const saveProgress = vi.fn(async () => {})
+    configureSync({ load: async () => null, saveProgress, saveAttempts: async () => {} })
+
+    await push()
+
+    expect(saveProgress).toHaveBeenCalledTimes(1)
+    expect(saveProgress.mock.calls[0][0].challenge.day).toBe(5)
+  })
+})
