@@ -62,7 +62,20 @@ export default defineConfig(({ mode }) => {
     server: {
       allowedHosts: true,
     },
+    // Воркер MediaPipe (раздел Motion) — ТОЛЬКО ES-модуль. Дефолт Vite здесь
+    // 'iife', а при нём динамический import() внутри воркера не работает; весь
+    // шим в src/motion/pose/poseWorker.js построен именно на нём. Симптом
+    // поломки — «Can't find variable: document» на iOS, ровно та ошибка, которую
+    // в Motion однажды уже чинили.
+    worker: {
+      format: 'es',
+    },
     build: {
+      // Явный target вместо дефолтного 'modules': дефолт тянет esnext-синтаксис,
+      // и на движке постарше модуль просто не парсится — страница остаётся
+      // белой, а в поле это выглядит как «приложение не открывается».
+      // Safari 14 / Chrome 87 покрывают всё, где вообще работает MediaPipe.
+      target: ['es2019', 'safari14', 'chrome87', 'firefox78'],
       rollupOptions: {
         output: {
           manualChunks(id) {
@@ -72,6 +85,16 @@ export default defineConfig(({ mode }) => {
           }
         }
       }
-    }
+    },
+    /**
+     * Транспиляция исходников — тем же таргетом, что и итоговая сборка.
+     *
+     * В Motion это поле называлось `esbuild`, но Vite 8 собирает через Rolldown
+     * и трансформирует через oxc: `esbuild` он принимает, но молча игнорирует,
+     * прямо говоря об этом в предупреждении. Имя другое, смысл тот же.
+     */
+    oxc: {
+      target: 'es2019',
+    },
   }
 })
