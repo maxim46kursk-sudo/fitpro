@@ -165,17 +165,59 @@ export const MOVEMENTS = [
 /** У этих движений стороны нет по самому их устройству. */
 export const SIDELESS = new Set(['bend', 'jumpsquat', 'jack', 'hop', 'wings', 'clap'])
 
+/**
+ * ДВИЖЕНИЯ, КОТОРЫЕ СУДЯТСЯ ПЕРЕСЕЧЕНИЕМ ПОРОГОВ, А НЕ ВЫДЕРЖКОЙ.
+ *
+ * Общее у всех трёх — короткая вершина, которую человек ПРОХОДИТ, а не держит:
+ * джек 260–400 мс, складка 200–400, хлопок 130–500 (замерено по записи
+ * calibration-new9). Выдержка в 200 мс набирается только по замерам, и на
+ * 7 поз/с для неё нужны три замера подряд — то есть вершина вдвое длиннее той,
+ * что человек делает. Отсюда полевые 10 повторов джека против 17 у одного
+ * человека на двух телефонах и складка 6 против 1 на прогоне записи.
+ *
+ * Остальные движения сюда не идут намеренно. Прыжок врозь, махи, шаг вбок,
+ * боковой выпад и захлёст на редких замерах не теряют ничего — им выдержка не
+ * мешает, а лишний повод для ложного срабатывания не нужен никому.
+ */
+export const CROSSED = ['bend', 'jack', 'clap']
+
+/** Сколько замеров нужно, чтобы разворот плеч можно было с чем-то сравнивать. */
+const SPAN_SAMPLES = 9
+/** Окно медианы разворота плеч. */
+const SPAN_WINDOW = 15
+/** Плечи уже своей медианы во столько раз — трекер потерял корпус. */
+const SPAN_MIN_K = 0.5
+
 export const DEFAULT_MOVES = {
   /** Столько условие держится подряд, чтобы это было движение, а не проход мимо. */
   holdMs: 200,
   /** Одно движение — одно событие: возврат в стойку занимает несколько кадров. */
   refractoryMs: 800,
+  /**
+   * Насколько признаки позы могут разъехаться по замерам у движений, судимых
+   * пересечением порогов (см. CROSSED). На 7 поз/с это три замера: руки и ноги
+   * приходят в свою крайнюю точку не строго одновременно, и на редкой съёмке
+   * попадают в разные. Шире делать нельзя — тогда «руки подняли, опустили, и
+   * только потом развели ноги» станет джеком.
+   */
+  pairWindowMs: 400,
 
   bend: {
     /** Корпус сложен: плечи дошли до линии таза. */
     foldMaxK: 0.3,
     /** И руки ушли ниже колен — в приседе они туда не идут. */
     belowKneeK: 0.5,
+    /**
+     * Возврат: человек разогнулся. Складка судится пересечением порогов
+     * (см. CROSSED), и от двойного счёта защищает именно возврат.
+     *
+     * 0.6 стоит в разрыве, а не на краю: по записи calibration-new9 в своём
+     * сегменте складка уводит fold до 0.06, а вне сегмента он ни разу не
+     * опускается ниже 0.62 при медиане стойки 1.00.
+     */
+    foldBackK: 0.6,
+    /** И руки ушли от пола: вне складки belowKnee не поднимается выше -0.23. */
+    belowKneeBackK: 0,
   },
   jumpsquat: {
     /** Сначала присед: таз ниже своей медианы на столько ростов. */
@@ -226,8 +268,6 @@ export const DEFAULT_MOVES = {
      */
     ankleBackK: 0.45,
     raiseBackK: 0,
-    /** Насколько ноги врозь и руки вверх могут разъехаться по замерам. */
-    pairWindowMs: 400,
     /**
      * И защита от сбойного замера, которую раньше давала сама выдержка: одного
      * замера теперь достаточно, значит одного мусорного тоже. Живой пример из
@@ -283,6 +323,14 @@ export const DEFAULT_MOVES = {
     wristGapMaxK: 0.55,
     /** И обе выше носа: сведённые внизу руки — это не хлопок над головой. */
     raiseK: 0.3,
+    /**
+     * Возврат: руки опустились. Хлопок судится пересечением порогов
+     * (см. CROSSED), и разводить руки для возврата не требуется — по записи
+     * calibration-new9 сведённые кисти встречаются и вне хлопка (минимум 0.39
+     * там и 0.41 здесь), а вот выше носа они вне хлопка не поднимаются: их
+     * потолок -0.12 при планке 0.30.
+     */
+    raiseBackK: 0,
   },
   twistknee: {
     /**
@@ -332,6 +380,7 @@ const EMPTY = () => ({
   hipY: null,
   torso: null,
   shW: null,
+  shoulderSpan: null,
   ankleOut: NONE(),
   wristOut: NONE(),
   wristGap: null,
@@ -365,6 +414,8 @@ export function readMoves(landmarks, minVisibility = MIN_VISIBILITY) {
   const shoulderY = (ls.y + rs.y) / 2
   const hipY = (lh.y + rh.y) / 2
   const shW = Math.abs(ls.x - rs.x)
+  // со знаком: по нему видно, что трекер поменял стороны тела местами
+  out.shoulderSpan = ls.x - rs.x
   const torso = Math.abs(hipY - shoulderY)
   if (!shW) return out
 
@@ -502,15 +553,17 @@ export function createMoveWatchers(overrides = {}) {
   /** До какого момента присед ещё может стать приседом с прыжком. */
   let jumpArmedUntil = null
   /**
-   * Джек: когда в последний раз видели ноги врозь и руки вверху, и не пора ли
-   * ждать возврата в стойку. Оба следа живут до возврата, а не до следующего
-   * кадра — на редкой съёмке ноги и руки попадают в разные замеры.
+   * Движения, которые судятся ПЕРЕСЕЧЕНИЕМ ПОРОГОВ, а не выдержкой: следы
+   * признаков живут до возврата в стойку, а не до следующего замера — на
+   * редкой съёмке признаки попадают в разные замеры.
    */
-  const jackState = {
-    feetAt: null,
-    armsAt: null,
-    armed: true,
-  }
+  const crossings = {}
+  for (const movement of CROSSED) crossings[movement] = { marks: {}, armed: true }
+  /**
+   * Разворот плеч в кадре: x левого минус x правого. По всем записям он держит
+   * знак и величину, и по ним видно, когда трекер ПЕРЕПУТАЛ СТОРОНЫ.
+   */
+  const spans = []
   const squatState = newState()
 
   const sidesOf = (movement) => (SIDELESS.has(movement) ? ['none'] : [SIDE.LEFT, SIDE.RIGHT])
@@ -745,6 +798,79 @@ export function createMoveWatchers(overrides = {}) {
         return true
       }
 
+      /**
+       * ТРЕКЕР ПЕРЕПУТАЛ СТОРОНЫ — такой замер не поза, и судить по нему нечего.
+       *
+       * Живой случай из записи calibration-new9, 74.7 с: человек в прыжке, и на
+       * двух кадрах подряд MediaPipe меняет левую половину тела с правой
+       * местами. Видимость точек при этом 0.96–1.00 — движок уверен и неправ,
+       * так что порог видимости здесь не помогает. Зато видно по плечам: x
+       * левого минус x правого держится около +0.19 всю запись, а на этих
+       * кадрах становится -0.15 и +0.03. Кисти в тот же миг «сходятся» с 2.04
+       * до 0.12 ширины плеч за 36 мс и разлетаются обратно — готовый хлопок над
+       * головой, которого не было.
+       *
+       * Проверка стоит ТОЛЬКО на движениях, судимых пересечением порогов: там
+       * хватает одного замера, значит хватает и одного мусорного. У остальных
+       * такой замер по-прежнему переживает выдержка, и трогать их незачем.
+       */
+      const span = frame.shoulderSpan
+      let trusted = true
+      if (Number.isFinite(span)) {
+        if (spans.length >= SPAN_SAMPLES) {
+          const median = [...spans].sort((a, b) => a - b)[spans.length >> 1]
+          trusted =
+            Math.sign(span) === Math.sign(median) &&
+            Math.abs(span) >= Math.abs(median) * SPAN_MIN_K
+        }
+        spans.push(span)
+        if (spans.length > SPAN_WINDOW) spans.shift()
+      }
+
+      /**
+       * ХОД ДЛЯ ДВИЖЕНИЙ, КОТОРЫЕ СУДЯТСЯ ПЕРЕСЕЧЕНИЕМ ПОРОГОВ.
+       *
+       * Выдержка набирается только по замерам: 200 мс на шаге 143 мс — это ТРИ
+       * замера подряд, то есть вершина в 286–429 мс, против 218 мс на шаге
+       * 43 мс. Живые вершины лежат ровно в этой щели (джек 260–400 мс, складка
+       * 200–400, хлопок 130–500), и один и тот же человек получал на медленном
+       * телефоне вдвое меньший счёт.
+       *
+       * Здесь важно, что поза БЫЛА: хватает одного замера на каждый признак.
+       * Признаки засчитываются порознь и сводятся по времени — на редкой съёмке
+       * руки и ноги попадают в разные замеры. От двойного счёта защищает не
+       * рефрактерный период, а ВОЗВРАТ В СТОЙКУ, и он от частоты замеров не
+       * зависит вовсе.
+       *
+       * @param {Array<[string, boolean]>} checks признаки позы по именам
+       * @param {boolean} back человек вернулся в исходное положение
+       */
+      const cross = (movement, checks, back, measure) => {
+        const own = crossings[movement]
+        if (!trusted) return false
+        const probe = probes[movement].none
+        for (const [name, ok] of checks) if (ok) own.marks[name] = nowMs
+        if (back) {
+          own.armed = true
+          own.marks = {}
+        }
+        const times = checks.map(([name]) => own.marks[name])
+        const missing = checks.find((check, i) => times[i] == null)
+        probe.block = missing ? missing[0] : null
+        if (missing) {
+          probe.heldMs = 0
+          return false
+        }
+        const spread = Math.max(...times) - Math.min(...times)
+        probe.heldMs = Math.round(spread)
+        const window = config[movement].pairWindowMs ?? config.pairWindowMs
+        if (spread > window || !own.armed) return false
+        own.armed = false
+        state[movement].none.lastAt = nowMs
+        events.push({ movement, side: null, at: nowMs, holdMs: 0, ...measure() })
+        return true
+      }
+
       const readable = fold > READABLE_FOLD
       const minAnkleOut = bothMin(metrics.ankleOut)
       const minRaise = bothMin(metrics.raise)
@@ -755,13 +881,13 @@ export function createMoveWatchers(overrides = {}) {
       // --- наклон вперёд: корпус сложен, руки ниже колен ---
       // Второе условие обязательно: в глубоком приседе корпус тоже кое-как
       // складывается, а руки к полу не идут.
-      step(
+      cross(
         'bend',
-        'none',
         [
           ['fold', atMost(fold, config.bend.foldMaxK)],
           ['wristLow', atLeast(minBelowKnee, config.bend.belowKneeK)],
         ],
+        atLeast(fold, config.bend.foldBackK) && below(minBelowKnee, config.bend.belowKneeBackK),
         () => ({ fold, belowKnee: minBelowKnee }),
       )
 
@@ -775,7 +901,19 @@ export function createMoveWatchers(overrides = {}) {
         squatState.fired = false
       } else {
         if (squatState.since == null) squatState.since = nowMs
-        if (!squatState.fired && nowMs - squatState.since >= config.holdMs) {
+        /**
+         * ПРИСЕД ВЗВОДИТ ПРЫЖОК ПЕРВЫМ ЖЕ ЗАМЕРОМ, А НЕ ЧЕРЕЗ ВЫДЕРЖКУ.
+         *
+         * Выдержка здесь стояла из осторожности, а платил за неё темп: присед в
+         * прыжковой серии человек не держит, он проходит его насквозь, и
+         * набрать 200 мс на шаге 143 мс можно только тремя замерами подряд.
+         * Замер по записи: при 7 поз/с терялся один прыжок из семи.
+         *
+         * Осторожность при этом никуда не делась, просто она в другом месте:
+         * взведённый присед сам по себе ничего не засчитывает — нужен ОТРЫВ
+         * ОБЕИХ СТОП в течение windowMs, а его наклоном вперёд не изобразить.
+         */
+        if (!squatState.fired) {
           squatState.fired = true
           jumpArmedUntil = nowMs + config.jumpsquat.windowMs
         }
@@ -807,50 +945,20 @@ export function createMoveWatchers(overrides = {}) {
       }
 
       // --- джампинг-джек: ноги врозь И обе руки над головой ---
-      // Здесь не выдержка, а пересечение порогов с возвратом в стойку —
-      // единственное движение с такой судьёй (почему, см. DEFAULT_MOVES.jack).
       {
-        const jack = config.jack
-        const probe = probes.jack.none
         // замер вне физических пределов — это не поза, а рассыпавшийся трекинг
-        const goodAnkle = Number.isFinite(minAnkleOut) && minAnkleOut <= jack.ankleOutMaxK
-        const goodRaise = Number.isFinite(minRaise)
-
-        const feetOut = goodAnkle && atLeast(minAnkleOut, jack.ankleOutK)
-        const armsUp = goodRaise && atLeast(minRaise, jack.raiseK)
-        if (feetOut) jackState.feetAt = nowMs
-        if (armsUp) jackState.armsAt = nowMs
-
-        // возврат в стойку: ноги сошлись и руки опустились — можно считать заново
-        const back =
-          goodAnkle &&
-          goodRaise &&
-          below(minAnkleOut, jack.ankleBackK) &&
-          below(minRaise, jack.raiseBackK)
-        if (back) {
-          jackState.armed = true
-          jackState.feetAt = null
-          jackState.armsAt = null
-        }
-
-        const { feetAt, armsAt } = jackState
-        const together =
-          feetAt != null && armsAt != null && Math.abs(feetAt - armsAt) <= jack.pairWindowMs
-        probe.block = feetAt == null ? 'feetOut' : armsAt == null ? 'armsUp' : null
-        probe.heldMs = together ? Math.round(Math.max(feetAt, armsAt) - Math.min(feetAt, armsAt)) : 0
-
-        if (together && jackState.armed) {
-          jackState.armed = false
-          state.jack.none.lastAt = nowMs
-          events.push({
-            movement: 'jack',
-            side: null,
-            at: nowMs,
-            holdMs: 0,
-            ankleOut: minAnkleOut,
-            raise: minRaise,
-          })
-        }
+        const sane = Number.isFinite(minAnkleOut) && minAnkleOut <= config.jack.ankleOutMaxK
+        cross(
+          'jack',
+          [
+            ['feetOut', sane && atLeast(minAnkleOut, config.jack.ankleOutK)],
+            ['armsUp', atLeast(minRaise, config.jack.raiseK)],
+          ],
+          sane &&
+            below(minAnkleOut, config.jack.ankleBackK) &&
+            below(minRaise, config.jack.raiseBackK),
+          () => ({ ankleOut: minAnkleOut, raise: minRaise }),
+        )
       }
 
       // --- прыжок ноги врозь: те же ноги, но руки ВНИЗУ ---
@@ -879,13 +987,13 @@ export function createMoveWatchers(overrides = {}) {
       )
 
       // --- хлопок над головой: кисти сошлись и обе выше носа ---
-      step(
+      cross(
         'clap',
-        'none',
         [
           ['wristGap', atMost(metrics.wristGap, config.clap.wristGapMaxK)],
           ['armsUp', atLeast(minRaise, config.clap.raiseK)],
         ],
+        below(minRaise, config.clap.raiseBackK),
         () => ({ wristGap: metrics.wristGap, raise: minRaise }),
       )
 

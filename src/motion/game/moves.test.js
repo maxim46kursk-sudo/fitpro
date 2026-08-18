@@ -90,15 +90,21 @@ describe('опора кадра', () => {
    * Прежде такой кадр обнулял всё накопленное, и наклон было не взять.
    */
   it('поза пропала на кадр — выдержка переживает это, как и любой сбой', () => {
+    /**
+     * Проверяется на разведении рук: у наклона выдержки больше нет вовсе — он
+     * судится пересечением порогов (см. CROSSED), и терять ему нечего. У
+     * остальных движений выдержка на месте, и правка про потерянный кадр
+     * ровно про них.
+     */
     const watcher = settled()
-    const bend = stand({ torso: 0.05, wristDown: { left: 0.12, right: 0.12 } })
-    hold(watcher, bend, 100, 4100)
+    const wings = stand({ wristOut: { left: 1.3, right: 1.3 } })
+    hold(watcher, wings, 200, 4100)
     // ...и на один кадр человека не видно
-    watcher.update(4250, {})
+    watcher.update(4350, {})
     expect(watcher.fold).toBeNull()
 
-    // накопленное не потеряно: 100 до пропажи и 100 после дают зачётные 200
-    expect(names(hold(watcher, bend, 100, 4300))).toEqual(['bend'])
+    // накопленное не потеряно: 200 до пропажи и 200 после дают зачётные 400
+    expect(names(hold(watcher, wings, 200, 4400))).toEqual(['wings'])
   })
 
   it('пропал надолго — это конец движения, и выдержка идёт с нуля', () => {
@@ -131,6 +137,34 @@ describe('наклон вперёд и присед', () => {
   it('один наклон — одно событие, сколько его ни держи', () => {
     const watcher = settled()
     expect(names(hold(watcher, bend(), 700, 4100))).toEqual(['bend'])
+  })
+
+  it('наклон засчитывается ОДНИМ замером на вершине', () => {
+    /**
+     * Складка теряла на редкой съёмке больше всех: 6 повторов на полной частоте
+     * против 1 при 7 поз/с. Причина та же, что у джека: вершина держится
+     * 200–400 мс (замерено по calibration-new9), а выдержка в 200 мс на шаге
+     * 143 мс набирается только тремя замерами подряд.
+     */
+    const watcher = settled()
+    expect(names(watcher.update(4100, bend()))).toEqual(['bend'])
+  })
+
+  it('второй наклон не засчитается, пока человек не разогнулся', () => {
+    const watcher = settled()
+    expect(names(watcher.update(4100, bend()))).toEqual(['bend'])
+    expect(names(hold(watcher, bend(), 600, 4150))).toEqual([])
+    // разогнулся — и следующий считается
+    hold(watcher, stand(), 300, 4800)
+    expect(names(watcher.update(5200, bend()))).toEqual(['bend'])
+  })
+
+  it('корпус сложен, а руки к полу не пошли — это не наклон, сколько ни жди', () => {
+    // признаки сводятся по времени, и порознь они ничего не значат
+    const watcher = settled()
+    hold(watcher, stand({ torso: 0.05 }), 1000, 4100)
+    hold(watcher, stand({ wristDown: { left: 0.12, right: 0.12 } }), 1000, 5200)
+    expect(names(hold(watcher, stand(), 300, 6300))).toEqual([])
   })
 })
 
@@ -306,6 +340,42 @@ describe('руки в стороны и хлопок', () => {
   it('те же сведённые кисти внизу хлопком не считаются', () => {
     const watcher = settled()
     expect(names(hold(watcher, stand({ wristGap: 0.4 }), 400, 4100))).toEqual([])
+  })
+
+  it('хлопок засчитывается ОДНИМ замером на вершине', () => {
+    // вершина хлопка держится 130–500 мс (замерено по calibration-new9), а
+    // выдержка в 200 мс на шаге 143 мс требует трёх замеров подряд
+    const watcher = settled()
+    const clap = stand({ wristGap: 0.4, wristUp: { left: 0.1, right: 0.1 } })
+    expect(names(watcher.update(4100, clap))).toEqual(['clap'])
+  })
+
+  it('второй хлопок не засчитается, пока руки не опустились', () => {
+    const watcher = settled()
+    const clap = stand({ wristGap: 0.4, wristUp: { left: 0.1, right: 0.1 } })
+    expect(names(watcher.update(4100, clap))).toEqual(['clap'])
+    expect(names(hold(watcher, clap, 600, 4150))).toEqual([])
+    hold(watcher, stand(), 300, 4800)
+    expect(names(watcher.update(5200, clap))).toEqual(['clap'])
+  })
+
+  it('трекер перепутал стороны — хлопка нет', () => {
+    /**
+     * Живой случай из calibration-new9, 74.7 с: человек в прыжке, MediaPipe на
+     * двух кадрах меняет левую половину тела с правой местами. Видимость точек
+     * 0.96–1.00 — движок уверен и неправ. Кисти в тот же миг «сходятся» с 2.04
+     * до 0.12 ширины плеч за 36 мс: готовый хлопок над головой, которого не
+     * было. Видно это по плечам: их разворот держит знак всю запись.
+     */
+    const watcher = createMoveWatchers()
+    const прямо = (over = {}) => stand({ shoulderSpan: 0.2, ...over })
+    hold(watcher, прямо(), 4000)
+    const подмена = прямо({
+      shoulderSpan: -0.15,
+      wristGap: 0.12,
+      wristUp: { left: 0.1, right: 0.1 },
+    })
+    expect(names(watcher.update(4100, подмена))).toEqual([])
   })
 })
 
