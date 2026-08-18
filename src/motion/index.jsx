@@ -27,6 +27,7 @@ import { recordFrame } from './debug/recorder.js'
 import { isCalibrating, subscribeCalibration } from './debug/calibrationMode.js'
 import { openMotion } from './lifecycle.js'
 import { configureLogShipper } from './debug/logShipper.js'
+import { configureSync, hydrate, resetSync, startSync, stopSync } from './sync.js'
 import './motion.css'
 
 /**
@@ -52,8 +53,11 @@ import './motion.css'
  * @param {{endpoint: string, token: () => Promise<string|null>}} [props.log]
  *   куда слать журнал и как получить токен. Не задан — журнал ведёт себя как в
  *   своём проекте: модуль про хозяина ничего не знает (см. logShipper).
+ * @param {{userId: string, load: Function, saveProgress: Function, saveAttempts: Function}} [props.sync]
+ *   где хранится прогресс. Не задан — прогресс живёт только на устройстве, как
+ *   до переезда.
  */
-export default function MotionApp({ onExit, day, tier, paused = false, log = null } = {}) {
+export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null } = {}) {
   /**
    * Ключ перезапуска после падения. ErrorBoundary раньше предлагал
    * `location.reload()` — внутри FitPro это перезагрузка ВСЕГО приложения и
@@ -62,6 +66,56 @@ export default function MotionApp({ onExit, day, tier, paused = false, log = nul
    * Motion и ничего больше.
    */
   const [attempt, setAttempt] = useState(0)
+
+  /**
+   * ПРОГРЕСС ЧИТАЕТСЯ С СЕРВЕРА ДО ВХОДА В ИГРУ, и до этого момента раздел не
+   * монтируется вовсе.
+   *
+   * Иначе никак: день челленджа, попытки и личные планки игра берёт СИНХРОННО и
+   * прямо в ленивых инициализаторах useState. Смонтируй мы её раньше загрузки —
+   * человек увидел бы первый день и нулевые рекорды, а через секунду всё
+   * поменялось бы под ним; хуже того, начатая на пустом месте тренировка легла
+   * бы поверх настоящего прогресса.
+   *
+   * Заставка короткая: это один запрос, а не восемь мегабайт модели.
+   */
+  const [ready, setReady] = useState(!sync)
+
+  useEffect(() => {
+    if (!sync) return undefined
+    let alive = true
+    const unconfigure = configureSync(sync)
+
+    hydrate(sync.userId).then(() => {
+      if (!alive) return
+      // следить за записями начинаем ПОСЛЕ загрузки: иначе её собственные
+      // записи в кэш тут же поехали бы обратно на сервер
+      startSync()
+      setReady(true)
+    })
+
+    return () => {
+      alive = false
+      // отдать накопленное на выходе: человек закрыл раздел сразу после круга,
+      // и ждать следующего открытия его результату незачем
+      stopSync()
+      resetSync()
+      unconfigure()
+    }
+  }, [sync])
+
+  if (!ready) {
+    return (
+      <div className="mt-root">
+        <div className="mt-blocker mt-blocker--solid">
+          <div className="mt-blocker__card">
+            <div className="mt-spinner" />
+            <div className="mt-blocker__text">Загружаю прогресс…</div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <ErrorBoundary
@@ -73,6 +127,7 @@ export default function MotionApp({ onExit, day, tier, paused = false, log = nul
         key={attempt}
         onExit={onExit}
         log={log}
+        sync={sync}
         dayOverride={day}
         tierOverride={tier}
         paused={paused}
@@ -137,7 +192,7 @@ function readBlockMode() {
   }
 }
 
-function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log }) {
+function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync }) {
   // calibration | setup | levels | room | workout | result
   // выбор уровня и настройка под себя — только в игре
   const [screen, setScreen] = useState('calibration')

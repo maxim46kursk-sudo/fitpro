@@ -85,7 +85,60 @@ const MOTION_LOG = {
   },
 }
 
-function MotionOverlay({ onExit }) {
+/**
+ * ГДЕ ЖИВЁТ ПРОГРЕСС РАЗДЕЛА. Клиент пишет в базу напрямую, как дневник
+ * питания: ручки тут не нужны, доступ закрывает RLS — своё видит только сам
+ * человек, всё целиком видит тренер.
+ *
+ * `load` возвращает null ТОЛЬКО при ошибке. Пустой прогресс — это `{progress:
+ * null}`, и разница принципиальна: ошибку раздел не имеет права принять за
+ * «данных нет» и положить пустоту поверх кэша.
+ */
+function motionSyncFor(userId) {
+  return {
+    userId,
+    async load() {
+      try {
+        const [progress, attempts] = await Promise.all([
+          supabase.from('motion_progress').select('payload').eq('user_id', userId).maybeSingle(),
+          supabase.from('motion_attempts').select('day,tier,attempt_no,score,reps,hits,spawned,react_ms,at').eq('user_id', userId),
+        ])
+        // ошибка запроса — это отказ, а не пустота
+        if (progress.error || attempts.error) return null
+        return { progress: progress.data?.payload || null, attempts: attempts.data || [] }
+      } catch {
+        return null
+      }
+    },
+    async saveProgress(payload) {
+      const { error } = await supabase
+        .from('motion_progress')
+        .upsert({ user_id: userId, payload, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+      if (error) throw new Error(error.message)
+    },
+    async saveAttempts(rows) {
+      /**
+       * Попытки только ДОБАВЛЯЮТСЯ. Повтор той же попытки (день, уровень, номер)
+       * отбрасывается уникальным индексом, а не переписывает строку: результат,
+       * однажды записанный, меняться не должен — это будущий предмет спора о
+       * деньгах.
+       */
+      const { error } = await supabase
+        .from('motion_attempts')
+        .upsert(rows.map(r => ({ ...r, user_id: userId })), { onConflict: 'user_id,day,tier,attempt_no', ignoreDuplicates: true })
+      if (error) throw new Error(error.message)
+    },
+  }
+}
+
+function MotionOverlay({ onExit, userId }) {
+  /**
+   * Адаптер собирается ОДИН раз на человека. Новый объект на каждый рендер
+   * означал бы новую загрузку прогресса на каждый рендер — то есть заставку,
+   * возвращающуюся посреди тренировки.
+   */
+  const sync = useMemo(() => (userId ? motionSyncFor(userId) : null), [userId])
+
   return createPortal(
     <div
       data-testid="motion-overlay"
@@ -126,7 +179,7 @@ function MotionOverlay({ onExit }) {
             Загружаю тренировку…
           </div>
         }>
-        <MotionApp onExit={onExit} log={MOTION_LOG} />
+        <MotionApp onExit={onExit} log={MOTION_LOG} sync={sync} />
       </Suspense>
     </div>,
     document.body,
@@ -151,7 +204,17 @@ import './App.css'
 
 const clearFitproData = () => {
   Object.keys(localStorage)
-    .filter(k => k.startsWith('fitpro_'))
+    /**
+     * ДВА ПРЕФИКСА, А НЕ ОДИН. Свои ключи приложение пишет через подчёркивание
+     * (`fitpro_role`), раздел Motion — через дефис (`fitpro-motion.`). Фильтр по
+     * одному `fitpro_` проходил мимо второго насквозь, и прогресс челленджа
+     * переживал выход из аккаунта: следующий человек на том же телефоне открывал
+     * раздел с чужим днём и чужими рекордами.
+     *
+     * Ровно на этом уже обжигались с `fitpro-auth` — его пришлось удалять
+     * отдельной строкой. Здесь то же самое, но правилом, а не заплаткой.
+     */
+    .filter(k => k.startsWith('fitpro_') || k.startsWith('fitpro-motion.'))
     .forEach(k => localStorage.removeItem(k))
 }
 
@@ -11420,7 +11483,7 @@ export default function App() {
           комментарий выше это поведение и описывал — разошлась реализация. */}
       {/* Раздел Motion. Смонтирован только пока открыт: закрытие = размонтирование,
           и только оно гасит камеру (см. MotionOverlay). */}
-      {motionOpen&&<MotionOverlay onExit={closeMotion} />}
+      {motionOpen&&<MotionOverlay onExit={closeMotion} userId={user?.id} />}
 
       <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} hideButton={workoutFullscreen||trainerSessionActive} extraBottomOffset={workoutMinimized?MINIMIZED_BAR_H:0} accessLevel={access.level} openPlans={openPlans} programLabelOf={programLabelOf} />
      </TemplatesContext.Provider>
