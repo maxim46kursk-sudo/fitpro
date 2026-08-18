@@ -38,26 +38,6 @@ import HubCard from './HubCard.jsx'
 const MotionApp = lazy(() => import('./motion/index.jsx'))
 
 /**
- * КОМУ ВИДНА КАРТОЧКА MOTION.
- *
- * Раздел в проде живёт, но клиентам его не показывают: он в бете, и первым его
- * смотрит владелец на живом приложении. Условие — роль trainer в профиле.
- *
- * Запасной ключ `?motion=1` — на случай, если роль не подхватится: она приезжает
- * из профиля отдельным запросом, и до её загрузки человек считается клиентом.
- * Без ключа владелец в такой момент остался бы без раздела и без объяснения.
- * Ключ читается ОДИН раз при загрузке: адрес приложение переписывает своими
- * эффектами, и перечитывать его позже значило бы потерять флаг на ровном месте.
- */
-const MOTION_KEY = (() => {
-  try {
-    return new URLSearchParams(window.location.search).get('motion') === '1'
-  } catch {
-    return false
-  }
-})()
-
-/**
  * ОВЕРЛЕЙ РАЗДЕЛА MOTION.
  *
  * ПОЧЕМУ ПОРТАЛ В document.body, А НЕ РАЗМЕТКА ВНУТРИ «ТРЕНИРОВОК». Три причины,
@@ -4481,23 +4461,23 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       , document.body)}
 
       {/* ── FitPro Motion: тренировка с камерой ──
-          ПЕРВОЙ КАРТОЧКОЙ и бесплатно — тарифом раздел не закрыт. Но виден он
-          пока только владельцу (роль trainer или ключ ?motion=1): раздел в бете,
-          и первым его смотрит он на живом приложении. Клиент карточки не видит,
-          а значит и чанк раздела не грузит — он лежит за ленивой границей. */}
-      {(isTrainer||MOTION_KEY)&&(
-        <HubCard
-          testId="program-folder-motion"
-          icon="video"
-          title="FitPro Motion"
-          subtitle="Тренировка с камерой · бета"
-          topRight={
-            <span style={{ padding:'2px 8px', borderRadius:999, background:`${ACCENT2}22`, color:ACCENT2, fontSize:11, fontWeight:800, letterSpacing:'0.03em' }}>
-              БЕТА
-            </span>
-          }
-          onClick={onOpenMotion} />
-      )}
+          ПЕРВОЙ КАРТОЧКОЙ, всем и бесплатно: тарифом раздел не закрыт и проверок
+          пакета здесь нет. Пометка «бета» остаётся — раздел молодой, и человек
+          должен понимать, во что заходит.
+
+          Чанк раздела при этом лежит за ленивой границей и грузится только по
+          нажатию: тот, кто карточку не тронул, не качает ни байта. */}
+      <HubCard
+        testId="program-folder-motion"
+        icon="video"
+        title="FitPro Motion"
+        subtitle="Тренировка с камерой · бета"
+        topRight={
+          <span style={{ padding:'2px 8px', borderRadius:999, background:`${ACCENT2}22`, color:ACCENT2, fontSize:11, fontWeight:800, letterSpacing:'0.03em' }}>
+            БЕТА
+          </span>
+        }
+        onClick={onOpenMotion} />
 
       {/* ── Уровень 0: список папок ── */}
       {templateFolders.map(t=>{
