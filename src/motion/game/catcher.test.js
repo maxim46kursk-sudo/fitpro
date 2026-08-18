@@ -564,6 +564,79 @@ describe('зачёт и промах', () => {
     expect(catcher.update(250, reaching(spawn.target))).toEqual([])
   })
 
+  it('редкие замеры: одного попадания хватает, если рука прошла через круг', () => {
+    /**
+     * ПОЛЕ. Redmi отдаёт 7 поз/с против 23 у iPhone, и «два попадания из трёх»
+     * означает там 143 мс внутри круга против 43 мс здесь. Полевой лог: промахи
+     * с nearK 0.67 и 0.85 — рука была на две трети радиуса ВНУТРИ мишени, но
+     * попала туда одним замером, и зачёта не случилось.
+     *
+     * Между двумя замерами рука шла по прямой — это два измеренных положения, а
+     * не догадка. Времени внутри круга там на добрую десятую секунды.
+     */
+    const catcher = catcherOf()
+    const [spawn] = catcher.update(0, pose())
+    const t = spawn.target
+    /** Рука на заданном удалении от центра мишени: 1 — ровно край круга. */
+    const atReach = (k) => {
+      const points = pose()
+      points[PART_POINTS[t.part][t.side]] = { x: t.x + k * t.rx, y: t.y }
+      return points
+    }
+    // 7 поз/с, рука проносится сквозь мишень: подход — центр — уход.
+    // Внутри круга она при этом реально была, и это видно по двум замерам.
+    catcher.update(143, atReach(-1.2))
+    const events = catcher.update(286, atReach(0))
+    expect(events.map((e) => e.kind)).toContain('clear')
+  })
+
+  it('пролёт МИМО круга зачёта не даёт — отрезок его не задел', () => {
+    const catcher = catcherOf()
+    const [spawn] = catcher.update(0, pose())
+    // рука ходит в стороне: обе точки отрезка далеко от мишени
+    const aside = (dx) => {
+      const points = pose()
+      points[PART_POINTS[spawn.target.part][spawn.target.side]] = {
+        x: spawn.target.x + dx,
+        y: spawn.target.y + 0.4,
+      }
+      return points
+    }
+    for (const t of [143, 286, 429, 572]) {
+      expect(catcher.update(t, aside(t % 286 ? -0.3 : 0.3))).toEqual([])
+    }
+  })
+
+  it('скачок трекинга через мишень зачёта не даёт', () => {
+    /**
+     * Отрезок строится по двум измеренным точкам, и это же его слабое место:
+     * сбойный замер улетает через полкадра, а прямая к нему проходит где угодно,
+     * в том числе через круг. Конечность так не двигается — такой отрезок не
+     * строим вовсе.
+     */
+    const catcher = catcherOf()
+    const [spawn] = catcher.update(0, pose())
+    const far = (dy) => {
+      const points = pose()
+      points[PART_POINTS[spawn.target.part][spawn.target.side]] = {
+        x: spawn.target.x,
+        y: spawn.target.y + dy,
+      }
+      return points
+    }
+    // за 50 мс точка перелетает с одной стороны мишени на другую — это сбой
+    catcher.update(50, far(-0.45))
+    expect(catcher.update(100, far(0.45))).toEqual([])
+  })
+
+  it('провал в замерах длиннее segmentMaxMs не достраивается', () => {
+    // за треть секунды рука успевает уйти и вернуться: прямой между концами не было
+    const catcher = catcherOf()
+    const [spawn] = catcher.update(0, pose())
+    catcher.update(50, pose())
+    expect(catcher.update(1200, reaching(spawn.target))).toEqual([])
+  })
+
   it('мишень живёт свой срок, и просрочка — промах', () => {
     const catcher = catcherOf({ lifeMs: 2500 })
     const [spawn] = catcher.update(0, pose())

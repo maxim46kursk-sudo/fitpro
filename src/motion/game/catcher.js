@@ -167,6 +167,39 @@ export const DEFAULT_CATCH = {
    */
   holdHits: 2,
   holdWindow: 3,
+  /**
+   * И ВТОРОЙ ПУТЬ К ЗАЧЁТУ — ПО ВРЕМЕНИ ВНУТРИ КРУГА, А НЕ ПО ЧИСЛУ ЗАМЕРОВ.
+   *
+   * Правило выше считает ЗАМЕРЫ, и цена замера у всех разная: на iPhone их 23 в
+   * секунду, на Redmi 7. «Два из трёх последних» — это 87 мс окна там и 286 мс
+   * здесь, а пробыть внутри круга надо 43 мс против 143 мс. Полевой лог показал
+   * ровно это: промахи с nearK 0.67 и 0.85, то есть рука была на две трети
+   * радиуса ВНУТРИ мишени, но попала туда одним-единственным замером.
+   *
+   * Между двумя соседними замерами рука шла по прямой — это не догадка, а два
+   * измеренных положения. Значит, время внутри круга можно посчитать честно:
+   * пересечь отрезок с эллипсом зачёта и взять долю интервала. Накопили
+   * touchMs — касание было, сколько бы замеров в него ни попало.
+   *
+   * 60 мс: столько же требует старое правило на 23 поз/с (два замера подряд —
+   * 43 мс плюс входной и выходной хвосты). Значение подобрано так, чтобы на
+   * полной частоте записей счёт зачётов не сдвинулся ни на единицу; ниже —
+   * начинает добирать и там, а это уже смена судейства для всех.
+   */
+  touchMs: 60,
+  /**
+   * Отрезок длиннее этого — уже не отрезок, а домысел: за 300 мс рука успевает
+   * уйти и вернуться, и прямая между концами пройдёт там, где её не было.
+   * При 7 поз/с шаг 143 мс, при 5 — 200 мс; провал длиннее не достраиваем.
+   */
+  segmentMaxMs: 300,
+  /**
+   * И защита от дрогнувшего замера: конечность не перелетает больше двух ширин
+   * плеч за сотую долю секунды. Скачок больше — сбой трекинга, отрезок к нему
+   * не строим. Прежнее правило «два из трёх» такой замер просто переживало, и
+   * новое обязано уметь то же.
+   */
+  maxStepK: 2,
   /** Сколько живёт мишень. Уровень подставляет своё (см. levels.js). */
   lifeMs: 3500,
   /**
@@ -384,7 +417,9 @@ export function partSpots(landmarks, part) {
     for (const index of pointsOf(part, side)) {
       const point = landmarks[index]
       if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
-        out.push({ side, x: point.x, y: point.y })
+        // index — чтобы сравнивать замер с прошлым по ТОЙ ЖЕ точке тела:
+        // пропала одна из точек, и позиции в массиве уже не совпадают
+        out.push({ side, index, x: point.x, y: point.y })
       }
     }
   }
@@ -634,6 +669,34 @@ export function createSides(rng) {
  * раскладывает их на очки, звук и картинку; здесь ни того, ни другого, ни
  * третьего нет.
  */
+/**
+ * Какая доля отрезка a->b прошла ВНУТРИ круга зачёта.
+ *
+ * Круг зачёта — эллипс в нормированных координатах (по x делит ширина кадра, по
+ * y — высота), поэтому считаем в его собственных единицах: там он ровный круг
+ * радиуса 1, а отрезок остаётся отрезком. Дальше это школьное пересечение
+ * прямой с окружностью, и корни квадратного уравнения прямо дают моменты входа
+ * и выхода. Ноль — отрезок мимо, единица — весь внутри.
+ */
+export function insidePart(a, b, spot) {
+  const ua = (a.x - spot.x) / spot.rx
+  const va = (a.y - spot.y) / spot.ry
+  const ub = (b.x - spot.x) / spot.rx
+  const vb = (b.y - spot.y) / spot.ry
+  const dx = ub - ua
+  const dy = vb - va
+  const aa = dx * dx + dy * dy
+  // конечность стояла на месте: либо всё время внутри, либо всё время снаружи
+  if (aa < 1e-12) return ua * ua + va * va <= 1 ? 1 : 0
+  const bb = 2 * (ua * dx + va * dy)
+  const cc = ua * ua + va * va - 1
+  const disc = bb * bb - 4 * aa * cc
+  if (disc <= 0) return 0
+  const root = Math.sqrt(disc)
+  const from = Math.max(0, (-bb - root) / (2 * aa))
+  const to = Math.min(1, (-bb + root) / (2 * aa))
+  return to > from ? to - from : 0
+}
 export function createCatcher(options = {}) {
   const config = { ...DEFAULT_CATCH, ...options }
   /** Бросок приходит из движка: раунд по одному сиду обязан повторяться. */
@@ -645,6 +708,11 @@ export function createCatcher(options = {}) {
   let nextAt = config.firstAtMs
   /** Окно последних кадров: попала часть в круг или нет. */
   let hold = []
+  /** Сколько миллисекунд конечность уже пробыла внутри круга (см. touchMs). */
+  let insideMs = 0
+  /** Где были точки этой части на прошлом замере и когда — для отрезка. */
+  let prevSpots = null
+  let prevAt = null
   let seeking = null
   let count = 0
 
@@ -717,6 +785,7 @@ export function createCatcher(options = {}) {
     }
   }
 
+
   /** Насколько часть далека от центра мишени: 1 — ровно по краю круга. */
   const reachOf = (point, spot) =>
     Math.hypot((point.x - spot.x) / spot.rx, (point.y - spot.y) / spot.ry)
@@ -743,9 +812,29 @@ export function createCatcher(options = {}) {
       if (target) {
         if (body) {
           let near = null
-          for (const point of partSpots(landmarks, target.part)) {
+          const spots = partSpots(landmarks, target.part)
+          for (const point of spots) {
             const value = reachOf(point, target)
             if (near == null || value < near) near = value
+          }
+
+          /**
+           * ВРЕМЯ ВНУТРИ КРУГА — по отрезку между этим замером и прошлым.
+           * Берётся лучшая из двух точек части: подпись называет часть тела, а
+           * не рабочую руку, и достать мишень человек вправе любой из них.
+           */
+          const dt = prevAt == null ? 0 : now - prevAt
+          if (prevSpots && dt > 0 && dt <= config.segmentMaxMs) {
+            let best = 0
+            for (const spot of spots) {
+              const was = prevSpots.find((p) => p.index === spot.index)
+              if (!was) continue
+              // скачок трекинга: прямой между такими концами не было
+              if (distanceK(body, was, spot) > (config.maxStepK * dt) / 100) continue
+              const part = insidePart(was, spot, target)
+              if (part > best) best = part
+            }
+            insideMs += best * dt
           }
           /**
            * ДВА РАЗНЫХ ЧИСЛА, и путать их нельзя. `near` — ЭТОТ кадр: по нему
@@ -769,10 +858,12 @@ export function createCatcher(options = {}) {
            */
           hold.push(false)
           target.near = null
+          // тела не видно: прошлые точки уже не соседи следующим
+          prevSpots = null
         }
         while (hold.length > config.holdWindow) hold.shift()
 
-        if (hold.filter(Boolean).length >= config.holdHits) {
+        if (hold.filter(Boolean).length >= config.holdHits || insideMs >= config.touchMs) {
           target.status = 'clear'
           target.judgedAt = now
           events.push({ kind: 'clear', at: now, target })
@@ -785,6 +876,8 @@ export function createCatcher(options = {}) {
         if (target.status !== 'live') {
           target = null
           hold = []
+          insideMs = 0
+          prevSpots = null
           nextAt = now + config.gapMs
         }
       }
@@ -794,9 +887,14 @@ export function createCatcher(options = {}) {
         if (made) {
           target = made
           hold = []
+          insideMs = 0
+          prevSpots = null
           events.push({ kind: 'spawn', at: now, target })
         }
       }
+
+      prevSpots = body ? partSpots(landmarks, target?.part ?? null) : null
+      prevAt = now
 
       return events
     },
@@ -804,6 +902,9 @@ export function createCatcher(options = {}) {
     reset() {
       target = null
       hold = []
+      insideMs = 0
+      prevSpots = null
+      prevAt = null
       seeking = null
       nextAt = config.firstAtMs
     },

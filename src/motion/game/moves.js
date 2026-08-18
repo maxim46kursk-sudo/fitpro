@@ -118,6 +118,7 @@
  */
 
 import { LM } from '../pose/landmarks.js'
+import { createPace } from './pace.js'
 
 export const MIN_VISIBILITY = 0.5
 
@@ -208,6 +209,40 @@ export const DEFAULT_MOVES = {
     ankleOutK: 0.7,
     /** И обе кисти выше носа: этим джек и отличается от прыжка врозь. */
     raiseK: 0.2,
+    /**
+     * ДЖЕК СУДИТСЯ ПЕРЕСЕЧЕНИЕМ ПОРОГОВ, А НЕ ВЫДЕРЖКОЙ. Причина в замерах:
+     * вершина джека держится 260–400 мс, а выдержка holdMs набирается только по
+     * замерам, и на 7 поз/с (шаг 143 мс) для 200 мс нужны ТРИ замера подряд, то
+     * есть вершина длиной 286–429 мс. На 23 поз/с хватает 218 мс. Полевой парный
+     * тест: 10 повторов на Redmi против 17 на iPhone у одного человека.
+     *
+     * Здесь важно, что вершина БЫЛА, а не сколько раз в неё попал замер: хватает
+     * одного замера выше порога. Ноги и руки засчитываются порознь и сводятся по
+     * времени — на редкой съёмке они попадают в разные замеры.
+     *
+     * От двойного счёта защищает не рефрактерный период, а ВОЗВРАТ В СТОЙКУ:
+     * пока ноги не сошлись обратно ниже ankleBackK, следующего повтора нет.
+     * Это и есть гистерезис, и он не зависит от частоты замеров вовсе.
+     */
+    ankleBackK: 0.45,
+    raiseBackK: 0,
+    /** Насколько ноги врозь и руки вверх могут разъехаться по замерам. */
+    pairWindowMs: 400,
+    /**
+     * И защита от сбойного замера, которую раньше давала сама выдержка: одного
+     * замера теперь достаточно, значит одного мусорного тоже. Живой пример из
+     * записи: человек уходит из кадра, видимость стоп падает с 0.95 до 0.25, и
+     * ноги «разъезжаются» на 1.74 ширины плеч КАЖДАЯ от центра таза.
+     *
+     * Так ноги не разводятся. По всем девяти записям (16 295 замеров) 99.9%
+     * значений лежат ниже 0.90 при пороге джека 0.7, и выше 1.0 набирается
+     * четыре штуки — все в местах, где трекинг рассыпается. Потолок в 1.2
+     * отсекает их и не трогает ни одного живого джека.
+     *
+     * Потолок, а не ограничение скорости: джек — прыжок, ноги в нём разлетаются
+     * быстро, и запрещать резкое движение детектору прыжка было бы странно.
+     */
+    ankleOutMaxK: 1.2,
   },
   hop: {
     /** Ноги врозь шире, чем в джеке: там их разводит прыжок с руками. */
@@ -462,8 +497,20 @@ export function createMoveWatchers(overrides = {}) {
       ? { none: newState() }
       : { left: newState(), right: newState() }
   }
+  /** Запас на дрогнувший замер берётся от наблюдаемого темпа съёмки. */
+  const pace = createPace(config.holdGraceMs)
   /** До какого момента присед ещё может стать приседом с прыжком. */
   let jumpArmedUntil = null
+  /**
+   * Джек: когда в последний раз видели ноги врозь и руки вверху, и не пора ли
+   * ждать возврата в стойку. Оба следа живут до возврата, а не до следующего
+   * кадра — на редкой съёмке ноги и руки попадают в разные замеры.
+   */
+  const jackState = {
+    feetAt: null,
+    armsAt: null,
+    armed: true,
+  }
   const squatState = newState()
 
   const sidesOf = (movement) => (SIDELESS.has(movement) ? ['none'] : [SIDE.LEFT, SIDE.RIGHT])
@@ -511,6 +558,9 @@ export function createMoveWatchers(overrides = {}) {
      * @returns {Array<object>} события этого кадра (обычно пустой массив)
      */
     update(nowMs, source) {
+      const graceMs = pace.see(nowMs)
+      this.stepMs = pace.stepMs
+      this.graceMs = graceMs
       this.ref = null
       this.drop = null
       this.fold = null
@@ -541,7 +591,7 @@ export function createMoveWatchers(overrides = {}) {
         for (const movement of MOVEMENTS) {
           const own = state[movement]
           for (const side of sidesOf(movement)) {
-            if (own[side].since != null && nowMs - own[side].lastOkAt <= config.holdGraceMs) {
+            if (own[side].since != null && nowMs - own[side].lastOkAt <= graceMs) {
               continue
             }
             own[side].since = null
@@ -669,7 +719,7 @@ export function createMoveWatchers(overrides = {}) {
           // сорвалось ненадолго — это потерянный кадр, а не конец движения:
           // накопленное не трогаем вовсе, иначе снятый `fired` выдал бы второе
           // событие на ту же выдержку (см. заголовок модуля)
-          if (own.since != null && nowMs - own.lastOkAt <= config.holdGraceMs) return false
+          if (own.since != null && nowMs - own.lastOkAt <= graceMs) return false
           own.since = null
           own.lastOkAt = null
           own.fired = false
@@ -757,15 +807,51 @@ export function createMoveWatchers(overrides = {}) {
       }
 
       // --- джампинг-джек: ноги врозь И обе руки над головой ---
-      step(
-        'jack',
-        'none',
-        [
-          ['feetOut', atLeast(minAnkleOut, config.jack.ankleOutK)],
-          ['armsUp', atLeast(minRaise, config.jack.raiseK)],
-        ],
-        () => ({ ankleOut: minAnkleOut, raise: minRaise }),
-      )
+      // Здесь не выдержка, а пересечение порогов с возвратом в стойку —
+      // единственное движение с такой судьёй (почему, см. DEFAULT_MOVES.jack).
+      {
+        const jack = config.jack
+        const probe = probes.jack.none
+        // замер вне физических пределов — это не поза, а рассыпавшийся трекинг
+        const goodAnkle = Number.isFinite(minAnkleOut) && minAnkleOut <= jack.ankleOutMaxK
+        const goodRaise = Number.isFinite(minRaise)
+
+        const feetOut = goodAnkle && atLeast(minAnkleOut, jack.ankleOutK)
+        const armsUp = goodRaise && atLeast(minRaise, jack.raiseK)
+        if (feetOut) jackState.feetAt = nowMs
+        if (armsUp) jackState.armsAt = nowMs
+
+        // возврат в стойку: ноги сошлись и руки опустились — можно считать заново
+        const back =
+          goodAnkle &&
+          goodRaise &&
+          below(minAnkleOut, jack.ankleBackK) &&
+          below(minRaise, jack.raiseBackK)
+        if (back) {
+          jackState.armed = true
+          jackState.feetAt = null
+          jackState.armsAt = null
+        }
+
+        const { feetAt, armsAt } = jackState
+        const together =
+          feetAt != null && armsAt != null && Math.abs(feetAt - armsAt) <= jack.pairWindowMs
+        probe.block = feetAt == null ? 'feetOut' : armsAt == null ? 'armsUp' : null
+        probe.heldMs = together ? Math.round(Math.max(feetAt, armsAt) - Math.min(feetAt, armsAt)) : 0
+
+        if (together && jackState.armed) {
+          jackState.armed = false
+          state.jack.none.lastAt = nowMs
+          events.push({
+            movement: 'jack',
+            side: null,
+            at: nowMs,
+            holdMs: 0,
+            ankleOut: minAnkleOut,
+            raise: minRaise,
+          })
+        }
+      }
 
       // --- прыжок ноги врозь: те же ноги, но руки ВНИЗУ ---
       // Руки — единственное, чем он отличается от джека, и потому условие по
