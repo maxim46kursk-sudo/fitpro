@@ -35,6 +35,11 @@ async function дождатьсяЗагрузки(p) {
 async function войти(b, u) {
   const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, locale: 'ru-RU', permissions: ['camera'] })
   const p = await ctx.newPage()
+  p.on('response', async r => {
+    if (!/motion_progress|motion_attempts/.test(r.url())) return
+    const тело = r.status() >= 400 ? (await r.text().catch(() => '')).slice(0, 160) : ''
+    console.log(`  сеть: ${r.status()} ${r.request().method()} ${r.url().split('/rest/v1/')[1]?.slice(0, 30)} ${тело}`)
+  })
   await p.goto(BASE, { waitUntil: 'networkidle', timeout: 60000 })
   await p.locator('text=Начать').first().click(); await sleep(700)
   await p.locator('button:visible').filter({ hasText: /^Войти$/ }).first().click().catch(() => {})

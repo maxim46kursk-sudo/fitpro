@@ -262,7 +262,16 @@ function schedulePush() {
  * открытие раздела отправят его снова.
  */
 export async function push({ force = false } = {}) {
-  if (!backend || pushing) return
+  /**
+   * Адаптер берётся В ЛОКАЛЬНУЮ переменную и дальше используется только она.
+   *
+   * Отправка живёт дольше одного кадра: между `await` на попытках и записью
+   * прогресса раздел успевает закрыться и отключить хранилище. Читай мы `backend`
+   * после каждого ожидания — вторая половина отправки падала бы на пустом месте.
+   * Ровно это и случилось: попытки уезжали, прогресс молча нет.
+   */
+  const api = backend
+  if (!api || pushing) return
   pushing = true
   try {
     const payload = { ...collectProgress(), [STAMP]: new Date().toISOString() }
@@ -290,8 +299,8 @@ export async function push({ force = false } = {}) {
 
     for (let attempt = 0; attempt <= RETRY_MS.length; attempt += 1) {
       try {
-        if (rows.length) await backend.saveAttempts(rows)
-        if (!пусто) await backend.saveProgress(payload)
+        if (rows.length) await api.saveAttempts(rows)
+        if (!пусто) await api.saveProgress(payload)
         for (const r of rows) knownAttempts.add(`${r.day}:${r.tier}:${r.attempt_no}`)
         return
       } catch (error) {
