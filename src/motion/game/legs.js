@@ -96,6 +96,7 @@
  */
 
 import { LM } from '../pose/landmarks.js'
+import { createPace } from './pace.js'
 
 export const MIN_VISIBILITY = 0.5
 
@@ -353,6 +354,8 @@ export function createLegWatchers(overrides = {}) {
     holdGraceMs: overrides.holdGraceMs ?? HOLD_GRACE_MS,
     minVisibility: overrides.minVisibility ?? MIN_VISIBILITY,
   }
+  /** Запас на дрогнувший замер берётся от наблюдаемого темпа съёмки. */
+  const pace = createPace(config.holdGraceMs)
   /** Высота таза за окно: по её медиане считается, насколько человек присел. */
   const hips = []
   const state = {
@@ -381,6 +384,9 @@ export function createLegWatchers(overrides = {}) {
      * @returns {Array<object>} события этого кадра (обычно пустой массив)
      */
     update(nowMs, source, worldLandmarks) {
+      const graceMs = pace.see(nowMs)
+      this.stepMs = pace.stepMs
+      this.graceMs = graceMs
       this.drop = null
 
       // разбор записей кормит детектор точками, игра — признаками из позы:
@@ -436,7 +442,7 @@ export function createLegWatchers(overrides = {}) {
         }
 
         if (!legBack || drop < config.lunge.dropK) {
-          loosen(lunge, nowMs, config.holdGraceMs)
+          loosen(lunge, nowMs, graceMs)
         } else {
           if (lunge.since == null) lunge.since = nowMs
           lunge.lastOkAt = nowMs
@@ -478,7 +484,7 @@ export function createLegWatchers(overrides = {}) {
         }
 
         if (!held) {
-          loosen(heel, nowMs, config.holdGraceMs)
+          loosen(heel, nowMs, graceMs)
         } else {
           if (heel.since == null) heel.since = nowMs
           heel.lastOkAt = nowMs

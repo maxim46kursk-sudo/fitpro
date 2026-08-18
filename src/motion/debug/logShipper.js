@@ -88,7 +88,7 @@ const MAX_BUFFER = 600
 const BULK_TAGS = new Set(['snapshot', 'game.clear', 'game.miss'])
 
 /**
- * СОБЫТИЯ-ОТКЛОНЕНИЯ (render.cheap, audio.blocked, page.hidden, wakelock.lost,
+ * СОБЫТИЯ-ОТКЛОНЕНИЯ (render.cheap, audio.blocked, page.hidden, wakelock.lost/paused,
  * orientation.change, camera.degraded) в массовые НЕ входят — они и есть то,
  * ради чего лог читают. Захлебнуться ими нельзя по построению: каждое пишет
  * только ПЕРЕХОД, а не состояние, и либо один раз за сессию (audio.blocked),
