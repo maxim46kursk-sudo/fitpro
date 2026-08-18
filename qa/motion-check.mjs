@@ -25,7 +25,9 @@ try {
   const net = []
   p.on('response', r => net.push({ url: r.url(), status: r.status() }))
 
-  await p.goto(BASE, { waitUntil: 'networkidle', timeout: 60000 })
+  // карточка открыта владельцу: роль trainer или запасной ключ. Прогон заходит
+  // обычным аккаунтом, поэтому берёт ключ — проверяем сам раздел, а не доступ
+  await p.goto(BASE + '/?motion=1', { waitUntil: 'networkidle', timeout: 60000 })
   await p.locator('text=Начать').first().click(); await sleep(700)
   await p.locator('button:visible').filter({ hasText: /^Войти$/ }).first().click().catch(() => {})
   await p.locator('input[type="email"]:visible').first().fill(u.email)
