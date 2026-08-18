@@ -14,16 +14,7 @@ export default defineConfig([
       reactRefresh.configs.vite,
     ],
     languageOptions: {
-      globals: {
-        ...globals.browser,
-        /**
-         * Виден ли раздел Motion. Значение вклеивает сборка (define в
-         * vite.config.js) — для eslint это обычная глобальная константа.
-         * Объявление глобалки не ослабляет ни одного правила: no-undef
-         * продолжает ловить всё остальное.
-         */
-        __MOTION_ON__: 'readonly',
-      },
+      globals: globals.browser,
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
   },

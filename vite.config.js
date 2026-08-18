@@ -54,49 +54,10 @@ function localApiChatPlugin(apiKey) {
   }
 }
 
-/**
- * ВИДНА ЛИ КАРТОЧКА «FITPRO MOTION» В «ТРЕНИРОВКАХ».
- *
- * Раздел новый и живёт первый день, поэтому в проде он ВЫКЛЮЧЕН, а на превью
- * включён: владелец смотрит его по ссылке ветки, и только после его «да» ветка
- * идёт в main. Если после выкатки что-то пойдёт не так — раздел гасится этим же
- * флагом, а приложение остаётся как было.
- *
- * Решается на СБОРКЕ, а не в панели Vercel, и это осознанно: переменные в панели
- * живут отдельно от репозитория, их легко забыть выставить на одном из окружений,
- * и цена забывчивости здесь — сырой раздел у живых людей. `VERCEL_ENV` Vercel
- * подставляет сам на каждой сборке ('production' | 'preview' | 'development'), и
- * забыть его нельзя.
- *
- * `VITE_MOTION=1` включает раздел где угодно — этим же ключом его включат в
- * проде, когда владелец скажет «да».
- */
-function motionCardVisible(env) {
-  if (env.VITE_MOTION === '1') return true
-  if (env.VITE_MOTION === '0') return false
-  // VERCEL_ENV приходит из окружения сборки; loadEnv с пустым префиксом отдаёт и
-  // системные переменные, поэтому обращаться к process здесь не нужно
-  const where = env.VERCEL_ENV || ''
-  // на Vercel: везде кроме прода. Вне Vercel (локальная разработка) — тоже да
-  return where !== 'production'
-}
-
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   return {
-    /**
-     * Значение вклеивается в код на сборке.
-     *
-     * Имя обычное, а не `import.meta.env.VITE_MOTION_ON`, и это не вкусовщина:
-     * Vite подставляет `import.meta.env.*` сам, из СВОЕГО набора переменных, и
-     * перебивает define. Ключ, которого в .env нет, превращается в `undefined`
-     * — то есть флаг молча оказывался выключен и на превью тоже. Проверено:
-     * обе сборки давали `false`.
-     */
-    define: {
-      __MOTION_ON__: JSON.stringify(motionCardVisible(env)),
-    },
     plugins: [react(), localApiChatPlugin(env.VITE_ANTHROPIC_KEY)],
     server: {
       allowedHosts: true,

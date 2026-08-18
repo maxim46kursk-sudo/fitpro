@@ -38,11 +38,24 @@ import HubCard from './HubCard.jsx'
 const MotionApp = lazy(() => import('./motion/index.jsx'))
 
 /**
- * ВИДЕН ЛИ РАЗДЕЛ. Значение вклеивается на сборке (см. motionCardVisible в
- * vite.config.js): на превью и локально — да, в проде — нет, пока владелец не
- * проверит раздел и не скажет «да».
+ * КОМУ ВИДНА КАРТОЧКА MOTION.
+ *
+ * Раздел в проде живёт, но клиентам его не показывают: он в бете, и первым его
+ * смотрит владелец на живом приложении. Условие — роль trainer в профиле.
+ *
+ * Запасной ключ `?motion=1` — на случай, если роль не подхватится: она приезжает
+ * из профиля отдельным запросом, и до её загрузки человек считается клиентом.
+ * Без ключа владелец в такой момент остался бы без раздела и без объяснения.
+ * Ключ читается ОДИН раз при загрузке: адрес приложение переписывает своими
+ * эффектами, и перечитывать его позже значило бы потерять флаг на ровном месте.
  */
-const MOTION_ON = __MOTION_ON__
+const MOTION_KEY = (() => {
+  try {
+    return new URLSearchParams(window.location.search).get('motion') === '1'
+  } catch {
+    return false
+  }
+})()
 
 /**
  * ОВЕРЛЕЙ РАЗДЕЛА MOTION.
@@ -2079,7 +2092,7 @@ const makeDefaultFolderSlots=(folders=FOLDERS,programsMap=PROGRAMS_MAP)=>{
 // приходит отдельно, в accessLevel.
 // accessLevel — уровень пакета: тренировки 4–12 в шаблонах требуют БАЗУ (1),
 // в СТАРТ (0) открыты только первые FREE_SLOTS.
-function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, hasTrainer, coachSubExpired = false, accessLevel = 0, openPlans, exerciseVideos = {}, userRole = 'client', setExerciseVideos, onOpenConstructor, onOpenMotion, motionEnabled = false }) {
+function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, hasTrainer, coachSubExpired = false, accessLevel = 0, openPlans, exerciseVideos = {}, userRole = 'client', setExerciseVideos, onOpenConstructor, onOpenMotion }) {
   const { exercises: catalogExercises } = useContext(CatalogContext)
   // Шаблоны программ — из базы (program_templates) с запасным вариантом из кода.
   // folderKeys — КЛЮЧИ (profiles.program, префиксы workouts держатся за них),
@@ -4450,11 +4463,11 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       , document.body)}
 
       {/* ── FitPro Motion: тренировка с камерой ──
-          ПЕРВОЙ КАРТОЧКОЙ и бесплатно для всех — раздел новый, и прятать его за
-          тариф, пока он сам себя не показал, значит не получить о нём отзывов.
-          Виден по флагу сборки (см. MOTION_ON): в проде выключен, пока владелец
-          не проверит его на превью. */}
-      {motionEnabled&&(
+          ПЕРВОЙ КАРТОЧКОЙ и бесплатно — тарифом раздел не закрыт. Но виден он
+          пока только владельцу (роль trainer или ключ ?motion=1): раздел в бете,
+          и первым его смотрит он на живом приложении. Клиент карточки не видит,
+          а значит и чанк раздела не грузит — он лежит за ленивой границей. */}
+      {(isTrainer||MOTION_KEY)&&(
         <HubCard
           testId="program-folder-motion"
           icon="video"
@@ -11151,7 +11164,7 @@ export default function App() {
   const renderMain=()=>(
     <>
       <div data-testid="screen-workouts" style={{ display: nav==='workouts' ? 'block' : 'none' }}>
-        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} hasTrainer={hasCoach} coachSubExpired={coachSubExpired} accessLevel={access.level} openPlans={openPlans} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} onOpenConstructor={openConstructor} onOpenMotion={openMotion} motionEnabled={MOTION_ON} />
+        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} hasTrainer={hasCoach} coachSubExpired={coachSubExpired} accessLevel={access.level} openPlans={openPlans} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} onOpenConstructor={openConstructor} onOpenMotion={openMotion} />
       </div>
       {nav!=='workouts'&&renderOther()}
     </>
