@@ -8,17 +8,20 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "test:motion": "vitest run",
     "test": "node test-progression.mjs && node test-constructor.mjs && node test-theme-guard.mjs && node test-nutrition.mjs && node test-barcode.mjs && node test-error-log.mjs && node test-food-diary.mjs && node test-food-basics.mjs && node test-off-import.mjs && node test-auth-state.mjs && node test-auth-session.mjs && node test-telegram-auth.mjs && node test-prodamus.mjs && node test-plan-test50.mjs",
     "export": "node scripts/build-export.mjs"
   },
   "dependencies": {
     "@iconify/react": "^6.0.2",
+    "@mediapipe/tasks-vision": "0.10.35",
     "@supabase/supabase-js": "^2.110.0",
     "@zxing/browser": "^0.2.1",
     "@zxing/library": "^0.23.0",
     "qs": "^6.15.3",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "three": "0.185.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -35,7 +38,11 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "exceljs": "^4.4.0",
     "globals": "^17.6.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
+    "jsdom": "^30.0.1",
     "playwright": "^1.62.1",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "vitest": "^2.1.8"
   }
 }

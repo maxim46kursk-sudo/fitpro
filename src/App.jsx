@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, createContext, useContext } from 'react'
+import { useState, useEffect, useRef, useMemo, createContext, useContext, lazy, Suspense } from 'react'
 import { createPortal } from 'react-dom'
 import AIAssistant from './AIAssistant'
 import TrainerSession, { TrainerSessionsList } from './TrainerSession.jsx'
@@ -22,6 +22,105 @@ import { VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, ef
 import { clampNum } from './nutrition.js'
 import FoodDiary from './FoodDiary.jsx'
 import HubCard from './HubCard.jsx'
+
+/**
+ * MOTION — ТРЕНИРОВКА С КАМЕРОЙ. Единственная ленивая граница раздела.
+ *
+ * Ни одного статического импорта из `src/motion` в этом файле быть не должно —
+ * даже одной константы. Любой такой импорт схлопнет весь граф раздела в основной
+ * бандл вместе с его стилями: там three (588 КБ), MediaPipe и demoLoops, то есть
+ * лишний мегабайт для КАЖДОГО, кто открыл приложение, включая тех, кто про
+ * тренировку с камерой никогда не узнает.
+ *
+ * Образец тот же, что у сканера штрихкода (FoodDiary.jsx:40): lazy + портал +
+ * гашение камеры размонтированием.
+ */
+const MotionApp = lazy(() => import('./motion/index.jsx'))
+
+/**
+ * ВИДЕН ЛИ РАЗДЕЛ. Значение вклеивается на сборке (см. motionCardVisible в
+ * vite.config.js): на превью и локально — да, в проде — нет, пока владелец не
+ * проверит раздел и не скажет «да».
+ */
+const MOTION_ON = __MOTION_ON__
+
+/**
+ * ОВЕРЛЕЙ РАЗДЕЛА MOTION.
+ *
+ * ПОЧЕМУ ПОРТАЛ В document.body, А НЕ РАЗМЕТКА ВНУТРИ «ТРЕНИРОВОК». Три причины,
+ * каждой хватило бы одной:
+ *
+ *   1. `#root` (src/index.css) — колонка `max-width:1126px; display:flex`. Корень
+ *      Motion живёт на `min-height:100dvh` и слоях `position:absolute; inset:0`,
+ *      внутри такой колонки он схлопнется по высоте, а вся его типографика на
+ *      vw/vmin считается от ОКНА и вылезет за её границы.
+ *   2. `WorkoutsView` смонтирован ВСЕГДА и прячется через `display:none`. Камера
+ *      при `display:none` не гаснет — поток жив, пока компонент смонтирован. То
+ *      есть человек ушёл бы в «Питание», а камера продолжала работать. Гасить её
+ *      можно только размонтированием, поэтому Motion монтируется ТОЛЬКО пока
+ *      открыт.
+ *   3. По порогу 768px приложение переключает мобильную и десктопную ветку
+ *      разметки — это РАЗНЫЕ поддеревья, React их перемонтирует. Поворот
+ *      телефона (360 -> 780) порог пересекает, и Motion, смонтированный внутри,
+ *      потерял бы тренировку ровно в момент поворота.
+ *
+ * Заодно портал уводит раздел из-под pull-to-refresh: тот слушает touchmove на
+ * `.mobile-content`, а мы теперь не внутри неё — иначе жест вниз в игре
+ * перезагружал бы приложение.
+ *
+ * z-index 2900: выше всех модалок приложения (самая верхняя — 2600), но НИЖЕ
+ * тостов (2200-3000). Сообщения приложения обязаны оставаться видны поверх
+ * тренировки. `isolation:isolate` — потому что `.mt-root` контекста наложения не
+ * создаёт, и из него в корневой контекст страницы выпадают два `position:fixed`
+ * слоя раздела.
+ */
+function MotionOverlay({ onExit }) {
+  return createPortal(
+    <div
+      data-testid="motion-overlay"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 2900,
+        isolation: 'isolate',
+        background: '#0b0d12',
+        overflow: 'hidden',
+      }}>
+      {/*
+        ГЛОБАЛЬНЫЕ СТИЛИ FITPRO, КОТОРЫЕ ИНАЧЕ ПОПАДУТ ПО РАЗМЕТКЕ MOTION.
+        Перекрываются точечно и ТОЛЬКО внутри `.mt-root` — глобальные файлы
+        (index.css, App.css) не трогаются: по ним живёт всё остальное приложение.
+
+        Самое опасное здесь — предпоследнее правило. `button:active { transform:
+        scale(.97) }` из App.css создаёт containing block, а внутри Motion есть
+        `position:fixed` слои: нажатая кнопка перепривязала бы их к себе, и
+        экран калибровки уехал бы в угол ровно в момент нажатия.
+      */}
+      <style>{`
+        .mt-root h1, .mt-root h2, .mt-root h3, .mt-root h4 {
+          font-size: revert !important;
+          color: revert !important;
+        }
+        .mt-root input, .mt-root select, .mt-root textarea {
+          font-size: revert !important;
+        }
+        .mt-root button { min-height: unset; }
+        .mt-root button:active,
+        .mt-root [role="button"]:active { transform: none; }
+      `}</style>
+
+      <Suspense
+        fallback={
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8b93a7', fontSize: 14 }}>
+            Загружаю тренировку…
+          </div>
+        }>
+        <MotionApp onExit={onExit} />
+      </Suspense>
+    </div>,
+    document.body,
+  )
+}
 import { BG, SURF, SURF2, SEP, HAIR, TXT, TXT2, TXT3, PUR, ACCENT2, TEA, BLU, COR, KCAL, DANGER } from './theme.js'
 // Совместимость с телефоном: закрытие меню тапом мимо без плёнки-перехватчика
 // и подтверждение действия, работающее внутри Telegram (window.confirm там
@@ -1980,7 +2079,7 @@ const makeDefaultFolderSlots=(folders=FOLDERS,programsMap=PROGRAMS_MAP)=>{
 // приходит отдельно, в accessLevel.
 // accessLevel — уровень пакета: тренировки 4–12 в шаблонах требуют БАЗУ (1),
 // в СТАРТ (0) открыты только первые FREE_SLOTS.
-function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, hasTrainer, coachSubExpired = false, accessLevel = 0, openPlans, exerciseVideos = {}, userRole = 'client', setExerciseVideos, onOpenConstructor }) {
+function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, hasTrainer, coachSubExpired = false, accessLevel = 0, openPlans, exerciseVideos = {}, userRole = 'client', setExerciseVideos, onOpenConstructor, onOpenMotion, motionEnabled = false }) {
   const { exercises: catalogExercises } = useContext(CatalogContext)
   // Шаблоны программ — из базы (program_templates) с запасным вариантом из кода.
   // folderKeys — КЛЮЧИ (profiles.program, префиксы workouts держатся за них),
@@ -4349,6 +4448,25 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           </div>
         </div>
       , document.body)}
+
+      {/* ── FitPro Motion: тренировка с камерой ──
+          ПЕРВОЙ КАРТОЧКОЙ и бесплатно для всех — раздел новый, и прятать его за
+          тариф, пока он сам себя не показал, значит не получить о нём отзывов.
+          Виден по флагу сборки (см. MOTION_ON): в проде выключен, пока владелец
+          не проверит его на превью. */}
+      {motionEnabled&&(
+        <HubCard
+          testId="program-folder-motion"
+          icon="video"
+          title="FitPro Motion"
+          subtitle="Тренировка с камерой · бета"
+          topRight={
+            <span style={{ padding:'2px 8px', borderRadius:999, background:`${ACCENT2}22`, color:ACCENT2, fontSize:11, fontWeight:800, letterSpacing:'0.03em' }}>
+              БЕТА
+            </span>
+          }
+          onClick={onOpenMotion} />
+      )}
 
       {/* ── Уровень 0: список папок ── */}
       {templateFolders.map(t=>{
@@ -10387,6 +10505,59 @@ export default function App() {
     return()=>window.removeEventListener('resize',fn)
   },[])
 
+  /**
+   * РАЗДЕЛ MOTION: открыт или нет. Смонтирован он ровно тогда, когда открыт —
+   * иначе камера не погаснет (см. комментарий у MotionOverlay).
+   */
+  const [motionOpen,setMotionOpen]=useState(false)
+
+  /**
+   * ИСТОРИЮ БРАУЗЕРА ВЕДЁТ ХОЗЯИН, А НЕ РАЗДЕЛ.
+   *
+   * Motion не имеет права трогать history чужого приложения — он про это ничего
+   * не знает и знать не должен. Но без записи в историю аппаратная «назад» на
+   * Android и свайп-назад в Telegram выкинули бы человека ИЗ ПРИЛОЖЕНИЯ прямо
+   * посреди тренировки, а не закрыли бы раздел.
+   *
+   * Поэтому открытие кладёт свою запись, а popstate её отрабатывает. Закрытие
+   * кнопкой снимает запись само (history.back), чтобы «назад» после закрытия не
+   * возвращала человека обратно в тренировку.
+   */
+  const motionPushedRef=useRef(false)
+
+  const openMotion=()=>{
+    if(motionOpen)return
+    try{
+      window.history.pushState({fitproMotion:1},'',window.location.href)
+      motionPushedRef.current=true
+    }catch{
+      // история недоступна (редкие webview) — раздел всё равно откроется,
+      // просто «назад» уведёт из приложения, как и до переезда
+      motionPushedRef.current=false
+    }
+    setMotionOpen(true)
+  }
+
+  const closeMotion=()=>{
+    setMotionOpen(false)
+    if(motionPushedRef.current){
+      motionPushedRef.current=false
+      try{window.history.back()}catch{/* нечего снимать */}
+    }
+  }
+
+  useEffect(()=>{
+    if(!motionOpen)return undefined
+    const onPop=()=>{
+      // «назад» уже сняла нашу запись — снимать её второй раз нельзя,
+      // иначе уедем на шаг глубже, чем человек просил
+      motionPushedRef.current=false
+      setMotionOpen(false)
+    }
+    window.addEventListener('popstate',onPop)
+    return()=>window.removeEventListener('popstate',onPop)
+  },[motionOpen])
+
   // Telegram Mini App — определяем, что приложение открыто внутри Telegram
   // (SDK из index.html может подгрузиться и в обычном браузере, но initData
   // там всегда пустой — это единственный надёжный признак реального запуска
@@ -10980,7 +11151,7 @@ export default function App() {
   const renderMain=()=>(
     <>
       <div data-testid="screen-workouts" style={{ display: nav==='workouts' ? 'block' : 'none' }}>
-        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} hasTrainer={hasCoach} coachSubExpired={coachSubExpired} accessLevel={access.level} openPlans={openPlans} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} onOpenConstructor={openConstructor} />
+        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} hasTrainer={hasCoach} coachSubExpired={coachSubExpired} accessLevel={access.level} openPlans={openPlans} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} onOpenConstructor={openConstructor} onOpenMotion={openMotion} motionEnabled={MOTION_ON} />
       </div>
       {nav!=='workouts'&&renderOther()}
     </>
@@ -11236,6 +11407,10 @@ export default function App() {
           старому условию кнопка была спрятана на ПЕРВОМ ЖЕ экране, который
           видит новый пользователь, хотя никакой тренировки ещё нет. Сам
           комментарий выше это поведение и описывал — разошлась реализация. */}
+      {/* Раздел Motion. Смонтирован только пока открыт: закрытие = размонтирование,
+          и только оно гасит камеру (см. MotionOverlay). */}
+      {motionOpen&&<MotionOverlay onExit={closeMotion} />}
+
       <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} hideButton={workoutFullscreen||trainerSessionActive} extraBottomOffset={workoutMinimized?MINIMIZED_BAR_H:0} accessLevel={access.level} openPlans={openPlans} programLabelOf={programLabelOf} />
      </TemplatesContext.Provider>
     </CatalogContext.Provider>

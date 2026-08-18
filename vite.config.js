@@ -54,15 +54,67 @@ function localApiChatPlugin(apiKey) {
   }
 }
 
+/**
+ * ВИДНА ЛИ КАРТОЧКА «FITPRO MOTION» В «ТРЕНИРОВКАХ».
+ *
+ * Раздел новый и живёт первый день, поэтому в проде он ВЫКЛЮЧЕН, а на превью
+ * включён: владелец смотрит его по ссылке ветки, и только после его «да» ветка
+ * идёт в main. Если после выкатки что-то пойдёт не так — раздел гасится этим же
+ * флагом, а приложение остаётся как было.
+ *
+ * Решается на СБОРКЕ, а не в панели Vercel, и это осознанно: переменные в панели
+ * живут отдельно от репозитория, их легко забыть выставить на одном из окружений,
+ * и цена забывчивости здесь — сырой раздел у живых людей. `VERCEL_ENV` Vercel
+ * подставляет сам на каждой сборке ('production' | 'preview' | 'development'), и
+ * забыть его нельзя.
+ *
+ * `VITE_MOTION=1` включает раздел где угодно — этим же ключом его включат в
+ * проде, когда владелец скажет «да».
+ */
+function motionCardVisible(env) {
+  if (env.VITE_MOTION === '1') return true
+  if (env.VITE_MOTION === '0') return false
+  // VERCEL_ENV приходит из окружения сборки; loadEnv с пустым префиксом отдаёт и
+  // системные переменные, поэтому обращаться к process здесь не нужно
+  const where = env.VERCEL_ENV || ''
+  // на Vercel: везде кроме прода. Вне Vercel (локальная разработка) — тоже да
+  return where !== 'production'
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   return {
+    /**
+     * Значение вклеивается в код на сборке.
+     *
+     * Имя обычное, а не `import.meta.env.VITE_MOTION_ON`, и это не вкусовщина:
+     * Vite подставляет `import.meta.env.*` сам, из СВОЕГО набора переменных, и
+     * перебивает define. Ключ, которого в .env нет, превращается в `undefined`
+     * — то есть флаг молча оказывался выключен и на превью тоже. Проверено:
+     * обе сборки давали `false`.
+     */
+    define: {
+      __MOTION_ON__: JSON.stringify(motionCardVisible(env)),
+    },
     plugins: [react(), localApiChatPlugin(env.VITE_ANTHROPIC_KEY)],
     server: {
       allowedHosts: true,
     },
+    // Воркер MediaPipe (раздел Motion) — ТОЛЬКО ES-модуль. Дефолт Vite здесь
+    // 'iife', а при нём динамический import() внутри воркера не работает; весь
+    // шим в src/motion/pose/poseWorker.js построен именно на нём. Симптом
+    // поломки — «Can't find variable: document» на iOS, ровно та ошибка, которую
+    // в Motion однажды уже чинили.
+    worker: {
+      format: 'es',
+    },
     build: {
+      // Явный target вместо дефолтного 'modules': дефолт тянет esnext-синтаксис,
+      // и на движке постарше модуль просто не парсится — страница остаётся
+      // белой, а в поле это выглядит как «приложение не открывается».
+      // Safari 14 / Chrome 87 покрывают всё, где вообще работает MediaPipe.
+      target: ['es2019', 'safari14', 'chrome87', 'firefox78'],
       rollupOptions: {
         output: {
           manualChunks(id) {
@@ -72,6 +124,16 @@ export default defineConfig(({ mode }) => {
           }
         }
       }
-    }
+    },
+    /**
+     * Транспиляция исходников — тем же таргетом, что и итоговая сборка.
+     *
+     * В Motion это поле называлось `esbuild`, но Vite 8 собирает через Rolldown
+     * и трансформирует через oxc: `esbuild` он принимает, но молча игнорирует,
+     * прямо говоря об этом в предупреждении. Имя другое, смысл тот же.
+     */
+    oxc: {
+      target: 'es2019',
+    },
   }
 })

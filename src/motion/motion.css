@@ -1,0 +1,2625 @@
+/* Стили модуля. Все селекторы с префиксом mt- , чтобы при переносе в FitPro
+   ничего не пересеклось с существующими стилями. Никакого Tailwind. */
+
+.mt-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 100dvh;
+  overflow: hidden;
+  background: #0b0d12;
+  color: #e8ecf3;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+  /* убирает 300 мс задержку и зум по двойному тапу во время подхода */
+  touch-action: manipulation;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/**
+ * СВОЙ КОНТЕКСТ НАЛОЖЕНИЯ. Без isolation корень наложения не создаёт
+ * (position: relative без z-index этого не делает), и все внутренние слои
+ * модуля — от z-index 2 до 999 — оказываются в корневом контексте страницы,
+ * то есть конкурируют с чужими напрямую. У FitPro там меню (900), шапка (901),
+ * уровни «Тренировок» (1000/1001), чат (1050), модалки (до 1450), сканер (2000)
+ * и тосты (до 3000): без изоляции экран падения Motion (999) лёг бы между
+ * чужими слоями, а не поверх своего раздела.
+ *
+ * Одна строка здесь заменяет договорённость «не занимать чужие числа», которую
+ * невозможно ни проверить, ни удержать: внутри изоляции числа модуля значат
+ * только его собственный порядок.
+ */
+.mt-root {
+  isolation: isolate;
+}
+
+/* --- камера --- */
+
+.mt-stage {
+  position: absolute;
+  inset: 0;
+}
+
+.mt-mirror {
+  position: absolute;
+  inset: 0;
+  transform: scaleX(-1); /* зеркало: человек видит себя, а не инверсию */
+}
+
+.mt-video,
+.mt-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.mt-video {
+  /* contain, а не cover: cover обрезает края кадра, а вместе с ними и человека.
+     Поля сверху/снизу — нормальная плата за полный обзор. */
+  object-fit: contain;
+  background: #000;
+}
+
+.mt-overlay {
+  pointer-events: none;
+}
+
+/* --- общая раскладка экранов --- */
+
+.mt-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  /* интерфейс не должен уезжать под чёлку и системный жест-бар */
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  pointer-events: none;
+}
+
+.mt-screen > * {
+  pointer-events: auto;
+}
+
+.mt-panel {
+  margin: 16px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: rgba(11, 13, 18, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mt-panel--slim {
+  padding: 12px;
+  background: transparent;
+  border: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.mt-title {
+  margin: 0 0 10px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.mt-steps {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #b9c2d0;
+}
+
+/* --- кнопки --- */
+
+.mt-button {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  padding: 16px;
+  border: none;
+  border-radius: 14px;
+  background: #3ddc97;
+  color: #06210f;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+
+.mt-button:active {
+  transform: scale(0.98);
+}
+
+.mt-button:disabled {
+  background: #2a2f3a;
+  color: #6b7484;
+  cursor: not-allowed;
+}
+
+.mt-button--ghost {
+  background: rgba(11, 13, 18, 0.72);
+  color: #e8ecf3;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* --- калибровка --- */
+
+.mt-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.mt-status__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex: none;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.mt-status.is-bad .mt-status__dot {
+  background: #ff5a5a;
+  box-shadow: 0 0 0 4px rgba(255, 90, 90, 0.18);
+}
+
+.mt-status.is-ok .mt-status__dot {
+  background: #3ddc97;
+  box-shadow: 0 0 0 4px rgba(61, 220, 151, 0.18);
+}
+
+.mt-status.is-bad .mt-status__text {
+  color: #ffb3b3;
+}
+
+.mt-trial {
+  margin-top: 10px;
+  font-size: 14px;
+  color: #b9c2d0;
+}
+
+.mt-trial.is-done {
+  color: #3ddc97;
+  font-weight: 700;
+}
+
+/* --- подсказка и силуэт на калибровке --- */
+
+.mt-hintline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.mt-hintline__text {
+  flex: 1;
+}
+
+.mt-subhint {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #b9c2d0;
+}
+
+.mt-status__dot.is-ok {
+  background: #3ddc97;
+  box-shadow: 0 0 0 4px rgba(61, 220, 151, 0.18);
+}
+
+.mt-status__dot.is-bad {
+  background: #ff5a5a;
+  box-shadow: 0 0 0 4px rgba(255, 90, 90, 0.18);
+}
+
+/* силуэт: зелёные зоны видны, красные — нет */
+.mt-sil {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  height: 72%;
+  max-width: 78%;
+  pointer-events: none;
+  filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.75));
+}
+
+.mt-sil__frame {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 1.5;
+}
+
+.mt-sil__part {
+  fill: none;
+  stroke-width: 6;
+  transition: stroke 0.2s ease, opacity 0.2s ease;
+}
+
+.mt-sil__part.is-ok {
+  stroke: #3ddc97;
+  opacity: 0.9;
+}
+
+.mt-sil__part.is-bad {
+  stroke: #ff5a5a;
+  opacity: 1;
+}
+
+/* прогресс удержания перед отсчётом */
+.mt-hold {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+}
+
+.mt-hold__bar {
+  height: 100%;
+  background: #3ddc97;
+  transition: width 0.1s linear;
+}
+
+/* --- отсчёт --- */
+
+.mt-countdown {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+  background: rgba(11, 13, 18, 0.45);
+  pointer-events: none;
+}
+
+.mt-countdown__value {
+  font-size: 44vw;
+  line-height: 1;
+  font-weight: 800;
+  color: #3ddc97;
+  text-shadow: 0 6px 40px rgba(0, 0, 0, 0.6);
+  animation: mt-pop 0.4s ease-out;
+}
+
+@keyframes mt-pop {
+  from {
+    transform: scale(1.35);
+    opacity: 0.2;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.mt-countdown__label {
+  margin-top: 8px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #e8ecf3;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+/* --- маленькие угловые кнопки --- */
+
+.mt-corner {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(11, 13, 18, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #e8ecf3;
+  font-size: 15px;
+  line-height: 1;
+  z-index: 45;
+  padding: 0;
+}
+
+.mt-corner--left {
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  left: calc(10px + env(safe-area-inset-left, 0px));
+}
+
+.mt-corner--right-bottom {
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  right: calc(10px + env(safe-area-inset-right, 0px));
+}
+
+.mt-corner.is-off {
+  opacity: 0.55;
+}
+
+/* Вход в комнату с заставки загрузки: модель ещё качается, а статистика уже
+   готова — она лежит в хранилище и ничего не ждёт. */
+.mt-boot__room {
+  margin-top: 14px;
+  padding: 8px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(232, 236, 243, 0.8);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/**
+ * Вход в комнату с постановки в кадр. Свободный угол — нижний левый: сверху
+ * слева на других экранах стоит «назад», снизу справа — звук.
+ *
+ * Пилюля с текстом, а не кружок со значком: сюда заходят редко и осознанно, и
+ * гадать, что означает иконка, человек не должен. Приглушена нарочно — главное
+ * на этом экране встать в кадр, и кнопка с этим не спорит.
+ */
+.mt-corner--room {
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  left: calc(10px + env(safe-area-inset-left, 0px));
+  width: auto;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(220, 232, 255, 0.78);
+}
+
+/* мягкое предупреждение: подход продолжается, но точность ниже */
+.mt-softwarn {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(255, 176, 32, 0.16);
+  border: 1px solid rgba(255, 176, 32, 0.42);
+  color: #ffd08a;
+  font-size: 13px;
+  text-align: center;
+  z-index: 34;
+  pointer-events: none;
+}
+
+.mt-tap-hint {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(58px + env(safe-area-inset-bottom, 0px));
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(11, 13, 18, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 13px;
+  color: #b9c2d0;
+  z-index: 44;
+  pointer-events: none;
+}
+
+/* непропускаемый оверлей неполного кадра */
+.mt-blocker--hard {
+  background: rgba(120, 10, 10, 0.42);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  z-index: 35;
+}
+
+.mt-blocker--hard .mt-blocker__card {
+  border-color: rgba(255, 90, 90, 0.5);
+}
+
+.mt-blocker--hard .mt-blocker__title {
+  color: #ff8f8f;
+  font-size: 24px;
+}
+
+.mt-result__again {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 14px;
+  color: #3ddc97;
+  font-weight: 600;
+}
+
+.mt-silhouette {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  /* не должен налезать на панели инструкции и статуса в портрете */
+  height: 52%;
+  max-width: 62%;
+  stroke: rgba(255, 255, 255, 0.28);
+  opacity: 0;
+  transition: opacity 0.3s ease, stroke 0.3s ease;
+  pointer-events: none;
+}
+
+.mt-silhouette.is-active {
+  opacity: 1;
+  stroke: rgba(255, 120, 120, 0.55);
+}
+
+/* --- подход --- */
+
+.mt-hud {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px;
+}
+
+.mt-timer {
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: rgba(11, 13, 18, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  min-width: 130px;
+}
+
+.mt-timer__value {
+  font-size: 32px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.mt-timer__bar {
+  margin-top: 8px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.mt-timer__fill {
+  height: 100%;
+  background: #3ddc97;
+  transition: width 0.2s linear;
+}
+
+.mt-timer.is-paused .mt-timer__fill {
+  background: #ffb020;
+}
+
+.mt-timer__paused {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffb020;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.mt-repcounter {
+  padding: 12px 20px;
+  border-radius: 16px;
+  background: rgba(11, 13, 18, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: center;
+}
+
+.mt-repcounter__value {
+  font-size: 56px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #3ddc97;
+}
+
+.mt-repcounter__label {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #b9c2d0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* --- оверлеи --- */
+
+.mt-blocker {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(11, 13, 18, 0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 10;
+}
+
+.mt-blocker--solid {
+  background: rgba(11, 13, 18, 0.92);
+}
+
+.mt-blocker__card {
+  max-width: 360px;
+  width: 100%;
+  padding: 22px;
+  border-radius: 18px;
+  background: rgba(20, 24, 33, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: center;
+}
+
+.mt-blocker__title {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.mt-blocker__text {
+  font-size: 15px;
+  line-height: 1.5;
+  color: #b9c2d0;
+}
+
+.mt-blocker__detail {
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #7f8a9b;
+  word-break: break-word;
+}
+
+.mt-boot-bar {
+  margin-top: 10px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.mt-boot-bar__fill {
+  height: 100%;
+  background: #3ddc97;
+  transition: width 0.2s linear;
+}
+
+.mt-spinner {
+  width: 28px;
+  height: 28px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+  border-top-color: #3ddc97;
+  animation: mt-spin 0.8s linear infinite;
+}
+
+@keyframes mt-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- результат --- */
+
+/* Камера остаётся видимой: повторный подход запускается тем же способом —
+   человек должен видеть, попал ли он в кадр. */
+.mt-screen--result {
+  justify-content: center;
+  z-index: 5;
+}
+
+.mt-result {
+  margin: 16px;
+  padding: 24px;
+  border-radius: 20px;
+  background: rgba(20, 24, 33, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mt-result__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 18px 0 4px;
+}
+
+.mt-metric {
+  padding: 14px 8px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  text-align: center;
+}
+
+.mt-metric__value {
+  font-size: 26px;
+  font-weight: 800;
+  color: #3ddc97;
+  font-variant-numeric: tabular-nums;
+}
+
+.mt-metric__label {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #b9c2d0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.mt-result__note {
+  margin-top: 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #b9c2d0;
+}
+
+/* --- поворот телефона --- */
+
+.mt-blocker--rotate {
+  z-index: 40;
+}
+
+.mt-rotate-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 12px;
+  display: block;
+  stroke: #3ddc97;
+  fill: none;
+}
+
+/* --- диагностическая панель (временный инструмент калибровки) --- */
+
+/* невидимая мишень тройного тапа в правом верхнем углу */
+.mt-debug-hit {
+  position: absolute;
+  top: 0;
+  right: 0;
+  /* крупнее прежних 68×68: попасть в невидимую мишень на телефоне тяжело */
+  width: 110px;
+  height: 110px;
+  z-index: 60;
+  background: transparent;
+}
+
+.mt-dbg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  max-height: 88%;
+  overflow-y: auto;
+  z-index: 50;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 12px;
+  background: rgba(6, 8, 12, 0.92);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mt-dbg__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.mt-dbg__x {
+  flex: none;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 10px;
+  background: rgba(255, 90, 90, 0.22);
+  color: #ffd9d9;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* шапка панели остаётся на виду при прокрутке — иначе кнопку закрытия
+   приходится искать, а из панели не выйти */
+.mt-dbg__head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: rgba(6, 8, 12, 0.96);
+  padding-bottom: 8px;
+}
+
+.mt-dbg__grid {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 2px 8px;
+  margin-bottom: 10px;
+}
+
+.mt-dbg__k {
+  color: #7f8a9b;
+}
+
+.mt-dbg__v.is-bad {
+  color: #ff8f8f;
+}
+
+.mt-dbg__points {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 8px;
+  margin-bottom: 8px;
+}
+
+.mt-dbg__point {
+  display: grid;
+  grid-template-columns: 78px 74px 1fr 14px;
+  gap: 6px;
+  font-size: 11px;
+  padding: 1px 0;
+  color: #b9c2d0;
+}
+
+.mt-dbg__point i {
+  color: #5c6675;
+  font-style: normal;
+}
+
+.mt-dbg__point.is-bad {
+  color: #ff8f8f;
+}
+
+.mt-dbg__cams {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 8px;
+  margin-bottom: 8px;
+}
+
+.mt-dbg__cam {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #b9c2d0;
+  font-size: 11px;
+  text-align: left;
+}
+
+.mt-dbg__cam.is-active {
+  color: #3ddc97;
+  border-color: rgba(61, 220, 151, 0.4);
+}
+
+/* --- настройка под себя: знакомство с движениями и замер амплитуды --- */
+
+/* Во время замера подложки нет: человек обязан видеть себя, иначе не поймёт,
+   попадает ли в кадр. Тот же принцип, что в калибровке движений. */
+.mt-setup--run {
+  justify-content: space-between;
+  align-items: center;
+  background: transparent;
+  /* отступы под чёлку берут на себя сами плашки: середина должна остаться
+     свободной целиком, там стоит человек */
+  padding: 0;
+  pointer-events: none;
+}
+
+.mt-setup--run > * {
+  pointer-events: auto;
+}
+
+/* Фигурка и подпись стоят В РЯД: столбиком плашка выросла бы вниз и полезла
+   на видео. */
+.mt-setup__top {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 560px;
+  padding: 12px 14px;
+  margin-top: env(safe-area-inset-top, 0px);
+  border-radius: 0 0 18px 18px;
+  background: rgba(6, 9, 22, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  text-align: left;
+}
+
+.mt-setup__brief {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* Имя экрана — тихо и над всем: человек должен понимать, где он находится, но
+   смотреть ему надо на задачу и на фигурку, а не на заголовок. */
+.mt-setup__kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #9fd0ff;
+}
+
+.mt-setup__step {
+  font-size: 13px;
+  color: rgba(220, 232, 255, 0.65);
+}
+
+.mt-setup__task {
+  font-size: clamp(16px, 4vw, 24px);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.mt-setup__hint {
+  font-size: 14px;
+  color: rgba(220, 232, 255, 0.75);
+}
+
+/* Счётчик повторов — единственная цифра на экране, и она крупная: с двух
+   метров человек должен видеть, засчиталось или нет. */
+.mt-setup__count {
+  font-size: clamp(44px, 14vw, 96px);
+  font-weight: 900;
+  color: #3ddc97;
+  text-shadow: 0 0 30px rgba(61, 220, 151, 0.55);
+}
+
+.mt-setup__bottom {
+  width: 100%;
+  max-width: 560px;
+  padding: 12px 14px;
+  margin-bottom: env(safe-area-inset-bottom, 0px);
+  border-radius: 18px 18px 0 0;
+  background: rgba(6, 9, 22, 0.72);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mt-setup__calm {
+  font-size: 14px;
+  color: rgba(220, 232, 255, 0.7);
+}
+
+.mt-setup__stuck {
+  font-size: 14px;
+  line-height: 1.4;
+  color: rgba(255, 226, 170, 0.95);
+}
+
+.mt-setup__go,
+.mt-setup__again,
+.mt-setup__skip {
+  padding: 16px;
+  border: none;
+  border-radius: 14px;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.mt-setup__go,
+.mt-setup__skip {
+  background: #3ddc97;
+  color: #06210f;
+}
+
+.mt-setup__again {
+  background: rgba(255, 255, 255, 0.12);
+  color: #eaf3ff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.mt-setup--summary {
+  gap: 12px;
+  padding: 20px;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  overflow-y: auto;
+  background: rgba(6, 9, 22, 0.86);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #eaf3ff;
+  pointer-events: auto;
+}
+
+.mt-setup__note {
+  font-size: 14px;
+  line-height: 1.45;
+  color: rgba(220, 232, 255, 0.75);
+  max-width: 460px;
+}
+
+.mt-setup__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: 460px;
+}
+
+.mt-setup__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 15px;
+  text-align: left;
+}
+
+.mt-setup__rowName {
+  font-weight: 700;
+  flex: none;
+}
+
+.mt-setup__rowBar {
+  color: rgba(220, 232, 255, 0.8);
+  text-align: right;
+}
+
+/* Движение, которое человек пропустил: планка у него общая, и это надо
+   назвать вслух — иначе он решит, что настроил всё. */
+.mt-setup__extra {
+  color: rgba(220, 232, 255, 0.6);
+  font-style: normal;
+}
+
+.mt-setup__common {
+  color: rgba(255, 210, 140, 0.9);
+  font-style: normal;
+}
+
+/* Неброская кнопка на выборе уровня: сюда приходят по своей воле. */
+.mt-levels__setup {
+  margin-top: 4px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: transparent;
+  color: rgba(220, 232, 255, 0.75);
+  font-size: 14px;
+}
+
+/* --- пошаговая калибровка движений --- */
+
+/* absolute, а не fixed: слой принадлежит корню модуля, а не окну. Внутри
+   FitPro окно чужое, и привязка к нему — это выход за границы раздела. */
+.mt-cal {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px;
+  background: rgba(6, 9, 22, 0.86);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #eaf3ff;
+  text-align: center;
+}
+
+/* Во время записи подложки нет вовсе: человек обязан видеть себя и скелет,
+   иначе он не понимает, попадает ли в кадр, и запись выходит пустой. Экран
+   отдан камере, интерфейс живёт двумя плашками по краям. */
+.mt-cal--clear {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  justify-content: space-between;
+  padding: 0;
+  pointer-events: none;
+}
+
+.mt-cal--clear > * {
+  pointer-events: auto;
+}
+
+.mt-cal__top,
+.mt-cal__bottom {
+  width: 100%;
+  max-width: 560px;
+  padding: 12px 14px;
+  background: rgba(6, 9, 22, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* Фигурка и текст стоят В РЯД, а не столбиком: столбиком плашка выросла бы
+   вниз и полезла на само видео, а именно этого делать нельзя — человек должен
+   видеть себя, иначе он не понимает, попадает ли в кадр. */
+.mt-cal__top {
+  margin-top: env(safe-area-inset-top, 0px);
+  border-radius: 0 0 18px 18px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+}
+
+.mt-cal__brief {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* Демо-скелет: движение показывается, а не описывается. */
+.mt-demo {
+  flex: none;
+  border-radius: 12px;
+  background: rgba(10, 30, 22, 0.55);
+  border: 1px solid rgba(61, 220, 151, 0.28);
+}
+
+.mt-cal__bottom {
+  margin-bottom: env(safe-area-inset-bottom, 0px);
+  border-radius: 18px 18px 0 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* Кадры перестали идти — это важнее всего остального на экране. */
+.mt-cal__alarm {
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: rgba(180, 30, 40, 0.9);
+  border: 1px solid rgba(255, 120, 130, 0.7);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  max-width: 90%;
+}
+
+.mt-cal__close {
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  right: 12px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(11, 13, 18, 0.7);
+  color: #e8ecf3;
+  font-size: 16px;
+}
+
+.mt-cal__setup,
+.mt-cal__run {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 460px;
+  align-items: stretch;
+  /* Без этого плашка не сжимается ниже своего содержимого и вылезает за экран
+     вместе с кнопкой «Начать». Движений под два десятка, в телефон они не
+     влезают. */
+  min-height: 0;
+}
+
+/* Прокручивается СПИСОК, а не вся плашка: заголовок и «Начать» остаются на
+   месте. Прокрути мы плашку целиком — кнопка уехала бы за нижний край, и
+   человек, впервые открывший экран, решил бы, что тот сломан. */
+.mt-cal__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  /* полоса прокрутки не должна наезжать на галочки */
+  padding-right: 2px;
+}
+
+.mt-cal__title {
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.mt-cal__note {
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(220, 232, 255, 0.7);
+}
+
+.mt-cal__check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* в прокручиваемом списке строки не сжимаются, а прокручиваются */
+  flex: none;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 16px;
+  text-align: left;
+}
+
+.mt-cal__check input {
+  width: 22px;
+  height: 22px;
+}
+
+/* Кнопки крупные: их жмут, стоя в двух метрах и подходя к телефону. */
+.mt-cal__go,
+.mt-cal__again {
+  padding: 16px;
+  border: none;
+  border-radius: 14px;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.mt-cal__go {
+  background: #3ddc97;
+  color: #06210f;
+}
+
+.mt-cal__again {
+  background: rgba(255, 255, 255, 0.12);
+  color: #eaf3ff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.mt-cal__step {
+  font-size: 13px;
+  color: rgba(220, 232, 255, 0.65);
+}
+
+/* Задание стало ПОДПИСЬЮ к фигурке, а не заголовком экрана: движение теперь
+   объясняет показ, а слова только уточняют — сколько повторов и какой стороной.
+   Прежние 52px были платой за то, что текст был единственным объяснением. */
+.mt-cal__task {
+  font-size: clamp(15px, 3.6vw, 22px);
+  font-weight: 800;
+  line-height: 1.2;
+  text-shadow: 0 0 18px rgba(90, 190, 255, 0.5);
+}
+
+.mt-cal__hint {
+  font-size: 14px;
+  color: rgba(220, 232, 255, 0.7);
+}
+
+.mt-cal__buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* Предупреждение над спрятанными порогами: их правят только по инструкции. */
+.mt-dbg__warn {
+  margin: 0 8px 4px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 176, 32, 0.16);
+  border: 1px solid rgba(255, 176, 32, 0.4);
+  color: #ffd08a;
+  font-size: 11px;
+  text-align: center;
+}
+
+.mt-dbg__sliders {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 8px;
+}
+
+.mt-dbg__slider {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.mt-dbg__slider span {
+  display: flex;
+  justify-content: space-between;
+  color: #7f8a9b;
+}
+
+.mt-dbg__slider b {
+  color: #3ddc97;
+}
+
+.mt-dbg__slider input {
+  width: 100%;
+  margin: 2px 0 0;
+  accent-color: #3ddc97;
+}
+
+.mt-dbg__btn {
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8ecf3;
+  font-size: 12px;
+}
+
+.mt-dbg__btn.is-active {
+  background: rgba(255, 176, 32, 0.18);
+  border-color: rgba(255, 176, 32, 0.6);
+  color: #ffd08a;
+  font-weight: 700;
+}
+
+/* absolute по той же причине, что и .mt-cal: экран падения рисуется внутри
+   .mt-root (см. ErrorBoundary) и принадлежит разделу, а не всему окну. */
+.mt-fatal {
+  position: absolute;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: #0b0d12;
+  color: #e8ecf3;
+}
+
+.mt-fatal__card {
+  max-width: 420px;
+  width: 100%;
+}
+
+.mt-fatal__title {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+/* Второе действие на экране падения — приглушённое: выйти из раздела человек
+   должен, только если «начать заново» не помогло. */
+.mt-button--ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #e8ecf3;
+  font-weight: 600;
+}
+
+.mt-fatal__text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  color: #ff8f8f;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 12px;
+  border-radius: 10px;
+  margin: 0;
+}
+
+.mt-dbg__btn:disabled {
+  opacity: 0.4;
+}
+
+.mt-dbg__btn--inline {
+  width: auto;
+  margin: 0;
+  padding: 4px 10px;
+}
+
+.mt-dbg__log {
+  margin-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 8px;
+}
+
+.mt-dbg__logHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  color: #7f8a9b;
+}
+
+.mt-dbg__text {
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.5);
+  color: #e8ecf3;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.35;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.mt-dbg__empty {
+  color: #5c6675;
+}
+
+.mt-dbg__row {
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+.mt-dbg__row--rep {
+  color: #3ddc97;
+}
+
+.mt-dbg__row--too_fast {
+  color: #ffb020;
+}
+
+.mt-dbg__row--shallow {
+  color: #ff8f8f;
+}
+
+/* --- игровой экран: механика «Цели», тема «Космос» --- */
+
+.mt-screen--game {
+  justify-content: flex-start;
+}
+
+/* Небо: затемнение поверх видео и свечение точки схода. Статичный слой —
+   композитор рисует его один раз, а не каждый кадр, как делал canvas. */
+/**
+ * Вуаль поверх видео.
+ *
+ * БЫЛА ПОЧТИ НЕПРОЗРАЧНОЙ (0.80 сверху, 0.74 снизу) — под неё пряталась
+ * комната, чтобы фигуры читались на любом фоне. В формате «человек — герой»
+ * прятать нечего: главный на экране сам человек, и затемнять его до силуэта
+ * значит убирать то единственное, на что он смотрит. Осталось ~0.22 — ровно
+ * чтобы белые подписи не терялись на светлой стене.
+ *
+ * Плата за это — подписи, которые раньше лежали на тёмном. Поэтому у каждой из
+ * них теперь своя тень: см. --mt-ink ниже.
+ */
+.mt-game__sky {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      circle at 50% 44%,
+      rgba(120, 170, 255, 0.14) 0%,
+      rgba(120, 170, 255, 0) 60%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(4, 6, 22, 0.26) 0%,
+      rgba(16, 8, 44, 0.16) 45%,
+      rgba(3, 5, 18, 0.24) 100%
+    );
+}
+
+/**
+ * Общая тень подписей игрового экрана. Тонкий чёрный контур плюс мягкое
+ * пятно: на светлом видео буква держится контуром, на тёмном — пятном.
+ * Одной переменной, чтобы не разъезжалось по десятку правил.
+ */
+.mt-screen--game {
+  --mt-ink:
+    0 1px 0 rgba(0, 0, 0, 0.85), 0 -1px 0 rgba(0, 0, 0, 0.7),
+    1px 0 0 rgba(0, 0, 0, 0.7), -1px 0 0 rgba(0, 0, 0, 0.7),
+    0 3px 16px rgba(0, 0, 0, 0.95);
+}
+
+/* Игровой слой лежит поверх видео и не перехватывает касания:
+   в игре нечего нажимать, всё управление — телом. */
+.mt-game__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/**
+ * ПОЛОСА ПРОГРЕССА СЕССИИ — одна на силовой блок, отдых и бой.
+ *
+ * Занимает ровно строку у верхнего края и ничего собой не закрывает: человек в
+ * кадре остаётся героем экрана, а полоса — справкой на полях. Всё, что у
+ * экранов стояло сверху, сдвинуто ей навстречу через .mt-screen--sprog: полоса
+ * не наезжает на чужое, а раздвигает его.
+ *
+ * Ниже отладочного счётчика кадров по z-index: тот вылезает по ?fps=1 и живёт
+ * считаные минуты полевого замера, а в эти минуты важнее он.
+ */
+.mt-sprog {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 7px 56px 0;
+  pointer-events: none;
+}
+
+.mt-sprog__label {
+  color: #9fd0ff;
+  font-size: clamp(11px, 3vw, 15px);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: var(--mt-ink);
+}
+
+/* Сегменты — по одному на круг: число кругов у дня своё, и полоса обязана
+   показывать сегодняшнее, а не «примерно столько». */
+.mt-sprog__bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mt-sprog__seg {
+  width: clamp(10px, 3vw, 18px);
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(159, 208, 255, 0.22);
+}
+
+.mt-sprog__seg.is-done {
+  background: rgba(120, 230, 190, 0.75);
+}
+
+.mt-sprog__seg.is-now {
+  background: #9ff0ff;
+  box-shadow: 0 0 10px rgba(90, 190, 255, 0.8);
+}
+
+/* Счёт в полосе — только на отдыхе: в блоке и в бою он и так на экране крупно,
+   и второй такой же спорил бы с первым. */
+.mt-sprog__score {
+  color: #eaf3ff;
+  font-size: clamp(12px, 3.4vw, 17px);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-shadow: var(--mt-ink);
+}
+
+/* Экономный режим: остаётся текст и ничего больше — ни свечения, ни сегментов
+   (их в разметке просто нет). */
+.mt-sprog.is-cheap .mt-sprog__label {
+  text-shadow: none;
+}
+
+.mt-game__hud {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px 0;
+  pointer-events: none;
+}
+
+/* Место под полосу: верхнее хозяйство каждого экрана отступает ровно на её
+   высоту. Модификатор ставится только внутри сессии — одиночный раунд по
+   ?round=1 кругов не знает, и двигать там нечего. */
+.mt-screen--sprog .mt-game__hud {
+  padding-top: 32px;
+}
+
+.mt-screen--sprog .mt-block__head {
+  top: calc(4% + 22px);
+}
+
+.mt-screen--sprog .mt-rest__title {
+  top: calc(8% + 12px);
+}
+
+.mt-game__score {
+  justify-self: start;
+}
+
+.mt-game__scoreValue {
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #eaf3ff;
+  text-shadow: var(--mt-ink), 0 0 18px rgba(90, 190, 255, 0.55);
+  animation: mt-game-pop 220ms ease-out;
+}
+
+.mt-game__scoreLabel {
+  margin-top: 2px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(220, 232, 255, 0.55);
+}
+
+/* Уровень рядом со счётом: мелкая плашка, которая не спорит с очками, но всегда
+   на виду — разгон между раундами иначе читается как поломка. */
+.mt-game__level {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(150, 200, 255, 0.25);
+  background: rgba(10, 16, 40, 0.45);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(220, 232, 255, 0.8);
+}
+
+.mt-result__level {
+  margin-bottom: 10px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(220, 232, 255, 0.75);
+}
+
+/* --- выбор уровня перед раундом --- */
+
+.mt-screen--levels {
+  justify-content: center;
+  gap: 14px;
+}
+
+/* ------------------------------------------------ моя комната (кабинет) */
+
+/**
+ * Кабинет — единственный экран, где человек ЧИТАЕТ, а не работает: тридцать
+ * дней истории в один экран не влезают, поэтому здесь и только здесь разрешена
+ * прокрутка. Тёмная подложка та же, что на отдыхе и финальном листе: смотреть
+ * надо на числа, а не на себя в кадре.
+ */
+.mt-screen--room {
+  justify-content: flex-start;
+  gap: 14px;
+  padding: 46px 16px 24px;
+  overflow-y: auto;
+  pointer-events: auto;
+}
+
+/**
+ * Содержимое комнаты держится колонкой в центре — как уровни на своём экране.
+ *
+ * Экран растянут на всё окно, а блоки внутри ограничены по ширине: без общей
+ * центровки они прижимались к левому краю, а шапка со своим text-align
+ * оставалась посередине, и на планшете экран выглядел разъехавшимся.
+ *
+ * Ширина задаётся ЗДЕСЬ, одной строкой на все четыре блока: у шапки, плиток,
+ * графика и календаря она обязана совпадать — они читаются как один столбец, и
+ * разъехавшись хоть на пиксель, перестают им быть.
+ *
+ * Перечислением, а не через `> *`: прямые дети экрана — ещё и вуаль во весь
+ * кадр, и угловая кнопка, а им ширина колонки не нужна и вредна.
+ */
+.mt-room__head,
+.mt-room__tiles,
+.mt-room__chart,
+.mt-room__days {
+  width: 100%;
+  max-width: 380px;
+  margin: 0 auto;
+}
+
+.mt-room__head {
+  text-align: center;
+}
+
+.mt-room__total {
+  font-size: clamp(40px, 13vw, 84px);
+  font-weight: 900;
+  line-height: 1;
+  color: #eaf3ff;
+  font-variant-numeric: tabular-nums;
+  text-shadow: var(--mt-ink), 0 0 24px rgba(90, 190, 255, 0.5);
+}
+
+.mt-room__totalLabel {
+  margin-top: 4px;
+  color: #cfe6ff;
+  font-size: clamp(11px, 3.2vw, 15px);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: var(--mt-ink);
+}
+
+.mt-room__where {
+  margin-top: 8px;
+  color: #9fd0ff;
+  font-size: 14px;
+  font-weight: 700;
+  text-shadow: var(--mt-ink);
+}
+
+/* Три плитки в ряд: они отвечают на три разных вопроса и сравниваются между
+   собой только глазами — в столбик человек читал бы их как список. */
+.mt-room__tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.mt-room__tile {
+  padding: 10px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(10, 16, 28, 0.6);
+  text-align: center;
+}
+
+.mt-room__tileValue {
+  font-size: clamp(17px, 5vw, 26px);
+  font-weight: 900;
+  color: #eaf3ff;
+  font-variant-numeric: tabular-nums;
+}
+
+.mt-room__tileLabel {
+  margin-top: 2px;
+  color: #9fd0ff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mt-room__tileHint {
+  margin-top: 2px;
+  color: rgba(220, 232, 255, 0.5);
+  font-size: 10px;
+}
+
+/**
+ * Динамика: тридцать столбиков высотой от лучшего дня. Выравнивание по низу —
+ * шкала читается снизу вверх, как любой график роста.
+ */
+.mt-room__chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 76px;
+  padding: 0 2px;
+}
+
+.mt-room__bar {
+  flex: 1;
+  min-height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(180deg, #7fd8ff, #3a86c8);
+}
+
+/* Пустой день — тонкий след, а не пустое место: тридцать позиций должны
+   читаться как шкала даже у того, кто сыграл один день. */
+.mt-room__bar.is-empty {
+  background: rgba(159, 208, 255, 0.18);
+}
+
+.mt-room__bar.is-now {
+  background: linear-gradient(180deg, #9ff0ff, #46e0b0);
+  box-shadow: 0 0 10px rgba(90, 240, 200, 0.7);
+}
+
+/* Календарь: шесть в ряд — пять недель по шесть тренировочных дней. */
+.mt-room__days {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 5px;
+}
+
+.mt-room__day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 4px 2px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(10, 16, 28, 0.5);
+  color: rgba(220, 232, 255, 0.7);
+}
+
+.mt-room__day.is-done {
+  border-color: rgba(120, 230, 190, 0.45);
+  background: rgba(18, 44, 38, 0.6);
+  color: #a8f0d4;
+}
+
+/* Будущие приглушены, но не спрятаны: человек должен видеть, сколько впереди. */
+.mt-room__day.is-future {
+  opacity: 0.42;
+}
+
+.mt-room__day.is-now {
+  border-color: #9ff0ff;
+  box-shadow: 0 0 12px rgba(90, 190, 255, 0.55);
+  color: #eaf3ff;
+  opacity: 1;
+}
+
+.mt-room__dayNum {
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.mt-room__dayScore {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Пометки разгрузки здесь нет намеренно: расписание нагрузок — внутренняя
+   кухня плана. Названная разгрузка становится разрешением, и человек приходит
+   в этот день вполсилы. План разгружает его сам, молча. */
+
+.mt-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 340px;
+}
+
+/* Карточка уровня — крупная кнопка: до экрана человек тянется от места, где
+   стоял, и промахнуться мимо уровня он не должен. */
+.mt-level {
+  display: block;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(150, 200, 255, 0.28);
+  background: rgba(10, 16, 40, 0.55);
+  color: #eaf3ff;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.mt-level:active {
+  transform: scale(0.98);
+}
+
+/* Исчерпанный уровень гасим, но оставляем на месте: пропавшая карточка
+   читалась бы как поломка, погашенная — как «на сегодня всё». */
+.mt-level.is-locked {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.mt-level__name {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.mt-level__price {
+  margin-top: 2px;
+  font-size: 13px;
+  color: rgba(220, 232, 255, 0.7);
+}
+
+.mt-level__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: rgba(220, 232, 255, 0.55);
+}
+
+.mt-levels__total {
+  font-size: 18px;
+  color: #eaf3ff;
+}
+
+/* Сумма челленджа тише суммы дня: сегодня человек влияет только на вторую,
+   а первая — это счёт, который он ведёт тридцать дней. */
+.mt-levels__challenge {
+  font-size: 14px;
+  color: rgba(220, 232, 255, 0.72);
+}
+
+/**
+ * Переход к следующему дню. Кнопка заметная, потому что действие необратимо и
+ * человек должен понимать, что нажимает, — но стоит НАД уровнями и не вместо
+ * них: пока он не нажал, играть можно, и это его оставшиеся попытки.
+ */
+.mt-levels__step {
+  padding: 10px 18px;
+  border: 1px solid rgba(120, 230, 190, 0.55);
+  border-radius: 999px;
+  background: rgba(18, 44, 38, 0.7);
+  color: #a8f0d4;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+/* Пройденный челлендж — уже не кнопка: нажимать больше не на что. */
+.mt-levels__step--done {
+  border-color: rgba(255, 212, 138, 0.6);
+  background: rgba(48, 38, 16, 0.7);
+  color: #ffd48a;
+  cursor: default;
+}
+
+/**
+ * ГРАНИЦА БЕСПЛАТНЫХ ДНЕЙ — вместо карточек уровней.
+ *
+ * Показаны собственные цифры человека, а не список того, чего он лишён: решение
+ * продолжать принимается от вида своего результата, а не от жадности до
+ * контента. Поэтому и оформлено как достижение, а не как замок.
+ */
+.mt-levels__wall {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 340px;
+  padding: 18px 16px;
+  border: 1px solid rgba(120, 230, 190, 0.4);
+  border-radius: 18px;
+  background: rgba(14, 32, 30, 0.66);
+}
+
+.mt-wall__stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  width: 100%;
+}
+
+.mt-wall__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+}
+
+.mt-wall__stat b {
+  font-size: clamp(16px, 5vw, 24px);
+  font-weight: 900;
+  color: #eaf3ff;
+  font-variant-numeric: tabular-nums;
+}
+
+.mt-wall__stat span {
+  font-size: 10px;
+  line-height: 1.3;
+  color: rgba(220, 232, 255, 0.6);
+}
+
+.mt-wall__text {
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  color: #a8f0d4;
+}
+
+.mt-wall__contact {
+  padding: 11px 22px;
+  border-radius: 999px;
+  background: #2fd39a;
+  color: #06120f;
+  font-size: 15px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+/* Вход в комнату стоит сразу под суммами: сюда идут именно от цифры
+   «за челлендж» — увидел сумму, захотел посмотреть, из чего она собралась. */
+.mt-levels__room {
+  padding: 8px 18px;
+  border: 1px solid rgba(159, 208, 255, 0.4);
+  border-radius: 999px;
+  background: rgba(12, 20, 34, 0.6);
+  color: #cfe3ff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mt-levels__note {
+  max-width: 340px;
+  font-size: 12px;
+  text-align: center;
+  color: rgba(220, 232, 255, 0.5);
+}
+
+.mt-result__record {
+  margin-bottom: 10px;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #ffd48a;
+  text-shadow: var(--mt-ink), 0 0 20px rgba(255, 170, 60, 0.75);
+  animation: mt-game-pop 320ms ease-out;
+}
+
+.mt-game__combo {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(150, 200, 255, 0.25);
+  background: rgba(10, 16, 40, 0.45);
+  font-size: 20px;
+  font-weight: 800;
+  color: rgba(220, 232, 255, 0.7);
+}
+
+.mt-game__combo.is-hot {
+  border-color: rgba(255, 190, 90, 0.75);
+  color: #ffd48a;
+  text-shadow: var(--mt-ink), 0 0 16px rgba(255, 170, 60, 0.7);
+}
+
+.mt-game__timer {
+  justify-self: end;
+  min-width: 92px;
+  text-align: right;
+}
+
+.mt-game__timerValue {
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #eaf3ff;
+}
+
+.mt-game__timerBar {
+  margin-top: 6px;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(200, 220, 255, 0.18);
+}
+
+.mt-game__timerFill {
+  height: 100%;
+  background: linear-gradient(90deg, #4fc3ff, #a06bff);
+}
+
+.mt-game__timer.is-paused .mt-game__timerFill {
+  background: rgba(200, 220, 255, 0.35);
+}
+
+/* Команда во весь экран. Единственное, что читается с двух метров: высота
+   букв около десятой части экрана, максимальный контраст, ничего вокруг. */
+.mt-game__command {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 14%;
+  padding: 0 12px;
+  color: #ffffff;
+  font-size: clamp(38px, 13vw, 110px);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  text-align: center;
+  text-transform: uppercase;
+  text-shadow: var(--mt-ink), 0 0 34px rgba(90, 190, 255, 0.85);
+  animation: mt-game-breathe 1.6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Ответ на незачёт: не тревога, а подсказка — тёплый, а не красный. */
+.mt-game__command--miss {
+  color: #ffd48a;
+  font-size: clamp(30px, 9vw, 76px);
+  text-shadow: var(--mt-ink), 0 0 30px rgba(255, 170, 60, 0.8);
+  animation: none;
+}
+
+/* Пока человек сидит, ему ничего не засчитается — это важнее команды. */
+.mt-game__command--warn {
+  color: #ffd9b0;
+  text-shadow: var(--mt-ink), 0 0 34px rgba(255, 150, 60, 0.85);
+}
+
+/* «Молодец» и отсчёт: единственный экран, который человек читает стоя, поэтому
+   всё крупное — и похвала, и цифра. */
+.mt-game__ready {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  text-align: center;
+  pointer-events: none;
+  z-index: 36;
+}
+
+.mt-game__readyTitle {
+  font-size: clamp(34px, 11vw, 92px);
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: #b6ffe9;
+  text-shadow: var(--mt-ink), 0 0 36px rgba(60, 230, 190, 0.85);
+}
+
+.mt-game__readyText {
+  margin-top: 6px;
+  font-size: clamp(16px, 4.5vw, 30px);
+  font-weight: 700;
+  color: #eaf3ff;
+  text-shadow: var(--mt-ink);
+}
+
+.mt-game__readyCount {
+  margin-top: 8px;
+  font-size: clamp(60px, 22vw, 180px);
+  font-weight: 900;
+  line-height: 1;
+  color: #ffffff;
+  text-shadow: var(--mt-ink), 0 0 40px rgba(120, 200, 255, 0.9);
+}
+
+/* Разминка: крупно и коротко. Мелкая служебная строка внизу с двух метров не
+   читалась — человек не понимал ни что идёт разминка, ни сколько ещё повторов. */
+.mt-game__practice {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 16%;
+  text-align: center;
+  pointer-events: none;
+  z-index: 35;
+}
+
+.mt-game__practiceTitle {
+  font-size: clamp(22px, 7vw, 56px);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  color: #7fd7ff;
+  text-shadow: var(--mt-ink), 0 0 26px rgba(70, 180, 255, 0.8);
+}
+
+.mt-game__practiceCount {
+  margin-top: 2px;
+  font-size: clamp(30px, 10vw, 80px);
+  font-weight: 900;
+  line-height: 1;
+  color: #ffffff;
+  text-shadow: 0 0 12px rgba(0, 0, 0, 0.9), 0 0 30px rgba(120, 200, 255, 0.85);
+}
+
+@keyframes mt-game-breathe {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes mt-game-pop {
+  from {
+    transform: scale(1.18);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mt-game__scoreValue,
+  .mt-game__command,
+  .mt-result__level {
+    animation: none;
+  }
+}
+
+@media (min-width: 720px) {
+  .mt-panel,
+  .mt-result {
+    max-width: 420px;
+  }
+
+  .mt-panel--bottom,
+  .mt-result {
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+/* --- силовой блок: инструктор в углу, счёт повторов, таймер --- */
+
+.mt-block {
+  pointer-events: none;
+}
+
+/** Служебное <video>: нужно только чтобы знать размер кадра камеры. */
+.mt-block__probe {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/**
+ * Инструктор стоит СБОКУ СВЕРХУ и занимает треть высоты. Человек в кадре — по
+ * середине и во весь рост, и фигурка не имеет права на него лечь: закрытый
+ * собственный силуэт стоил бы ровно того, ради чего инструктор и появился.
+ */
+.mt-block__coach {
+  position: absolute;
+  top: 8%;
+  right: 4%;
+  width: 34vmin;
+  height: 33%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  /* стеклянная карточка референса: полупрозрачная подложка, скругление и
+     тонкая светлая кромка. Сам человек при этом остаётся ярким — вуали в
+     силовом блоке и в бою нет вовсе */
+  border-radius: 20px;
+  background: linear-gradient(
+    180deg,
+    rgba(30, 48, 74, 0.42) 0%,
+    rgba(10, 16, 28, 0.5) 100%
+  );
+  box-shadow:
+    inset 0 0 0 1px rgba(170, 220, 255, 0.35),
+    0 10px 30px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+}
+
+/** Подпись под фигуркой: та же типографика, что и у HUD боя. */
+.mt-block__coachLabel {
+  padding: 0 8px;
+  color: #eaf6ff;
+  font-size: clamp(11px, 2.6vw, 16px);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-transform: uppercase;
+  text-shadow: var(--mt-ink);
+}
+
+.mt-block__head {
+  position: absolute;
+  top: 4%;
+  left: 5%;
+  text-align: left;
+}
+
+.mt-block__timer {
+  color: #eaf6ff;
+  font-size: clamp(46px, 15vw, 130px);
+  font-weight: 900;
+  line-height: 0.9;
+  text-shadow: var(--mt-ink), 0 0 34px rgba(90, 190, 255, 0.8);
+}
+
+.mt-block__level {
+  color: #9fd0ff;
+  font-size: clamp(12px, 3.4vw, 20px);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: var(--mt-ink);
+}
+
+/** Счёт повторов — крупная цифра и мелкое слово под ней. */
+.mt-block__count {
+  position: absolute;
+  left: 5%;
+  bottom: 26%;
+  text-align: left;
+}
+
+.mt-block__countValue {
+  color: #ffffff;
+  font-size: clamp(64px, 22vw, 190px);
+  font-weight: 900;
+  line-height: 0.85;
+  text-shadow: var(--mt-ink), 0 0 40px rgba(120, 230, 190, 0.75);
+}
+
+.mt-block__countLabel {
+  color: #cfe6ff;
+  font-size: clamp(13px, 4vw, 26px);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-shadow: var(--mt-ink);
+}
+
+.mt-block__score {
+  margin-top: 6px;
+  color: #ffe08a;
+  font-size: clamp(18px, 5vw, 34px);
+  font-weight: 900;
+  text-shadow: var(--mt-ink);
+}
+
+.mt-block__exit {
+  position: absolute;
+  right: 4%;
+  bottom: 4%;
+  pointer-events: auto;
+  padding: 10px 18px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(10, 16, 28, 0.7);
+  color: #cfe6ff;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* --- отдых и финал сессии: единственные экраны с тёмной подложкой --- */
+
+.mt-rest,
+.mt-final {
+  pointer-events: none;
+}
+
+/**
+ * Подложка отдыха. В силовом блоке и в бою человек — герой экрана, и затемнять
+ * его нельзя; на отдыхе смотреть надо на таймер и на следующее движение, и
+ * подложка здесь помогает, а не мешает.
+ */
+.mt-rest__veil {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 10, 20, 0.72);
+}
+
+.mt-rest__title,
+.mt-final__title {
+  position: absolute;
+  top: 8%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: #9fd0ff;
+  font-size: clamp(14px, 4vw, 24px);
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-shadow: var(--mt-ink);
+}
+
+.mt-rest__timer,
+.mt-rest__countdown {
+  position: absolute;
+  top: 26%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: #ffffff;
+  font-size: clamp(90px, 34vw, 260px);
+  font-weight: 900;
+  line-height: 0.85;
+  text-shadow: var(--mt-ink), 0 0 44px rgba(90, 190, 255, 0.85);
+}
+
+.mt-rest__countdown {
+  color: #ffe08a;
+  text-shadow: var(--mt-ink), 0 0 48px rgba(255, 200, 90, 0.9);
+  animation: mt-game-breathe 1s ease-in-out infinite;
+}
+
+.mt-rest__next {
+  position: absolute;
+  bottom: 16%;
+  left: 0;
+  right: 0;
+  padding: 0 16px;
+  text-align: center;
+  color: #eaf6ff;
+  font-size: clamp(20px, 7vw, 54px);
+  font-weight: 900;
+  text-transform: uppercase;
+  text-shadow: var(--mt-ink), 0 0 30px rgba(90, 190, 255, 0.7);
+}
+
+.mt-rest__coach {
+  top: auto;
+  bottom: 26%;
+  right: 6%;
+}
+
+/* --- финальный лист --- */
+
+.mt-final {
+  overflow-y: auto;
+}
+
+.mt-final__head {
+  position: absolute;
+  top: 6%;
+  left: 0;
+  right: 0;
+  text-align: center;
+}
+
+.mt-final__level {
+  margin-top: 6px;
+  color: #9fd0ff;
+  font-size: clamp(12px, 3.4vw, 20px);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-shadow: var(--mt-ink);
+}
+
+.mt-final__score {
+  position: absolute;
+  top: 15%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: #ffe08a;
+  font-size: clamp(56px, 20vw, 170px);
+  font-weight: 900;
+  line-height: 0.9;
+  text-shadow: var(--mt-ink), 0 0 40px rgba(255, 200, 90, 0.75);
+}
+
+.mt-final__scoreLabel {
+  position: absolute;
+  top: 30%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: #cfe6ff;
+  font-size: clamp(12px, 3.6vw, 20px);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: var(--mt-ink);
+}
+
+/* Зачёт дня — сразу под счётом, до разбора по кругам: первый вопрос человека
+   после двадцати минут работы не «сколько повторов в четвёртом круге». */
+.mt-final__day {
+  position: absolute;
+  top: 35%;
+  left: 0;
+  right: 0;
+  text-align: center;
+}
+
+.mt-final__dayLine {
+  color: #cfe6ff;
+  font-size: clamp(12px, 3.4vw, 18px);
+  font-weight: 700;
+  line-height: 1.5;
+  text-shadow: var(--mt-ink);
+}
+
+.mt-final__dayBest {
+  color: #9ff0ff;
+  text-shadow: var(--mt-ink), 0 0 14px rgba(90, 190, 255, 0.7);
+}
+
+/* Отказ не красный и не мигает: человек отработал те же двадцать минут, и
+   ругать его не за что — ему просто говорят, как есть. */
+.mt-final__dayLine--out {
+  color: #ffd9a8;
+}
+
+.mt-final__table {
+  position: absolute;
+  top: 36%;
+  left: 6%;
+  right: 6%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mt-final__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #eaf6ff;
+  font-size: clamp(12px, 3.4vw, 19px);
+  font-weight: 700;
+  text-shadow: var(--mt-ink);
+}
+
+.mt-final__row--head {
+  margin-top: 8px;
+  color: #7fb6e6;
+  font-size: clamp(10px, 2.8vw, 15px);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/** Строка сверки: действия на цену — по ней участник пересчитывает очки сам. */
+.mt-final__sum {
+  position: absolute;
+  bottom: 12%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: #b6ffe9;
+  font-size: clamp(14px, 4.4vw, 26px);
+  font-weight: 900;
+  text-shadow: var(--mt-ink);
+}
+
+.mt-final__exit {
+  position: absolute;
+  left: 50%;
+  bottom: 4%;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  padding: 12px 26px;
+  border: 0;
+  border-radius: 14px;
+  background: #22d3ee;
+  color: #04252b;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+/* --- меню тренировки: постоянная кнопка и четыре действия за ней --- */
+
+.mt-menu__button {
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  right: calc(10px + env(safe-area-inset-right, 0px));
+  z-index: 6;
+  width: 44px;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(8, 12, 22, 0.55);
+  color: #cfe3ff;
+  font: 700 18px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  letter-spacing: 2px;
+  cursor: pointer;
+}
+
+.mt-menu {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mt-menu__veil {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 7, 14, 0.82);
+}
+
+.mt-menu__card {
+  position: relative;
+  width: min(84vw, 340px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px 18px;
+  border: 1px solid #1f2a44;
+  border-radius: 16px;
+  background: #0d1424;
+}
+
+.mt-menu__title {
+  margin-bottom: 4px;
+  color: #8fa0c0;
+  font: 700 13px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mt-menu__item {
+  padding: 14px 16px;
+  border: 1px solid #24314f;
+  border-radius: 12px;
+  background: #131c30;
+  color: #e8eefc;
+  font: 600 17px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mt-menu__item--main {
+  border-color: #3ddc97;
+  background: #16301f;
+  color: #7ef0b5;
+}
+
+.mt-menu__item--quiet {
+  border-color: transparent;
+  background: transparent;
+  color: #8fa0c0;
+  text-align: center;
+}
+
+/* --- пауза --- */
+
+.mt-paused {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.mt-paused__title {
+  position: relative;
+  color: #e8eefc;
+  font: 900 12vw/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  letter-spacing: 0.04em;
+}
+
+.mt-paused__text {
+  position: relative;
+  color: #8fa0c0;
+  font: 500 15px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* --- финальный лист: две кнопки --- */
+
+.mt-final__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.mt-final__again {
+  padding: 14px 22px;
+  border: 1px solid #3ddc97;
+  border-radius: 12px;
+  background: #16301f;
+  color: #7ef0b5;
+  font: 700 17px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  cursor: pointer;
+}
