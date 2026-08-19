@@ -19,13 +19,15 @@
 // действия пишутся немедленно, а при уходе с экрана недописанное досылается
 // fetch'ем с keepalive — обычный запрос не переживает закрытия Mini App свайпом,
 // на этом уже теряли правки программы.
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { supabase, SUPABASE_URL, SUPABASE_KEY } from './supabase.js'
 import { parseTemplateSets } from './workoutPrompt.js'
 import { GlassIcon } from './glassIcons'
 import { logError } from './logError'
 // window.confirm заблокирован в Telegram WebView — см. src/uiCompat.js.
 import { askConfirm } from './uiCompat.js'
+import { filterSuggestions, findByName, mergeSuggestions } from './exerciseSuggest.js'
+import { clearDraft, saveDraft } from './trainerDraft.js'
 
 // Палитра — из src/theme.js. Раньше здесь лежала копия значений из App.jsx с
 // припиской «обязаны совпадать» — теперь совпадение обеспечено тем, что
@@ -59,12 +61,18 @@ const mkExercise = (name, sets, note = '') => ({
 // WorkoutsView. Вытаскивать одну из них в общий компонент значит править два
 // боевых экрана ради нового; вёрстка и поведение здесь повторены один в один,
 // плюс поле «своё название» — его в тех двух нет, а тренеру оно нужно.
-function ExercisePicker({ catalogExercises, onPick, onClose }) {
+//
+// СПИСОК ПРИХОДИТ ГОТОВЫМ (см. suggestions в TrainerSession): каталог плюс всё,
+// что тренер когда-либо записывал этому клиенту. Отбор и сравнение — через
+// exerciseSuggest.js, то есть без учёта регистра, по вхождению и с ё=е.
+function ExercisePicker({ suggestions, onPick, onClose }) {
   const [q, setQ] = useState('')
-  const query = q.trim().toLowerCase()
-  const list = (catalogExercises || []).filter(e =>
-    (e.label || e.n).toLowerCase().includes(query) || e.n.toLowerCase().includes(query))
+  const list = filterSuggestions(suggestions, q)
   const custom = q.trim()
+  // Название, уже существующее под другим написанием («жим лежа» при «Жим
+  // лёжа»), заводить заново нельзя: у дубля не будет истории, а тренер об этом
+  // узнает только через месяц, когда динамика не построится.
+  const дубль = findByName(suggestions, custom)
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:2200, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
       onClick={onClose}>
@@ -79,7 +87,7 @@ function ExercisePicker({ catalogExercises, onPick, onClose }) {
           onFocus={e => e.target.style.borderColor = PUR} onBlur={e => e.target.style.borderColor = HAIR} />
         {/* Своё название — когда упражнения нет в каталоге. Показываем только
             если введённое не совпало с готовым вариантом, иначе кнопка-дубль. */}
-        {custom && !list.some(e => (e.label || e.n).toLowerCase() === custom.toLowerCase()) && (
+        {custom && !дубль && (
           <button onClick={() => onPick(custom)}
             style={{ width:'100%', marginBottom:8, padding:'10px', fontSize:13, fontWeight:700, borderRadius:9, border:`1px dashed ${PUR}`, background:`${PUR}18`, color:PUR, cursor:'pointer', textAlign:'left' }}>
             + Добавить «{custom}»
@@ -87,10 +95,14 @@ function ExercisePicker({ catalogExercises, onPick, onClose }) {
         )}
         <div style={{ overflowY:'auto', display:'flex', flexDirection:'column', gap:2 }}>
           {list.map(e => (
-            <button key={e.n} onClick={() => onPick(e.n)}
+            /* onPick(e.n) — КАНОНИЧЕСКОЕ название, а не то, что набрал тренер:
+               прошлые подходы ищутся точным равенством строки. */
+            <button key={e.n} onClick={() => onPick(e.n)} data-testid="picker-item"
               style={{ display:'flex', flexDirection:'column', alignItems:'flex-start', width:'100%', padding:'9px 10px', border:'none', background:'transparent', cursor:'pointer', textAlign:'left', borderRadius:8 }}>
               <span style={{ fontSize:13, color:TXT }}>{e.label || e.n}</span>
-              <span style={{ fontSize:11, color:TXT3 }}>{e.m}{e.eq ? ` · ${e.eq}` : ''}</span>
+              <span style={{ fontSize:11, color:TXT3 }}>
+                {e.fromHistory ? 'из твоих записей' : `${e.m}${e.eq ? ` · ${e.eq}` : ''}`}
+              </span>
             </button>
           ))}
           {!list.length && !custom && (
@@ -222,9 +234,18 @@ function SessionStopwatch() {
   )
 }
 
-export default function TrainerSession({ client, trainerId, catalogExercises = [], editWorkoutId = null, onExit }) {
+export default function TrainerSession({ client, trainerId, catalogExercises = [], editWorkoutId = null, resume = null, onExit }) {
   const clientId = client?.id
-  const [phase, setPhase] = useState(editWorkoutId ? 'session' : 'loading')  // loading | choose | session
+  // resume — продолжение незавершённого занятия: {workoutId, startedAt}. От
+  // правки прошлой записи отличается принципиально: секундомер идёт дальше от
+  // сохранённого момента старта, и «Завершить» допишет длительность занятия.
+  const resumeWorkoutId = resume?.workoutId ?? null
+  const resumeStartedAt = resume?.startedAt ?? null
+  // Тренировка, которую надо поднять из базы: правка прошлой записи или
+  // продолжение незавершённой. Объявлена здесь, выше всех эффектов, которые на
+  // неё смотрят.
+  const openWorkoutId = editWorkoutId ?? resumeWorkoutId
+  const [phase, setPhase] = useState(editWorkoutId || resumeWorkoutId ? 'session' : 'loading')  // loading | choose | session
 
   // Пока экран открыт, плавающая кнопка ассистента в App должна быть спрятана:
   // её место занимает секундомер, и две кнопки в одном углу перекрывали бы друг
@@ -237,12 +258,15 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
   }, [])
   const [starters, setStarters] = useState({ program: null, last: null })
 
-  const [workoutId, setWorkoutId] = useState(editWorkoutId)
+  const [workoutId, setWorkoutId] = useState(editWorkoutId ?? resumeWorkoutId)
   const [date, setDate] = useState(localTodayISO())
   const [name, setName] = useState('Тренировка с тренером')
   const [comment, setComment] = useState('')
   const [exercises, setExercises] = useState([])
   const [prev, setPrev] = useState({})          // имя упражнения → {text, date}
+  // Названия, которые тренер уже записывал этому клиенту. Ровно те, что видны
+  // ему в «Прогрессе по упражнениям», — и до сих пор их не было в подсказках.
+  const [historyNames, setHistoryNames] = useState([])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [finishing, setFinishing] = useState(false)
 
@@ -258,7 +282,7 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
   // → тело запроса. Держим в ref, чтобы обработчик закрытия страницы читал
   // самое свежее без перерисовок.
   const pendingRef = useRef(new Map())
-  const latestRef = useRef({ workoutId: editWorkoutId, comment: '' })
+  const latestRef = useRef({ workoutId: editWorkoutId ?? resumeWorkoutId, comment: '' })
   const creatingRef = useRef(null)               // промис создания workouts — защита от двойной вставки
   // Содержимое сессии реально загружено/выбрано. Нужен ТОЛЬКО как предохранитель
   // для удаления пустой тренировки: в режиме правки workoutId известен с первого
@@ -270,6 +294,37 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
 
   useEffect(() => { latestRef.current = { workoutId, comment } }, [workoutId, comment])
 
+  /**
+   * ВСЕ НАЗВАНИЯ ИЗ ИСТОРИИ КЛИЕНТА — один раз при открытии экрана.
+   *
+   * Читается одна колонка: DISTINCT в PostgREST нет, поэтому повторы схлопывает
+   * mergeSuggestions уже на клиенте. Потолок в две тысячи строк — не экономия, а
+   * граница: это сотни тренировок, дальше названия перестают быть новыми, а
+   * запрос начинает стоить заметно.
+   *
+   * Сбой не показываем: подсказки из каталога работают и без истории, а красная
+   * плашка про «не удалось прочитать названия» посреди занятия мешает больше,
+   * чем помогает.
+   */
+  useEffect(() => {
+    if (!clientId) return
+    let cancelled = false
+    ;(async () => {
+      const { data, error } = await supabase.from('workout_sets')
+        .select('exercise').eq('user_id', clientId)
+        .order('id', { ascending: false }).limit(2000)
+      if (cancelled) return
+      if (error) { console.error('Тренировка с тренером: не удалось прочитать названия из истории:', error); return }
+      setHistoryNames((data || []).map(r => r.exercise).filter(Boolean))
+    })()
+    return () => { cancelled = true }
+  }, [clientId])
+
+  /** Единый источник подсказок: каталог задаёт написание, история добавляет своё. */
+  const suggestions = useMemo(
+    () => mergeSuggestions(catalogExercises, historyNames),
+    [catalogExercises, historyNames])
+
   // Токен держим заранее: в момент pagehide спрашивать сессию асинхронно поздно.
   useEffect(() => {
     let cancelled = false
@@ -280,11 +335,13 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
 
   // Секундомер сессии. Для правки старой записи не показываем — там он врёт.
   useEffect(() => {
-    if (startedAtRef.current == null) startedAtRef.current = Date.now()
+    // У продолжения момент старта свой — тот, что записан в пометке: иначе
+    // занятие, к которому тренер вернулся через полчаса, показало бы ноль.
+    if (startedAtRef.current == null) startedAtRef.current = resumeStartedAt || Date.now()
     if (editWorkoutId) return
     const t = setInterval(() => setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000)), 1000)
     return () => clearInterval(t)
-  }, [editWorkoutId])
+  }, [editWorkoutId, resumeStartedAt])
 
   const fail = (msg, e) => {
     if (e) console.error('Тренировка с тренером:', msg, e)
@@ -331,7 +388,7 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
   // Стартовый экран: что вообще можно предложить. Пусто и там и там — сразу
   // чистый лист, промежуточный экран с одной кнопкой не нужен.
   useEffect(() => {
-    if (editWorkoutId || !clientId) return
+    if (openWorkoutId || !clientId) return
     let cancelled = false
     ;(async () => {
       const today = localTodayISO()
@@ -348,16 +405,18 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
       setPhase('choose')
     })()
     return () => { cancelled = true }
-  }, [clientId, editWorkoutId])
+  }, [clientId, openWorkoutId])
 
-  // Правка ранее записанной тренировки: поднимаем её целиком.
+  // Поднять записанную тренировку целиком. Один код на два случая: правку
+  // прошлой записи и продолжение незавершённой — читается ровно то же самое,
+  // разница только в том, идёт ли секундомер и пишется ли длительность.
   useEffect(() => {
-    if (!editWorkoutId) return
+    if (!openWorkoutId) return
     let cancelled = false
     ;(async () => {
       const [{ data: w, error: we }, { data: sets, error: se }] = await Promise.all([
-        supabase.from('workouts').select('id,name,date,comment,created_by,user_id').eq('id', editWorkoutId).maybeSingle(),
-        supabase.from('workout_sets').select('id,exercise,kg,reps,note').eq('workout_id', editWorkoutId).order('id'),
+        supabase.from('workouts').select('id,name,date,comment,created_by,user_id').eq('id', openWorkoutId).maybeSingle(),
+        supabase.from('workout_sets').select('id,exercise,kg,reps,note').eq('workout_id', openWorkoutId).order('id'),
       ])
       if (cancelled) return
       if (we || se || !w) { fail('Не удалось открыть запись', we || se); return }
@@ -377,10 +436,10 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
         sets: byEx.get(ex).map(s => ({ id: s.id, kg: s.kg != null ? String(s.kg) : '', reps: s.reps != null ? String(s.reps) : '' })),
       })))
       contentReadyRef.current = true
-      loadPrev(order, editWorkoutId)
+      loadPrev(order, openWorkoutId)
     })()
     return () => { cancelled = true }
-  }, [editWorkoutId, loadPrev])
+  }, [openWorkoutId, loadPrev])
 
   // ── Запись в базу ─────────────────────────────────────────────────────────
   // Строка workouts заводится ровно один раз и как можно раньше — на первом же
@@ -401,12 +460,26 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
       }
       setWorkoutId(data.id)
       latestRef.current = { ...latestRef.current, workoutId: data.id }
+      /**
+       * ПОМЕТКА СТАВИТСЯ СРАЗУ, вместе с созданием тренировки, а не при уходе с
+       * экрана. Уход бывает разный: свайп, закрытая вкладка, севший телефон, —
+       * и рассчитывать на то, что мы успеем что-то записать в этот момент,
+       * нельзя. Пометка, поставленная заранее, снимается «Завершить»; лишней она
+       * не бывает, а недостающая стоит потерянного занятия.
+       */
+      if (!editWorkoutId) {
+        saveDraft({
+          workoutId: data.id, clientId,
+          name: name || 'Тренировка с тренером', date,
+          startedAt: startedAtRef.current || Date.now(),
+        })
+      }
       return data.id
     })()
     const id = await creatingRef.current
     creatingRef.current = null
     return id
-  }, [workoutId, clientId, name, date, trainerId])
+  }, [workoutId, clientId, name, date, trainerId, editWorkoutId])
 
   // Один подход. Есть id — update, нет — insert (и запоминаем выданный id).
   // user_id подхода ВСЕГДА равен владельцу тренировки: иначе политика откажет.
@@ -600,7 +673,11 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
     // писать уже некуда.
     if (willHaveSets === 0) {
       // Пока содержимое не загружено, «ноль подходов» ничего не значит.
-      if (contentReadyRef.current) send(`${SUPABASE_URL}/rest/v1/workouts?id=eq.${wid}`, 'DELETE', undefined)
+      if (contentReadyRef.current) {
+        send(`${SUPABASE_URL}/rest/v1/workouts?id=eq.${wid}`, 'DELETE', undefined)
+        // Тренировки больше нет — продолжать нечего, пометку снимаем вместе с ней.
+        clearDraft(wid)
+      }
       return
     }
     // Комментарий к тренировке — он живёт только в состоянии до «Завершить».
@@ -715,6 +792,7 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
         const { error: dErr } = await supabase.from('workouts').delete().eq('id', wid)
         if (dErr) { fail('Не удалось убрать пустую тренировку', dErr); return }
         pendingRef.current.clear()
+        clearDraft(wid)
         latestRef.current = { ...latestRef.current, workoutId: null }
         setWorkoutId(null)
         onExit()
@@ -722,7 +800,8 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
       }
 
       const patch = { comment: comment || null, name: name || 'Тренировка с тренером', date }
-      // Длительность — минуты с начала сессии, и ТОЛЬКО для новой записи. В
+      // Длительность — минуты с начала сессии, и ТОЛЬКО для новой записи (в том
+      // числе продолженной: там начало взято из пометки, и счёт честный). В
       // режиме правки секундомер не идёт вовсе (см. эффект выше), и время
       // занятия здесь не наше: перезаписав его, мы бы стёрли настоящую
       // длительность прошедшей тренировки.
@@ -730,6 +809,8 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
       const { error } = await supabase.from('workouts').update(patch).eq('id', wid)
       if (error) { fail('Не удалось завершить тренировку — проверь связь и нажми «Повторить»', error); return }
       pendingRef.current.clear()
+      // Занятие закончено — незавершённым оно больше не числится.
+      clearDraft(wid)
       setSaveState('saved')
       onExit()
     } finally {
@@ -798,7 +879,7 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
           длинного списка упражнений. */}
       <SessionStopwatch />
       {pickerOpen && (
-        <ExercisePicker catalogExercises={catalogExercises} onPick={addExercise} onClose={() => setPickerOpen(false)} />
+        <ExercisePicker suggestions={suggestions} onPick={addExercise} onClose={() => setPickerOpen(false)} />
       )}
 
       {/* Ошибка записи обязана быть заметной: тренер смотрит на клиента, а не

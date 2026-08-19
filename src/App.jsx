@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, createContext, useContext, lazy, 
 import { createPortal } from 'react-dom'
 import AIAssistant from './AIAssistant'
 import TrainerSession, { TrainerSessionsList } from './TrainerSession.jsx'
+import { clearDraft as clearTrainerDraft, draftForClient } from './trainerDraft.js'
 import { supabase, SUPABASE_AUTH_STORAGE_KEY, SUPABASE_URL, SUPABASE_KEY } from './supabase.js'
 import { resolveAuthOutcome, AUTH_OUTCOME } from './authState.js'
 import { logError } from './logError'
@@ -1165,6 +1166,10 @@ function RealClientDetail({ client, goBack, trainerId }) {
   // прошлой записи. По выходу перечитываем дневник: тренер только что в него
   // написал, и старый список был бы неправдой.
   const [session,setSession]=useState(null)
+  // Незавершённое занятие этого клиента (src/trainerDraft.js). Читается при
+  // открытии карточки и после каждого выхода из сессии: тренер мог её как
+  // завершить, так и снова оставить.
+  const [unfinished,setUnfinished]=useState(()=>draftForClient(client?.id))
   const [history,setHistory]=useState([])
   const [loading,setLoading]=useState(true)
   const [error,setError]=useState(false)
@@ -1206,6 +1211,7 @@ function RealClientDetail({ client, goBack, trainerId }) {
   }
   const load=()=>{
     setLoading(true);setError(false)
+    setUnfinished(draftForClient(client.id))
     loadWorkoutHistoryFromSupabase(client.id).then(({history,error})=>{
       setHistory(history)
       setError(error)
@@ -1224,6 +1230,7 @@ function RealClientDetail({ client, goBack, trainerId }) {
       trainerId={trainerId}
       catalogExercises={catalogExercises}
       editWorkoutId={session.editId}
+      resume={session.resume||null}
       onExit={()=>{setSession(null);load()}}
     />
   )
@@ -1293,6 +1300,31 @@ function RealClientDetail({ client, goBack, trainerId }) {
       {/* Записи, сделанные ЭТИМ тренером, — их он вправе открыть и поправить.
           Тренировки, которые клиент вёл сам, сюда не попадают: их правку база
           не пропустит (политика требует created_by = auth.uid()). */}
+      {/* НЕЗАВЕРШЁННОЕ ЗАНЯТИЕ. Тем же смыслом, что плашка свёрнутой тренировки
+          у клиента (MinimizedWorkoutBar): тренировка не потеряна, в неё можно
+          вернуться. «Продолжить» открывает её В РЕЖИМЕ ЗАНЯТИЯ, а не правки —
+          секундомер идёт дальше от сохранённого начала, «Завершить» допишет
+          длительность. «Убрать пометку» нужен для случая, когда занятие давно
+          закончилось в жизни, но не в приложении: тренировка остаётся в списке
+          ниже и правится как обычно, просто перестаёт числиться незавершённой.
+          Возраст пометки не проверяем: молча перестать предлагать продолжение
+          значило бы решить за тренера. */}
+      {unfinished&&(
+        <div data-testid="unfinished-session" style={{ display:'flex', alignItems:'center', gap:8, background:SURF, border:`1px solid ${PUR}`, borderRadius:12, padding:'10px 12px', marginBottom:10 }}>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:13, color:TXT, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{unfinished.name}</div>
+            <div style={{ fontSize:11, color:PUR }}>Незавершённая{unfinished.date?` · ${unfinished.date}`:''}</div>
+          </div>
+          <button data-testid="unfinished-resume" onClick={()=>setSession({editId:null,resume:{workoutId:unfinished.workoutId,startedAt:unfinished.startedAt}})}
+            style={{ flexShrink:0, fontSize:12, fontWeight:700, color:'#fff', background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, border:'none', borderRadius:8, padding:'6px 12px', cursor:'pointer' }}>
+            Продолжить
+          </button>
+          <button data-testid="unfinished-drop" onClick={()=>{clearTrainerDraft(unfinished.workoutId);setUnfinished(null)}}
+            style={{ flexShrink:0, fontSize:12, color:TXT3, background:'none', border:`1px solid ${HAIR}`, borderRadius:8, padding:'6px 10px', cursor:'pointer' }}>
+            Убрать пометку
+          </button>
+        </div>
+      )}
       <TrainerSessionsList clientId={client.id} trainerId={trainerId} onEdit={id=>setSession({editId:id})} />
       <div style={{ display:'flex', gap:0, marginBottom:18, background:SURF2, borderRadius:10, padding:3, width:'fit-content', flexWrap:'wrap' }}>
         {[['diary','Дневник'],['program','Программа']].map(([id,label])=>(
