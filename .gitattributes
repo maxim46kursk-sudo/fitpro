@@ -1,0 +1,2 @@
+# Хук pre-push исполняет git через sh: CRLF в нём ломает разбор строк на Windows.
+.githooks/** text eol=lf
