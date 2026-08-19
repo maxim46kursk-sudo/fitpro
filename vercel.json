@@ -1,5 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/api/motion-health/:key",
+      "destination": "/api/set-exercise?action=motion-health&key=:key"
+    }
+  ],
   "headers": [
     {
       "source": "/assets/(.*)",
