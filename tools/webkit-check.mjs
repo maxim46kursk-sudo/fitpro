@@ -29,8 +29,36 @@ console.log('заголовки кэша (vercel.json):')
 if (!existsSync('vercel.json')) {
   провалы.push('нет vercel.json — заголовки кэша задавать негде')
 } else {
-  const cfg = JSON.parse(readFileSync('vercel.json', 'utf8'))
-  const правила = cfg.headers ?? []
+  const сырой = readFileSync('vercel.json', 'utf8')
+  let cfg = null
+  try {
+    cfg = JSON.parse(сырой)
+  } catch (e) {
+    провалы.push('vercel.json не разбирается как JSON: ' + e.message)
+  }
+
+  /**
+   * КЛЮЧИ-КОММЕНТАРИИ «//» ВАЛЯТ СБОРКУ. Vercel проверяет vercel.json по схеме и
+   * отбивает любое лишнее поле: «headers[0] should NOT have additional property
+   * "//"». Приём из package.json тут не работает, и цена ошибки высокая — деплой
+   * не собирается вовсе, а прод молча остаётся на старой выкладке. Поэтому
+   * объяснения к правилам живут здесь, в коде проверки, а не в самом конфиге.
+   */
+  const комментарии = []
+  ;(function обойти(узел, путь) {
+    if (Array.isArray(узел)) return узел.forEach((э, i) => обойти(э, `${путь}[${i}]`))
+    if (!узел || typeof узел !== 'object') return
+    for (const ключ of Object.keys(узел)) {
+      if (ключ === '//' || ключ.startsWith('//')) комментарии.push(`${путь}.${ключ}`)
+      обойти(узел[ключ], путь ? `${путь}.${ключ}` : ключ)
+    }
+  })(cfg, '')
+  for (const место of комментарии) {
+    провалы.push(`в vercel.json ключ-комментарий ${место} — Vercel такое поле не принимает, сборка не пройдёт`)
+  }
+  if (cfg && !комментарии.length) ок('разбирается как JSON, ключей-комментариев нет')
+
+  const правила = cfg?.headers ?? []
   /** Значение Cache-Control для пути, как его увидит браузер. */
   const кэшДля = (source) =>
     правила
@@ -38,12 +66,24 @@ if (!existsSync('vercel.json')) {
       ?.headers?.find((h) => h.key.toLowerCase() === 'cache-control')
       ?.value ?? null
 
+  /**
+   * Файлы сборки помечены хэшем: содержимое по такому имени не меняется никогда.
+   * Год в кэше и immutable — чтобы телефон не ходил за ними по сети на каждом
+   * заходе. До аварии они отдавались с max-age=0, то есть ровно наоборот.
+   */
   const assets = кэшДля('/assets/(.*)')
   if (!assets) провалы.push('для /assets/* не задан Cache-Control')
   else if (!/max-age=31536000/.test(assets) || !/immutable/.test(assets)) {
     провалы.push(`/assets/* должны быть год и immutable, а стоит: ${assets}`)
   } else ок('/assets/* — ' + assets)
 
+  /**
+   * А сама страница не кэшируется вовсе. Она — единственное, что связывает
+   * браузер с именами файлов текущей выкладки, и устаревшая копия означает
+   * запрос к именам, которых на сервере уже нет: 404 и пустой экран.
+   * must-revalidate тут мало: телефон отдаёт такую страницу из кэша на плохой
+   * связи и в WebView Telegram.
+   */
   for (const путь of ['/', '/index.html']) {
     const стр = кэшДля(путь)
     if (!стр) провалы.push(`для ${путь} не задан Cache-Control — страница будет кэшироваться`)
