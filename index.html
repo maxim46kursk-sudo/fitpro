@@ -13,5 +13,76 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <!--
+      СТРАХОВКА ОТ ЧЁРНОГО ЭКРАНА ПОСЛЕ ВЫКЛАДКИ.
+
+      Имена файлов сборки содержат хэш, и после каждой выкладки они меняются.
+      Старые при этом с боевого адреса ПРОПАДАЮТ — отвечают 404 (проверено на
+      fitproapp.ru). Телефон, у которого в кэше лежит вчерашняя страница, просит
+      вчерашний файл, получает 404 и остаётся ни с чем: разметка пустая, стиль
+      загрузился, и человек видит ровно фон приложения. В Safari он тёмный —
+      «чёрный экран»; в другом браузере со своим состоянием кэша — белый. Ни
+      ошибки, ни объяснения, ни способа выйти: перезагрузка берёт ту же страницу
+      из того же кэша.
+
+      Внутри приложения это не чинится: приложение в таком заходе НЕ ЗАПУСКАЕТСЯ
+      вовсе — падает его собственный входной файл. Поэтому проверка живёт прямо
+      здесь, без сборки и без импортов.
+
+      ПОВОД — НЕ «ДОЛГО ПУСТО», А ФАКТ НЕУДАЧНОЙ ЗАГРУЗКИ. Медленная связь тоже
+      оставляет корень пустым надолго, и перезагружать из-за неё — значит рвать
+      человеку и без того тяжёлый заход. Событие error на теге script приходит
+      только когда файл действительно не приехал, и только оно даёт право на
+      перезаход.
+
+      Перезаход ровно один, отметка в sessionStorage: если и свежая страница не
+      поднялась, человек получает текст, а не бесконечную перезагрузку. Метка
+      времени в адресе — чтобы промежуточный кэш отдал страницу заново.
+    -->
+    <script>
+      (function () {
+        var КЛЮЧ = 'fitpro.reload.v1'
+        var ЖДЁМ = 6000
+        var сломалось = false
+
+        window.addEventListener(
+          'error',
+          function (e) {
+            var el = e.target
+            if (el && el.tagName === 'SCRIPT' && String(el.src || '').indexOf('/assets/') > -1) {
+              сломалось = true
+            }
+          },
+          true,
+        )
+
+        function пусто() {
+          var root = document.getElementById('root')
+          return !root || root.childElementCount === 0
+        }
+
+        setTimeout(function () {
+          if (!пусто()) {
+            try { sessionStorage.removeItem(КЛЮЧ) } catch (e) {}
+            return
+          }
+          // корень пуст, но файлы приехали — это просто медленно, не мешаем
+          if (!сломалось) return
+
+          var повтор = false
+          try { повтор = sessionStorage.getItem(КЛЮЧ) === '1' } catch (e) {}
+          if (!повтор) {
+            try { sessionStorage.setItem(КЛЮЧ, '1') } catch (e) {}
+            location.replace(location.pathname + '?v=' + Date.now() + location.hash)
+            return
+          }
+          document.body.innerHTML =
+            '<div style="font:16px/1.5 -apple-system,system-ui,sans-serif;color:#fff;' +
+            'background:#0b0b0d;min-height:100vh;display:flex;align-items:center;' +
+            'justify-content:center;text-align:center;padding:24px">' +
+            'Приложение обновилось.<br>Закройте вкладку и откройте FitPro заново.</div>'
+        }, ЖДЁМ)
+      })()
+    </script>
   </body>
 </html>
