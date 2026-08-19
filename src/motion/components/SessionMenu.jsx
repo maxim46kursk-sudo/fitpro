@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { NOTE_MAX } from '../debug/diagnostics.js'
 
 /**
  * МЕНЮ ТРЕНИРОВКИ — постоянная кнопка в углу и действия за ней.
@@ -24,6 +25,17 @@ import { useState } from 'react'
  * место рядом с «начать заново» и «выйти» стоит дорого — промахнуться по нему
  * посреди тренировки хуже, чем не найти его сразу.
  *
+ * ОКНО СО СЛОВАМИ. Снимок состояния говорит, ЧТО происходило с телефоном, но не
+ * что человек при этом видел: «очки не начислились» и «эффекта попадания не
+ * видно» дают один и тот же снимок и чинятся по-разному. Поэтому у жалобы есть
+ * поле для слов — и оно НЕОБЯЗАТЕЛЬНОЕ: пустая жалоба всё равно ценнее
+ * ненажатой кнопки, а требование что-то написать отсечёт ровно тех, кому
+ * некогда. Плейсхолдер показывает пример не для красоты: без него в поле пишут
+ * «не работает», и разбирать это невозможно.
+ *
+ * «Отмена» возвращает в меню, а не закрывает его: человек, передумавший писать,
+ * чаще всего хочет продолжить тренировку, а не выйти из неё.
+ *
  * Кнопка нарочно маленькая и в углу: человек стоит в двух метрах от телефона и
  * попадает по ней только намеренно, подойдя. Случайно её не нажимают — а
  * именно случайного нажатия здесь и надо бояться больше, чем неудобного.
@@ -34,12 +46,14 @@ import { useState } from 'react'
  */
 export default function SessionMenu({ paused, onPause, onResume, onRestart, onExit, onReport }) {
   const [open, setOpen] = useState(false)
-  /** 'idle' | 'sending' | 'sent' — состояние жалобы, живёт только пока открыто меню. */
+  /** 'idle' | 'form' | 'sending' | 'sent' — где человек в жалобе. */
   const [report, setReport] = useState('idle')
+  const [note, setNote] = useState('')
 
   const close = () => {
     setOpen(false)
     setReport('idle')
+    setNote('')
   }
   const act = (fn) => () => {
     close()
@@ -54,17 +68,69 @@ export default function SessionMenu({ paused, onPause, onResume, onRestart, onEx
    *
    * Повторное нажатие блокируется на время отправки по той же причине.
    */
-  const report_ = async () => {
-    if (report !== 'idle') return
+  const send = async () => {
+    if (report === 'sending' || report === 'sent') return
     setReport('sending')
     try {
-      await onReport?.()
+      await onReport?.(note)
     } catch {
       // Отправка глотает свои сбои сама и оставляет запись в буфере — она
       // уедет со следующей удачной отправкой. Человеку сообщать не о чем:
       // жалоба принята, а доедет она сейчас или через минуту, ему всё равно.
     }
     setReport('sent')
+  }
+
+  /**
+   * ОКНО ЖАЛОБЫ вместо карточки меню, а не поверх неё: два наложенных окна на
+   * телефоне в двух метрах — это способ промахнуться, а не выбрать.
+   */
+  if (open && (report === 'form' || report === 'sending')) {
+    return (
+      <div className="mt-menu" data-testid="report-form">
+        <div className="mt-menu__veil" aria-hidden="true" />
+        <div className="mt-menu__card">
+          <div className="mt-menu__title">Сообщить о проблеме</div>
+
+          <textarea
+            className="mt-menu__field"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            maxLength={NOTE_MAX}
+            rows={4}
+            disabled={report === 'sending'}
+            placeholder="Что пошло не так? Например: не начислились очки за попадание"
+            aria-label="Что пошло не так"
+            data-testid="report-text"
+          />
+          {/* Поле необязательное — так и написано, чтобы никто не искал, что ввести. */}
+          <div className="mt-menu__hint">Можно отправить и без описания</div>
+
+          <button
+            type="button"
+            className="mt-menu__item mt-menu__item--main"
+            onClick={send}
+            disabled={report === 'sending'}
+            data-testid="report-send"
+          >
+            {report === 'sending' ? 'Отправляем…' : 'Отправить'}
+          </button>
+
+          <button
+            type="button"
+            className="mt-menu__item mt-menu__item--quiet"
+            onClick={() => {
+              setReport('idle')
+              setNote('')
+            }}
+            disabled={report === 'sending'}
+            data-testid="report-cancel"
+          >
+            Отмена
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (!open) {
@@ -129,11 +195,10 @@ export default function SessionMenu({ paused, onPause, onResume, onRestart, onEx
           <button
             type="button"
             className="mt-menu__item mt-menu__item--quiet"
-            onClick={report_}
-            disabled={report === 'sending'}
+            onClick={() => setReport('form')}
             data-testid="menu-report"
           >
-            {report === 'sending' ? 'Отправляем…' : 'Сообщить о проблеме'}
+            Сообщить о проблеме
           </button>
         )}
 

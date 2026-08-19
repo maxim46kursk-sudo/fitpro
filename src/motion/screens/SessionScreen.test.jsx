@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { act } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import SessionScreen from './SessionScreen.jsx'
@@ -392,29 +392,99 @@ describe('меню тренировки', () => {
 
   /**
    * КНОПКА ЖАЛОБЫ. Единственное место, куда человек придёт САМ и в момент
-   * поломки. Ценна не словами, а снимком состояния, снятым тогда, когда ему
-   * что-то не понравилось, — поэтому проверяется именно содержимое события.
+   * поломки. Ценность двойная: снимок состояния, снятый в нужный момент, и
+   * слова, без которых снимок толкуется гадательно, — поэтому проверяется
+   * содержимое события целиком.
    */
-  it('«Сообщить о проблеме» кладёт в журнал снимок состояния и торопит отправку', async () => {
-    logEvent.mockClear()
-    flush.mockClear()
-    render(<SessionScreen subscribe={noopSubscribe} tier="pro" />)
+  /** Открыть меню и дойти до окна жалобы. */
+  const открытьЖалобу = () => {
     act(() => {
       screen.getByTestId('session-menu-button').click()
     })
-
-    await act(async () => {
+    act(() => {
       screen.getByTestId('menu-report').click()
+    })
+  }
+
+  it('«Сообщить о проблеме» открывает окно с полем, а не отправляет сразу', () => {
+    logEvent.mockClear()
+    render(<SessionScreen subscribe={noopSubscribe} tier="pro" />)
+    открытьЖалобу()
+
+    expect(screen.getByTestId('report-form')).toBeTruthy()
+    const поле = screen.getByTestId('report-text')
+    expect(поле.maxLength).toBe(500)
+    expect(поле.placeholder).toMatch(/что пошло не так/i)
+    // до нажатия «Отправить» в журнал не уходит ничего
+    expect(logEvent.mock.calls.some(([tag]) => tag === 'user.report')).toBe(false)
+  })
+
+  it('слова человека уезжают вместе со снимком, первым полем', async () => {
+    logEvent.mockClear()
+    flush.mockClear()
+    render(<SessionScreen subscribe={noopSubscribe} tier="pro" />)
+    открытьЖалобу()
+
+    const поле = screen.getByTestId('report-text')
+    await act(async () => {
+      fireEvent.change(поле, { target: { value: '  не начислились очки  ' } })
+    })
+    await act(async () => {
+      screen.getByTestId('report-send').click()
     })
 
     const жалоба = logEvent.mock.calls.find(([tag]) => tag === 'user.report')
     expect(жалоба).toBeTruthy()
+    // текст очищен и стоит первым: сообщение тревоги читают сверху
+    expect(Object.keys(жалоба[1])[0]).toBe('note')
+    expect(жалоба[1].note).toBe('не начислились очки')
     // снимок отклонений целиком: по этим полям и разбирают «не видно попаданий»
     expect(жалоба[1]).toMatchObject({ screen: expect.anything(), cheap: expect.any(Boolean) })
     expect(жалоба[1].tier).toBe('pro')
-    // и ничего личного сверх того, что журнал пишет каждые пять секунд
+    // и ничего личного сверх написанного самим человеком
     expect(JSON.stringify(жалоба[1])).not.toMatch(/label|deviceId/i)
     expect(flush).toHaveBeenCalled()
+  })
+
+  it('пустое поле отправке не мешает: жалоба без слов ценнее ненажатой кнопки', async () => {
+    logEvent.mockClear()
+    render(<SessionScreen subscribe={noopSubscribe} tier="pro" />)
+    открытьЖалобу()
+    await act(async () => {
+      screen.getByTestId('report-send').click()
+    })
+
+    const жалоба = logEvent.mock.calls.find(([tag]) => tag === 'user.report')
+    expect(жалоба).toBeTruthy()
+    // пустого поля в событии нет вовсе — не «note»: «»
+    expect('note' in жалоба[1]).toBe(false)
+    expect(screen.getByTestId('menu-report-done')).toBeTruthy()
+  })
+
+  it('«Отмена» возвращает в меню и ничего не отправляет', async () => {
+    /**
+     * Передумавший писать чаще всего хочет продолжить тренировку, а не выйти из
+     * неё, — поэтому возврат в меню, а не закрытие.
+     */
+    logEvent.mockClear()
+    render(<SessionScreen subscribe={noopSubscribe} tier="pro" />)
+    открытьЖалобу()
+    await act(async () => {
+      fireEvent.change(screen.getByTestId('report-text'), { target: { value: 'передумал' } })
+    })
+    act(() => {
+      screen.getByTestId('report-cancel').click()
+    })
+
+    expect(screen.queryByTestId('report-form')).toBeNull()
+    expect(screen.getByTestId('session-menu')).toBeTruthy()
+    expect(logEvent.mock.calls.some(([tag]) => tag === 'user.report')).toBe(false)
+
+    // и написанное не всплывает при повторном открытии окна
+    act(() => {
+      screen.getByTestId('menu-report').click()
+    })
+    expect(screen.getByTestId('report-text').value).toBe('')
   })
 
   it('после жалобы человек видит подтверждение, а меню не закрывается', async () => {
@@ -424,11 +494,9 @@ describe('меню тренировки', () => {
      * здесь тоже.
      */
     render(<SessionScreen subscribe={noopSubscribe} tier="pro" />)
-    act(() => {
-      screen.getByTestId('session-menu-button').click()
-    })
+    открытьЖалобу()
     await act(async () => {
-      screen.getByTestId('menu-report').click()
+      screen.getByTestId('report-send').click()
     })
 
     expect(screen.getByTestId('menu-report-done').textContent).toContain('Отправлено')

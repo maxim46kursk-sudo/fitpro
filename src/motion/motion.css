@@ -2588,6 +2588,30 @@
   cursor: default;
 }
 
+/* Поле жалобы. Крупный шрифт не украшение: на iOS поле со шрифтом меньше 16px
+   заставляет браузер приближать страницу, и человек оказывается в перекошенном
+   макете посреди тренировки. */
+.mt-menu__field {
+  padding: 12px 14px;
+  border: 1px solid #24314f;
+  border-radius: 12px;
+  background: #0f1626;
+  color: #e8eefc;
+  font: 400 16px/1.35 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  resize: none;
+}
+
+.mt-menu__field::placeholder {
+  color: #61708d;
+}
+
+.mt-menu__hint {
+  margin: -4px 0 2px;
+  color: #8fa0c0;
+  font: 400 13px/1.3 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  text-align: center;
+}
+
 /* Подтверждение жалобы. Занимает место самой кнопки — меню не прыгает под
    пальцем в тот момент, когда человек только что по нему попал. */
 .mt-menu__note {

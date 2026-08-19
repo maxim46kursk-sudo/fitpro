@@ -402,8 +402,13 @@ const motionReq = (lines, { auth = 'Bearer good-token' } = {}) => ({
   socket: {},
 })
 
-const ЖАЛОБА = '2026-08-19T12:00:00.000Z [user.report] {"screen":"fight","fps":21,"cheap":true}'
+const снимок = (extra = {}) =>
+  JSON.stringify({ screen: 'fight', fps: 21, cheap: true, ...extra })
+const жалобаСо = (extra) => `2026-08-19T12:00:00.000Z [user.report] ${снимок(extra)}`
+const ЖАЛОБА = жалобаСо()
 const ОБЫЧНАЯ = '2026-08-19T12:00:01.000Z [snapshot] {"screen":"fight","fps":21}'
+/** Что человек написал: с мусором по краям, управляющими символами и лишней длиной. */
+const СЛОВА = `  не начислились очки за\tпопадание  ${'я'.repeat(600)}`
 
 {
   // Без переменных окружения тревога молчит и ничего не ломает.
@@ -423,17 +428,33 @@ process.env.TG_ALERT_TOKEN = 'alert-bot-token'
 process.env.TG_ALERT_CHAT = '424242'
 
 {
-  // Жалоба человека — тревога уходит, и в ней сама строка снимка.
+  // ЖАЛОБА СО СЛОВАМИ. Слова человека — первыми в сообщении и первым полем в
+  // строке журнала; техчасть следом. Чистка длины и управляющих символов стоит
+  // и здесь, в приёмнике: сборка на телефоне живёт своей жизнью.
   const st = stub()
   const res = mockRes()
-  await handler(motionReq([ОБЫЧНАЯ, ЖАЛОБА]), res)
+  await handler(motionReq([ОБЫЧНАЯ, жалобаСо({ note: СЛОВА })]), res)
   await догнать()
   restore()
   assertEqual('жалоба: ответ 200', res.statusCode, 200)
   assertEqual('жалоба: строки легли в motion_log', st.motion[0]?.payload?.lines?.length, 2)
   assertEqual('жалоба: тревога ушла', st.sent.length, 1)
   assertEqual('жалоба: в тот самый чат', st.sent[0]?.chat_id, '424242')
-  report('жалоба: в тексте снимок состояния', /user\.report/.test(st.sent[0]?.text) && /fight/.test(st.sent[0]?.text), st.sent[0]?.text)
+
+  const строка = st.motion[0].payload.lines.find(l => l.includes('[user.report]'))
+  const данные = JSON.parse(строка.slice(строка.indexOf('{')))
+  assertEqual('жалоба: note стоит первым полем', Object.keys(данные)[0], 'note')
+  assertEqual('жалоба: текст обрезан до 500', данные.note.length, 500)
+  report('жалоба: управляющие символы вычищены', !/[\u0000-\u0009\u000B-\u001F\u007F]/.test(данные.note), JSON.stringify(данные.note.slice(0, 40)))
+  report('жалоба: края подчищены', данные.note.startsWith('не начислились'), JSON.stringify(данные.note.slice(0, 40)))
+  assertEqual('жалоба: снимок на месте', данные.screen, 'fight')
+
+  const текст = st.sent[0]?.text ?? ''
+  report('тревога: слова человека выше техчасти',
+    текст.indexOf('не начислились') > -1 && текст.indexOf('не начислились') < текст.indexOf('"screen"'), текст.slice(0, 80))
+  report('тревога: техчасть никуда не делась', /fight/.test(текст) && /сессия session-/.test(текст), текст.slice(-90))
+  // слова не должны уехать дважды: второй раз они бы съели потолок сообщения
+  assertEqual('тревога: слова в сообщении ровно один раз', текст.split('не начислились').length - 1, 1)
 }
 {
   // ГЛАВНЫЙ ТЕСТ ТИШИНЫ. Вторая жалоба сразу же — сообщения быть не должно, а
@@ -445,6 +466,20 @@ process.env.TG_ALERT_CHAT = '424242'
   restore()
   assertEqual('вторая жалоба подряд: запись ВСЁ РАВНО легла', st.motion.length, 1)
   assertEqual('вторая жалоба подряд: второго сообщения нет', st.sent.length, 0)
+}
+{
+  // ЖАЛОБА БЕЗ СЛОВ. Поле необязательное, и пустого note в строке быть не
+  // должно вовсе: «note»: «» читается как «человек ничего не сказал», хотя он
+  // просто не стал писать.
+  const st = stub()
+  const res = mockRes()
+  await handler(motionReq([жалобаСо({ note: '   ' })]), res)
+  await догнать()
+  restore()
+  const строка = st.motion[0].payload.lines[0]
+  const данные = JSON.parse(строка.slice(строка.indexOf('{')))
+  report('жалоба без слов: пустого note в строке нет', !('note' in данные), строка)
+  assertEqual('жалоба без слов: снимок на месте', данные.screen, 'fight')
 }
 {
   // Лог без жалобы тревогу не поднимает вовсе — иначе кричали бы на каждый

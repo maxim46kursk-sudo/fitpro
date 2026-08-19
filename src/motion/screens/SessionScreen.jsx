@@ -19,7 +19,7 @@ import { completeDay } from '../game/challenge.js'
 import { submitAttempt } from '../game/day.js'
 import { submitScore } from '../game/record.js'
 import { flush, logEvent } from '../debug/logShipper.js'
-import { pushLive, snapshotOf } from '../debug/diagnostics.js'
+import { cleanNote, pushLive, snapshotOf } from '../debug/diagnostics.js'
 import { noteScreen } from '../debug/errorReporter.js'
 import { useWakeLock } from '../device/useWakeLock.js'
 
@@ -111,14 +111,26 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
    * потерянные кадры, состояние звука — по ним видно и «не видно попаданий»,
    * и «не слышно отсчёта», и «всё тормозит».
    *
-   * Ничего сверх того, что журнал пишет и так: снимок технический, поля те же,
-   * что уходят каждые пять секунд. Ни текста от человека, ни имени, ни камеры.
+   * СЛОВА ЧЕЛОВЕКА — необязательные и первым полем. Снимок говорит, ЧТО
+   * происходило с телефоном, слова — что человек при этом видел; порознь оба
+   * толкуются гадательно, вместе разбираются за минуту. Поле необязательное
+   * потому, что жалоба без слов всё равно ценнее ненажатой кнопки.
+   *
+   * Ничего личного сверх написанного самим человеком: снимок технический, поля
+   * те же, что уходят каждые пять секунд. Ни имени, ни камеры, ни адреса.
    *
    * Отправка немедленная, а не через буфер: человек в этот момент смотрит на
    * экран и через минуту может закрыть вкладку.
    */
-  const reportProblem = async () => {
-    logEvent('user.report', { ...snapshotOf(), phase: phase.kind, tier: level.id })
+  const reportProblem = async (note) => {
+    const текст = cleanNote(note)
+    logEvent('user.report', {
+      // note первым: и в строке лога, и в сообщении тревоги читают сверху
+      ...(текст ? { note: текст } : {}),
+      ...snapshotOf(),
+      phase: phase.kind,
+      tier: level.id,
+    })
     await flush()
   }
 
