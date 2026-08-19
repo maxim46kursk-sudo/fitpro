@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
+import { timingSafeEqual } from 'node:crypto'
+import { Buffer } from 'node:buffer'
 import { rateLimit } from './_ratelimit.js'
 // Разбор и валидация карточек продуктов — общие с api/chat.js (распознавание
 // этикетки по фото). Пределы правдоподобия обязаны совпадать в обеих ручках:
@@ -37,6 +39,13 @@ const CARD_COLUMNS = 'barcode,name,brand,kcal100,p100,c100,f100,source'
 //                             свой ключ rate limit и своя логика доступа.
 //      ?action=food-search  — GET, тоже публичная, та же группа: поиск по
 //                             нашему справочнику продуктов по названию.
+//      ?action=motion-health — GET, доступ по КЛЮЧУ НАБЛЮДАТЕЛЯ, не по токену
+//                             пользователя. Живёт в этой группе вынужденно:
+//                             задумывалась рядом с motion-log, но там выше
+//                             стоят 405 для не-POST и 401 без токена, и до
+//                             сверки ключа дело не дошло бы никогда. У неё,
+//                             как и у barcode, свой метод и своя логика
+//                             доступа — значит и место то же.
 //   2. ?action=save-product — POST, нужен токен, роль НЕ проверяется. Стоит
 //                             после авторизации, но ВЫШЕ проверки роли: это
 //                             ручка обычного пользователя, а не тренера.
@@ -740,6 +749,188 @@ function motionLogLine(line) {
     .replace(/"(label|deviceId)":\s*("(?:[^"\\]|\\.)*"|null)/g, '"$1":"—"')
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// ВЕТКА ?action=motion-health: сводка по бете Motion для наблюдателя.
+//
+// Зачем. Бета идёт на живых людях, а видно её только изнутри базы. Наблюдателю
+// (постоянной задаче раз в час) нужен ответ на один вопрос: «за последний час
+// что-нибудь сломалось или затихло?» — и ради этого он не должен ни иметь
+// учётной записи в приложении, ни ходить в базу сам.
+//
+// ТОЛЬКО ЧИТАЕТ. Ни одной записи отсюда не уходит: наблюдатель, способный
+// что-то изменить, — это уже не наблюдатель, а вторая точка отказа. Автопочинку
+// решено включать после беты, когда станет ясно, какие поломки бывают.
+//
+// ТОЛЬКО АГРЕГАТЫ. В ответе нет ни user_id, ни имён, ни содержимого строк —
+// счётчики, типы событий и метки времени. Это сознательное ограничение, а не
+// экономия: сводка уезжает наружу по ключу, и всё, что в неё попало, считай
+// вынесенным за пределы базы. Типы берутся из ТЕГА строки (`[render.cheap]`),
+// сам текст строки наружу не идёт; уникальные люди считаются множеством, из
+// которого отдаётся только размер.
+//
+// ДОСТУП ПО КЛЮЧУ, А НЕ ПО ТОКЕНУ, и потому ветка стоит в первой группе: в
+// группе motion-log до неё бы не дошло — выше 405 для не-POST и 401 без токена.
+// Ключ ищется в заголовке x-monitor-key или в ?key=. Сверка постоянная по
+// времени: обычное === на длинном секрете сравнивает посимвольно и на потоке
+// запросов выдаёт длину общего префикса.
+//
+// НЕТ КЛЮЧА В ОКРУЖЕНИИ — 404, а не 500. Ненастроенная ручка не должна
+// сообщать, что она существует и ждёт ключ: неверный ключ, отсутствующий ключ
+// и незаданный MONITOR_KEY отвечают одинаково и молча, как несуществующий путь.
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Сколько строк читаем на одно окно. Бета маленькая, но сводка не имеет права
+ * стать тяжёлым запросом: она ходит раз в час и обязана быть дешёвой всегда, в
+ * том числе если телеметрия однажды хлынет потоком. Упёрлись в потолок — так и
+ * говорим полем `обрезано`, а не тихо отдаём неполную картину.
+ */
+const HEALTH_MAX_ROWS = 2000
+
+/** Постоянное по времени сравнение секретов. Разная длина — сразу нет. */
+function секретСовпал(дано, ожидается) {
+  const a = Buffer.from(String(дано ?? ''), 'utf8')
+  const b = Buffer.from(String(ожидается ?? ''), 'utf8')
+  if (a.length !== b.length || !a.length) return false
+  return timingSafeEqual(a, b)
+}
+
+/** Тег события из строки лога: «2026-08-19T… [render.cheap] {…}» → render.cheap. */
+function тегСтроки(line) {
+  const m = String(line ?? '').match(/\[([a-zA-Z0-9._-]{1,40})\]/)
+  return m ? m[1] : 'без-тега'
+}
+
+async function handleMotionHealth(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-monitor-key')
+  if (req.method === 'OPTIONS') return res.status(200).end()
+
+  const ожидается = process.env.MONITOR_KEY
+  const дано = req.headers?.['x-monitor-key'] ?? req.query?.key
+  // Одинаковый ответ на все три случая: ключа нет в окружении, ключа нет в
+  // запросе, ключ не тот. Наружу это неотличимо от несуществующего пути.
+  if (!ожидается || Array.isArray(дано) || !секретСовпал(дано, ожидается)) {
+    return res.status(404).end()
+  }
+  if (req.method !== 'GET') return res.status(404).end()
+
+  // Лимит свой и скромный: сюда ходит одна задача раз в час, всё остальное —
+  // перебор ключа. Он всё равно не подберётся, но и считать за него не будем.
+  if (!rateLimit(req, res, { name: 'motion-health', limit: 30 })) return
+
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!serviceRoleKey) {
+    reportError('api:set-exercise:motion-health', ['SUPABASE_SERVICE_ROLE_KEY не настроен — сводка не собирается'], { message: 'SUPABASE_SERVICE_ROLE_KEY не настроен (motion-health)', status: 500 })
+    return res.status(500).json({ error: 'Сервер не настроен' })
+  }
+  const db = createClient(SUPABASE_URL, serviceRoleKey)
+
+  const сейчас = Date.now()
+  const окна = {
+    час: new Date(сейчас - 60 * 60 * 1000).toISOString(),
+    сутки: new Date(сейчас - 24 * 60 * 60 * 1000).toISOString(),
+  }
+
+  /** Просто счётчик строк: head:true — база считает, строк не отдаёт вовсе. */
+  const сколько = async (таблица, колонкаВремени, от) => {
+    const { count, error } = await db
+      .from(таблица)
+      .select('id', { count: 'exact', head: true })
+      .gte(колонкаВремени, от)
+    if (error) throw new Error(`${таблица}: ${error.message}`)
+    return count ?? 0
+  }
+
+  /** Метка последней записи. Читается одна колонка одной строки. */
+  const последняя = async (таблица, колонкаВремени) => {
+    const { data, error } = await db
+      .from(таблица)
+      .select(колонкаВремени)
+      .order(колонкаВремени, { ascending: false })
+      .limit(1)
+    if (error) throw new Error(`${таблица}: ${error.message}`)
+    return data?.[0]?.[колонкаВремени] ?? null
+  }
+
+  /**
+   * События motion_log по типам. Читается payload — иначе тип не узнать, — но
+   * наружу уходит только «тип → сколько раз». Сами строки остаются здесь.
+   */
+  const поТипам = async (от) => {
+    const { data, error } = await db
+      .from('motion_log')
+      .select('payload')
+      .gte('at', от)
+      .order('at', { ascending: false })
+      .limit(HEALTH_MAX_ROWS)
+    if (error) throw new Error(`motion_log: ${error.message}`)
+    const типы = {}
+    let событий = 0
+    for (const строка of data ?? []) {
+      for (const line of строка?.payload?.lines ?? []) {
+        событий += 1
+        const тег = тегСтроки(line)
+        типы[тег] = (типы[тег] ?? 0) + 1
+      }
+    }
+    return { записей: data?.length ?? 0, событий, типы, обрезано: (data?.length ?? 0) >= HEALTH_MAX_ROWS }
+  }
+
+  /**
+   * Попытки и сколько РАЗНЫХ людей их делало. user_id читается, чтобы построить
+   * множество, и не покидает эту функцию — наружу идёт только его размер.
+   */
+  const попытки = async (от) => {
+    const { data, error } = await db
+      .from('motion_attempts')
+      .select('user_id')
+      .gte('at', от)
+      .order('at', { ascending: false })
+      .limit(HEALTH_MAX_ROWS)
+    if (error) throw new Error(`motion_attempts: ${error.message}`)
+    const люди = new Set((data ?? []).map((r) => r.user_id))
+    return { попыток: data?.length ?? 0, людей: люди.size, обрезано: (data?.length ?? 0) >= HEALTH_MAX_ROWS }
+  }
+
+  const окно = async (от) => {
+    const [лог, att, ошибок] = await Promise.all([
+      поТипам(от),
+      попытки(от),
+      сколько('error_log', 'created_at', от),
+    ])
+    return {
+      motion_log: { записей: лог.записей, событий: лог.событий, по_типам: лог.типы, обрезано: лог.обрезано },
+      motion_attempts: { попыток: att.попыток, уникальных_людей: att.людей, обрезано: att.обрезано },
+      error_log: { записей: ошибок },
+    }
+  }
+
+  try {
+    const [час, сутки, последнееLog, последнееAtt, последнееErr] = await Promise.all([
+      окно(окна.час),
+      окно(окна.сутки),
+      последняя('motion_log', 'at'),
+      последняя('motion_attempts', 'at'),
+      последняя('error_log', 'created_at'),
+    ])
+    return res.status(200).json({
+      снято: new Date(сейчас).toISOString(),
+      час,
+      сутки,
+      последняя_запись: {
+        motion_log: последнееLog,
+        motion_attempts: последнееAtt,
+        error_log: последнееErr,
+      },
+    })
+  } catch (e) {
+    reportError('api:set-exercise:motion-health', ['сводка не собралась:', e], { message: e?.message, status: 500 })
+    return res.status(500).json({ error: 'Сводка недоступна' })
+  }
+}
+
 export default async function handler(req, res) {
   // Развилка ДО всего остального. Ветка штрих-кода опознаётся ТОЛЬКО по
   // query-параметру: существующие вызовы тренерского каталога — это POST на
@@ -751,6 +942,10 @@ export default async function handler(req, res) {
   // Именно query, а не body: у веток метод GET, тела у них нет.
   if (req.query?.action === 'barcode') return handleBarcode(req, res)
   if (req.query?.action === 'food-search') return handleFoodSearch(req, res)
+  // Сводка по бете Motion. Тоже до проверки метода и токена: доступ у неё по
+  // ключу наблюдателя, и 401 «требуется авторизация» ей не подходит — см.
+  // порядок веток в шапке файла.
+  if (req.query?.action === 'motion-health') return handleMotionHealth(req, res)
 
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
