@@ -53,7 +53,7 @@ const json = (body, status = 200) =>
 // rows — то, что «уже лежит» в error_log. Именно по нему отвечает запрос
 // «была ли такая ошибка за последний час», и именно им моделируется шторм.
 function stub({ rows = [], tgFails = false, tgThrows = false, insertFails = false, noTrainerChat = false } = {}) {
-  const st = { inserted: [], sent: [], quietQueries: [] }
+  const st = { inserted: [], sent: [], quietQueries: [], motion: [] }
   let nextId = 1000
 
   globalThis.fetch = async (url, opts = {}) => {
@@ -100,6 +100,12 @@ function stub({ rows = [], tgFails = false, tgThrows = false, insertFails = fals
         && r.created_at >= since
         && (!notId || String(r.id) !== String(notId)))
       return json(hit.slice(0, 1).map(r => ({ id: r.id })))
+    }
+
+    // ── motion_log: приёмник телеметрии беты (ветка ?action=motion-log)
+    if (u.pathname.startsWith('/rest/v1/motion_log')) {
+      st.motion.push(JSON.parse(opts.body))
+      return json([{ id: nextId++ }])
     }
 
     if (u.pathname.startsWith('/rest/v1/profiles')) return json([])
@@ -369,6 +375,123 @@ const req = (body, { auth = 'Bearer good-token' } = {}) => ({
   restore()
   assertEqual('сбой записи: клиенту всё равно 200', res.statusCode, 200)
   assertEqual('сбой записи: ничего не записано', st.inserted.length, 0)
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// 5. ТРЕВОГА ПО БЕТЕ MOTION — свой бот, свой чат, своя тишина
+//
+// Отдельный канал от уведомлений тренеру: те про приложение целиком, эта про
+// бету и адресована тому, кто её ведёт. Поводов два, и оба приезжают в эту же
+// ручку — упавшее у человека приложение и нажатая им кнопка «Сообщить о
+// проблеме».
+//
+// ГЛАВНОЕ, ЧТО ЗДЕСЬ ПРОВЕРЯЕТСЯ: тревога не имеет права ни задержать ответ
+// ручки, ни уронить его. Телефон, отправивший лог, не должен ждать Телеграм, а
+// упавший Телеграм не должен ронять приём журнала.
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── Тревога по бете Motion ─────────────────────────────────────────')
+
+/** Отправка не ожидается вызовом — даём микрозадачам добежать. */
+const догнать = () => new Promise((r) => setTimeout(r, 0))
+
+const motionReq = (lines, { auth = 'Bearer good-token' } = {}) => ({
+  method: 'POST',
+  query: { action: 'motion-log' },
+  body: { session: 'session-20260819-120000', lines },
+  headers: { 'x-real-ip': `10.9.1.${++ip}`, ...(auth ? { authorization: auth } : {}) },
+  socket: {},
+})
+
+const ЖАЛОБА = '2026-08-19T12:00:00.000Z [user.report] {"screen":"fight","fps":21,"cheap":true}'
+const ОБЫЧНАЯ = '2026-08-19T12:00:01.000Z [snapshot] {"screen":"fight","fps":21}'
+
+{
+  // Без переменных окружения тревога молчит и ничего не ломает.
+  delete process.env.TG_ALERT_TOKEN
+  delete process.env.TG_ALERT_CHAT
+  const st = stub()
+  const res = mockRes()
+  await handler(motionReq([ЖАЛОБА]), res)
+  await догнать()
+  restore()
+  assertEqual('без TG_ALERT_*: ответ 200', res.statusCode, 200)
+  assertEqual('без TG_ALERT_*: запись легла', st.motion.length, 1)
+  assertEqual('без TG_ALERT_*: никуда не ходили', st.sent.length, 0)
+}
+
+process.env.TG_ALERT_TOKEN = 'alert-bot-token'
+process.env.TG_ALERT_CHAT = '424242'
+
+{
+  // Жалоба человека — тревога уходит, и в ней сама строка снимка.
+  const st = stub()
+  const res = mockRes()
+  await handler(motionReq([ОБЫЧНАЯ, ЖАЛОБА]), res)
+  await догнать()
+  restore()
+  assertEqual('жалоба: ответ 200', res.statusCode, 200)
+  assertEqual('жалоба: строки легли в motion_log', st.motion[0]?.payload?.lines?.length, 2)
+  assertEqual('жалоба: тревога ушла', st.sent.length, 1)
+  assertEqual('жалоба: в тот самый чат', st.sent[0]?.chat_id, '424242')
+  report('жалоба: в тексте снимок состояния', /user\.report/.test(st.sent[0]?.text) && /fight/.test(st.sent[0]?.text), st.sent[0]?.text)
+}
+{
+  // ГЛАВНЫЙ ТЕСТ ТИШИНЫ. Вторая жалоба сразу же — сообщения быть не должно, а
+  // запись обязана лечь: глушится сигнал, не журнал.
+  const st = stub()
+  const res = mockRes()
+  await handler(motionReq([ЖАЛОБА]), res)
+  await догнать()
+  restore()
+  assertEqual('вторая жалоба подряд: запись ВСЁ РАВНО легла', st.motion.length, 1)
+  assertEqual('вторая жалоба подряд: второго сообщения нет', st.sent.length, 0)
+}
+{
+  // Лог без жалобы тревогу не поднимает вовсе — иначе кричали бы на каждый
+  // снимок состояния, которых за сессию сотни.
+  const st = stub()
+  const res = mockRes()
+  await handler(motionReq([ОБЫЧНАЯ]), res)
+  await догнать()
+  restore()
+  assertEqual('лог без жалобы: запись есть', st.motion.length, 1)
+  assertEqual('лог без жалобы: тревоги нет', st.sent.length, 0)
+}
+{
+  // ОШИБКА — ДРУГОЙ ТИП, и своя тишина. Жалоба только что заглушила свой тип,
+  // ошибка обязана пройти: это разные поломки, и знать о них надо по отдельности.
+  const st = stub()
+  const res = mockRes()
+  await handler(req({ context: 'ui:motion', message: 'упало у человека' }), res)
+  await догнать()
+  restore()
+  assertEqual('ошибка: ответ 200', res.statusCode, 200)
+  // Первое сообщение — тренеру (_logError), второе — в канал беты.
+  const беты = st.sent.filter((m) => String(m.chat_id) === '424242')
+  assertEqual('ошибка: тревога по бете ушла', беты.length, 1)
+  report('ошибка: в тексте контекст и суть', /ui:motion/.test(беты[0]?.text) && /упало/.test(беты[0]?.text), беты[0]?.text)
+}
+{
+  // Повтор ошибки — тишина по своему типу.
+  const st = stub()
+  const res = mockRes()
+  await handler(req({ context: 'ui:motion', message: 'опять упало' }), res)
+  await догнать()
+  restore()
+  const беты = st.sent.filter((m) => String(m.chat_id) === '424242')
+  assertEqual('повтор ошибки: второй тревоги по бете нет', беты.length, 0)
+}
+{
+  // ТЕЛЕГРАМ ЛЁГ. Тишина по этому типу к этому моменту уже стоит, так что до
+  // сети дело и не дойдёт, — но проверяется здесь не она, а то, что ответ
+  // ручки остаётся прежним при любой поломке снаружи.
+  const st = stub({ tgThrows: true })
+  const res = mockRes()
+  await handler(motionReq([ЖАЛОБА]), res)
+  await догнать()
+  restore()
+  assertEqual('Телеграм недоступен: клиенту всё равно 200', res.statusCode, 200)
+  assertEqual('Телеграм недоступен: запись легла', st.motion.length, 1)
 }
 
 // ══════════════════════════════════════════════════════════════════════════

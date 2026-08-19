@@ -18,8 +18,8 @@ import { cueCountdown, cueTick } from '../feedback/audio.js'
 import { completeDay } from '../game/challenge.js'
 import { submitAttempt } from '../game/day.js'
 import { submitScore } from '../game/record.js'
-import { logEvent } from '../debug/logShipper.js'
-import { pushLive } from '../debug/diagnostics.js'
+import { flush, logEvent } from '../debug/logShipper.js'
+import { pushLive, snapshotOf } from '../debug/diagnostics.js'
 import { noteScreen } from '../debug/errorReporter.js'
 import { useWakeLock } from '../device/useWakeLock.js'
 
@@ -102,6 +102,26 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
     logEvent('session.restart', { tier: level.id })
   }
 
+  /**
+   * ЖАЛОБА ЧЕЛОВЕКА — тот же снимок состояния, что и в журнале отклонений.
+   *
+   * Ценность жалобы не в словах (их всё равно не напишут в спортзале), а в
+   * МОМЕНТЕ: снимок снят тогда, когда человеку что-то не понравилось, а не
+   * раз в пять секунд вслепую. Режим отрисовки, частота, задержка показа,
+   * потерянные кадры, состояние звука — по ним видно и «не видно попаданий»,
+   * и «не слышно отсчёта», и «всё тормозит».
+   *
+   * Ничего сверх того, что журнал пишет и так: снимок технический, поля те же,
+   * что уходят каждые пять секунд. Ни текста от человека, ни имени, ни камеры.
+   *
+   * Отправка немедленная, а не через буфер: человек в этот момент смотрит на
+   * экран и через минуту может закрыть вкладку.
+   */
+  const reportProblem = async () => {
+    logEvent('user.report', { ...snapshotOf(), phase: phase.kind, tier: level.id })
+    await flush()
+  }
+
   /** Меню одинаково на всех фазах — поэтому и собирается одним куском. */
   const menu = (
     <SessionMenu
@@ -110,6 +130,7 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
       onResume={() => setPaused(false)}
       onRestart={restart}
       onExit={onExit}
+      onReport={reportProblem}
     />
   )
 

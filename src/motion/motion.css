@@ -2583,6 +2583,20 @@
   text-align: center;
 }
 
+.mt-menu__item[disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Подтверждение жалобы. Занимает место самой кнопки — меню не прыгает под
+   пальцем в тот момент, когда человек только что по нему попал. */
+.mt-menu__note {
+  padding: 14px 16px;
+  color: #7ef0b5;
+  font: 600 17px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  text-align: center;
+}
+
 /* --- пауза --- */
 
 .mt-paused {

@@ -17,6 +17,18 @@ import { dayPlan } from '../game/challenge.js'
 import { tierById } from '../game/levels.js'
 import { cueCountdown, cueStart, cueTick } from '../feedback/audio.js'
 import { getLive } from '../debug/diagnostics.js'
+import { flush, logEvent } from '../debug/logShipper.js'
+
+/**
+ * Отправка подменена: проверяется, ЧТО экран кладёт в журнал по кнопке жалобы
+ * и что он торопит отправку. Как строка уезжает на сервер — дело
+ * logShipper.test.js.
+ */
+vi.mock('../debug/logShipper.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  logEvent: vi.fn(),
+  flush: vi.fn(async () => {}),
+}))
 
 /**
  * Сигналы подменены, всё остальное в звуке — настоящее: проверяется, ЧТО и
@@ -376,6 +388,53 @@ describe('меню тренировки', () => {
     expect(screen.getByTestId('session-menu')).toBeTruthy()
     // и предлагает продолжить, а не встать на паузу ещё раз
     expect(screen.getByTestId('menu-resume').textContent).toBe('Продолжить')
+  })
+
+  /**
+   * КНОПКА ЖАЛОБЫ. Единственное место, куда человек придёт САМ и в момент
+   * поломки. Ценна не словами, а снимком состояния, снятым тогда, когда ему
+   * что-то не понравилось, — поэтому проверяется именно содержимое события.
+   */
+  it('«Сообщить о проблеме» кладёт в журнал снимок состояния и торопит отправку', async () => {
+    logEvent.mockClear()
+    flush.mockClear()
+    render(<SessionScreen subscribe={noopSubscribe} tier="pro" />)
+    act(() => {
+      screen.getByTestId('session-menu-button').click()
+    })
+
+    await act(async () => {
+      screen.getByTestId('menu-report').click()
+    })
+
+    const жалоба = logEvent.mock.calls.find(([tag]) => tag === 'user.report')
+    expect(жалоба).toBeTruthy()
+    // снимок отклонений целиком: по этим полям и разбирают «не видно попаданий»
+    expect(жалоба[1]).toMatchObject({ screen: expect.anything(), cheap: expect.any(Boolean) })
+    expect(жалоба[1].tier).toBe('pro')
+    // и ничего личного сверх того, что журнал пишет каждые пять секунд
+    expect(JSON.stringify(жалоба[1])).not.toMatch(/label|deviceId/i)
+    expect(flush).toHaveBeenCalled()
+  })
+
+  it('после жалобы человек видит подтверждение, а меню не закрывается', async () => {
+    /**
+     * Молча закрывшееся меню читается как «кнопка не сработала»: человек нажмёт
+     * ещё раз, потом ещё — три жалобы вместо одной и уверенность, что сломано и
+     * здесь тоже.
+     */
+    render(<SessionScreen subscribe={noopSubscribe} tier="pro" />)
+    act(() => {
+      screen.getByTestId('session-menu-button').click()
+    })
+    await act(async () => {
+      screen.getByTestId('menu-report').click()
+    })
+
+    expect(screen.getByTestId('menu-report-done').textContent).toContain('Отправлено')
+    expect(screen.getByTestId('session-menu')).toBeTruthy()
+    // повторно нажать нечего: кнопка уступила место подтверждению
+    expect(screen.queryByTestId('menu-report')).toBeNull()
   })
 
   it('на паузе блок снимается с экрана целиком, а не замирает', () => {
