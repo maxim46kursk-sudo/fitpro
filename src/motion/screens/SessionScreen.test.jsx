@@ -18,6 +18,8 @@ import { tierById } from '../game/levels.js'
 import { cueCountdown, cueStart, cueTick } from '../feedback/audio.js'
 import { getLive } from '../debug/diagnostics.js'
 import { flush, logEvent } from '../debug/logShipper.js'
+import { closePending, holdAttempt, startAttempt } from '../game/day.js'
+import { completeDay } from '../game/challenge.js'
 
 /**
  * Отправка подменена: проверяется, ЧТО экран кладёт в журнал по кнопке жалобы
@@ -29,6 +31,29 @@ vi.mock('../debug/logShipper.js', async (importOriginal) => ({
   logEvent: vi.fn(),
   flush: vi.fn(async () => {}),
 }))
+
+/**
+ * Учёт попыток и зачёт дня подменены: здесь проверяется РАСПОРЯДОК — что и в
+ * какой момент экран зовёт. Само хранилище попыток и сид трассы проверяет
+ * test-motion-attempts.mjs, там для этого не нужен React.
+ */
+vi.mock('../game/day.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  startAttempt: vi.fn(() => 4),
+  holdAttempt: vi.fn(),
+  closePending: vi.fn(() => ({ recorded: true, attempt: 4, attemptsLeft: 0, score: 1, best: 1, isBest: false, day: 1, dayTotal: 1, challengeTotal: 1 })),
+}))
+vi.mock('../game/challenge.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  completeDay: vi.fn(() => ({ dayDone: true })),
+}))
+
+/** План сессии подменяется только там, где нужен мгновенный финал. */
+let планОверрайд = null
+vi.mock('../game/session.js', async (importOriginal) => {
+  const orig = await importOriginal()
+  return { ...orig, buildDay: (...args) => планОверрайд ?? orig.buildDay(...args) }
+})
 
 /**
  * Сигналы подменены, всё остальное в звуке — настоящее: проверяется, ЧТО и
@@ -698,5 +723,134 @@ describe('отсчёт слышно', () => {
     } finally {
       restore()
     }
+  })
+})
+
+/**
+ * ПОПЫТКА И ЗАЧЁТ ДНЯ — РАЗНЫЕ ВЕЩИ, и до этой правки они были склеены.
+ *
+ * Попытка записывалась только на фазе done, то есть после семи кругов целиком.
+ * За неделю беты до неё не дошёл никто: в журнале ноль событий `session.end`
+ * при сотне взятых мишеней за сессию, и в базе ноль строк прогресса. Теперь
+ * заход закрывается попыткой при любом исходе, а «день сдан» по-прежнему значит
+ * «пройден целиком»: на кону деньги.
+ */
+describe('заход закрывается попыткой при любом исходе', () => {
+  beforeEach(() => {
+    планОверрайд = null
+    startAttempt.mockClear()
+    holdAttempt.mockClear()
+    closePending.mockClear()
+    completeDay.mockClear()
+  })
+  afterEach(() => { планОверрайд = null })
+
+  /**
+   * Отрисовать и обнулить счётчики вызовов.
+   *
+   * На монтировании экран законно зовёт closePending ещё раз — дозакрывает
+   * черновик сессии, которую убили из фона в прошлый раз. Считать надо то, что
+   * произошло ПОСЛЕ появления экрана, иначе этот вызов путается с настоящим.
+   */
+  const открыть = (props = {}) => {
+    const r = render(<SessionScreen subscribe={noopSubscribe} tier="pro" {...props} />)
+    closePending.mockClear()
+    holdAttempt.mockClear()
+    startAttempt.mockClear()
+    completeDay.mockClear()
+    return r
+  }
+
+  it('номер захода берётся на СТАРТЕ сессии и уезжает в бой', () => {
+    /**
+     * Прежде номер считался из записанных попыток, а записывались они только
+     * после семи кругов — то есть никогда. В журнале у всех и всегда стояло
+     * `attempt:1`, и трасса была одна и та же.
+     */
+    render(<SessionScreen subscribe={noopSubscribe} tier="pro" />)
+    expect(startAttempt).toHaveBeenCalledTimes(1)
+    expect(startAttempt.mock.calls[0][0]).toBe('pro')
+  })
+
+  it('выход через меню закрывает попытку, но день не сдаёт', () => {
+    const onExit = vi.fn()
+    открыть({ onExit })
+    act(() => {
+      screen.getByTestId('session-menu-button').click()
+    })
+    act(() => {
+      screen.getByTestId('menu-exit').click()
+    })
+
+    expect(closePending).toHaveBeenCalledTimes(1)
+    // ГЛАВНОЕ: день не пройден, значит и не сдан
+    expect(completeDay).not.toHaveBeenCalled()
+    expect(onExit).toHaveBeenCalled()
+  })
+
+  it('уход со страницы кладёт ЧЕРНОВИК, а не попытку', () => {
+    /**
+     * visibilitychange приходит и тогда, когда человек свернул телефон на минуту
+     * и вернулся доигрывать. Записав на нём попытку, мы закрыли бы заход,
+     * который продолжается, и потеряли бы всё остальное.
+     */
+    открыть()
+    act(() => {
+      Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+
+    expect(holdAttempt).toHaveBeenCalled()
+    expect(closePending).not.toHaveBeenCalled()
+
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+  })
+
+  it('pagehide тоже кладёт черновик — на iOS visibilitychange приходит не всегда', () => {
+    открыть()
+    act(() => {
+      window.dispatchEvent(new Event('pagehide'))
+    })
+    expect(holdAttempt).toHaveBeenCalled()
+    expect(closePending).not.toHaveBeenCalled()
+  })
+
+  it('второй выход не пишет вторую попытку', () => {
+    const onExit = vi.fn()
+    открыть({ onExit })
+    act(() => { screen.getByTestId('session-menu-button').click() })
+    act(() => { screen.getByTestId('menu-exit').click() })
+    act(() => { window.dispatchEvent(new Event('pagehide')) })
+
+    expect(closePending).toHaveBeenCalledTimes(1)
+  })
+
+  it('«начать заново» закрывает прошлый заход и берёт новый номер', () => {
+    открыть()
+    act(() => { screen.getByTestId('session-menu-button').click() })
+    act(() => { screen.getByTestId('menu-restart').click() })
+
+    expect(closePending).toHaveBeenCalledTimes(1)
+    // трасса нового захода обязана отличаться от брошенного
+    expect(startAttempt).toHaveBeenCalledTimes(1)
+  })
+
+  it('полное прохождение — и попытка, и сданный день', () => {
+    /**
+     * План подменён на один финальный шаг: гнать семь настоящих кругов ради
+     * одной проверки дороже, чем она стоит, а проверяется здесь ровно развилка
+     * complete.
+     */
+    планОверрайд = {
+      plan: { day: 1 },
+      phases: [{ kind: 'done', durationMs: 0 }],
+      catcher: {},
+    }
+    const до = closePending.mock.calls.length
+    render(<SessionScreen subscribe={noopSubscribe} tier="pro" />)
+
+    expect(completeDay).toHaveBeenCalledTimes(1)
+    // два вызова: дозакрытие чужого черновика на монтировании и своё завершение
+    expect(closePending.mock.calls.length - до).toBe(2)
   })
 })

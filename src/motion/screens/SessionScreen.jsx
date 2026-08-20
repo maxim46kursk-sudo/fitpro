@@ -16,7 +16,7 @@ import {
 } from '../game/session.js'
 import { cueCountdown, cueTick } from '../feedback/audio.js'
 import { completeDay } from '../game/challenge.js'
-import { submitAttempt } from '../game/day.js'
+import { closePending, holdAttempt, startAttempt } from '../game/day.js'
 import { submitScore } from '../game/record.js'
 import { flush, logEvent } from '../debug/logShipper.js'
 import { cleanNote, pushLive, snapshotOf } from '../debug/diagnostics.js'
@@ -84,6 +84,24 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
   const attemptRef = useRef(null)
   const startedAt = useRef(null)
 
+  /**
+   * НОМЕР ЗАХОДА — берётся на старте сессии, а не по её завершении.
+   *
+   * От него зависит трасса (см. attemptSeed). Прежде номер считался из
+   * записанных попыток, а записывались они только после семи кругов целиком —
+   * то есть никогда: в полевом логе у всех и всегда стояло `attempt:1`, и трасса
+   * была одна и та же. Заход считается начатым в момент, когда человек в него
+   * вошёл; брошенный он или доигранный — на трассу следующего влияет одинаково.
+   *
+   * Заодно здесь закрывается ЧУЖОЙ НЕЗАКРЫТЫЙ ЧЕРНОВИК: если прошлую сессию
+   * убили из фона, её результат дописывается сейчас — до того, как начнётся эта.
+   */
+  const attemptNo = useRef(null)
+  if (attemptNo.current == null) {
+    closePending()
+    attemptNo.current = startAttempt(level.id, plan.current.plan.day)
+  }
+
   const phases = plan.current.phases
   const phase = phases[Math.min(index, phases.length - 1)]
 
@@ -91,15 +109,104 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
   const cycles = cyclesOf(phases)
   const cycle = cycleOf(phase)
 
+  /**
+   * ЧЕРНОВИК ПОПЫТКИ — обновляется по ходу сессии и переживает что угодно.
+   *
+   * Зачем вообще черновик, а не сразу попытка. Уход со страницы на iOS надёжно
+   * виден только через visibilitychange, а он приходит и тогда, когда человек
+   * свернул телефон на минуту и вернулся доигрывать. Записав на нём попытку, мы
+   * закрыли бы заход, который продолжается, и потеряли бы всё остальное.
+   * Черновик же переписывается сколько угодно раз и ничего не расходует.
+   */
+  const holdNow = () => {
+    holdAttempt(level.id, attemptStatsOf(totals.current, new Date().toISOString()), plan.current.plan.day)
+  }
+
+  /**
+   * ЗАКРЫТЬ ЗАХОД. Один раз и при любом исходе — кнопкой «Выйти», уходом со
+   * страницы, перезапуском или дойдя до конца.
+   *
+   * ДЕНЬ СДАЁТСЯ ТОЛЬКО ПРИ complete. Это разные вещи, и до сих пор они были
+   * склеены в одной строке: попытка записывалась там же, где засчитывался день,
+   * то есть после семи кругов. До семи не доходил никто — и прогресс людей
+   * оставался пустым, при сотне взятых мишеней за сессию. Теперь результат
+   * человека сохраняется всегда, а «день сдан» по-прежнему значит «пройден
+   * целиком»: на кону деньги, и этот смысл не меняется.
+   *
+   * Пустой заход попыткой не становится (см. closePending): открыл, посмотрел и
+   * вышел — не повод сжечь одну из трёх попыток дня.
+   */
+  const closeAttempt = (why, { complete = false } = {}) => {
+    if (submitted.current) return null
+    submitted.current = true
+    holdNow()
+    const record = submitScore(totals.current.score)
+    const marked = complete ? completeDay(plan.current.plan.day) : null
+    attemptRef.current = closePending()
+    logEvent('session.end', {
+      tier: level.id,
+      day: plan.current.plan.day,
+      // чем закончился заход и был ли он пройден целиком
+      why,
+      complete,
+      // день сдан; перешёл ли человек дальше — уже другое событие
+      dayDone: marked ? marked.dayDone : false,
+      cycle,
+      score: totals.current.score,
+      best: record.best,
+      isRecord: record.isRecord,
+      // зачёт дня: пошла ли попытка в счёт и что она изменила
+      recorded: attemptRef.current?.recorded ?? false,
+      attempt: attemptRef.current?.attempt ?? attemptNo.current,
+      attemptsLeft: attemptRef.current?.attemptsLeft ?? null,
+      dayBest: attemptRef.current?.best ?? null,
+      isBest: attemptRef.current?.isBest ?? false,
+      dayTotal: attemptRef.current?.dayTotal ?? null,
+    })
+    return attemptRef.current
+  }
+
   /** Начать тренировку заново тем же уровнем: счёт, круги и заход — с нуля. */
   const restart = () => {
+    // прошлый заход закрывается своей попыткой, а не растворяется в новом
+    closeAttempt('restart')
     totals.current = { score: 0, strength: [], fights: [], hits: 0, spawned: 0, reactSum: 0, reactCount: 0 }
     submitted.current = false
     attemptRef.current = null
+    attemptNo.current = startAttempt(level.id, plan.current.plan.day)
     setPaused(false)
     setIndex(0)
     setRunId((n) => n + 1)
-    logEvent('session.restart', { tier: level.id })
+    logEvent('session.restart', { tier: level.id, attempt: attemptNo.current })
+  }
+
+  /**
+   * УХОД СО СТРАНИЦЫ. Черновик кладётся синхронно — до всякой сети: и pagehide,
+   * и visibilitychange умеют быть последним, что вообще случится с вкладкой.
+   * Оба слушателя, а не один: pagehide на iOS приходит не всегда, а
+   * visibilitychange приходит.
+   *
+   * Черновик, а не попытка, — потому что свёрнутый на минуту телефон это не
+   * конец захода. Настоящей попыткой черновик станет при выходе, при завершении
+   * или при следующем открытии раздела, если приложение убьют из фона.
+   */
+  const holdRef = useRef(holdNow)
+  holdRef.current = holdNow
+  useEffect(() => {
+    const save = () => { if (!submitted.current) holdRef.current() }
+    const onVis = () => { if (document.visibilityState === 'hidden') save() }
+    window.addEventListener('pagehide', save)
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      window.removeEventListener('pagehide', save)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [])
+
+  /** Выход из тренировки любым путём: попытка закрывается, потом уходим. */
+  const exitSession = () => {
+    closeAttempt('exit')
+    onExit?.()
   }
 
   /**
@@ -141,7 +248,7 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
       onPause={() => setPaused(true)}
       onResume={() => setPaused(false)}
       onRestart={restart}
-      onExit={onExit}
+      onExit={exitSession}
       onReport={reportProblem}
     />
   )
@@ -282,55 +389,20 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
   }, [countdown, paused])
 
   if (phase.kind === 'done') {
-    // рекорд дня — один на всю тренировку, и подаётся он здесь
-    if (!submitted.current) {
-      submitted.current = true
-      const record = submitScore(totals.current.score)
-      /**
-       * ДЕНЬ ЗАСЧИТЫВАЕТСЯ ЗДЕСЬ И ТОЛЬКО ЗДЕСЬ — на фазе done, то есть после
-       * последнего круга. Не на старте, не в середине и не по выходу из меню:
-       * на кону деньги, и «день сдан» обязано значить, что он пройден целиком.
-       *
-       * Указатель дня при этом НЕ ДВИГАЕТСЯ: сдача открывает дверь вперёд, а
-       * входит в неё человек сам, кнопкой на выборе уровня. Иначе первая же
-       * завершённая сессия сжигала бы оставшиеся попытки дня — и дошедший до
-       * конца оказывался бы наказан за то, что дошёл.
-       */
-      const marked = completeDay(plan.current.plan.day)
-
-      /**
-       * ПОПЫТКА УХОДИТ В ЗАЧЁТ ДНЯ — здесь же, рядом с завершением дня, и по
-       * той же причине: засчитывается пройденное целиком, а не начатое.
-       *
-       * Записывается статистика, а не один счёт. Очки за месяц могут стоять на
-       * месте — человек берёт те же мишени и получает те же баллы, — а реакция
-       * при этом уезжает на двести миллисекунд. Без неё прогресс просто нечем
-       * показать, и человек, который стал заметно быстрее, видит ту же цифру,
-       * что и в первый день.
-       */
-      attemptRef.current = submitAttempt(
-        level.id,
-        attemptStatsOf(totals.current, new Date().toISOString()),
-        plan.current.plan.day,
-      )
-
-      logEvent('session.end', {
-        tier: level.id,
-        day: plan.current.plan.day,
-        // день сдан; перешёл ли человек дальше — уже другое событие
-        dayDone: marked.dayDone,
-        score: totals.current.score,
-        best: record.best,
-        isRecord: record.isRecord,
-        // зачёт дня: пошла ли попытка в счёт и что она изменила
-        recorded: attemptRef.current.recorded,
-        attempt: attemptRef.current.attempt,
-        attemptsLeft: attemptRef.current.attemptsLeft,
-        dayBest: attemptRef.current.best,
-        isBest: attemptRef.current.isBest,
-        dayTotal: attemptRef.current.dayTotal,
-      })
-    }
+    /**
+     * ДЕНЬ ЗАСЧИТЫВАЕТСЯ ЗДЕСЬ И ТОЛЬКО ЗДЕСЬ — на фазе done, то есть после
+     * последнего круга. Не на старте, не в середине и не по выходу из меню: на
+     * кону деньги, и «день сдан» обязано значить, что он пройден целиком.
+     *
+     * Указатель дня при этом НЕ ДВИГАЕТСЯ: сдача открывает дверь вперёд, а
+     * входит в неё человек сам, кнопкой на выборе уровня. Иначе первая же
+     * завершённая сессия сжигала бы оставшиеся попытки дня — и дошедший до
+     * конца оказывался бы наказан за то, что дошёл.
+     *
+     * Сама попытка записывается тем же closeAttempt, что и при выходе на
+     * середине: отличие полного прохождения ровно одно — complete.
+     */
+    closeAttempt('done', { complete: true })
     return (
       <SessionResult
         result={{
@@ -341,7 +413,7 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
           days: 30,
           attempt: attemptRef.current,
         }}
-        onExit={onExit}
+        onExit={exitSession}
         onRestart={restart}
       />
     )
@@ -442,8 +514,11 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
         }}
         // рекорд дня подаёт сессия целиком, а не каждый из семи боёв
         submitsRecord={false}
+        // номер захода: вместе с днём, уровнем и уже переданным номером круга
+        // он и составляет сид трассы (см. attemptSeed)
+        attempt={attemptNo.current}
         onFinish={finishFight}
-        onCancel={onExit}
+        onCancel={exitSession}
       />
       {menu}
     </>

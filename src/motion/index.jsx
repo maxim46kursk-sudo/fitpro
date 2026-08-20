@@ -20,7 +20,7 @@ import AudioToggle from './components/AudioToggle.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { isAudioEnabled, isAudioReady, unlockAudio } from './feedback/audio.js'
 import DebugPanel from './debug/DebugPanel.jsx'
-import { pushLive, snapshotOf } from './debug/diagnostics.js'
+import { noteRate, pushLive, snapshotOf } from './debug/diagnostics.js'
 import { flush, isShipping, logEvent, logSessionId } from './debug/logShipper.js'
 import { noteScreen } from './debug/errorReporter.js'
 import { recordFrame } from './debug/recorder.js'
@@ -401,6 +401,9 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync }
   useEffect(() => {
     const id = setInterval(() => {
       const c = pose.fpsRef.current
+      // тем же замером кормим счётчик темпа за бой (см. rateStats): своего
+      // таймера он не заводит
+      noteRate(c.value, c.latencyMs)
       pushLive({
         fps: c.value,
         inferenceMs: c.inferenceMs,

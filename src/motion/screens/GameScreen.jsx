@@ -32,7 +32,7 @@ import {
   updateParticles,
   updateStarfield,
 } from '../game/space.js'
-import { pushLive } from '../debug/diagnostics.js'
+import { pushLive, rateStats, resetRate } from '../debug/diagnostics.js'
 import { createTransitionLog, logEvent } from '../debug/logShipper.js'
 import { useWakeLock } from '../device/useWakeLock.js'
 
@@ -246,14 +246,14 @@ const wantsClassic = () => urlFlag('classic')
  */
 const wantsMoves = () => urlFlag('moves')
 
-function roundSeed(tierId, attempt) {
+function roundSeed(tierId, attempt, cycle) {
   try {
     const forced = new URLSearchParams(globalThis.location?.search || '').get('seed')
     if (forced && Number.isFinite(Number(forced))) return Number(forced) >>> 0
   } catch {
     // нет location — берём сид дня
   }
-  return attemptSeed(tierId, attempt)
+  return attemptSeed(tierId, attempt, undefined, cycle)
 }
 
 /**
@@ -329,6 +329,12 @@ export default function GameScreen({
   cycle = 0,
   cycles = 0,
   /**
+   * Номер захода за день. Подаёт сессия: она считает его на СТАРТЕ, а не по
+   * записи результата, иначе брошенная тренировка не меняла бы трассу. Ноль —
+   * раунд играется сам по себе, и номер он берёт сам.
+   */
+  attempt = 0,
+  /**
    * УБРАТЬ УГЛОВОЙ КРЕСТИК. Нужен бою внутри сессии, и по двум причинам сразу.
    *
    * Он лежал поверх блока очков в левом верхнем углу — то есть закрывал собой
@@ -357,9 +363,15 @@ export default function GameScreen({
       id: row.id,
       name: row.name,
       obstaclePoints: row.obstaclePoints,
-      // номер попытки нужен и сиду, и логу: без него две попытки в один день
-      // неразличимы
-      attempt: nextAttempt(row.id),
+      /**
+       * Номер попытки нужен и сиду, и логу: без него две попытки в один день
+       * неразличимы. Сессия подаёт его сама (она считает заход на старте, а не
+       * по записи результата); одиночный бой по ?round=1 сессии не имеет и
+       * считает сам.
+       */
+      attempt: Math.max(1, Math.round(Number(attempt)) || 0) || nextAttempt(row.id),
+      /** Номер круга: без него семь боёв одной сессии шли по одной трассе. */
+      cycle: Math.max(0, Math.round(Number(cycle)) || 0),
     }
   }
   if (!roundRef.current) {
@@ -373,7 +385,7 @@ export default function GameScreen({
       mode: wantsMoves() ? 'moves' : 'catch',
       // сид раунда рождается здесь, а не в движке: движок обязан быть
       // воспроизводимым, и трасса дня — одна на всех
-      seed: roundSeed(levelRef.current.id, levelRef.current.attempt),
+      seed: roundSeed(levelRef.current.id, levelRef.current.attempt, levelRef.current.cycle),
       ...config,
       // набор движений из адреса перебивает всё: это отладочный ключ, и если
       // человек его написал, он хочет раунд именно из этих движений
@@ -533,7 +545,15 @@ export default function GameScreen({
       // в логе ни с чем не сравнима
       tier: lvl.id,
       attempt: lvl.attempt,
+      cycle: lvl.cycle,
       points: lvl.obstaclePoints,
+      /**
+       * ПРИБОРЫ ТЕЛЕФОНА ЗА ЭТОТ БОЙ. Без них доля зачищенных ни о чём не
+       * говорит: по записям 20 поз/с дают 88% зачётов, а 8 поз/с — 68%, при том
+       * что все промахи «не успел». Раньше эти числа приходилось сшивать из
+       * снимков состояния вручную, раскладывая их по времени между боями.
+       */
+      ...rateStats(),
     })
     // трезвучие конца играет ResultScreen сразу при появлении — здесь его
     // дублировать нельзя, иначе оно звучит дважды подряд
@@ -764,6 +784,9 @@ export default function GameScreen({
         })
       } else if (ev.type === 'round.start') {
         cueStart()
+        // приборы считаем с начала боя, а не с открытия экрана: разогрев модели
+        // и отсчёт до старта в темп самого боя не входят
+        resetRate()
         logEvent('game.round.start', { at: Math.round(ev.at) })
       } else if (ev.type === 'round.end') {
         finishRound()

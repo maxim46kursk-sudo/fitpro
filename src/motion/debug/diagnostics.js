@@ -142,6 +142,66 @@ export function cleanNote(text) {
     .slice(0, NOTE_MAX)
 }
 
+/**
+ * ТЕМП ЗАМЕРОВ ЗА ОТРЕЗОК — чтобы связь «частота ↔ зачёт» была видна в ОДНОМ
+ * событии, а не сшивалась вручную из снимков состояния.
+ *
+ * Зачем понадобилось. Разбор жалобы «на третьем круге попадаю, а зачёта нет»
+ * упёрся в то, что в game.end есть зачёты и промахи, но нет ни одного числа про
+ * телефон. Частоту пришлось доставать из снимков, раскладывая их по времени
+ * между боями. По записям вышло: бой 1 — 20 поз/с и 88% зачётов, бой 3 — 8 поз/с
+ * и 68%, промахи все «не успел». Такое должно читаться сразу.
+ *
+ * Своего таймера здесь НЕТ намеренно: замеры складывает тот же интервал в
+ * index.jsx, который и так раз в четверть секунды переносит счётчики инференса в
+ * шину. Заводить ради диагностики второй таймер на экране, где мы боремся
+ * ровно за скорость, было бы смешно.
+ */
+const темп = { fps: [], lat: [] }
+/** Потолок выборки: 250 мс × 600 — это две с половиной минуты, длиннее боя. */
+const RATE_MAX = 600
+
+/** Отметить замер. Зовётся из общего интервала счётчиков. */
+export function noteRate(fps, latencyMs) {
+  const f = Number(fps)
+  const l = Number(latencyMs)
+  if (Number.isFinite(f) && f > 0) {
+    темп.fps.push(f)
+    if (темп.fps.length > RATE_MAX) темп.fps.shift()
+  }
+  if (Number.isFinite(l) && l >= 0) {
+    темп.lat.push(l)
+    if (темп.lat.length > RATE_MAX) темп.lat.shift()
+  }
+}
+
+/** Забыть накопленное — зовётся в начале отрезка (боя). */
+export function resetRate() {
+  темп.fps.length = 0
+  темп.lat.length = 0
+}
+
+const медиана = (list) => {
+  if (!list.length) return null
+  const s = [...list].sort((a, b) => a - b)
+  return s[s.length >> 1]
+}
+
+/**
+ * Медианы за отрезок. Медиана, а не среднее: один провал на разогреве не должен
+ * решать за весь бой — а именно провалы и случаются, когда телефон уходит
+ * думать над кадром.
+ */
+export function rateStats() {
+  const fps = медиана(темп.fps)
+  const lat = медиана(темп.lat)
+  return {
+    poseFps: fps == null ? null : Math.round(fps),
+    latencyMs: lat == null ? null : Math.round(lat),
+    rateSamples: темп.fps.length,
+  }
+}
+
 /** Полный лог событий за сессию — уходит в буфер обмена по кнопке. */
 const log = []
 /**
@@ -192,6 +252,7 @@ export function clearLog() {
 export function resetDiagnostics() {
   log.length = 0
   seq = 0
+  resetRate()
   Object.assign(live, emptyLive())
 }
 

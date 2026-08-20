@@ -36,6 +36,8 @@ function fakeSubscribe() {
       if (i > -1) listeners.splice(i, 1)
     }
   }
+  /** Сколько подписок живо прямо сейчас — по нему видно утечку при смене кругов. */
+  subscribe.count = () => listeners.length
   subscribe.frame = (over = {}) => {
     act(() => {
       for (const fn of listeners) {
@@ -221,6 +223,39 @@ describe('блок кончается сам', () => {
     } finally {
       raf.mockRestore()
       now.mockRestore()
+    }
+  })
+})
+
+/**
+ * СМЕНА КРУГОВ НЕ КОПИТ ПОДПИСКИ.
+ *
+ * Разбор жалобы «на третьем круге зачёта нет» показал по журналу, что частота
+ * замеров падает по ходу сессии: силовой блок на первом круге идёт при 20 поз/с,
+ * на третьем — при 8. Первый подозреваемый в таком — накопление подписчиков на
+ * позу: каждый круг монтирует свой блок и свой бой, и не снятая подписка делает
+ * конвейер тяжелее с каждым кругом.
+ *
+ * Здесь это закрыто проверкой: семь монтирований подряд, как в настоящей
+ * сессии, — и после них не должно остаться ни одной живой подписки.
+ */
+describe('круги не копят подписки на позу', () => {
+  it('семь монтирований и размонтирований не оставляют слушателей', () => {
+    const subscribe = fakeSubscribe()
+    expect(subscribe.count()).toBe(0)
+
+    for (let круг = 0; круг < 7; круг += 1) {
+      const { unmount } = render(
+        <StrengthBlock
+          subscribe={subscribe}
+          movement={STRENGTH_TYPES[круг % STRENGTH_TYPES.length]}
+          tier="pro"
+          onFinish={() => {}}
+        />,
+      )
+      expect(subscribe.count()).toBe(1)
+      unmount()
+      expect(subscribe.count()).toBe(0)
     }
   })
 })

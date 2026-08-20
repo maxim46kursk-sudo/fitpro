@@ -117,6 +117,15 @@ export function newerOf(local, remote) {
 /**
  * Слить попытки двух устройств. Только объединение, ничего не выбрасываем:
  * попытка — это будущий предмет спора о деньгах.
+ *
+ * СЧЁТЧИК ЗАХОДОВ (`started`) сливается максимумом. Он не данные, а номер
+ * трассы: если взять меньший, человек на втором телефоне получил бы трассу,
+ * которую уже проходил на первом, — то есть ровно ту беду, ради которой счётчик
+ * и заведён.
+ *
+ * ЧЕРНОВИК НЕЗАКРЫТОЙ ПОПЫТКИ (`pending`) не сливается вовсе и наверх не едет:
+ * это состояние ОДНОГО устройства, на котором прямо сейчас идёт заход.
+ * Приехавший с сервера чужой черновик закрылся бы здесь чужой попыткой.
  */
 export function mergeAttempts(a, b) {
   const days = {}
@@ -130,7 +139,23 @@ export function mergeAttempts(a, b) {
       }
     }
   }
-  return { days }
+  const started = {}
+  for (const src of [a?.started, b?.started]) {
+    for (const [day, tiers] of Object.entries(src || {})) {
+      started[day] = started[day] || {}
+      for (const [tier, n] of Object.entries(tiers || {})) {
+        started[day][tier] = Math.max(Number(started[day][tier]) || 0, Number(n) || 0)
+      }
+    }
+  }
+  // счётчик не может отставать от того, что уже записано
+  for (const [day, tiers] of Object.entries(days)) {
+    for (const [tier, list] of Object.entries(tiers)) {
+      started[day] = started[day] || {}
+      started[day][tier] = Math.max(Number(started[day][tier]) || 0, list.length)
+    }
+  }
+  return { days, started }
 }
 
 /** Строки попыток для отдельной таблицы — из общего хранилища попыток. */
@@ -283,6 +308,10 @@ export async function push({ force = false } = {}) {
   pushing = true
   try {
     const payload = { ...collectProgress(), [STAMP]: new Date().toISOString() }
+    // Черновик незакрытой попытки — состояние этого устройства, серверу его
+    // знать незачем: приехав на второй телефон, он закрылся бы там чужой
+    // попыткой (см. mergeAttempts).
+    if (payload.attempts?.pending) payload.attempts = { ...payload.attempts, pending: null }
     writeRaw(`${KEYS.challenge}.stamp`, payload[STAMP])
 
     const rows = attemptRows(payload.attempts).filter(
