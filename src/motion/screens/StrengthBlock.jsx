@@ -7,6 +7,7 @@ import { createTargets, readBody } from '../game/targets.js'
 import { fitContain } from '../pose/viewport.js'
 import { cueMilestone, cueRep, cueStart } from '../feedback/audio.js'
 import { logEvent } from '../debug/logShipper.js'
+import { domCounts, heapMb, noteCounts, noteFrame, noteStage, resetStages, stageReport } from '../debug/stageMeter.js'
 import { getThresholds } from '../exercises/thresholds.js'
 import { pushLive } from '../debug/diagnostics.js'
 import {
@@ -94,6 +95,8 @@ export default function StrengthBlock({
   const landmarksRef = useRef(null)
   const startedAtRef = useRef(null)
   const doneRef = useRef(false)
+  /** Когда в последний раз считали живые объекты: обход документа не бесплатный. */
+  const countsSinceRef = useRef(0)
   const onFinishRef = useRef(onFinish)
   onFinishRef.current = onFinish
 
@@ -123,10 +126,21 @@ export default function StrengthBlock({
       landmarksRef.current = landmarks
       if (startedAtRef.current == null) {
         startedAtRef.current = timestamp
+        // счёт стадий с начала блока, а не с монтирования: разогрев модели и
+        // выход человека в кадр в темп самого блока не входят
+        resetStages()
         cueStart()
       }
 
+      // стадия «судейство» силового блока: счётчик повторов по кадру
+      const judgeAt = performance.now()
       const gained = counterRef.current.update(timestamp, { landmarks, worldLandmarks }) ?? 0
+      noteStage('judge', performance.now() - judgeAt, judgeAt)
+      noteFrame(judgeAt)
+      if (judgeAt - countsSinceRef.current >= 1000) {
+        countsSinceRef.current = judgeAt
+        noteCounts({ heapMb: heapMb(), ...domCounts() }, judgeAt)
+      }
       /**
        * ПОПЫТКИ ЦИКЛА В ЛОГ — по одной строке на попытку, зачётную и нет.
        *
@@ -207,6 +221,13 @@ export default function StrengthBlock({
           tier: level.id,
           reps: state.hits,
           score: state.total,
+          /**
+           * Разбор по стадиям и минутам — тот же, что в бою. Силовой блок тут
+           * не менее важен: по журналу он проседает с 20 поз/с на первом круге
+           * до 8 на третьем, то есть замедляется вместе со всем остальным, а
+           * рисует при этом несравнимо меньше.
+           */
+          stages: stageReport(),
         })
         // блок кончился — его причина отказа больше никого не описывает
         pushLive({ lastReject: null })

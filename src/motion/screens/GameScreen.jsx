@@ -33,6 +33,7 @@ import {
   updateStarfield,
 } from '../game/space.js'
 import { pushLive, rateStats, resetRate } from '../debug/diagnostics.js'
+import { domCounts, heapMb, noteCounts, noteFrame, noteStage, resetStages, stageReport } from '../debug/stageMeter.js'
 import { createTransitionLog, logEvent } from '../debug/logShipper.js'
 import { useWakeLock } from '../device/useWakeLock.js'
 
@@ -554,6 +555,11 @@ export default function GameScreen({
        * снимков состояния вручную, раскладывая их по времени между боями.
        */
       ...rateStats(),
+      /**
+       * РАЗБОР ПО СТАДИЯМ И ПО МИНУТАМ. Ради одного вопроса: какая именно стадия
+       * растёт по ходу сессии. Средняя за бой его прячет — нужен наклон.
+       */
+      stages: stageReport(),
     })
     // трезвучие конца играет ResultScreen сразу при появлении — здесь его
     // дублировать нельзя, иначе оно звучит дважды подряд
@@ -787,6 +793,7 @@ export default function GameScreen({
         // приборы считаем с начала боя, а не с открытия экрана: разогрев модели
         // и отсчёт до старта в темп самого боя не входят
         resetRate()
+        resetStages()
         logEvent('game.round.start', { at: Math.round(ev.at) })
       } else if (ev.type === 'round.end') {
         finishRound()
@@ -945,6 +952,8 @@ export default function GameScreen({
     const showMeter = wantsFpsMeter()
     let meterFrames = 0
     let meterSince = performance.now()
+    /** Когда в последний раз считали живые объекты (раз в секунду). */
+    let countsSince = performance.now()
 
     const syncCanvasSize = () => {
       // в экономном режиме рисуем в один пиксель устройства: вчетверо меньше
@@ -1061,7 +1070,11 @@ export default function GameScreen({
         if (!blockedRef.current && hasFrameRef.current) cueFrameLost()
       } else if (!finishedRef.current) {
         clockRef.current += dt
+        // стадия «судейство»: шаг движка и разбор его событий — вместе, потому
+        // что разбор и есть вторая половина судейства (зачёты, промахи, звук)
+        const judgeAt = performance.now()
         handleEventsRef.current(roundRef.current.update(clockRef.current, poseRef.current))
+        noteStage('judge', performance.now() - judgeAt, judgeAt)
       }
 
       /**
@@ -1083,6 +1096,7 @@ export default function GameScreen({
       // отсуженное препятствие ещё уходит из кадра — потом выбрасываем
       drawnRef.current = drawnRef.current.filter((o) => clock <= o.passAt + TAIL_MS)
 
+      const drawAt = performance.now()
       if (ctx && !(cheapRef.current && drawEveryOther)) {
         syncCanvasSize()
 
@@ -1199,6 +1213,31 @@ export default function GameScreen({
             meterSince = real
           }
         }
+      }
+      // стадия «отрисовка» целиком: сцена, мишени, эффекты и слой стекла.
+      // Кадр, пропущенный экономным режимом, тоже считается — иначе рост
+      // прятался бы за тем, что рисовать стали через раз.
+      noteStage('draw', performance.now() - drawAt, drawAt)
+      noteFrame(now)
+
+      /**
+       * ЖИВЫЕ ОБЪЕКТЫ — раз в секунду, а не каждый кадр.
+       *
+       * Обход документа стоит заметно, и звать его чаще значило бы самому
+       * создавать те тормоза, которые мы ищем. Раз в секунду достаточно: нас
+       * интересует наклон за минуты, а не рябь внутри секунды.
+       */
+      if (now - countsSince >= 1000) {
+        countsSince = now
+        noteCounts({
+          // мишени/препятствия в полёте прямо сейчас (см. incoming в движке)
+          targets: round.incoming?.length ?? 0,
+          obstacles: drawnRef.current.length,
+          particles: particlesRef.current.length,
+          stars: starsRef.current.length,
+          heapMb: heapMb(),
+          ...domCounts(),
+        }, now)
       }
 
       syncHud(round)

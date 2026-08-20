@@ -7,6 +7,7 @@ import {
   START_COUNTDOWN_MS,
   STRENGTH_ORDER,
   attemptStatsOf,
+  buildDay,
   buildSession,
   createSession,
   nextLabelOf,
@@ -204,5 +205,46 @@ describe('часы сессии', () => {
     for (let i = 1; i < phases.length; i += 1) {
       expect(phases[i].startAt).toBe(phases[i - 1].endAt)
     }
+  })
+})
+
+/**
+ * ПОЗДНИЕ КРУГИ НЕ ТЯЖЕЛЕЕ ПО ЗАМЫСЛУ.
+ *
+ * Проверка появилась из разбора жалобы «на третьем круге зачёта нет»: прежде чем
+ * искать замедление в конвейере, надо было исключить, что игра просто становится
+ * плотнее к концу сессии. Не становится — и это должно остаться так, иначе
+ * следующий разбор снова начнётся с той же развилки.
+ *
+ * Живых мишеней у ловца всегда не больше одной по построению (catcher.js держит
+ * одну переменную target), поэтому число одновременных мишеней расти не может в
+ * принципе. Здесь закрыто остальное: длительность и настройки.
+ */
+describe('плотность сессии не растёт от круга к кругу', () => {
+  const день = buildDay(1, { id: 'pro', targetLifeMs: 2800, targetGapMs: 210 })
+
+  it('все бои одинаковой длины', () => {
+    const бои = день.phases.filter((p) => p.kind === 'fight')
+    expect(бои.length).toBeGreaterThan(1)
+    expect(new Set(бои.map((p) => p.durationMs)).size).toBe(1)
+  })
+
+  it('все силовые блоки одинаковой длины', () => {
+    const блоки = день.phases.filter((p) => p.kind === 'strength')
+    expect(new Set(блоки.map((p) => p.durationMs)).size).toBe(1)
+  })
+
+  it('настройки мишеней одни на всю сессию, а не свои у каждого круга', () => {
+    // жизнь и пауза мишени приходят одним объектом на день; круг их не трогает
+    expect(день.catcher).toEqual({ targetLifeMs: expect.any(Number), targetGapMs: expect.any(Number) })
+    expect(день.catcher.targetLifeMs).toBeGreaterThan(0)
+    expect(день.catcher.targetGapMs).toBeGreaterThan(0)
+  })
+
+  it('отдых между кругами не сокращается к концу сессии', () => {
+    const отдых = день.phases.filter((p) => p.kind === 'rest')
+    // два вида отдыха (после силового и после боя), и внутри каждого — одна длина
+    const после = new Set(отдых.filter((p) => p.next === 'fight').map((p) => p.durationMs))
+    expect(после.size).toBe(1)
   })
 })

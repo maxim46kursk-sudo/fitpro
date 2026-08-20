@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createMainThreadRunner } from './mainThreadRunner.js'
 import { logEvent } from '../debug/logShipper.js'
+import { noteStage } from '../debug/stageMeter.js'
 import { assetSources } from './assets.js'
 
 /**
@@ -270,6 +271,8 @@ export function usePoseLandmarker({ videoRef, active = true, onResult }) {
         const counter = fpsRef.current
         counter.frames += 1
         counter.results += 1
+        // стадия «инференс»: воркер меряет её сам и присылает с ответом
+        noteStage('inference', data.inferenceMs)
         counter.inferenceMs = data.inferenceMs
         counter.inferenceSum += data.inferenceMs
         counter.inferenceCount += 1
@@ -382,7 +385,10 @@ export function usePoseLandmarker({ videoRef, active = true, onResult }) {
         const height = Math.round(video.videoHeight * scale)
         // размер запоминается ДО отправки: с ним результат и вернётся
         sentSizeRef.current = { w: width, h: height }
+        // стадия «захват»: сколько стоит вынуть кадр из видео
+        const grabAt = performance.now()
         const bitmap = await grabFrame(video, width, height, grabRef.current)
+        noteStage('grab', performance.now() - grabAt, grabAt)
         fpsRef.current.grabMode = grabRef.current.mode
         if (stopped) {
           bitmap.close()
