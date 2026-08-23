@@ -24,6 +24,9 @@ import { clampNum } from './nutrition.js'
 import FoodDiary from './FoodDiary.jsx'
 import HubCard from './HubCard.jsx'
 import { bump } from './funnel.js'
+import { collectGuestData, resetGuestStore, setGuestWorkouts } from './guestStore.js'
+import { saveGuestPending } from './guestPending.js'
+import { dropGuestPendingWorkouts, guestPendingWorkouts } from './guestPending.js'
 
 /**
  * MOTION — ТРЕНИРОВКА С КАМЕРОЙ. Единственная ленивая граница раздела.
@@ -7287,32 +7290,20 @@ function PasswordInput({ value, onChange, placeholder, onKeyDown }) {
  */
 const OFFER_TEXTS = {
   workout: {
-    title: 'Тренировка записана на этом устройстве',
-    text: 'Создай бесплатный аккаунт — она сохранится насовсем и будет видна с любого устройства',
+    title: 'Сохранить тренировку?',
+    text: 'Для сохранения нужен бесплатный аккаунт — история останется навсегда и на любом устройстве',
+    no: 'Не сохранять',
   },
   diary: {
-    title: 'Дневник ведётся!',
-    text: 'Сохрани его в аккаунте, чтобы не потерять и видеть статистику',
+    title: 'Вести дневник постоянно?',
+    text: 'Для сохранения нужен бесплатный аккаунт — записи останутся навсегда и на любом устройстве',
+    no: 'Не сейчас',
   },
   motion: {
-    title: (score) => `Твой счёт ${score} — отличный результат!`,
-    text: 'С таким можно претендовать на победу в челлендже. Создай аккаунт, чтобы сохранить его и участвовать',
+    title: (score) => `Счёт ${score}. Сохранить и участвовать в челлендже?`,
+    text: 'Для участия нужен бесплатный аккаунт — результат зачтётся, а прогресс будет виден с любого устройства',
+    no: 'Пропустить',
   },
-}
-
-/** Сутки по МЕСТНОМУ времени: человек живёт по своему календарю, а не по UTC. */
-const offerDayKey = (section) => {
-  const d = new Date()
-  const p = (n) => String(n).padStart(2, '0')
-  return `fitpro_offer_${section}_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
-
-/** Показывали ли уже сегодня. Хранилище недоступно — считаем, что нет. */
-function offerShownToday(section) {
-  try { return !!localStorage.getItem(offerDayKey(section)) } catch { return false }
-}
-function markOfferShown(section) {
-  try { localStorage.setItem(offerDayKey(section), '1') } catch { /* приватный режим */ }
 }
 
 function OfferSheet({ section, score, onCreate, onLater }) {
@@ -7355,7 +7346,7 @@ function OfferSheet({ section, score, onCreate, onLater }) {
             width: '100%', marginTop: 10, padding: '12px', borderRadius: 13,
             border: 'none', background: 'none', color: TXT3, fontSize: 14, cursor: 'pointer',
           }}>
-          Не сейчас
+          {t.no || 'Не сейчас'}
         </button>
       </div>
     </div>
@@ -7457,6 +7448,18 @@ function LandingPage({ onEnter, isTelegram, accessError, startAtForm = false, st
      */
     const owner=localStorage.getItem('fitpro_owner_uid')
     if(owner)clearFitproData()
+    /**
+     * БУФЕР ПЕРЕЕЗДА — СТРОГО ПОСЛЕ ЧИСТКИ.
+     *
+     * `clearFitproData` сносит всё по префиксу `fitpro_`, а буфер называется
+     * `fitpro_guest_pending` — положи мы его раньше, чистка чужого кэша унесла
+     * бы вместе с чужим и то, ради чего человек сейчас регистрируется.
+     *
+     * Это единственный момент, когда работа гостя попадает на диск: до нажатия
+     * «Создать аккаунт» она живёт в памяти вкладки и честно исчезает с
+     * перезагрузкой. Дальше её подберут переносы после входа.
+     */
+    saveGuestPending(collectGuestData())
     const{error}=await supabase.auth.signUp({
       email:form.email.trim(),password:form.password,
       options:{data:{name:form.name.trim()}}
@@ -10077,6 +10080,23 @@ function buildExerciseEntryFromSets(name, sets) {
 async function migrateLocalWorkoutHistoryToSupabase(userId) {
   let local
   try { local = JSON.parse(localStorage.getItem('fitpro_history') || '[]') } catch { local = [] }
+  /**
+   * ТРЕНИРОВКИ ГОСТЯ — ИЗ БУФЕРА, И СРАЗУ В КЭШ.
+   *
+   * Гость в `fitpro_history` не пишет вовсе: его работа живёт в памяти вкладки
+   * и попадает на диск одним буфером в момент нажатия «Создать аккаунт».
+   * Сливаем их сюда до отбора — дальше они неотличимы от несохранённых
+   * тренировок и поедут общим путём, тем же, что чинит потерю связи.
+   *
+   * Буфер отдаётся сразу, ДО первой вставки: оставь мы его до конца, упавшая
+   * тренировка лежала бы в двух местах, и следующий вход записал бы её дважды.
+   */
+  const изБуфера = guestPendingWorkouts()
+  if (изБуфера.length) {
+    local = [...local, ...изБуфера]
+    try { localStorage.setItem('fitpro_history', JSON.stringify(local)) } catch { /* приватный режим */ }
+    dropGuestPendingWorkouts()
+  }
   // fromSupabaseFallback — карточки, которые сами являются лишь чтением уже
   // существующих в Supabase данных (см. loadWorkoutHistoryFromSupabase), их
   // нельзя мигрировать обратно — иначе то, что удалили из Supabase напрямую,
@@ -10547,10 +10567,27 @@ export default function App() {
    * `useCallback` не для оптимизации: функция уезжает пропом в Motion и в
    * дневник, а новая ссылка на каждый рендер перезапускала бы там эффекты.
    */
+  /**
+   * ПОКАЗАТЬ ПРЕДЛОЖЕНИЕ СОХРАНИТЬ. Единственная точка входа.
+   *
+   * Суточного ограничения больше нет, и это следствие смены модели. Раньше
+   * гость СОХРАНЯЛ на устройство, и предложение было приглашением «перенести
+   * потом» — навязчивым, если повторять его каждый раз. Теперь он не сохраняет
+   * никуда: каждое завершение — реальная развилка, после которой работа либо
+   * останется, либо нет. Умолчать об этом во второй раз значило бы дать
+   * человеку потерять тренировку молча.
+   *
+   * Дневник — исключение и единственное: там запись делается по одной, и
+   * спрашивать на каждой ложке было бы не честностью, а помехой. Ему хватает
+   * первого раза за открытую вкладку.
+   */
+  const offeredDiaryRef=useRef(false)
   const showOffer=useCallback((section,score)=>{
     if(!guestMode)return false
-    if(offerShownToday(section))return false
-    markOfferShown(section)
+    if(section==='diary'){
+      if(offeredDiaryRef.current)return false
+      offeredDiaryRef.current=true
+    }
     bump(`offer_shown_${section}`)
     setOffer({section,score})
     return true
@@ -11151,7 +11188,20 @@ export default function App() {
   const [historyLoadError,setHistoryLoadError]=useState(false)
   const [historyReloadToken,setHistoryReloadToken]=useState(0)
 
-  useEffect(()=>{localStorage.setItem('fitpro_history',JSON.stringify(workoutHistory))},[workoutHistory])
+  /**
+   * ТРЕНИРОВКИ ГОСТЯ — В ПАМЯТЬ ВКЛАДКИ, НЕ НА ДИСК.
+   *
+   * Сохранность обещает аккаунт, и только он. Прежде гостевая тренировка
+   * ложилась в тот же `fitpro_history`, что и у вошедшего: на общем телефоне
+   * следующий человек видел чужую историю как свою, а сам гость получал
+   * «сохранённое», которое держалось на одном браузере и умирало от очистки
+   * кэша. Теперь его работа живёт ровно пока открыта вкладка, а на диск уходит
+   * один раз — буфером, в момент нажатия «Создать аккаунт».
+   */
+  useEffect(()=>{
+    if(guestMode){setGuestWorkouts(workoutHistory);return}
+    localStorage.setItem('fitpro_history',JSON.stringify(workoutHistory))
+  },[workoutHistory,guestMode])
   useEffect(()=>{localStorage.setItem('fitpro_custom_ex',JSON.stringify(customExercises))},[customExercises])
 
   // Выход — локальное действие, не должно зависеть от сети. Раньше порядок
@@ -11193,6 +11243,9 @@ export default function App() {
      */
     setGuestFlag(false)
     setShowAuth(false)
+    // память гостя не под властью clearFitproData: она в модуле, а не в
+    // хранилище, и пережила бы выход вместе с чужой едой и тренировками
+    resetGuestStore()
     // Явный выход — состояние достоверно известно, экран "нет связи" тут
     // показывать нельзя: он перекрыл бы LandingPage, если баннер висел до этого.
     setAuthError(false)

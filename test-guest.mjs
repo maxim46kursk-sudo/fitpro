@@ -13,8 +13,10 @@
 //     и человек видит ошибку сохранения там, где ему обещали, что всё работает.
 //     Здесь это ловится перехватом сети: за весь прогон ни одного POST/PATCH/
 //     DELETE к пользовательским таблицам;
-//   ОБЕЩАНИЕ. Что гость наработал — лежит на устройстве и помечено так, чтобы
-//     переезд в аккаунт его нашёл (см. src/foodDiaryMigrate.js).
+//   СЛЕД. Гость НЕ оставляет на устройстве ничего: сохранность обещает аккаунт,
+//     и только он. Работа живёт в памяти вкладки и честно исчезает с
+//     перезагрузкой; на диск она попадает одним буфером и ровно в один момент —
+//     когда человек нажал «Создать аккаунт».
 //
 // В pre-push НЕ добавлен намеренно: хук должен оставаться быстрым, а здесь
 // поднимается браузер и проходится четыре вкладки.
@@ -139,7 +141,18 @@ await page.waitForTimeout(700)
 
 // ── 3. тренировка с одним подходом попадает в историю ──────────────────────
 /** Путь человека целиком: папка -> занятие -> старт -> подход -> сохранить. */
+/** Выбраться из любых полноэкранных порталов к нижнему меню. */
+async function goHome() {
+  for (let i = 0; i < 4; i += 1) {
+    const back = page.locator('[data-back="1"]')
+    if (!(await back.count())) break
+    await back.first().click().catch(() => {})
+    await page.waitForTimeout(400)
+  }
+}
+
 async function finishOneWorkout() {
+  await goHome()
   await page.locator('[data-testid="tab-workouts"]').click()
   await page.waitForTimeout(900)
   await page.locator('[data-testid="program-folder-Full Body"]').click()
@@ -173,45 +186,40 @@ async function finishOneWorkout() {
 }
 
 await finishOneWorkout()
-const history = await page.evaluate(() => { try { return JSON.parse(localStorage.getItem('fitpro_history') || '[]') } catch { return [] } })
-report('тренировка гостя легла в fitpro_history', history.length >= 1, `записей: ${history.length}`)
-report('у неё нет workoutId — она нигде не сохранена, кроме устройства',
-  history.length >= 1 && history[history.length - 1].workoutId == null)
+report('тренировка гостя НЕ попала в fitpro_history — следа на диске нет',
+  await page.evaluate(() => !localStorage.getItem('fitpro_history')))
+report('и она видна в самом приложении, в состоянии сессии',
+  (await page.locator('[data-testid="tab-progress"]').count()) === 1)
 
 // ── 3б. предложение после тренировки ───────────────────────────────────────
 await page.waitForTimeout(600)
 report('после тренировки всплыло предложение завести аккаунт',
   await page.locator('[data-testid="offer-sheet"]').count() === 1)
-report('суточный ключ раздела поставлен в момент показа',
-  await page.evaluate(() => Object.keys(localStorage).some(k => k.startsWith('fitpro_offer_workout_'))))
+report('текст плашки — про сохранение, а не про возможности',
+  (await page.locator('[data-testid="offer-sheet"]').innerText()).includes('Сохранить тренировку?'))
+report('никаких суточных ключей на диске не заводится',
+  await page.evaluate(() => !Object.keys(localStorage).some(k => k.startsWith('fitpro_offer_'))))
 
 await page.locator('[data-testid="offer-later"]').click()
 await page.waitForTimeout(500)
-report('«Не сейчас» закрывает предложение',
+report('«Не сохранять» закрывает плашку',
   await page.locator('[data-testid="offer-sheet"]').count() === 0)
 
 /**
- * ПОВТОРА В ТЕ ЖЕ СУТКИ БЫТЬ НЕ ДОЛЖНО. Предложение, всплывшее второй раз за
- * вечер, перестаёт быть предложением: его закрывают не глядя, и третий раз оно
- * уже не сработает никогда. Прогоняем тот же путь ещё раз целиком.
+ * ПЛАШКА ПРИ КАЖДОМ ЗАВЕРШЕНИИ. Модель изменилась: гость не сохраняет никуда, и
+ * каждое завершение — реальная развилка, после которой работа либо останется,
+ * либо нет. Промолчать во второй раз значило бы дать человеку потерять
+ * тренировку молча.
  */
-await open('')
 await finishOneWorkout()
 await page.waitForTimeout(800)
-report('второй раз в те же сутки предложение не показывается',
-  await page.locator('[data-testid="offer-sheet"]').count() === 0)
+report('плашка приходит и на второй тренировке, а не раз в сутки',
+  await page.locator('[data-testid="offer-sheet"]').count() === 1)
+await page.locator('[data-testid="offer-later"]').click()
+await page.waitForTimeout(400)
 
 // ── 4. запись в дневнике питания помечена как гостевая ─────────────────────
-// Перезагрузка между этапами: она гасит все всплывшие окна разом и заодно
-// проверяет, что гостевой режим её переживает (флаг лежит в localStorage).
-await open('')
-report('после перезагрузки гость остался гостем',
-  await page.locator('[data-testid="guest-login"]').count() === 1)
-// Ключ раздела сбрасываем: прогон идёт в одни сутки, и предложение дневника
-// не должно зависеть от того, показывали ли уже предложение тренировки.
-await page.evaluate(() => {
-  for (const k of Object.keys(localStorage)) if (k.startsWith('fitpro_offer_diary_')) localStorage.removeItem(k)
-})
+await goHome()
 await page.locator('[data-testid="tab-nutrition"]').click()
 await page.waitForTimeout(1200)
 const mealAdd = page.locator('[data-testid^="meal-add-"]').first()
@@ -229,29 +237,61 @@ if (await mealAdd.count()) {
 }
 // ── 4б. предложение после записи еды, и путь «Создать аккаунт» ─────────────
 await page.waitForTimeout(700)
-report('после записи еды всплыло предложение',
+report('после записи еды всплыла плашка дневника',
   await page.locator('[data-testid="offer-sheet"]').count() === 1)
+report('текст — «Вести дневник постоянно?»',
+  (await page.locator('[data-testid="offer-sheet"]').innerText()).includes('Вести дневник постоянно?'))
 
-if (await page.locator('[data-testid="offer-create"]').count()) {
-  await page.locator('[data-testid="offer-create"]').click()
-  await page.waitForTimeout(1000)
-  report('«Создать аккаунт» открывает форму сразу на вкладке регистрации',
-    await page.getByPlaceholder('Повтори пароль').count() === 1)
-  report('откуда пришёл — запомнено для register_from_offer',
-    await page.evaluate(() => sessionStorage.getItem('fitpro_offer_src')) === 'diary')
+report('запись еды НЕ попала в fitpro_food_diary — следа на диске нет',
+  await page.evaluate(() => !localStorage.getItem('fitpro_food_diary')))
+report('до нажатия «Создать аккаунт» буфера на диске тоже нет',
+  await page.evaluate(() => !localStorage.getItem('fitpro_guest_pending')))
+
+// ── 4в. «Создать аккаунт»: форма и буфер переезда ──────────────────────────
+report('«Создать аккаунт» открывает форму сразу на вкладке регистрации',
+  await (async () => {
+    if (!(await page.locator('[data-testid="offer-create"]').count())) return false
+    await page.locator('[data-testid="offer-create"]').click()
+    await page.waitForTimeout(1000)
+    return (await page.getByPlaceholder('Повтори пароль').count()) === 1
+  })())
+report('откуда пришёл — запомнено для register_from_offer',
+  await page.evaluate(() => sessionStorage.getItem('fitpro_offer_src')) === 'diary')
+/**
+ * БУФЕР ПИШЕТСЯ НА ОТПРАВКЕ ФОРМЫ, а не на нажатии в плашке: до отправки
+ * человек ещё может передумать, и класть его работу на диск раньше значило бы
+ * оставлять след там, где обещано, что следа нет. Заполняем форму как человек.
+ */
+await page.getByPlaceholder('Иван Иванов').fill('Гость')
+await page.getByPlaceholder('ivan@example.com').fill('guest.test@example.com')
+await page.getByPlaceholder('Минимум 6 символов').fill('secret123')
+await page.getByPlaceholder('Повтори пароль').fill('secret123')
+await page.getByRole('button', { name: /Создать аккаунт/ }).click()
+await page.waitForTimeout(1500)
+
+const pending = await page.evaluate(() => {
+  try { return JSON.parse(localStorage.getItem('fitpro_guest_pending') || 'null') } catch { return null }
+})
+report('отправка формы откладывает работу гостя в fitpro_guest_pending', !!pending)
+report('в буфере и тренировки, и еда',
+  !!pending && pending.workouts.length >= 1
+  && Object.values(pending.food || {}).flat().length >= 1,
+  pending ? `тренировок ${pending.workouts.length}, еды ${Object.values(pending.food || {}).flat().length}` : 'буфера нет')
+if (await page.locator('[data-testid="auth-back-to-app"]').count()) {
   await page.locator('[data-testid="auth-back-to-app"]').click()
-  await page.waitForTimeout(700)
-} else {
-  report('«Создать аккаунт» открывает форму сразу на вкладке регистрации', false, 'предложение не появилось')
-  report('откуда пришёл — запомнено для register_from_offer', false, 'предложение не появилось')
+  await page.waitForTimeout(600)
 }
 
-const diary = await page.evaluate(() => { try { return JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}') } catch { return {} } })
-const entries = Object.values(diary).flat()
-report('запись гостя легла в fitpro_food_diary', entries.length >= 1, `записей: ${entries.length}`)
-report('и помечена local:true — переезд в аккаунт её найдёт',
-  entries.length >= 1 && entries.every(e => e.local === true),
-  JSON.stringify(entries.map(e => ({ n: e.name, local: e.local }))))
+// ── 4г. перезагрузка гостем даёт чистое приложение ─────────────────────────
+await page.evaluate(() => localStorage.removeItem('fitpro_guest_pending'))
+await open('')
+report('после перезагрузки история пуста — гость начинает с чистого листа',
+  await page.evaluate(() => !localStorage.getItem('fitpro_history') && !localStorage.getItem('fitpro_food_diary')))
+report('и содержимого гостя на диске нет ни в одном из его ключей',
+  await page.evaluate(() => ['fitpro_history', 'fitpro_food_diary', 'fitpro_guest_pending']
+    .every((k) => !localStorage.getItem(k))
+    && !Object.keys(localStorage).some((k) => k.startsWith('fitpro-motion.'))),
+  await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('fitpro')).join(', ')))
 
 // ── 5. ни одной записи в облако за весь прогон ─────────────────────────────
 report('ни одного POST/PATCH/DELETE к пользовательским таблицам',

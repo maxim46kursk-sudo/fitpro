@@ -17,6 +17,7 @@ import { createPortal } from 'react-dom'
 import { supabase } from './supabase.js'
 import { resolveLoadOutcome, LOAD_OUTCOME } from './authState.js'
 import { ensureFoodDiaryMigrated } from './foodDiaryMigrate.js'
+import { getGuestFood, setGuestFood } from './guestStore.js'
 import { GlassIcon } from './glassIcons'
 import { Ic } from './icons.jsx'
 import MacroInputs from './MacroInputs.jsx'
@@ -97,14 +98,39 @@ const SEARCH_MIN_LEN = 2
  *   успешно записал еду — это и есть момент ценности, ради которого предлагают
  *   завести аккаунт. Решение о показе принимает App, здесь только факт.
  */
+/**
+ * ГДЕ ЖИВЁТ ДНЕВНИК: НА ДИСКЕ ИЛИ В ПАМЯТИ ВКЛАДКИ.
+ *
+ * У вошедшего — как раньше: `fitpro_food_diary` показывается сразу, до ответа
+ * сервера, и переживает перезагрузку. У гостя — только память: он пробует, но
+ * следа не остаётся, а обещание сохранности даёт аккаунт. Прежде его еда
+ * ложилась в тот же ключ, и на общем телефоне следующий человек открывал чужой
+ * день как свой.
+ *
+ * Две функции вместо восьми `localStorage.setItem` по файлу: ветку «гость или
+ * нет» иначе пришлось бы помнить в каждом из восьми мест, и забыть её в одном —
+ * вопрос времени. Модульные, а не внутри компонента: они не зависят от рендера,
+ * и React не должен считать их меняющимися от кадра к кадру.
+ */
+function readCache(guest) {
+  if (guest) return getGuestFood()
+  try { return JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}') } catch { return {} }
+}
+
+function writeCache(guest, readOnly, byDate) {
+  if (readOnly) return
+  if (guest) { setGuestFood(byDate); return }
+  try { localStorage.setItem('fitpro_food_diary', JSON.stringify(byDate)) } catch { /* приватный режим */ }
+}
+
 export default function FoodDiary({ userId, readOnly = false, readOnlyName = '', onClose, embedded = false, headerLeft = null, guest = false, onGuestValue = null }) {
+
+
   // ── Состояние дневника (перенесено из DiaryView без изменений)
   // Инициализация из localStorage-кэша — мгновенный показ до ответа сети
   // (полная загрузка из Supabase ниже перезатирает это, как только придёт
   // ответ; кэш — только для первого кадра, не источник правды).
-  const [foodDiary, setFoodDiary] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}') } catch { return {} }
-  })
+  const [foodDiary, setFoodDiary] = useState(() => readCache(guest))
   // Стек экранов раздела. В основании всегда день; поверх ложатся «Норма» и
   // «Сводка», а из календаря сводки — ещё один день. «Назад» = снять верхний.
   const [stack, setStack] = useState(() => initialStack(isoOf(new Date())))
@@ -214,17 +240,17 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
           ;(byDate[r.date] ??= []).push(entry)
         }
         setFoodDiary(byDate)
-        if (!readOnly) localStorage.setItem('fitpro_food_diary', JSON.stringify(byDate))
+        writeCache(guest, readOnly, byDate)
         setFoodLoading(false)
       })
     })()
     return () => { cancelled = true }
-  }, [userId, foodReloadToken, readOnly])
+  }, [userId, foodReloadToken, readOnly, guest])
 
   // Загрузка при смене даты
   useEffect(() => {
     if (!userId) {
-      setFoodDiary(d => ({ ...d, ...(() => { try { return JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}') } catch { return {} } })() }))
+      setFoodDiary(d => ({ ...d, ...readCache(guest) }))
       return
     }
     let cancelled = false
@@ -256,15 +282,15 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
         setFoodDiary(d => {
           const updated = { ...d, [foodDate]: entries }
           if (!readOnly) {
-            const all = { ...JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}'), [foodDate]: entries }
-            localStorage.setItem('fitpro_food_diary', JSON.stringify(all))
+            const all = { ...readCache(guest), [foodDate]: entries }
+            writeCache(guest, readOnly, all)
           }
           return updated
         })
       })
     })()
     return () => { cancelled = true }
-  }, [foodDate, userId, readOnly, foodReloadToken])
+  }, [foodDate, userId, readOnly, foodReloadToken, guest])
 
   // Загрузка за весь видимый месяц (для чисел в календаре)
   useEffect(() => {
@@ -305,8 +331,8 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
         setFoodDiary(d => {
           const updated = { ...d, ...byDate }
           if (!readOnly) {
-            const all = { ...JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}'), ...byDate }
-            localStorage.setItem('fitpro_food_diary', JSON.stringify(all))
+            const all = { ...readCache(guest), ...byDate }
+            writeCache(guest, readOnly, all)
           }
           return updated
         })
@@ -317,7 +343,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
     // ссылку при каждом изменении стека, и эффект перезапрашивал бы месяц на
     // каждое нажатие стрелки даты.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadMonth.y, loadMonth.m, userId, readOnly, foodReloadToken])
+  }, [loadMonth.y, loadMonth.m, userId, readOnly, foodReloadToken, guest])
 
   // Нормы КБЖУ
   useEffect(() => {
@@ -338,7 +364,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
   useEffect(() => {
     const handler = async () => {
       if (!userId) {
-        setFoodDiary(JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}'))
+        setFoodDiary(readCache(guest))
         return
       }
       /**
@@ -362,8 +388,8 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
           setFoodDiary(d => {
             const updated = { ...d, [foodDate]: entries }
             if (!readOnly) {
-              const all = { ...JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}'), [foodDate]: entries }
-              localStorage.setItem('fitpro_food_diary', JSON.stringify(all))
+              const all = { ...readCache(guest), [foodDate]: entries }
+              writeCache(guest, readOnly, all)
             }
             return updated
           })
@@ -371,7 +397,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
     }
     window.addEventListener('fitpro:diary-update', handler)
     return () => window.removeEventListener('fitpro:diary-update', handler)
-  }, [userId, foodDate, readOnly])
+  }, [userId, foodDate, readOnly, guest])
 
   // Через useMemo, а не `foodDiary[foodDate] || []` на месте: пустой литерал
   // создаёт НОВЫЙ массив на каждый рендер, и мемоизация группировки ниже
@@ -417,8 +443,8 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
     }
     setFoodDiary(d => {
       const updated = { ...d, [foodDate]: [...(d[foodDate] || []), entry] }
-      const all = { ...JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}'), [foodDate]: updated[foodDate] }
-      localStorage.setItem('fitpro_food_diary', JSON.stringify(all))
+      const all = { ...readCache(guest), [foodDate]: updated[foodDate] }
+      writeCache(guest, readOnly, all)
       return updated
     })
     // Запись легла — момент ценности. Только у гостя: вошедшему предлагать
@@ -435,8 +461,8 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
     }
     setFoodDiary(d => {
       const updated = { ...d, [foodDate]: (d[foodDate] || []).filter(e => e.id !== id) }
-      const all = { ...JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}'), [foodDate]: updated[foodDate] }
-      localStorage.setItem('fitpro_food_diary', JSON.stringify(all))
+      const all = { ...readCache(guest), [foodDate]: updated[foodDate] }
+      writeCache(guest, readOnly, all)
       return updated
     })
   }
@@ -451,8 +477,8 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
     }
     setFoodDiary(d => {
       const updated = { ...d, [foodDate]: moveEntry(d[foodDate], id, meal) }
-      const all = { ...JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}'), [foodDate]: updated[foodDate] }
-      localStorage.setItem('fitpro_food_diary', JSON.stringify(all))
+      const all = { ...readCache(guest), [foodDate]: updated[foodDate] }
+      writeCache(guest, readOnly, all)
       return updated
     })
   }
@@ -476,8 +502,8 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
     }
     setFoodDiary(d => {
       const updated = { ...d, [foodDate]: (d[foodDate] || []).map(e => e.id === editingFoodId ? { ...e, ...editFoodForm, kcal, p, c, f } : e) }
-      const all = { ...JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}'), [foodDate]: updated[foodDate] }
-      localStorage.setItem('fitpro_food_diary', JSON.stringify(all))
+      const all = { ...readCache(guest), [foodDate]: updated[foodDate] }
+      writeCache(guest, readOnly, all)
       return updated
     })
     setEditingFoodId(null)

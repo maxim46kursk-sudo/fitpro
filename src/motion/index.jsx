@@ -28,6 +28,7 @@ import { isCalibrating, subscribeCalibration } from './debug/calibrationMode.js'
 import { openMotion } from './lifecycle.js'
 import { configureLogShipper } from './debug/logShipper.js'
 import { configureSync, hydrate, resetSync, startSync, stopSync } from './sync.js'
+import { useMemoryStorage } from './storage.js'
 import './motion.css'
 
 /**
@@ -66,6 +67,20 @@ import './motion.css'
  *   принимает хозяин.
  */
 export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null, guest = false, onGuestValue = null } = {}) {
+  /**
+   * ГОСТЬ ПИШЕТ В ПАМЯТЬ, А НЕ НА УСТРОЙСТВО — и решается это здесь, раньше
+   * всего остального.
+   *
+   * Раньше всего потому, что день челленджа, попытки и пороги читаются
+   * СИНХРОННО и прямо в ленивых инициализаторах `useState` внутри. Переключи мы
+   * режим эффектом — первый же такой инициализатор успел бы прочитать чужой
+   * прогресс с диска, и гость увидел бы его как свой.
+   *
+   * Вызов идемпотентен (см. storage.js): он лишь сверяет режим, а не заводит
+   * память заново на каждый рендер.
+   */
+  useMemoryStorage(guest)
+
   /**
    * Ключ перезапуска после падения. ErrorBoundary раньше предлагал
    * `location.reload()` — внутри FitPro это перезагрузка ВСЕГО приложения и

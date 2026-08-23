@@ -190,6 +190,61 @@ describe('перенос гостевого дневника питания в �
     for (const r of all) expect(r).toEqual({ moved: 1, failed: 0 })
   })
 
+  /**
+   * НОВАЯ МОДЕЛЬ ГОСТЯ: он не пишет в кэш вовсе. Его работа приезжает одним
+   * буфером, отложенным в момент нажатия «Создать аккаунт».
+   */
+  it('буфер гостя переносится и забирается с диска', async () => {
+    store.set('fitpro_guest_pending', JSON.stringify({
+      workouts: [],
+      food: { '2026-08-24': [{ id: 1, name: 'Овсянка', kcal: 300, p: 10, c: 50, f: 5, meal: 'breakfast' }] },
+    }))
+    const db = fakeSupabase(() => ({ data: { id: 4200 }, error: null }))
+
+    const res = await ensureFoodDiaryMigrated(db, 'user-1')
+
+    expect(res).toEqual({ moved: 1, failed: 0 })
+    expect(db.inserted[0]).toMatchObject({ user_id: 'user-1', date: '2026-08-24', name: 'Овсянка' })
+    // буфер исчез: держать его вторым экземпляром нельзя
+    expect(store.get('fitpro_guest_pending')).toBeUndefined()
+    // а запись легла в обычный кэш уже с облачным id и без маркера
+    const day = getCache()['2026-08-24']
+    expect(day[0]).toMatchObject({ id: 4200, name: 'Овсянка' })
+    expect('local' in day[0]).toBe(false)
+  })
+
+  it('буфер и кэш складываются, а не спорят', async () => {
+    setCache({ '2026-08-20': [cloud(11, 'Курица'), guest('Кефир')] })
+    store.set('fitpro_guest_pending', JSON.stringify({
+      workouts: [],
+      food: { '2026-08-20': [{ id: 2, name: 'Гречка', kcal: 200, p: 6, c: 40, f: 2, meal: null }] },
+    }))
+    let next = 600
+    const db = fakeSupabase(() => ({ data: { id: next++ }, error: null }))
+
+    const res = await ensureFoodDiaryMigrated(db, 'user-1')
+
+    expect(res).toEqual({ moved: 2, failed: 0 })
+    expect(db.inserted.map((r) => r.name).sort()).toEqual(['Гречка', 'Кефир'])
+    // облачная запись как лежала, так и лежит
+    expect(getCache()['2026-08-20'][0]).toEqual(cloud(11, 'Курица'))
+  })
+
+  it('упавшая запись из буфера не поедет дважды: буфер уже отдан в кэш', async () => {
+    store.set('fitpro_guest_pending', JSON.stringify({
+      workouts: [],
+      food: { '2026-08-24': [{ id: 1, name: 'Битая', kcal: 100, p: 1, c: 1, f: 1, meal: null }] },
+    }))
+    const db = fakeSupabase(() => ({ data: null, error: { message: 'нет связи' } }))
+
+    const res = await ensureFoodDiaryMigrated(db, 'user-1')
+
+    expect(res).toEqual({ moved: 0, failed: 1 })
+    // буфера больше нет — запись живёт в кэше с маркером и поедет оттуда
+    expect(store.get('fitpro_guest_pending')).toBeUndefined()
+    expect(getCache()['2026-08-24'][0]).toMatchObject({ name: 'Битая', local: true })
+  })
+
   it('пустой дневник и отсутствие userId — без единого запроса', async () => {
     const db = fakeSupabase(() => ({ data: { id: 1 }, error: null }))
 

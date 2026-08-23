@@ -25,6 +25,7 @@
  * базе ещё нет. Это ровно та потеря, ради исключения которой этап и делается.
  */
 import { bump } from './funnel.js'
+import { dropGuestPendingFood, guestPendingFood } from './guestPending.js'
 
 const CACHE_KEY = 'fitpro_food_diary'
 
@@ -69,7 +70,39 @@ export function ensureFoodDiaryMigrated(supabase, userId) {
 }
 
 async function migrate(supabase, userId) {
+  /**
+   * ДВА ИСТОЧНИКА, И ОБА НАСТОЯЩИЕ.
+   *
+   * `fitpro_food_diary` — кэш вошедшего человека: там могли остаться записи,
+   * сделанные без сети и ещё не доехавшие до базы (маркер `local`).
+   *
+   * `fitpro_guest_pending` — буфер гостя: его работа за вкладку, отложенная в
+   * момент нажатия «Создать аккаунт». Гость в кэш не пишет вовсе, так что
+   * второй источник появился не вместо первого, а рядом с ним.
+   */
+  const изБуфера = guestPendingFood()
   const byDate = readCache()
+  let слито = false
+  for (const [date, list] of Object.entries(изБуфера)) {
+    if (!Array.isArray(list) || !list.length) continue
+    // записи гостя переносятся ВСЕ: они нигде не сохранены по определению,
+    // и маркер `local` им проставляется здесь, а не ждётся от них
+    byDate[date] = [...(byDate[date] ?? []), ...list.map((e) => ({ ...e, local: true }))]
+    слито = true
+  }
+  /**
+   * БУФЕР ОТДАЁТСЯ В КЭШ СРАЗУ, ДО ПЕРВОЙ ВСТАВКИ, и это важно.
+   *
+   * С этой минуты его записи неотличимы от обычных несохранённых и поедут в
+   * базу общим путём. Оставь мы буфер до конца — упавшая вставка лежала бы в
+   * ДВУХ местах разом, и следующий вход отправил бы её в базу дважды: человек
+   * увидел бы съеденное в двойном размере.
+   */
+  if (слито) {
+    writeCache(byDate)
+    dropGuestPendingFood()
+  }
+
   /** [дата, позиция в списке этой даты] для каждой гостевой записи. */
   const pending = []
   for (const [date, list] of Object.entries(byDate)) {

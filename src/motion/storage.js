@@ -103,12 +103,45 @@ export function allKeys() {
 }
 
 /**
+ * ХРАНИЛИЩЕ В ПАМЯТИ — для гостя без аккаунта.
+ *
+ * Гость пробует всё, но следа не оставляет: сохранность обещает аккаунт, и
+ * только он. Прежде его попытки, черновик и снимок незавершённой сессии
+ * ложились в те же ключи, что у участника челленджа, — и на общем телефоне
+ * следующий человек открывал раздел с чужим прогрессом, а сам гость видел
+ * «сохранённое», которое держалось на одном браузере и умирало от очистки кэша.
+ *
+ * ПОДМЕНЯЕТСЯ ОДИН СЛОЙ, И В ЭТОМ ВЕСЬ СМЫСЛ МОДУЛЯ. Девять ключей читаются из
+ * десятка мест, но все — через эти четыре функции. Игра при этом не знает о
+ * подмене ничего: попытки считаются, черновик кладётся, «Продолжить» работает —
+ * ровно до перезагрузки вкладки, и это обещанное поведение, а не отказ.
+ */
+let memory = null
+
+/**
+ * Переключить режим. Идемпотентна: зовётся из тела компонента на каждый
+ * рендер, и создавать новую память на каждый из них значило бы терять данные
+ * между отрисовками.
+ *
+ * @param {boolean} on true — писать в память вкладки, false — на устройство
+ */
+export function useMemoryStorage(on) {
+  const want = !!on
+  if (want === (memory !== null)) return
+  memory = want ? new Map() : null
+}
+
+/** В памяти ли мы сейчас. Нужна тестам и разбору. */
+export const isMemoryStorage = () => memory !== null
+
+/**
  * Сырая строка по ключу.
  *
  * @returns {string|null} null и когда ключа нет, и когда хранилище недоступно —
  *   для читающей стороны это одно и то же: данных нет.
  */
 export function readRaw(key) {
+  if (memory) return memory.has(key) ? memory.get(key) : null
   try {
     return globalThis.localStorage?.getItem(key) ?? null
   } catch {
@@ -123,6 +156,11 @@ export function readRaw(key) {
  *   потерянная запись всюду дешевле упавшей игры.
  */
 export function writeRaw(key, value) {
+  if (memory) {
+    memory.set(key, String(value))
+    // слушателя не зовём: следить не за чем, на сервер гостевое не уезжает
+    return true
+  }
   try {
     globalThis.localStorage?.setItem(key, value)
   } catch {
@@ -160,6 +198,10 @@ export function watchWrites(fn) {
 
 /** Забыть ключ. Молча: нечего чистить — тоже результат. */
 export function remove(key) {
+  if (memory) {
+    memory.delete(key)
+    return
+  }
   try {
     globalThis.localStorage?.removeItem(key)
   } catch {
