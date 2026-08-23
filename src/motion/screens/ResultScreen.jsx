@@ -17,7 +17,7 @@ import { logEvent } from '../debug/logShipper.js'
  * Результат проговаривается вслух, а повторный подход запускается тем же
  * механизмом, что и первый: встал в кадр, дождался отсчёта. Касаний не нужно.
  */
-export default function ResultScreen({ stats, onRestart, onExit, subscribe, guest = false, onGuestValue = null }) {
+export default function ResultScreen({ stats, onRestart, onExit, subscribe, guest = false, onGuestValue = null, onGuestProgress = null }) {
   const {
     reps = 0,
     avgDepth = null,
@@ -48,7 +48,11 @@ export default function ResultScreen({ stats, onRestart, onExit, subscribe, gues
   const day = savedRef.current
   // Человек видит свой счёт — момент ценности. Один раз за экран: ref внутри
   // самого раздела не даст позвать дважды даже при перерисовке.
-  if (guest) onGuestValue?.(score ?? 0)
+  if (guest) {
+    onGuestValue?.(score ?? 0)
+    // и набранное наружу: у гостя оно нигде не сохранено
+    onGuestProgress?.()
+  }
 
   useEffect(() => {
     if (spokenRef.current) return

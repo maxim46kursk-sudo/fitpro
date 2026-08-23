@@ -24,9 +24,9 @@ import { clampNum } from './nutrition.js'
 import FoodDiary from './FoodDiary.jsx'
 import HubCard from './HubCard.jsx'
 import { bump } from './funnel.js'
-import { collectGuestData, resetGuestStore, setGuestWorkouts } from './guestStore.js'
+import { collectGuestData, resetGuestStore, setGuestCustom, setGuestMotion, setGuestWorkouts } from './guestStore.js'
 import { saveGuestPending } from './guestPending.js'
-import { dropGuestPendingWorkouts, guestPendingWorkouts } from './guestPending.js'
+import { dropGuestPendingCustom, dropGuestPendingMotion, dropGuestPendingWorkouts, guestPendingCustom, guestPendingMotion, guestPendingWorkouts } from './guestPending.js'
 
 /**
  * MOTION — ТРЕНИРОВКА С КАМЕРОЙ. Единственная ленивая граница раздела.
@@ -136,7 +136,14 @@ function motionSyncFor(userId) {
   }
 }
 
-function MotionOverlay({ onExit, userId }) {
+/**
+ * @param {boolean} [props.guest] гость без аккаунта
+ * @param {(section: string, score: number) => void} [props.onGuestValue]
+ * @param {(payload: object) => void} [props.onGuestProgress] попытки гостя наружу
+ * @param {object|null} [props.guestMotion] попытки из буфера переезда
+ * @param {() => void} [props.onGuestMotionApplied]
+ */
+function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null }) {
   /**
    * Адаптер собирается ОДИН раз на человека. Новый объект на каждый рендер
    * означал бы новую загрузку прогресса на каждый рендер — то есть заставку,
@@ -184,7 +191,16 @@ function MotionOverlay({ onExit, userId }) {
             Загружаю тренировку…
           </div>
         }>
-        <MotionApp onExit={onExit} log={MOTION_LOG} sync={sync} />
+        <MotionApp
+          onExit={onExit}
+          log={MOTION_LOG}
+          sync={sync}
+          guest={guest}
+          onGuestValue={onGuestValue}
+          onGuestProgress={onGuestProgress}
+          guestMotion={guestMotion}
+          onGuestMotionApplied={onGuestMotionApplied}
+        />
       </Suspense>
     </div>,
     document.body,
@@ -2189,7 +2205,7 @@ const makeDefaultFolderSlots=(folders=FOLDERS,programsMap=PROGRAMS_MAP)=>{
 // приходит отдельно, в accessLevel.
 // accessLevel — уровень пакета: тренировки 4–12 в шаблонах требуют БАЗУ (1),
 // в СТАРТ (0) открыты только первые FREE_SLOTS.
-function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, hasTrainer, coachSubExpired = false, accessLevel = 0, openPlans, exerciseVideos = {}, userRole = 'client', setExerciseVideos, onOpenConstructor, onOpenMotion }) {
+function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, hasTrainer, coachSubExpired = false, accessLevel = 0, openPlans, exerciseVideos = {}, userRole = 'client', setExerciseVideos, onOpenConstructor, onOpenMotion, guest = false }) {
   const { exercises: catalogExercises } = useContext(CatalogContext)
   // Шаблоны программ — из базы (program_templates) с запасным вариантом из кода.
   // folderKeys — КЛЮЧИ (profiles.program, префиксы workouts держатся за них),
@@ -2286,8 +2302,15 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         exercises:slot.exercises.map(({videoUrl,...rest})=>rest)
       }))
     })
+    /**
+     * ГОСТЬ НЕ ПИШЕТ И СЮДА. Правки шаблонов ему недоступны (редактор за
+     * замком), но эффект срабатывает на самой загрузке слотов — то есть просто
+     * от открытия «Тренировок», без единого действия человека. След на диске
+     * от того, что человек ничего не сделал, — ровно то, чего быть не должно.
+     */
+    if(guest)return
     localStorage.setItem('fitpro_slots_meta_v2',JSON.stringify(meta))
-  },[folderSlots,slotsReady])
+  },[folderSlots,slotsReady,guest])
   const [menuOpen,setMenuOpen]=useState(false)
   const [step,setStep]=useState(null)
   // Редактор видео упражнения — тренеру, прямо из шаблонов/активной тренировки.
@@ -10334,6 +10357,13 @@ export default function App() {
   /** Открытое предложение завести аккаунт: {section, score} либо null. */
   const [offer,setOffer]=useState(null)
   /**
+   * Попытки Motion, отложенные гостем до регистрации. Читаются ОДИН раз за
+   * загрузку: применив их, раздел зовёт `onGuestMotionApplied`, буфер пустеет —
+   * и перечитывай мы его на каждый рендер, второе открытие Motion за тот же
+   * вход получило бы уже пустоту вместо того, что применилось.
+   */
+  const [guestMotionPending]=useState(guestPendingMotion)
+  /**
    * Гость — это «человека нет, но флаг стоит».
    *
    * Значение считается здесь, рядом с флагом, а не у роутинга ниже: его читает
@@ -11202,7 +11232,11 @@ export default function App() {
     if(guestMode){setGuestWorkouts(workoutHistory);return}
     localStorage.setItem('fitpro_history',JSON.stringify(workoutHistory))
   },[workoutHistory,guestMode])
-  useEffect(()=>{localStorage.setItem('fitpro_custom_ex',JSON.stringify(customExercises))},[customExercises])
+  /** Свои упражнения гостя — туда же, куда и тренировки: в память вкладки. */
+  useEffect(()=>{
+    if(guestMode){setGuestCustom(customExercises);return}
+    localStorage.setItem('fitpro_custom_ex',JSON.stringify(customExercises))
+  },[customExercises,guestMode])
 
   // Выход — локальное действие, не должно зависеть от сети. Раньше порядок
   // был "await signOut() -> потом чистим кэш": при сетевом сбое signOut()
@@ -11287,6 +11321,20 @@ export default function App() {
     ;(async()=>{
       let local
       try{local=JSON.parse(localStorage.getItem('fitpro_custom_ex')||'[]')}catch{local=[]}
+      /**
+       * Упражнения гостя приезжают буфером — он не пишет в `fitpro_custom_ex`
+       * вовсе. Сливаем их сюда до отбора: дальше они неотличимы от своих же
+       * несинхронизированных и поедут общим путём. Буфер отдаём сразу, до
+       * первой вставки, — иначе упавшая вставка попала бы в базу дважды.
+       */
+      const изБуфераУпр=guestPendingCustom()
+      if(изБуфераУпр.length){
+        // берём только поля упражнения: чужой supabaseId из буфера привязал бы
+        // запись к строке, которой у этого человека нет
+        local=[...local,...изБуфераУпр.map(e=>({n:e.n,m:e.m||'',eq:e.eq||'',custom:true}))]
+        try{localStorage.setItem('fitpro_custom_ex',JSON.stringify(local))}catch{/* приватный режим */}
+        dropGuestPendingCustom()
+      }
       const toMigrate=local.filter(e=>!e.supabaseId)
       for(const e of toMigrate){
         const{data,error}=await supabase.from('custom_exercises').insert({user_id:user.id,name:e.n,muscle_group:e.m||null,equipment:e.eq||null}).select('id').single()
@@ -11658,7 +11706,7 @@ export default function App() {
   const renderMain=()=>(
     <>
       <div data-testid="screen-workouts" style={{ display: nav==='workouts' ? 'block' : 'none' }}>
-        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} hasTrainer={hasCoach} coachSubExpired={coachSubExpired} accessLevel={access.level} openPlans={openPlans} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} onOpenConstructor={openConstructor} onOpenMotion={openMotion} />
+        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} hasTrainer={hasCoach} coachSubExpired={coachSubExpired} accessLevel={access.level} openPlans={openPlans} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} onOpenConstructor={openConstructor} onOpenMotion={openMotion} guest={guestMode} />
       </div>
       {nav!=='workouts'&&renderOther()}
     </>
@@ -11932,7 +11980,17 @@ export default function App() {
           комментарий выше это поведение и описывал — разошлась реализация. */}
       {/* Раздел Motion. Смонтирован только пока открыт: закрытие = размонтирование,
           и только оно гасит камеру (см. MotionOverlay). */}
-      {motionOpen&&<MotionOverlay onExit={closeMotion} userId={user?.id} guest={guestMode} onGuestValue={handleGuestValue} />}
+      {motionOpen&&(
+        <MotionOverlay
+          onExit={closeMotion}
+          userId={user?.id}
+          guest={guestMode}
+          onGuestValue={handleGuestValue}
+          onGuestProgress={setGuestMotion}
+          guestMotion={guestMotionPending}
+          onGuestMotionApplied={dropGuestPendingMotion}
+        />
+      )}
 
       {/*
         ИИ-АССИСТЕНТ ГОСТЮ НЕ МОНТИРУЕТСЯ ВОВСЕ. У него свой платный гейт по

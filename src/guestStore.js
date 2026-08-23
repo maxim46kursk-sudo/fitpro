@@ -22,6 +22,15 @@
 let workouts = []
 /** Дневник питания гостя: {дата: [записи]}. */
 let food = {}
+/** Свои упражнения, заведённые гостем. */
+let custom = []
+/**
+ * Попытки Motion за день 1: `{day, tiers: {уровень: [попытки]}}`.
+ *
+ * Приходят из самого раздела: он живёт в своей папке и про этот модуль не
+ * знает, поэтому отдаёт их наружу колбэком, а складывает сюда хозяин.
+ */
+let motion = null
 
 export function setGuestWorkouts(list) {
   workouts = Array.isArray(list) ? list : []
@@ -39,20 +48,42 @@ export function getGuestFood() {
   return food
 }
 
+export function setGuestCustom(list) {
+  custom = Array.isArray(list) ? list : []
+}
+
+export function getGuestCustom() {
+  return custom
+}
+
+export function setGuestMotion(payload) {
+  motion = payload ?? null
+}
+
+export function getGuestMotion() {
+  return motion
+}
+
+/** Есть ли в попытках Motion хоть одна запись. */
+const hasMotion = (m) =>
+  !!m && Object.values(m.tiers ?? {}).some((list) => Array.isArray(list) && list.length > 0)
+
 /**
  * Что гость наработал за эту вкладку. Пусто — значит переносить нечего и
  * буфер заводить незачем.
  *
- * @returns {{workouts: object[], food: object}|null}
+ * @returns {{workouts: object[], food: object, custom: object[], motion: object|null}|null}
  */
 export function collectGuestData() {
   const hasFood = Object.values(food).some((list) => Array.isArray(list) && list.length > 0)
-  if (!workouts.length && !hasFood) return null
-  return { workouts, food }
+  if (!workouts.length && !hasFood && !custom.length && !hasMotion(motion)) return null
+  return { workouts, food, custom, motion }
 }
 
 /** Забыть всё — при выходе из аккаунта и в тестах. */
 export function resetGuestStore() {
   workouts = []
   food = {}
+  custom = []
+  motion = null
 }

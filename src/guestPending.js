@@ -36,7 +36,7 @@ function read() {
 function write(value) {
   try {
     // не осталось ни одной части — ключу больше незачем лежать на устройстве
-    if (!value || (!value.workouts?.length && !hasFood(value.food))) {
+    if (empty(value)) {
       localStorage.removeItem(KEY)
       return
     }
@@ -49,6 +49,12 @@ function write(value) {
 const hasFood = (food) =>
   !!food && Object.values(food).some((list) => Array.isArray(list) && list.length > 0)
 
+const hasMotion = (motion) =>
+  !!motion && Object.values(motion.tiers ?? {}).some((list) => Array.isArray(list) && list.length > 0)
+
+/** Пусто ли в буфере целиком — по нему решается, жить ли ключу дальше. */
+const empty = (v) => !v || (!v.workouts?.length && !hasFood(v.food) && !v.custom?.length && !hasMotion(v.motion))
+
 /**
  * Отложить работу гостя до регистрации.
  *
@@ -60,9 +66,11 @@ export function saveGuestPending(data) {
   const value = {
     workouts: Array.isArray(data.workouts) ? data.workouts : [],
     food: data.food && typeof data.food === 'object' ? data.food : {},
+    custom: Array.isArray(data.custom) ? data.custom : [],
+    motion: data.motion ?? null,
     at: new Date().toISOString(),
   }
-  if (!value.workouts.length && !hasFood(value.food)) return false
+  if (empty(value)) return false
   try {
     localStorage.setItem(KEY, JSON.stringify(value))
     return true
@@ -105,6 +113,37 @@ export function dropGuestPendingFood() {
   const p = read()
   if (!p) return
   write({ ...p, food: {} })
+}
+
+/** Свои упражнения из буфера. */
+export function guestPendingCustom() {
+  const p = read()
+  return Array.isArray(p?.custom) ? p.custom : []
+}
+
+/** Свои упражнения переехали — забрать их из буфера. */
+export function dropGuestPendingCustom() {
+  const p = read()
+  if (!p) return
+  write({ ...p, custom: [] })
+}
+
+/**
+ * Попытки Motion из буфера. `null` — их там нет.
+ *
+ * Отдаются наружу целиком: применяет их сам раздел (он один знает, как
+ * записывается попытка), а хозяин только передаёт и потом забирает.
+ */
+export function guestPendingMotion() {
+  const p = read()
+  return hasMotion(p?.motion) ? p.motion : null
+}
+
+/** Попытки Motion переехали — забрать их из буфера. */
+export function dropGuestPendingMotion() {
+  const p = read()
+  if (!p) return
+  write({ ...p, motion: null })
 }
 
 /** Забыть буфер целиком — на выходе из аккаунта и в тестах. */

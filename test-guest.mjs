@@ -288,10 +288,20 @@ await open('')
 report('после перезагрузки история пуста — гость начинает с чистого листа',
   await page.evaluate(() => !localStorage.getItem('fitpro_history') && !localStorage.getItem('fitpro_food_diary')))
 report('и содержимого гостя на диске нет ни в одном из его ключей',
-  await page.evaluate(() => ['fitpro_history', 'fitpro_food_diary', 'fitpro_guest_pending']
+  await page.evaluate(() => ['fitpro_history', 'fitpro_food_diary', 'fitpro_guest_pending', 'fitpro_custom_ex', 'fitpro_slots_meta_v2']
     .every((k) => !localStorage.getItem(k))
     && !Object.keys(localStorage).some((k) => k.startsWith('fitpro-motion.'))),
   await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('fitpro')).join(', ')))
+
+/**
+ * СЛЕДА НЕ ДОЛЖНО БЫТЬ И ОТ ПРОСТОГО ОТКРЫТИЯ. `fitpro_slots_meta_v2` писался
+ * не по действию человека, а по самой загрузке слотов — то есть от того, что
+ * гость просто зашёл на «Тренировки» и ничего не сделал.
+ */
+await page.locator('[data-testid="tab-workouts"]').click()
+await page.waitForTimeout(1200)
+report('открытие «Тренировок» само по себе следа не оставляет',
+  await page.evaluate(() => !localStorage.getItem('fitpro_slots_meta_v2')))
 
 // ── 5. ни одной записи в облако за весь прогон ─────────────────────────────
 report('ни одного POST/PATCH/DELETE к пользовательским таблицам',

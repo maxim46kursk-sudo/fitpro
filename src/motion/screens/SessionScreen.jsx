@@ -42,7 +42,7 @@ import { useWakeLock } from '../device/useWakeLock.js'
  *   Задан — продолжаем ТУ ЖЕ попытку с накопленным счётом; не задан — новый
  *   заход с новой попыткой.
  */
-export default function SessionScreen({ subscribe, videoRef = null, tier, day = 1, onExit, guest = false, onGuestValue = null, resume = null, onRestartCamera = null }) {
+export default function SessionScreen({ subscribe, videoRef = null, tier, day = 1, onExit, guest = false, onGuestValue = null, onGuestProgress = null, resume = null, onRestartCamera = null }) {
   /**
    * ЭКРАН НЕ ГАСНЕТ ВСЮ СЕССИЮ, а не только в бою.
    *
@@ -214,6 +214,9 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
      */
     dropSession()
     attemptRef.current = closePending()
+    // попытка закрыта — отдаём набранное наружу: у гостя оно нигде не
+    // сохранено, и буфер переезда собирается именно из этого
+    if (guest) onGuestProgress?.()
     logEvent('session.end', {
       tier: level.id,
       day: plan.current.plan.day,

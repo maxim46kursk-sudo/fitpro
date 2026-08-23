@@ -29,6 +29,8 @@ import { openMotion } from './lifecycle.js'
 import { configureLogShipper } from './debug/logShipper.js'
 import { configureSync, hydrate, resetSync, startSync, stopSync } from './sync.js'
 import { useMemoryStorage } from './storage.js'
+import { attemptsFor, challengeTotal, submitAttempt } from './game/day.js'
+import { progress } from './game/challenge.js'
 import './motion.css'
 
 /**
@@ -65,8 +67,16 @@ import './motion.css'
  *   гостя закончился и он видит свой счёт — момент, ради которого стоит
  *   предложить аккаунт. Зовётся ОДИН раз за открытие раздела; решение о показе
  *   принимает хозяин.
+ * @param {(payload: {day: number, tiers: object}) => void} [props.onGuestProgress]
+ *   попытки гостя за день 1 — после каждой закрытой. Раздел живёт в своей папке
+ *   и про буфер переезда ничего не знает: он лишь отдаёт наружу то, что набрал.
+ * @param {{day: number, tiers: object}|null} [props.guestMotion] попытки,
+ *   отложенные гостем до регистрации. Применяются один раз, при первом входе, и
+ *   только если у аккаунта своего прогресса Motion ещё нет.
+ * @param {() => void} [props.onGuestMotionApplied] применили — хозяин может
+ *   убрать их из буфера.
  */
-export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null, guest = false, onGuestValue = null } = {}) {
+export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null, guest = false, onGuestValue = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null } = {}) {
   /**
    * ГОСТЬ ПИШЕТ В ПАМЯТЬ, А НЕ НА УСТРОЙСТВО — и решается это здесь, раньше
    * всего остального.
@@ -111,6 +121,33 @@ export default function MotionApp({ onExit, day, tier, paused = false, log = nul
 
     hydrate(sync.userId).then(() => {
       if (!alive) return
+      /**
+       * ПОПЫТКИ ГОСТЯ — ПОСЛЕ ЗАГРУЗКИ, НО ДО НАБЛЮДЕНИЯ ЗА ЗАПИСЯМИ.
+       *
+       * После загрузки — иначе мы решали бы «пуст ли аккаунт» по ещё не
+       * прочитанному прогрессу и подмешали бы гостевое поверх настоящего. До
+       * `startSync` — наоборот, чтобы записанное тут же уехало на сервер, а не
+       * осталось лежать на одном устройстве.
+       *
+       * ПОДМЕШИВАЕМ ТОЛЬКО В ЧИСТЫЙ АККАУНТ. Человек, входящий в старый, уже
+       * прошёл сколько-то дней; его челлендж — предмет спора о призах, и
+       * добавлять туда попытки, сыгранные до входа неизвестно кем на этом
+       * телефоне, нельзя. Такие попытки просто отбрасываются.
+       *
+       * `completeDay` не зовётся ни при каких условиях: день сдаётся только
+       * пройденной целиком сессией, и перенос этого смысла не меняет.
+       */
+      if (guestMotion) {
+        const пусто = challengeTotal() === 0 && progress().done.length === 0
+        if (пусто) {
+          for (const [tierId, list] of Object.entries(guestMotion.tiers ?? {})) {
+            for (const attempt of Array.isArray(list) ? list : []) {
+              submitAttempt(tierId, attempt, guestMotion.day ?? 1)
+            }
+          }
+        }
+        onGuestMotionApplied?.()
+      }
       // следить за записями начинаем ПОСЛЕ загрузки: иначе её собственные
       // записи в кэш тут же поехали бы обратно на сервер
       startSync()
@@ -163,6 +200,9 @@ export default function MotionApp({ onExit, day, tier, paused = false, log = nul
         paused={paused}
         guest={guest}
         onGuestValue={onGuestValue}
+        onGuestProgress={onGuestProgress}
+        guestMotion={guestMotion}
+        onGuestMotionApplied={onGuestMotionApplied}
       />
     </ErrorBoundary>
   )
@@ -224,7 +264,7 @@ function readBlockMode() {
   }
 }
 
-function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, guest = false, onGuestValue = null }) {
+function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, guest = false, onGuestValue = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null }) {
   // calibration | setup | levels | room | workout | result
   // выбор уровня и настройка под себя — только в игре
   const [screen, setScreen] = useState('calibration')
@@ -279,6 +319,16 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
    * глядя.
    */
   const offeredRef = useRef(false)
+  /**
+   * ОТДАТЬ НАБРАННОЕ НАРУЖУ. Зовётся после каждой закрытой попытки: гость может
+   * сыграть три захода, а нажать «Создать аккаунт» — не выходя из раздела, и
+   * отчёт только на размонтировании потерял бы всё сыгранное.
+   */
+  const reportGuestProgress = () => {
+    if (!guest) return
+    onGuestProgress?.(attemptsFor(1))
+  }
+
   const offerGuestValue = (score) => {
     if (!guest || offeredRef.current) return
     offeredRef.current = true
@@ -704,6 +754,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
             day={day}
             guest={guest}
             onGuestValue={offerGuestValue}
+            onGuestProgress={reportGuestProgress}
             resume={resume}
             onRestartCamera={restartPipeline}
             onExit={() => {
@@ -743,6 +794,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
           subscribe={subscribe}
           guest={guest}
           onGuestValue={offerGuestValue}
+          onGuestProgress={reportGuestProgress}
           onRestart={() => {
             setRunId((n) => n + 1)
             setStats(null)
