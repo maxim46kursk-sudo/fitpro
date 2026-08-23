@@ -13,6 +13,11 @@ on:
     - cron: "*/10 * * * *"   # аптайм — каждые 10 минут
     - cron: "7 * * * *"      # Motion — раз в час
   workflow_dispatch:         # ручной запуск для теста (проверяет всё)
+    inputs:
+      test_alert:
+        description: "Отправить тестовое сообщение в Telegram"
+        type: boolean
+        default: false
 
 jobs:
   uptime:
@@ -39,6 +44,11 @@ jobs:
             code=$(curl -sS -m 20 -o /dev/null -w '%{http_code}' https://api.fitproapp.ru/auth/v1/health 2>/dev/null) || return 1
             [[ $code != 000 ]] && [[ ! $code =~ ^5 ]]
           }
+
+          if [[ "${{ github.event.inputs.test_alert }}" == "true" ]]; then
+            alert "✅ Тест: сторож FitPro в GitHub Actions подключён, тревоги будут приходить сюда."
+            echo "Тестовое сообщение отправлено"
+          fi
 
           fail=""
           if ! check_site; then sleep 120; check_site || fail+="site"; fi
