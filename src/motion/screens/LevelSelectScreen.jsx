@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { MAX_ATTEMPTS, challengeTotal, daySummary } from '../game/day.js'
+import { MAX_ATTEMPTS, challengeTotal, closePending, daySummary, dropSession, sessionResume } from '../game/day.js'
 import {
   CONTACT_URL,
   DAYS,
   FREE_DAYS,
   advanceDay,
   dayPlayable,
+  dayRuns,
   isChallengeDone,
   isDayDone,
 } from '../game/challenge.js'
@@ -48,6 +49,12 @@ export default function LevelSelectScreen({
    * меняет разом всё — день, попытки, обе суммы.
    */
   const [view, setView] = useState(() => readView(challengeDay))
+  /**
+   * НЕЗАВЕРШЁННАЯ СЕССИЯ этого дня. Снимок берётся при монтировании: пока
+   * человек стоит на экране, начаться она не может, а вернуться он сюда может
+   * только через размонтирование.
+   */
+  const [resume, setResume] = useState(() => sessionResume(challengeDay || undefined))
 
   const day = view.day
   const step = () => {
@@ -99,6 +106,63 @@ export default function LevelSelectScreen({
             ? 'Завершить челлендж'
             : `День ${view.number} сдан — перейти к дню ${view.number + 1}`}
         </button>
+      )}
+      {/**
+        * ЗА СКОЛЬКО ЗАХОДОВ СОБРАН ДЕНЬ. Показывается только когда их больше
+        * одного: «за 1 заход» — это обычный случай, и называть его значит
+        * добавить строку, которая ничего не сообщает.
+        *
+        * Для судейства призов разница существенна, и человек должен видеть то
+        * же, что увидит судья: сюрпризов в споре о деньгах быть не должно.
+        */}
+      {view.number > 0 && view.dayDone && view.runs > 1 && (
+        <div className="mt-levels__runs" data-testid="day-runs">
+          Собран за {view.runs} захода
+        </div>
+      )}
+
+      {/**
+        * НАЧАТАЯ И НЕ ЗАВЕРШЁННАЯ СЕССИЯ — первым делом, до выбора уровня.
+        *
+        * Сессия идёт двадцать минут, и люди выходят из неё на третьем круге:
+        * зазвонил телефон, позвали, кончилось время. До сих пор возвращаться им
+        * было некуда — только начинать заново, тратя вторую попытку на то, что
+        * уже сделано. Отсюда и выбор из двух: продолжить ту же попытку или
+        * закрыть её и начать чистую.
+        */}
+      {resume && view.playable && (
+        <div className="mt-levels__resume" data-testid="session-resume">
+          <div className="mt-levels__resumeTitle">Тренировка начата и не завершена</div>
+          <div className="mt-levels__resumeText">
+            {`Круг ${resume.cycle}, набрано ${resume.totals?.score ?? 0}`}
+          </div>
+          <button
+            type="button"
+            className="mt-levels__resumeGo"
+            data-testid="session-resume-continue"
+            onClick={() => onPick?.(resume.tier, { resume })}
+          >
+            Продолжить со следующего круга
+          </button>
+          <button
+            type="button"
+            className="mt-levels__resumeDrop"
+            data-testid="session-resume-restart"
+            onClick={() => {
+              /**
+               * НАЧАТЬ ЗАНОВО = закрыть прошлый заход честной попыткой. Он
+               * состоялся: человек играл, набирал очки, и растворять его в
+               * новом заходе значило бы потерять его результат вовсе.
+               */
+              closePending()
+              dropSession()
+              setResume(null)
+              setView(readView(challengeDay))
+            }}
+          >
+            Начать заново
+          </button>
+        </div>
       )}
 
       <h1 className="mt-title">{view.playable ? 'Выбери уровень' : '5 дней пройдено!'}</h1>
@@ -234,6 +298,8 @@ function readView(number) {
     day: daySummary(number || 1),
     total: challengeTotal(),
     dayDone: number > 0 && isDayDone(number),
+    /** За сколько заходов собран день. Ноль — ещё не сдан. */
+    runs: number > 0 ? dayRuns(number) : 0,
     challengeDone: isChallengeDone(),
     /** Можно ли сегодня тренироваться, или день за границей бесплатных пяти. */
     playable: number <= 0 || dayPlayable(number),

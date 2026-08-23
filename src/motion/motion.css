@@ -1783,6 +1783,65 @@
  * ещё не наступил, а этот требует действия) и не реагирует на нажатия — чтобы
  * не обещать переход туда, куда перехода нет.
  */
+/*
+ * Незавершённая сессия на выборе уровня. Заметно, но не тревожно: это не
+ * ошибка и не потеря, а приглашение вернуться.
+ */
+/* За сколько заходов собран день — рядом с отметкой о сдаче. */
+.mt-levels__runs {
+  margin: -4px auto 10px;
+  font-size: 11px;
+  color: rgba(220, 232, 255, 0.55);
+  text-align: center;
+}
+
+.mt-levels__resume {
+  margin: 0 auto 14px;
+  max-width: 340px;
+  padding: 12px 14px 14px;
+  border: 1px dashed rgba(159, 240, 255, 0.5);
+  border-radius: 14px;
+  background: rgba(18, 34, 54, 0.55);
+  text-align: center;
+}
+
+.mt-levels__resumeTitle {
+  font-size: 13px;
+  font-weight: 800;
+  color: #eaf3ff;
+}
+
+.mt-levels__resumeText {
+  margin-top: 2px;
+  font-size: 11px;
+  color: rgba(220, 232, 255, 0.65);
+}
+
+.mt-levels__resumeGo {
+  margin-top: 10px;
+  width: 100%;
+  padding: 10px;
+  border: none;
+  border-radius: 10px;
+  background: #9ff0ff;
+  color: #06202c;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.mt-levels__resumeDrop {
+  margin-top: 6px;
+  width: 100%;
+  padding: 7px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: rgba(220, 232, 255, 0.55);
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .mt-room__day.is-locked {
   opacity: 0.5;
   border-style: dashed;

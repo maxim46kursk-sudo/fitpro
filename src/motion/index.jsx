@@ -248,6 +248,13 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
   })
   const [stats, setStats] = useState(null)
   /**
+   * Снимок незавершённой сессии, с которым стартует следующая. Живёт в
+   * состоянии, а не читается сессией самостоятельно: решение продолжать
+   * принимает человек на выборе уровня, и сессия обязана делать то, что ей
+   * сказали, а не то, что она нашла в хранилище.
+   */
+  const [resume, setResume] = useState(null)
+  /**
    * ПРЕДЛОЖЕНИЕ АККАУНТА — ОДИН РАЗ ЗА ОТКРЫТИЕ РАЗДЕЛА.
    *
    * Заход кончается двумя разными путями (итог одиночного раунда и итог полной
@@ -585,8 +592,10 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
           // человек перешёл к следующему дню — сессия обязана собраться по
           // нему, иначе переход был бы обманом
           onAdvance={(next) => setDay(next)}
-          onPick={(id) => {
+          onPick={(id, opts) => {
             setTier(id)
+            // снимок незавершённой сессии: сессия соберётся с него, а не с нуля
+            setResume(opts?.resume ?? null)
             setRunId((n) => n + 1)
             setScreen('workout')
           }}
@@ -628,7 +637,9 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
             day={day}
             guest={guest}
             onGuestValue={offerGuestValue}
+            resume={resume}
             onExit={() => {
+              setResume(null)
               setRunId((n) => n + 1)
               // день мог только что закрыться завершённой сессией — перечитываем
               // прогресс, но заданный снаружи день и отладочный ?day= уважаем:

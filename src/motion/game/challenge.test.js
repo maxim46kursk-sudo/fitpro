@@ -13,6 +13,7 @@ import {
   currentDay,
   dayPlan,
   dayPlayable,
+  dayRuns,
   isChallengeDone,
   isDayDone,
   isUnlocked,
@@ -359,7 +360,24 @@ describe('прогресс участника', () => {
     completeDay(1, new Date('2026-08-18T10:00:00Z'))
     const done = progress().done
     expect(done).toHaveLength(1)
-    expect(done[0]).toEqual({ day: 1, at: '2026-08-18T10:00:00.000Z' })
+    // runs — за сколько заходов собран день; по умолчанию за один
+    expect(done[0]).toEqual({ day: 1, at: '2026-08-18T10:00:00.000Z', runs: 1 })
+  })
+
+  /**
+   * С появлением продолжения незавершённой сессии день стало можно собрать за
+   * несколько заходов. Для судейства призов «прошёл целиком за раз» и
+   * «дособирал третьим заходом» — разные вещи, а по одной дате завершения их
+   * не различить никак.
+   */
+  it('за сколько заходов собран день — запоминается', () => {
+    expect(dayRuns(3)).toBe(0)
+    completeDay(3, new Date('2026-08-18T10:00:00Z'), 2)
+    expect(dayRuns(3)).toBe(2)
+    expect(progress().done.find((r) => r.day === 3).runs).toBe(2)
+    // пересобрал за один заход — запись обновляется целиком
+    completeDay(3, new Date('2026-08-19T10:00:00Z'), 1)
+    expect(dayRuns(3)).toBe(1)
   })
 
   it('тридцатый день плюс переход — челлендж пройден', () => {

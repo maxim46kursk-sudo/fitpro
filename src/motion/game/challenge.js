@@ -223,19 +223,39 @@ export const isDayDone = (day) => read().done.some((row) => row.day === clampDay
  * Повторный проход того же дня переписывает дату: в `done` каждый день ровно
  * один раз, и последняя дата — последний честный проход.
  *
+ * ЗА СКОЛЬКО ЗАХОДОВ СОБРАН ДЕНЬ — третьим полем, и это не украшение. Сессия
+ * идёт двадцать минут, и с появлением продолжения незавершённой её стало можно
+ * собрать за два-три подхода. Для судейства призов разница между «прошёл
+ * целиком за раз» и «дособирал третьим заходом» существенна, а по одной дате
+ * завершения её не восстановить никак.
+ *
+ * Смысл самой функции при этом прежний: она по-прежнему только отмечает факт и
+ * по-прежнему не двигает указатель дня.
+ *
+ * @param {number} day день челленджа
+ * @param {Date} [at] когда собран
+ * @param {number} [runs] за сколько заходов
  * @returns {{day: number, done: object[], dayDone: boolean}}
  */
-export function completeDay(day, at = new Date()) {
+export function completeDay(day, at = new Date(), runs = 1) {
   const state = read()
   const n = clampDay(day)
+  const заходов = Math.max(1, Math.round(Number(runs)) || 1)
   const next = {
     day: state.day,
-    done: [...state.done.filter((row) => row.day !== n), { day: n, at: at.toISOString() }].sort(
-      (a, b) => a.day - b.day,
-    ),
+    done: [
+      ...state.done.filter((row) => row.day !== n),
+      { day: n, at: at.toISOString(), runs: заходов },
+    ].sort((a, b) => a.day - b.day),
   }
   write(next)
   return { ...next, dayDone: true }
+}
+
+/** За сколько заходов собран день. Ноль — день ещё не сдан. */
+export function dayRuns(day) {
+  const row = read().done.find((r) => r.day === clampDay(day))
+  return row ? Math.max(1, Math.round(Number(row.runs)) || 1) : 0
 }
 
 /**

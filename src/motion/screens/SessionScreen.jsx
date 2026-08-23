@@ -16,7 +16,7 @@ import {
 } from '../game/session.js'
 import { cueCountdown, cueTick } from '../feedback/audio.js'
 import { completeDay } from '../game/challenge.js'
-import { closePending, holdAttempt, startAttempt } from '../game/day.js'
+import { closePending, dropSession, holdAttempt, holdSession, startAttempt } from '../game/day.js'
 import { submitScore } from '../game/record.js'
 import { flush, logEvent } from '../debug/logShipper.js'
 import { cleanNote, pushLive, snapshotOf } from '../debug/diagnostics.js'
@@ -37,7 +37,12 @@ import { useWakeLock } from '../device/useWakeLock.js'
  * блоки сменяются ПО ИХ СОБСТВЕННОМУ ЗАВЕРШЕНИЮ, а по часам идут только отдых и
  * отсчёт, где считать нечего.
  */
-export default function SessionScreen({ subscribe, videoRef = null, tier, day = 1, onExit, guest = false, onGuestValue = null }) {
+/**
+ * @param {object} [props.resume] снимок незавершённой сессии (см. game/day.js).
+ *   Задан — продолжаем ТУ ЖЕ попытку с накопленным счётом; не задан — новый
+ *   заход с новой попыткой.
+ */
+export default function SessionScreen({ subscribe, videoRef = null, tier, day = 1, onExit, guest = false, onGuestValue = null, resume = null }) {
   /**
    * ЭКРАН НЕ ГАСНЕТ ВСЮ СЕССИЮ, а не только в бою.
    *
@@ -63,7 +68,22 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
   const plan = useRef(null)
   if (!plan.current || plan.current.plan.day !== day) plan.current = buildDay(day, level)
 
-  const [index, setIndex] = useState(0)
+  /**
+   * ПРОДОЛЖЕНИЕ НАЧИНАЕТСЯ СО СЛЕДУЮЩЕГО КРУГА, а не с того, на котором вышли.
+   * Круг, брошенный на середине, доигранным не считается и переигрывать его
+   * человек не обязан: он уже потратил на него силы, а счёт за него в снимке.
+   *
+   * Индекс ищется по расписанию, а не считается арифметикой: длина круга
+   * зависит от плана дня (разгрузка, восьмой круг на тяжёлых днях), и «плюс
+   * четыре фазы» разошлось бы с расписанием на первом же таком дне.
+   */
+  const startIndexOf = (cycleLeftOn) => {
+    const list = plan.current.phases
+    const target = list.findIndex((p) => p.kind === 'strength' && (p.cycle ?? 0) + 1 === cycleLeftOn + 1)
+    return target >= 0 ? target : 0
+  }
+
+  const [index, setIndex] = useState(() => (resume ? startIndexOf(resume.cycle) : 0))
   /**
    * Остаток берётся у ПЕРВОЙ ФАЗЫ, а не у константы отсчёта: часы заводятся
    * эффектом, то есть после первого кадра, и подставь сюда COUNTDOWN_MS —
@@ -78,7 +98,17 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
   const [paused, setPaused] = useState(false)
   /** Номер захода: меняется на «начать заново» и пересоздаёт всё под собой. */
   const [runId, setRunId] = useState(0)
-  const totals = useRef({ score: 0, strength: [], fights: [], hits: 0, spawned: 0, reactSum: 0, reactCount: 0 })
+  const totals = useRef(
+    resume?.totals
+      ? { score: 0, strength: [], fights: [], hits: 0, spawned: 0, reactSum: 0, reactCount: 0, ...resume.totals }
+      : { score: 0, strength: [], fights: [], hits: 0, spawned: 0, reactSum: 0, reactCount: 0 },
+  )
+  /**
+   * СКОЛЬКО ЗАХОДОВ УШЛО НА ЭТОТ ДЕНЬ. Считается здесь и уезжает в зачёт дня:
+   * для судейства призов «прошёл целиком за раз» и «дособирал третьим заходом»
+   * — разные вещи, а по одной дате завершения их не различить.
+   */
+  const runs = useRef(resume ? Math.max(1, Number(resume.runs) || 1) + 1 : 1)
   const submitted = useRef(false)
   /** Что ответил зачёт дня. Ref, а не состояние: пишется один раз, до отрисовки. */
   const attemptRef = useRef(null)
@@ -98,8 +128,21 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
    */
   const attemptNo = useRef(null)
   if (attemptNo.current == null) {
-    closePending()
-    attemptNo.current = startAttempt(level.id, plan.current.plan.day)
+    if (resume) {
+      /**
+       * ПРОДОЛЖЕНИЕ НЕ ТРАТИТ ПОПЫТКУ. Это тот же заход, просто разорванный
+       * во времени; засчитать за него вторую попытку значило бы наказать
+       * человека за то, что он вышел из двадцатиминутной сессии.
+       *
+       * Черновик при этом НЕ закрывается: он и есть незакрытая попытка этого
+       * захода, и закрыть его сейчас — записать половину сессии как отдельный
+       * результат, а вторую половину как ещё один.
+       */
+      attemptNo.current = Math.max(1, Number(resume.attempt) || 1)
+    } else {
+      closePending()
+      attemptNo.current = startAttempt(level.id, plan.current.plan.day)
+    }
   }
 
   const phases = plan.current.phases
@@ -120,6 +163,13 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
    */
   const holdNow = () => {
     holdAttempt(level.id, attemptStatsOf(totals.current, new Date().toISOString()), plan.current.plan.day)
+    // и позиция — тем же движением: черновик отвечает «что записать, если не
+    // вернётся», снимок — «куда вернуть, если вернётся»
+    holdSession(
+      level.id,
+      { cycle, attempt: attemptNo.current, runs: runs.current, totals: totals.current },
+      plan.current.plan.day,
+    )
   }
 
   /**
@@ -152,7 +202,17 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
      * гость не увидел бы даже собственного результата за только что сыгранный
      * заход.
      */
-    const marked = complete && !guest ? completeDay(plan.current.plan.day) : null
+    const marked = complete && !guest ? completeDay(plan.current.plan.day, new Date(), runs.current) : null
+    /**
+     * ЗАХОД ЗАКОНЧЕН — ПРОДОЛЖАТЬ НЕЧЕГО. Снимок снимается при любом исходе, а
+     * не только при полном прохождении: после выхода кнопкой человек получает
+     * записанную попытку, и предлагать ему вдобавок «продолжить» ту же сессию
+     * значило бы позволить дважды сдать один заход.
+     *
+     * Единственный путь, где снимок ОСТАЁТСЯ, — уход со страницы: там
+     * `closeAttempt` не зовётся вовсе, работает только `holdNow`.
+     */
+    dropSession()
     attemptRef.current = closePending()
     logEvent('session.end', {
       tier: level.id,
@@ -184,6 +244,8 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
     totals.current = { score: 0, strength: [], fights: [], hits: 0, spawned: 0, reactSum: 0, reactCount: 0 }
     submitted.current = false
     attemptRef.current = null
+    // «Начать заново» — это НОВЫЙ заход по этому дню, а не продолжение старого
+    runs.current = 1
     attemptNo.current = startAttempt(level.id, plan.current.plan.day)
     setPaused(false)
     setIndex(0)

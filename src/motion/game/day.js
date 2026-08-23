@@ -61,17 +61,25 @@ const dayKey = (day) => String(Math.max(1, Math.round(Number(day)) || 1))
  * `pending` — НЕЗАКРЫТАЯ ПОПЫТКА. Черновик текущего захода: обновляется по ходу
  * сессии и превращается в настоящую попытку ровно один раз (см. closePending).
  * Про то, зачем он вообще нужен, — там же.
+ *
+ * `resume` — ГДЕ ЧЕЛОВЕК ОСТАНОВИЛСЯ. Черновик отвечает «сколько он успел
+ * набрать», и этого хватало, пока заход был всё-или-ничего. Но сессия идёт
+ * двадцать минут, а люди выходят на третьем круге — и возвращаться им было
+ * некуда: только начинать заново, тратя вторую попытку на то, что уже сделано.
+ * Снимок хранит ПОЗИЦИЮ (день, уровень, номер попытки, круг) и накопленное,
+ * чтобы продолжение было продолжением, а не новым заходом.
  */
 function readAll() {
   // мусор в хранилище или приватный режим — начинаем с чистого листа
   const parsed = readJson(STORAGE_KEY)
   if (!parsed || typeof parsed.days !== 'object' || parsed.days === null) {
-    return { days: {}, started: {}, pending: null }
+    return { days: {}, started: {}, pending: null, resume: null }
   }
   return {
     days: parsed.days,
     started: parsed.started && typeof parsed.started === 'object' ? parsed.started : {},
     pending: parsed.pending && typeof parsed.pending === 'object' ? parsed.pending : null,
+    resume: parsed.resume && typeof parsed.resume === 'object' ? parsed.resume : null,
   }
 }
 
@@ -332,6 +340,73 @@ export function closePending() {
   const st = p.stats ?? {}
   if (!(st.score > 0 || st.reps > 0 || st.spawned > 0)) return null
   return submitAttempt(p.tier, st, p.day)
+}
+
+/* ----------------------------------------- незавершённая сессия */
+
+/**
+ * СНИМОК НЕЗАВЕРШЁННОЙ СЕССИИ.
+ *
+ * Кладётся туда же и тогда же, когда черновик попытки: любой уход со страницы,
+ * выход кнопкой, свёрнутое приложение. Разница между ними ровно в назначении —
+ * черновик отвечает «что записать, если человек не вернётся», снимок отвечает
+ * «куда его вернуть, если вернётся».
+ *
+ * ПУСТОЙ ЗАХОД СНИМКОМ НЕ СТАНОВИТСЯ, и правило то же, что у черновика: открыл,
+ * посмотрел и вышел — не повод показывать ему завтра «у тебя начата сессия» и
+ * предлагать продолжить ничто.
+ *
+ * @param {string} id уровень
+ * @param {object} snapshot {cycle, index, totals, attempt, runs}
+ * @param {number} [day] день челленджа
+ */
+export function holdSession(id, snapshot, day = currentDay()) {
+  const st = snapshot?.totals ?? {}
+  // тот же критерий пустоты, что и у closePending
+  const empty = !(num(st.score) > 0 || num(st.hits) > 0 || num(st.spawned) > 0 || (Array.isArray(st.strength) && st.strength.length > 0))
+  const store = readAll()
+  if (empty) {
+    if (!store.resume) return
+    store.resume = null
+    writeAll(store)
+    return
+  }
+  store.resume = {
+    day: Number(dayKey(day)),
+    tier: tierById(id).id,
+    /** Номер попытки: продолжение обязано идти ТОЙ ЖЕ, иначе поедет трасса. */
+    attempt: Math.max(1, Math.round(Number(snapshot?.attempt)) || 1),
+    /** Круг, на котором человек остановился (1..N). Продолжаем со следующего. */
+    cycle: Math.max(1, Math.round(Number(snapshot?.cycle)) || 1),
+    /** Заходов на этот день уже сделано — попадёт в зачёт дня. */
+    runs: Math.max(1, Math.round(Number(snapshot?.runs)) || 1),
+    totals: snapshot?.totals ?? null,
+    at: new Date().toISOString(),
+  }
+  writeAll(store)
+}
+
+/**
+ * Снимок, если он есть и он про этот день. Чужой день не отдаём: человек мог
+ * бросить пятый день и перейти на шестой, и предлагать ему там продолжить
+ * пятый — значит вернуть его назад по челленджу.
+ */
+export function sessionResume(day = currentDay()) {
+  const r = readAll().resume
+  if (!r) return null
+  if (Number(r.day) !== Number(dayKey(day))) return null
+  return r
+}
+
+/** Есть ли незавершённая сессия на этом дне — для отметки в календаре. */
+export const hasSessionResume = (day = currentDay()) => !!sessionResume(day)
+
+/** Забыть снимок: сессия либо продолжена, либо начата заново, либо дошла до конца. */
+export function dropSession() {
+  const store = readAll()
+  if (!store.resume) return
+  store.resume = null
+  writeAll(store)
 }
 
 /**
