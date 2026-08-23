@@ -277,6 +277,19 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
     setTimeout(() => onGuestValue?.('motion', value), 0)
   }
   const [runId, setRunId] = useState(0)
+
+  /**
+   * ЗАПУСК СЕССИИ — одной функцией на оба входа: выбор уровня и ячейка дня в
+   * комнате. Продолжение незавершённой отличается от нового захода ровно
+   * снимком, и разъедься эти два пути, из комнаты человек попадал бы в сессию с
+   * нуля, теряя накопленное.
+   */
+  const startSession = useCallback((id, opts) => {
+    setTier(id)
+    setResume(opts?.resume ?? null)
+    setRunId((n) => n + 1)
+    setScreen('workout')
+  }, [])
   /**
    * Откуда пришли в комнату — туда и вернёмся. Заходов теперь два: с выбора
    * уровня и с постановки в кадр, и высадить человека не там, откуда он
@@ -569,7 +582,13 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
       )}
 
       {inRoom && (
-        <RoomScreen key={`room-${runId}`} day={day} guest={guest} onExit={() => setScreen(roomBack.current)} />
+        <RoomScreen
+          key={`room-${runId}`}
+          day={day}
+          guest={guest}
+          onResume={startSession}
+          onExit={() => setScreen(roomBack.current)}
+        />
       )}
 
       {!blockingError && !booting && !calibrating && blockMovement && (
@@ -631,13 +650,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
           // человек перешёл к следующему дню — сессия обязана собраться по
           // нему, иначе переход был бы обманом
           onAdvance={(next) => setDay(next)}
-          onPick={(id, opts) => {
-            setTier(id)
-            // снимок незавершённой сессии: сессия соберётся с него, а не с нуля
-            setResume(opts?.resume ?? null)
-            setRunId((n) => n + 1)
-            setScreen('workout')
-          }}
+          onPick={startSession}
           onSetup={() => {
             setRunId((n) => n + 1)
             setScreen('setup')

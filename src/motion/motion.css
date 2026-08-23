@@ -1642,12 +1642,54 @@
  * прокрутка. Тёмная подложка та же, что на отдыхе и финальном листе: смотреть
  * надо на числа, а не на себя в кадре.
  */
+/**
+ * КОМНАТА — ЭКРАН, А НЕ НАДПИСЬ ПОВЕРХ КАМЕРЫ.
+ *
+ * Здесь она и была: полупрозрачная вуаль (`.mt-rest__veil`, 72% чёрного) поверх
+ * живого кадра, а по ней — текст с тенью. На тёмной комнате это читалось, на
+ * светлой стене днём — почти нет: цифры сливались с движущимся фоном, и человек
+ * не мог разобрать собственный счёт за месяц.
+ *
+ * Вуаль тут была уместна на отдыхе, где под ней должен оставаться человек. В
+ * комнате смотреть на себя незачем — смотрят на цифры, — поэтому подложка
+ * плотная, а текст берёт полный контраст вместо теней.
+ *
+ * Цвета — переменными: их тут восемь штук на четыре блока, и разъехаться они
+ * должны все сразу или никак.
+ */
 .mt-screen--room {
+  --mt-room-bg: rgb(7, 11, 20);
+  --mt-room-surface: rgb(16, 22, 36);
+  --mt-room-line: rgb(38, 50, 72);
+  --mt-room-text: rgb(238, 245, 255);
+  --mt-room-dim: rgb(160, 178, 204);
+  --mt-room-accent: rgb(159, 240, 255);
+  --mt-room-good: rgb(120, 230, 190);
+  --mt-room-ink: none;
+
   justify-content: flex-start;
   gap: 14px;
   padding: 46px 16px 24px;
   overflow-y: auto;
   pointer-events: auto;
+  background: var(--mt-room-bg);
+  color: var(--mt-room-text);
+}
+
+/*
+ * Тени подписей комнате больше не нужны: под текстом плотный фон, а не видео.
+ * Гасим их одним правилом, а не вычищая по одному, — правила общие с игровым
+ * экраном, и там тени по-прежнему обязательны.
+ */
+.mt-screen--room .mt-room__total,
+.mt-screen--room .mt-room__totalLabel,
+.mt-screen--room .mt-room__where {
+  text-shadow: none;
+}
+
+/* Вуаль под плотным фоном не нужна и только съедает контраст. */
+.mt-screen--room .mt-rest__veil {
+  display: none;
 }
 
 /**
@@ -1681,14 +1723,13 @@
   font-size: clamp(40px, 13vw, 84px);
   font-weight: 900;
   line-height: 1;
-  color: #eaf3ff;
+  color: var(--mt-room-text);
   font-variant-numeric: tabular-nums;
-  text-shadow: var(--mt-ink), 0 0 24px rgba(90, 190, 255, 0.5);
 }
 
 .mt-room__totalLabel {
   margin-top: 4px;
-  color: #cfe6ff;
+  color: var(--mt-room-dim);
   font-size: clamp(11px, 3.2vw, 15px);
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -1698,7 +1739,7 @@
 
 .mt-room__where {
   margin-top: 8px;
-  color: #9fd0ff;
+  color: var(--mt-room-accent);
   font-size: 14px;
   font-weight: 700;
   text-shadow: var(--mt-ink);
@@ -1714,22 +1755,22 @@
 
 .mt-room__tile {
   padding: 10px 6px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--mt-room-line);
   border-radius: 12px;
-  background: rgba(10, 16, 28, 0.6);
+  background: var(--mt-room-surface);
   text-align: center;
 }
 
 .mt-room__tileValue {
   font-size: clamp(17px, 5vw, 26px);
   font-weight: 900;
-  color: #eaf3ff;
+  color: var(--mt-room-text, rgb(238, 245, 255));
   font-variant-numeric: tabular-nums;
 }
 
 .mt-room__tileLabel {
   margin-top: 2px;
-  color: #9fd0ff;
+  color: var(--mt-room-accent, rgb(159, 240, 255));
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -1738,7 +1779,7 @@
 
 .mt-room__tileHint {
   margin-top: 2px;
-  color: rgba(220, 232, 255, 0.5);
+  color: var(--mt-room-dim, rgb(160, 178, 204));
   font-size: 10px;
 }
 
@@ -1786,10 +1827,10 @@
   justify-content: center;
   min-height: 46px;
   padding: 4px 2px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--mt-room-line, rgb(38, 50, 72));
   border-radius: 10px;
-  background: rgba(10, 16, 28, 0.5);
-  color: rgba(220, 232, 255, 0.7);
+  background: var(--mt-room-surface, rgb(16, 22, 36));
+  color: var(--mt-room-dim, rgb(160, 178, 204));
 }
 
 .mt-room__day.is-done {
@@ -1874,10 +1915,78 @@
   cursor: pointer;
 }
 
+/*
+ * СОСТОЯНИЯ ЯЧЕЙКИ. Раньше их было три и они складывались классами; теперь
+ * состояние одно на ячейку (см. readRoom), и каждое видно с одного взгляда.
+ */
 .mt-room__day.is-locked {
-  opacity: 0.5;
+  opacity: 0.45;
   border-style: dashed;
   pointer-events: none;
+}
+
+/* Начатая и не завершённая — тем же пунктиром, что и плашка выбора: человек
+   должен узнать в ячейке то, что уже видел на экране уровней. */
+.mt-room__day.is-started {
+  border: 1px dashed var(--mt-room-accent, rgb(159, 240, 255));
+  background: rgb(18, 34, 54);
+  color: var(--mt-room-accent, rgb(159, 240, 255));
+}
+
+/* Нажимаемое обязано выглядеть нажимаемым: иначе человек не узнает, что за
+   ячейкой что-то есть, и тридцать дней так и останутся картинкой. */
+.mt-room__day.is-openable {
+  cursor: pointer;
+  font: inherit;
+}
+
+.mt-room__day.is-openable:active {
+  transform: scale(0.96);
+}
+
+.mt-room__day.is-open {
+  outline: 2px solid var(--mt-room-accent, rgb(159, 240, 255));
+  outline-offset: 1px;
+}
+
+/* Сводка открытого дня — под сеткой, тем же столбцом. */
+.mt-room__summary {
+  width: 100%;
+  max-width: 380px;
+  margin: 0 auto;
+  padding: 12px;
+  border: 1px solid var(--mt-room-line, rgb(38, 50, 72));
+  border-radius: 14px;
+  background: var(--mt-room-surface, rgb(16, 22, 36));
+}
+
+.mt-room__summaryHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--mt-room-text, rgb(238, 245, 255));
+}
+
+.mt-room__summaryRuns {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--mt-room-good, rgb(120, 230, 190));
+}
+
+.mt-room__summaryRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+/* Тот же выбор, что на экране уровней, но внутри колонки комнаты. */
+.mt-levels__resume--compact {
+  max-width: 380px;
+  margin-bottom: 0;
 }
 
 .mt-room__dayLock {

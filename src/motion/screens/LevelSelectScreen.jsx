@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { MAX_ATTEMPTS, challengeTotal, closePending, daySummary, dropSession, sessionResume } from '../game/day.js'
+import { MAX_ATTEMPTS, challengeTotal, daySummary, sessionResume } from '../game/day.js'
+import ResumeChoice from '../components/ResumeChoice.jsx'
 import {
   CONTACT_URL,
   DAYS,
@@ -131,38 +132,14 @@ export default function LevelSelectScreen({
         * закрыть её и начать чистую.
         */}
       {resume && view.playable && (
-        <div className="mt-levels__resume" data-testid="session-resume">
-          <div className="mt-levels__resumeTitle">Тренировка начата и не завершена</div>
-          <div className="mt-levels__resumeText">
-            {`Круг ${resume.cycle}, набрано ${resume.totals?.score ?? 0}`}
-          </div>
-          <button
-            type="button"
-            className="mt-levels__resumeGo"
-            data-testid="session-resume-continue"
-            onClick={() => onPick?.(resume.tier, { resume })}
-          >
-            Продолжить со следующего круга
-          </button>
-          <button
-            type="button"
-            className="mt-levels__resumeDrop"
-            data-testid="session-resume-restart"
-            onClick={() => {
-              /**
-               * НАЧАТЬ ЗАНОВО = закрыть прошлый заход честной попыткой. Он
-               * состоялся: человек играл, набирал очки, и растворять его в
-               * новом заходе значило бы потерять его результат вовсе.
-               */
-              closePending()
-              dropSession()
-              setResume(null)
-              setView(readView(challengeDay))
-            }}
-          >
-            Начать заново
-          </button>
-        </div>
+        <ResumeChoice
+          resume={resume}
+          onContinue={(r) => onPick?.(r.tier, { resume: r })}
+          onRestart={() => {
+            setResume(null)
+            setView(readView(challengeDay))
+          }}
+        />
       )}
 
       <h1 className="mt-title">{view.playable ? 'Выбери уровень' : '5 дней пройдено!'}</h1>
