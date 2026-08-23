@@ -7273,7 +7273,22 @@ function LandingPage({ onEnter, isTelegram, accessError }) {
     if(form.password!==form.confirm){setAuthError('Пароли не совпадают');return}
     if(form.password.length<6){setAuthError('Пароль минимум 6 символов');return}
     setAuthBusy(true);setAuthError('')
-    clearFitproData()
+    /**
+     * ЧИСТКА ТОЛЬКО ЧУЖОГО КЭША, А НЕ ВСЕГО ПОДРЯД.
+     *
+     * `fitpro_owner_uid` пишется при входе и означает «на устройстве лежат
+     * данные вот этого аккаунта». Есть он — телефон общий, и перед новым
+     * аккаунтом кэш прошлого надо убрать: ровно ради этого чистка тут и стояла.
+     *
+     * Нет его — данных аккаунта на устройстве не было НИКОГДА, а значит всё,
+     * что там лежит, нагулял гость: сыграл в Motion, провёл тренировку, записал
+     * еду. Стереть это в момент регистрации — отобрать у человека ровно то, за
+     * чем он и пришёл заводить аккаунт. Дальше их подберут переносы: история
+     * тренировок и свои упражнения мигрируют в эффектах на `user?.id`, дневник
+     * питания — `ensureFoodDiaryMigrated` (src/foodDiaryMigrate.js).
+     */
+    const owner=localStorage.getItem('fitpro_owner_uid')
+    if(owner)clearFitproData()
     const{error}=await supabase.auth.signUp({
       email:form.email.trim(),password:form.password,
       options:{data:{name:form.name.trim()}}

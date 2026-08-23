@@ -16,6 +16,7 @@ import { useState, useEffect, useMemo, lazy, Suspense } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from './supabase.js'
 import { resolveLoadOutcome, LOAD_OUTCOME } from './authState.js'
+import { ensureFoodDiaryMigrated } from './foodDiaryMigrate.js'
 import { GlassIcon } from './glassIcons'
 import { Ic } from './icons.jsx'
 import MacroInputs from './MacroInputs.jsx'
@@ -181,6 +182,18 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
     let cancelled = false
     setFoodLoading(true)
     setFoodLoadError(false)
+    ;(async () => {
+    /**
+     * СНАЧАЛА ПЕРЕНОС ГОСТЕВЫХ ЗАПИСЕЙ, ПОТОМ ЧТЕНИЕ ОБЛАКА.
+     *
+     * Этот эффект заканчивается записью ответа сервера в `fitpro_food_diary`.
+     * Приди ответ раньше переноса — он затрёт кэш вместе с гостевыми записями,
+     * которых в базе ещё нет, и человек потеряет всё, что вёл до регистрации.
+     * Барьер общий на все загрузки и мемоизирован по userId, так что четыре
+     * параллельных эффекта переносят один раз (см. foodDiaryMigrate.js).
+     */
+    await ensureFoodDiaryMigrated(supabase, userId)
+    if (cancelled) return
     supabase.from('food_diary').select('*').eq('user_id', userId).order('created_at')
       .then(({ data, error }) => {
         if (cancelled) return
@@ -198,6 +211,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
         if (!readOnly) localStorage.setItem('fitpro_food_diary', JSON.stringify(byDate))
         setFoodLoading(false)
       })
+    })()
     return () => { cancelled = true }
   }, [userId, foodReloadToken, readOnly])
 
@@ -208,6 +222,18 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
       return
     }
     let cancelled = false
+    ;(async () => {
+    /**
+     * СНАЧАЛА ПЕРЕНОС ГОСТЕВЫХ ЗАПИСЕЙ, ПОТОМ ЧТЕНИЕ ОБЛАКА.
+     *
+     * Этот эффект заканчивается записью ответа сервера в `fitpro_food_diary`.
+     * Приди ответ раньше переноса — он затрёт кэш вместе с гостевыми записями,
+     * которых в базе ещё нет, и человек потеряет всё, что вёл до регистрации.
+     * Барьер общий на все загрузки и мемоизирован по userId, так что четыре
+     * параллельных эффекта переносят один раз (см. foodDiaryMigrate.js).
+     */
+    await ensureFoodDiaryMigrated(supabase, userId)
+    if (cancelled) return
     supabase.from('food_diary').select('*').eq('user_id', userId).eq('date', foodDate).order('created_at')
       .then(({ data, error }) => {
         if (cancelled) return
@@ -230,6 +256,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
           return updated
         })
       })
+    })()
     return () => { cancelled = true }
   }, [foodDate, userId, readOnly, foodReloadToken])
 
@@ -241,6 +268,18 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
     const lastDay = new Date(y, m + 1, 0).getDate()
     const monthEnd = `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
     let cancelled = false
+    ;(async () => {
+    /**
+     * СНАЧАЛА ПЕРЕНОС ГОСТЕВЫХ ЗАПИСЕЙ, ПОТОМ ЧТЕНИЕ ОБЛАКА.
+     *
+     * Этот эффект заканчивается записью ответа сервера в `fitpro_food_diary`.
+     * Приди ответ раньше переноса — он затрёт кэш вместе с гостевыми записями,
+     * которых в базе ещё нет, и человек потеряет всё, что вёл до регистрации.
+     * Барьер общий на все загрузки и мемоизирован по userId, так что четыре
+     * параллельных эффекта переносят один раз (см. foodDiaryMigrate.js).
+     */
+    await ensureFoodDiaryMigrated(supabase, userId)
+    if (cancelled) return
     supabase.from('food_diary').select('*').eq('user_id', userId).gte('date', monthStart).lte('date', monthEnd).order('created_at')
       .then(({ data, error }) => {
         if (cancelled) return
@@ -266,6 +305,7 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
           return updated
         })
       })
+    })()
     return () => { cancelled = true }
     // Зависимости — ПОЛЯ loadMonth, а не сам объект: useMemo отдаёт новую
     // ссылку при каждом изменении стека, и эффект перезапрашивал бы месяц на
@@ -290,11 +330,18 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
   }, [userId, readOnly])
 
   useEffect(() => {
-    const handler = () => {
+    const handler = async () => {
       if (!userId) {
         setFoodDiary(JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}'))
         return
       }
+      /**
+       * И здесь тоже — по той же причине, что и в загрузках выше: этот
+       * обработчик пишет ответ сервера в `fitpro_food_diary`, а значит может
+       * затереть ещё не перенесённые гостевые записи. Барьер общий и
+       * мемоизированный, так что лишнего запроса не будет.
+       */
+      await ensureFoodDiaryMigrated(supabase, userId)
       supabase.from('food_diary').select('*').eq('user_id', userId).eq('date', foodDate).order('created_at')
         .then(({ data, error }) => {
           // Перечитывание после записи. Ошибка тут особенно опасна: запись уже
@@ -349,6 +396,18 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
       }).select().single()
       if (error) { console.error('Ошибка записи в дневник питания:', error); flashFoodSaveError(); return }
       entry = { ...entry, id: data.id }
+    } else {
+      /**
+       * МАРКЕР ГОСТЕВОЙ ЗАПИСИ. По нему и только по нему перенос в аккаунт
+       * (src/foodDiaryMigrate.js) отличит «это ещё нигде не сохранено» от
+       * «это кэш того, что уже лежит в базе». Отличать по виду id нельзя:
+       * у гостевой он `Date.now()`, у облачной bigint — оба числа.
+       *
+       * Ставится ПОСЛЕ разбора `src`, а не до: в `src` приезжает готовая
+       * запись от поиска, недавних или сканера, и хозяином этого поля должна
+       * быть ветка, а не входные данные.
+       */
+      entry = { ...entry, local: true }
     }
     setFoodDiary(d => {
       const updated = { ...d, [foodDate]: [...(d[foodDate] || []), entry] }
