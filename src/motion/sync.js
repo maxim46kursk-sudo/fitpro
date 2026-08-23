@@ -127,15 +127,32 @@ export function newerOf(local, remote) {
  * это состояние ОДНОГО устройства, на котором прямо сейчас идёт заход.
  * Приехавший с сервера чужой черновик закрылся бы здесь чужой попыткой.
  */
+/**
+ * ЧТО ПРИШЛО С СЕРВЕРА — НЕ ОБЯЗАНО БЫТЬ ТЕМ, ЧТО МЫ ТУДА КЛАЛИ.
+ *
+ * `payload` в базе — свободный jsonb: его писали прошлые версии раздела, его
+ * может испортить чужой клиент, и однажды испорченный он приезжает КАЖДЫЙ вход.
+ * Слияние на таком спотыкалось (`(list || []).filter is not a function`), а
+ * выброс отсюда до этой правки означал вечную заставку: раздел не открывался
+ * больше никогда, и починить это человек не мог ничем.
+ *
+ * Поэтому не массив — это «попыток нет», а не повод падать. Потерять чужой
+ * мусор не жалко; потерять доступ к разделу — нельзя.
+ */
+const asList = (v) => (Array.isArray(v) ? v : [])
+
 export function mergeAttempts(a, b) {
   const days = {}
   for (const src of [a?.days, b?.days]) {
     for (const [day, tiers] of Object.entries(src || {})) {
       days[day] = days[day] || {}
       for (const [tier, list] of Object.entries(tiers || {})) {
-        const have = days[day][tier] || []
-        const seen = new Set(have.map((x) => `${x.at}|${x.score}`))
-        days[day][tier] = [...have, ...(list || []).filter((x) => !seen.has(`${x.at}|${x.score}`))]
+        const have = asList(days[day][tier])
+        const seen = new Set(have.map((x) => `${x?.at}|${x?.score}`))
+        days[day][tier] = [
+          ...have,
+          ...asList(list).filter((x) => !seen.has(`${x?.at}|${x?.score}`)),
+        ]
       }
     }
   }
@@ -152,7 +169,7 @@ export function mergeAttempts(a, b) {
   for (const [day, tiers] of Object.entries(days)) {
     for (const [tier, list] of Object.entries(tiers)) {
       started[day] = started[day] || {}
-      started[day][tier] = Math.max(Number(started[day][tier]) || 0, list.length)
+      started[day][tier] = Math.max(Number(started[day][tier]) || 0, asList(list).length)
     }
   }
   return { days, started }
@@ -163,7 +180,7 @@ export function attemptRows(attempts) {
   const rows = []
   for (const [day, tiers] of Object.entries(attempts?.days || {})) {
     for (const [tier, list] of Object.entries(tiers || {})) {
-      ;(list || []).forEach((a, i) => {
+      asList(list).forEach((a, i) => {
         rows.push({
           day: Number(day),
           tier,
