@@ -37,7 +37,7 @@ import { useWakeLock } from '../device/useWakeLock.js'
  * блоки сменяются ПО ИХ СОБСТВЕННОМУ ЗАВЕРШЕНИЮ, а по часам идут только отдых и
  * отсчёт, где считать нечего.
  */
-export default function SessionScreen({ subscribe, videoRef = null, tier, day = 1, onExit }) {
+export default function SessionScreen({ subscribe, videoRef = null, tier, day = 1, onExit, guest = false, onGuestValue = null }) {
   /**
    * ЭКРАН НЕ ГАСНЕТ ВСЮ СЕССИЮ, а не только в бою.
    *
@@ -141,7 +141,18 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
     submitted.current = true
     holdNow()
     const record = submitScore(totals.current.score)
-    const marked = complete ? completeDay(plan.current.plan.day) : null
+    /**
+     * ДЕНЬ ЧЕЛЛЕНДЖА ГОСТЮ НЕ ЗАСЧИТЫВАЕТСЯ. За зачётом стоят призы и общий
+     * счёт участников, и вести его на устройстве, которое чистится вместе с
+     * кэшем браузера, нельзя — это спор о деньгах на пустом месте. Сам
+     * `completeDay` не трогаем: он про призы, и менять его смысл ради гостя
+     * значило бы менять правила для всех.
+     *
+     * Попытка при этом записывается как у всех (`closePending` ниже): без неё
+     * гость не увидел бы даже собственного результата за только что сыгранный
+     * заход.
+     */
+    const marked = complete && !guest ? completeDay(plan.current.plan.day) : null
     attemptRef.current = closePending()
     logEvent('session.end', {
       tier: level.id,
@@ -403,6 +414,9 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
      * середине: отличие полного прохождения ровно одно — complete.
      */
     closeAttempt('done', { complete: true })
+    // Человек видит свой счёт — момент, ради которого стоит предложить аккаунт.
+    // Решение о показе принимает хозяин раздела, здесь только факт и счёт.
+    if (guest) onGuestValue?.(totals.current.score)
     return (
       <SessionResult
         result={{

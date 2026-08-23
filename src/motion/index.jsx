@@ -56,8 +56,16 @@ import './motion.css'
  * @param {{userId: string, load: Function, saveProgress: Function, saveAttempts: Function}} [props.sync]
  *   где хранится прогресс. Не задан — прогресс живёт только на устройстве, как
  *   до переезда.
+ * @param {boolean} [props.guest] ГОСТЬ БЕЗ АККАУНТА. Играет всегда первый день,
+ *   и челлендж ему не засчитывается: `completeDay` не зовётся вовсе, `{day,
+ *   done[]}` не двигается. Всё остальное — попытки дня, черновик, рекорды —
+ *   работает как у всех: без них он не смог бы даже доиграть заход.
+ * @param {(section: string, score: number) => void} [props.onGuestValue] заход
+ *   гостя закончился и он видит свой счёт — момент, ради которого стоит
+ *   предложить аккаунт. Зовётся ОДИН раз за открытие раздела; решение о показе
+ *   принимает хозяин.
  */
-export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null } = {}) {
+export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null, guest = false, onGuestValue = null } = {}) {
   /**
    * Ключ перезапуска после падения. ErrorBoundary раньше предлагал
    * `location.reload()` — внутри FitPro это перезагрузка ВСЕГО приложения и
@@ -138,6 +146,8 @@ export default function MotionApp({ onExit, day, tier, paused = false, log = nul
         dayOverride={day}
         tierOverride={tier}
         paused={paused}
+        guest={guest}
+        onGuestValue={onGuestValue}
       />
     </ErrorBoundary>
   )
@@ -199,7 +209,7 @@ function readBlockMode() {
   }
 }
 
-function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync }) {
+function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, guest = false, onGuestValue = null }) {
   // calibration | setup | levels | room | workout | result
   // выбор уровня и настройка под себя — только в игре
   const [screen, setScreen] = useState('calibration')
@@ -226,9 +236,39 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync }
    */
   const [day, setDay] = useState(() => {
     unlockFromUrl()
+    /**
+     * У ГОСТЯ ВСЕГДА ПЕРВЫЙ ДЕНЬ. Челлендж — это тридцать дней подряд с
+     * призами на кону, и продвижение по нему требует аккаунта: без него
+     * прогресс живёт на одном телефоне и стирается очисткой кэша. Первый день
+     * при этом отдан целиком — попробовать надо на настоящей тренировке, а не
+     * на демонстрационной.
+     */
+    if (guest) return 1
     return dayOverride ?? forcedDay() ?? currentDay()
   })
   const [stats, setStats] = useState(null)
+  /**
+   * ПРЕДЛОЖЕНИЕ АККАУНТА — ОДИН РАЗ ЗА ОТКРЫТИЕ РАЗДЕЛА.
+   *
+   * Заход кончается двумя разными путями (итог одиночного раунда и итог полной
+   * сессии), и оба ведут к экрану, где человек видит свой счёт. Оба зовут одно
+   * и то же, а ref не даёт позвать дважды: человек, сыгравший три захода
+   * подряд, получил бы три предложения — то есть помеху, которую закрывают не
+   * глядя.
+   */
+  const offeredRef = useRef(false)
+  const offerGuestValue = (score) => {
+    if (!guest || offeredRef.current) return
+    offeredRef.current = true
+    const value = Math.max(0, Math.round(Number(score) || 0))
+    /**
+     * ОТЛОЖЕННО, а не прямо сейчас. Оба итоговых экрана зовут это в момент
+     * отрисовки — так же, как там уже закрывается попытка. Хозяин в ответ
+     * ставит своё состояние, и синхронный вызов означал бы «меняем чужой
+     * компонент, пока рисуется этот»: React такое ругает по делу.
+     */
+    setTimeout(() => onGuestValue?.('motion', value), 0)
+  }
   const [runId, setRunId] = useState(0)
   /**
    * Откуда пришли в комнату — туда и вернёмся. Заходов теперь два: с выбора
@@ -483,7 +523,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync }
       )}
 
       {inRoom && (
-        <RoomScreen key={`room-${runId}`} day={day} onExit={() => setScreen(roomBack.current)} />
+        <RoomScreen key={`room-${runId}`} day={day} guest={guest} onExit={() => setScreen(roomBack.current)} />
       )}
 
       {!blockingError && !booting && !calibrating && blockMovement && (
@@ -586,12 +626,14 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync }
             videoRef={videoRef}
             tier={tier}
             day={day}
+            guest={guest}
+            onGuestValue={offerGuestValue}
             onExit={() => {
               setRunId((n) => n + 1)
               // день мог только что закрыться завершённой сессией — перечитываем
               // прогресс, но заданный снаружи день и отладочный ?day= уважаем:
               // они показывают то, что попросили, и прогресса не касаются
-              setDay(dayOverride ?? forcedDay() ?? currentDay())
+              if (!guest) setDay(dayOverride ?? forcedDay() ?? currentDay())
               setScreen('levels')
             }}
           />
@@ -619,6 +661,8 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync }
           key={`result-${runId}`}
           stats={stats}
           subscribe={subscribe}
+          guest={guest}
+          onGuestValue={offerGuestValue}
           onRestart={() => {
             setRunId((n) => n + 1)
             setStats(null)

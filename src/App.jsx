@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, createContext, useContext, lazy, Suspense } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, createContext, useContext, lazy, Suspense } from 'react'
 import { createPortal } from 'react-dom'
 import AIAssistant from './AIAssistant'
 import TrainerSession, { TrainerSessionsList } from './TrainerSession.jsx'
@@ -5117,7 +5117,12 @@ const MEAL_ICONS={'Завтрак':'sunrise','Перекус':'food','Обед':
 // вернул бы ту же проблему поиска, только на этаж ниже.
 //
 // FoodDiary и NutritionView переехали как есть, целиком, без правок логики.
-function NutritionTab({ userId }){
+/**
+ * @param {boolean} [props.guest] гостевой режим: дневник живёт на устройстве
+ * @param {(section: string) => void} [props.onGuestValue] позвать в момент,
+ *   когда гость реально что-то записал — предложение решает App
+ */
+function NutritionTab({ userId, guest = false, onGuestValue = null }){
   const [tab,setTab]=useState('diary')
   // Тот же вид, что у переключателей внутри самого дневника (tabBtn в
   // FoodDiary.jsx) — вкладка не должна выглядеть как чужой экран.
@@ -5147,7 +5152,7 @@ function NutritionTab({ userId }){
           размонтирование сбрасывало бы его при каждом переключении — человек
           возвращался бы из «Рационов» не туда, где был. */}
       <div style={{ display: tab==='diary'?'block':'none' }}>
-        <FoodDiary userId={userId} embedded headerLeft={switcher} />
+        <FoodDiary userId={userId} embedded headerLeft={switcher} guest={guest} onGuestValue={onGuestValue} />
       </div>
       {/* У «Рационов» своей шапки нет, поэтому переключатель рисуем над ними. */}
       <div style={{ display: tab==='plans'?'block':'none' }}>
@@ -7263,6 +7268,101 @@ function PasswordInput({ value, onChange, placeholder, onKeyDown }) {
 }
 
 /**
+ * ПРЕДЛОЖЕНИЕ ЗАВЕСТИ АККАУНТ — В МОМЕНТ ЦЕННОСТИ, А НЕ НА ВХОДЕ.
+ *
+ * Вся затея гостевого режима держится на одном порядке: сначала человек получает
+ * что-то своё, потом ему предлагают это сохранить. Поэтому предложение
+ * привязано не к экрану и не к таймеру, а к трём событиям, после которых у
+ * человека РЕАЛЬНО есть что терять: записана тренировка, заполнен дневник,
+ * сыгран заход в Motion.
+ *
+ * ТЕКСТ ГОВОРИТ ПРО ЕГО РЕЗУЛЬТАТ, А НЕ ПРО НАШ ПРОДУКТ. «Тренировка записана
+ * на этом устройстве» — это про то, что он только что сделал, и про риск,
+ * который он ещё не осознал. «Зарегистрируйтесь, чтобы пользоваться всеми
+ * возможностями» — это про нас, и читается как та же анкета на входе.
+ *
+ * «НЕ СЕЙЧАС» ЗАКРЫВАЕТ И НЕ ВОЗВРАЩАЕТСЯ В ТОТ ЖЕ ДЕНЬ. Предложение, всплывшее
+ * второй раз за вечер, перестаёт быть предложением и становится помехой — а
+ * помеху закрывают не глядя, и третий раз она уже не сработает никогда.
+ */
+const OFFER_TEXTS = {
+  workout: {
+    title: 'Тренировка записана на этом устройстве',
+    text: 'Создай бесплатный аккаунт — она сохранится насовсем и будет видна с любого устройства',
+  },
+  diary: {
+    title: 'Дневник ведётся!',
+    text: 'Сохрани его в аккаунте, чтобы не потерять и видеть статистику',
+  },
+  motion: {
+    title: (score) => `Твой счёт ${score} — отличный результат!`,
+    text: 'С таким можно претендовать на победу в челлендже. Создай аккаунт, чтобы сохранить его и участвовать',
+  },
+}
+
+/** Сутки по МЕСТНОМУ времени: человек живёт по своему календарю, а не по UTC. */
+const offerDayKey = (section) => {
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  return `fitpro_offer_${section}_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+/** Показывали ли уже сегодня. Хранилище недоступно — считаем, что нет. */
+function offerShownToday(section) {
+  try { return !!localStorage.getItem(offerDayKey(section)) } catch { return false }
+}
+function markOfferShown(section) {
+  try { localStorage.setItem(offerDayKey(section), '1') } catch { /* приватный режим */ }
+}
+
+function OfferSheet({ section, score, onCreate, onLater }) {
+  const t = OFFER_TEXTS[section]
+  if (!t) return null
+  const title = typeof t.title === 'function' ? t.title(score) : t.title
+  return (
+    <div
+      data-testid="offer-sheet"
+      onClick={onLater}
+      style={{
+        position: 'fixed', inset: 0,
+        /* Выше оверлея Motion (2900): заход кончается ВНУТРИ него, и уводить
+           человека из полноэкранной игры ради предложения — терять момент. */
+        zIndex: 3000,
+        background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: SURF, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 460,
+          padding: '24px 22px 32px', textAlign: 'center',
+        }}>
+        <div style={{ width: 36, height: 4, borderRadius: 2, background: SURF2, margin: '0 auto 18px' }} />
+        <div style={{ fontSize: 19, fontWeight: 800, color: TXT, lineHeight: 1.3, marginBottom: 10 }}>{title}</div>
+        <div style={{ fontSize: 14, color: TXT2, lineHeight: 1.5, marginBottom: 22 }}>{t.text}</div>
+        <button
+          data-testid="offer-create"
+          onClick={onCreate}
+          style={{
+            width: '100%', padding: '14px', borderRadius: 13, border: 'none', cursor: 'pointer',
+            background: `linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color: '#fff', fontSize: 16, fontWeight: 700,
+          }}>
+          Создать аккаунт
+        </button>
+        <button
+          data-testid="offer-later"
+          onClick={onLater}
+          style={{
+            width: '100%', marginTop: 10, padding: '12px', borderRadius: 13,
+            border: 'none', background: 'none', color: TXT3, fontSize: 14, cursor: 'pointer',
+          }}>
+          Не сейчас
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
  * ЗАМОК ГОСТЯ — один на всё приложение.
  *
  * Ставится там, где без аккаунта либо нет смысла (планирование, привязка к
@@ -7299,7 +7399,7 @@ function GuestLock({ onLogin, what }) {
 // см. App). Показывается плашкой в шапке: клиент, которого завёл тренер, попал
 // сюда не по своей воле, и обычная форма входа ему ничего не говорит — у него
 // нет ни пароля, ни почты, только ссылка.
-function LandingPage({ onEnter, isTelegram, accessError, startAtForm = false, onBackToApp = null }) {
+function LandingPage({ onEnter, isTelegram, accessError, startAtForm = false, startTab = 'login', onBackToApp = null }) {
   /**
    * ЗАХОД ЧЕЛОВЕКА — верхняя ступень воронки. Отмечается здесь, а не в App():
    * это единственное место, куда попадает именно ПОСЕТИТЕЛЬ, ещё не вошедший.
@@ -7314,7 +7414,7 @@ function LandingPage({ onEnter, isTelegram, accessError, startAtForm = false, on
    * убедительнее любого текста. Открываемся прямо на форме.
    */
   const [view,setView]=useState(startAtForm?'form':'hero')
-  const [authTab,setAuthTab]=useState('login')
+  const [authTab,setAuthTab]=useState(startTab)
   const [form,setForm]=useState({name:'',email:'',password:'',confirm:''})
   const [mobile,setMobile]=useState(()=>window.innerWidth<640)
   const [authError,setAuthError]=useState('')
@@ -7365,6 +7465,18 @@ function LandingPage({ onEnter, isTelegram, accessError, startAtForm = false, on
     // Нижняя ступень воронки — ПОСЛЕ проверки ошибки: считаем заведённые
     // аккаунты, а не нажатия на кнопку.
     bump('register')
+    /**
+     * ОТКУДА ПРИШЁЛ. Пометку кладёт предложение в момент согласия; если она
+     * есть — человек завёлся не «сам по себе», а после конкретного момента
+     * ценности, и это единственная цифра, по которой видно, работают ли
+     * предложения вообще. Читаем и сразу гасим: один заход — один ответ.
+     */
+    try{
+      if(sessionStorage.getItem('fitpro_offer_src')){
+        bump('register_from_offer')
+        sessionStorage.removeItem('fitpro_offer_src')
+      }
+    }catch{/* приватный режим */}
     // Запись в public.profiles создаётся автоматически триггером on_auth_user_created в Supabase —
     // делать это здесь на клиенте ненадёжно, т.к. сразу после signUp сессии ещё может не быть (email-подтверждение)
     setAuthBusy(false)
@@ -10191,8 +10303,27 @@ export default function App() {
   })
   /** Форма входа поверх приложения — единственный путь гостя к регистрации. */
   const [showAuth,setShowAuth]=useState(false)
+  /**
+   * На какой вкладке открыть форму. Из предложения — сразу на регистрации:
+   * человеку предложили ЗАВЕСТИ аккаунт, и встретить его вкладкой «Вход» значит
+   * заставить сделать лишний шаг ровно в тот момент, когда он согласился.
+   */
+  const [authTabWanted,setAuthTabWanted]=useState('login')
   /** Текст замка гостя; null — замок закрыт. */
   const [guestLockWhat,setGuestLockWhat]=useState(null)
+  /** Открытое предложение завести аккаунт: {section, score} либо null. */
+  const [offer,setOffer]=useState(null)
+  /**
+   * Гость — это «человека нет, но флаг стоит».
+   *
+   * Значение считается здесь, рядом с флагом, а не у роутинга ниже: его читает
+   * `showOffer`, который объявлен выше по файлу, и вычисляй мы его позже —
+   * список зависимостей `useCallback` обращался бы к ещё не созданной константе.
+   * На смысл это не влияет: во всех заходах, где решать «гость или нет» рано
+   * (сессия проверяется, не подтвердилась), роутинг возвращает свой экран
+   * раньше, чем значение кому-нибудь понадобится.
+   */
+  const guestMode = !user && guestFlag
   const [authLoading,setAuthLoading]=useState(true)
   // Сессию не удалось подтвердить из-за временного сбоя (сеть/5xx), при этом
   // токены в localStorage целы. НЕ то же самое, что "пользователь вышел":
@@ -10407,6 +10538,56 @@ export default function App() {
     // В памяти флаг гасит выход из аккаунта (см. performLogout).
     try{localStorage.removeItem('fitpro_guest')}catch{/* приватный режим */}
   },[user])
+
+  /**
+   * ПОКАЗАТЬ ПРЕДЛОЖЕНИЕ. Единственная точка входа, и все проверки здесь:
+   * только гостю, только раз в сутки на раздел, отметка ставится в момент
+   * ПОКАЗА — а не нажатия, иначе закрытое крестиком всплыло бы снова.
+   *
+   * `useCallback` не для оптимизации: функция уезжает пропом в Motion и в
+   * дневник, а новая ссылка на каждый рендер перезапускала бы там эффекты.
+   */
+  const showOffer=useCallback((section,score)=>{
+    if(!guestMode)return false
+    if(offerShownToday(section))return false
+    markOfferShown(section)
+    bump(`offer_shown_${section}`)
+    setOffer({section,score})
+    return true
+  },[guestMode])
+
+  /**
+   * МОМЕНТ ЦЕННОСТИ у гостя: считаем КАЖДЫЙ (человек может записать три
+   * тренировки за неделю, и это три разных момента), а предложение показываем
+   * раз в сутки на раздел. Разные вещи и разные счётчики.
+   */
+  const handleGuestValue=useCallback((section,score)=>{
+    if(!guestMode)return
+    bump(`value_${section}`)
+    showOffer(section,score)
+  },[guestMode,showOffer])
+
+
+  /**
+   * ГОСТЬ ОТКРЫЛ ПРИЛОЖЕНИЕ — верхняя ступень его воронки. Отдельно от `open`:
+   * тот считает всех, кто дошёл до входного экрана, а этот — только тех, кто
+   * попал внутрь без анкеты. Сравнение этих двух чисел и есть ответ на вопрос,
+   * ради которого гостевой режим затевался.
+   */
+  useEffect(()=>{
+    if(guestMode)bump('open_guest')
+  },[guestMode])
+
+  /**
+   * ПОТРОГАЛ РАЗДЕЛ. Раз в сутки на раздел (см. DAILY в src/funnel.js): нас
+   * интересует, дошёл ли человек до сути, а не сколько раз он переключал
+   * вкладки за вечер.
+   */
+  useEffect(()=>{
+    if(!guestMode)return
+    if(nav==='workouts')bump('try_workout')
+    else if(nav==='nutrition')bump('try_diary')
+  },[guestMode,nav])
 
   const [isTelegram,setIsTelegram]=useState(false)
   // Авто-вход внутри Telegram (см. эффект ниже) — пока идёт попытка, вместо
@@ -10774,6 +10955,7 @@ export default function App() {
 
   const openMotion=()=>{
     if(motionOpen)return
+    if(guestMode)bump('try_motion')
     try{
       window.history.pushState({fitproMotion:1},'',window.location.href)
       motionPushedRef.current=true
@@ -11265,6 +11447,13 @@ export default function App() {
     const{ids,error:setsError}=await insertWorkoutSetsRows(withDate,workoutId)
     const ok=!rowError&&!setsError
     if(ok){setWorkoutHistory(h=>h.map(w=>w===withDate?{...w,workoutId,supabaseSetIds:ids}:w));setHistoryVersion(v=>v+1)}
+    /**
+     * МОМЕНТ ЦЕННОСТИ. У гостя `ok` истинно всегда — облака он не касается
+     * (insertWorkoutRow возвращает {id:null,error:null} без владельца), и
+     * тренировка легла ровно туда, где живёт весь его прогресс: на устройство.
+     * Именно про это и предложение — он ещё не знает, чем это ему грозит.
+     */
+    if(guestMode&&ok)handleGuestValue('workout')
     return{ok}
   }
 
@@ -11352,13 +11541,7 @@ export default function App() {
   // на !user — если сессия уже подтверждена, временный сбой рефреша не должен
   // выбрасывать человека из приложения вообще.
   if(!user&&authError) return <ConnectionErrorView onRetry={()=>{setAuthRetrying(true);setAuthRetryToken(t=>t+1)}} retrying={authRetrying} />
-  /**
-   * Гость — это «человека нет, но флаг стоит». Считается ЗДЕСЬ, после всех
-   * проверок выше: пока сессия ещё проверяется или её не удалось подтвердить,
-   * решать «гость или нет» рано — можно высадить в гостевой режим того, у кого
-   * просто отвалилась сеть, и показать ему пустое приложение вместо его данных.
-   */
-  const guestMode = !user && guestFlag
+
   // GlassDefs обязателен и здесь. Он объявляет <linearGradient>, на которые
   // ссылаются ВСЕ GlassIcon; ниже по коду он монтируется в основном layout, но
   // до него дело не доходит — этот return срабатывает раньше. Без определений
@@ -11396,7 +11579,7 @@ export default function App() {
         ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} userId={user?.id} workoutHistory={workoutHistory} />
         : null
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} userId={user?.id} />
-      case 'nutrition': return <NutritionTab userId={user?.id} />
+      case 'nutrition': return <NutritionTab userId={user?.id} guest={guestMode} onGuestValue={handleGuestValue} />
       case 'library':   return <LibraryView customExercises={customExercises} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} workoutHistory={workoutHistory} />
       // Конструктор — только тренеру (этап 1 разморозки, см.
       // docs/CONSTRUCTOR_FROZEN.md). Проверка роли ровно та же, что у
@@ -11513,7 +11696,7 @@ export default function App() {
             ):(
             /* У гостя нет ни имени, ни аватара — на их месте вход. Единственная
                кнопка, которая ведёт из гостевого режима в аккаунт. */
-            <button data-testid="guest-login" onClick={()=>setShowAuth(true)}
+            <button data-testid="guest-login" onClick={()=>{setAuthTabWanted('login');setShowAuth(true)}}
               style={{ padding:'6px 14px', borderRadius:10, border:`1px solid ${SEP}`, background:'transparent', color:TXT, fontSize:13, fontWeight:700, cursor:'pointer', minHeight:'unset' }}>
               Войти
             </button>
@@ -11628,7 +11811,7 @@ export default function App() {
                 </div>
               </div>
               ):(
-              <button data-testid="guest-login" onClick={()=>setShowAuth(true)}
+              <button data-testid="guest-login" onClick={()=>{setAuthTabWanted('login');setShowAuth(true)}}
                 style={{ width:'100%', padding:'9px 12px', borderRadius:10, border:`1px solid ${SEP}`, background:'transparent', color:TXT, fontSize:13, fontWeight:700, cursor:'pointer', minHeight:'unset' }}>
                 Войти
               </button>
@@ -11640,7 +11823,7 @@ export default function App() {
               ))}
             </nav>
             <div style={{ padding:'12px 14px', borderTop:`1px solid ${HAIR}` }}>
-              <button onClick={()=>user?openSettings():setShowAuth(true)}
+              <button onClick={()=>{if(user){openSettings();return}setAuthTabWanted('login');setShowAuth(true)}}
                 style={{ display:'flex',alignItems:'center',gap:7,fontSize:12,color:TXT3,background:'none',border:'none',cursor:'pointer',padding:'4px 0',marginBottom:4,width:'100%' }}>
                 <span>⚙️</span> Настройки
               </button>
@@ -11696,7 +11879,7 @@ export default function App() {
           комментарий выше это поведение и описывал — разошлась реализация. */}
       {/* Раздел Motion. Смонтирован только пока открыт: закрытие = размонтирование,
           и только оно гасит камеру (см. MotionOverlay). */}
-      {motionOpen&&<MotionOverlay onExit={closeMotion} userId={user?.id} />}
+      {motionOpen&&<MotionOverlay onExit={closeMotion} userId={user?.id} guest={guestMode} onGuestValue={handleGuestValue} />}
 
       {/*
         ИИ-АССИСТЕНТ ГОСТЮ НЕ МОНТИРУЕТСЯ ВОВСЕ. У него свой платный гейт по
@@ -11719,11 +11902,38 @@ export default function App() {
       <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} hideButton={workoutFullscreen||trainerSessionActive} extraBottomOffset={workoutMinimized?MINIMIZED_BAR_H:0} accessLevel={access.level} openPlans={openPlans} programLabelOf={programLabelOf} />
       )}
 
+      {/*
+        ПРЕДЛОЖЕНИЕ ЗАВЕСТИ АККАУНТ. Живёт выше оверлея Motion, потому что заход
+        в игру кончается ВНУТРИ него: увести человека из полноэкранной игры и
+        показать предложение после — значит показать его тому, кто уже думает о
+        другом. Разметки Motion при этом не касаемся ни в чём: это отдельный
+        слой поверх, как и всё остальное в этом файле.
+      */}
+      {offer&&(
+        <OfferSheet
+          section={offer.section}
+          score={offer.score}
+          onCreate={()=>{
+            bump(`offer_accepted_${offer.section}`)
+            // Откуда пришёл — переживает уход на форму: по нему считается
+            // register_from_offer, то есть какие именно моменты приводят людей
+            try{sessionStorage.setItem('fitpro_offer_src',offer.section)}catch{/* приватный режим */}
+            setOffer(null)
+            setAuthTabWanted('register')
+            setShowAuth(true)
+          }}
+          onLater={()=>{
+            bump(`offer_closed_${offer.section}`)
+            setOffer(null)
+          }}
+        />
+      )}
+
       {/* Замок гостя как отдельное окно — его открывают кнопки из разных мест. */}
       {guestLockWhat&&(
         <div onClick={()=>setGuestLockWhat(null)} style={{ position:'fixed', inset:0, zIndex:1500, background:'rgba(0,0,0,0.55)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
           <div onClick={e=>e.stopPropagation()} style={{ background:SURF, borderRadius:18, maxWidth:380, width:'100%' }}>
-            <GuestLock what={guestLockWhat===true?undefined:guestLockWhat} onLogin={()=>{setGuestLockWhat(null);setShowAuth(true)}} />
+            <GuestLock what={guestLockWhat===true?undefined:guestLockWhat} onLogin={()=>{setGuestLockWhat(null);setAuthTabWanted('login');setShowAuth(true)}} />
           </div>
         </div>
       )}
@@ -11735,7 +11945,7 @@ export default function App() {
       */}
       {showAuth&&!user&&(
         <div style={{ position:'fixed', inset:0, zIndex:2000, overflowY:'auto', background:BG }}>
-          <LandingPage onEnter={setUser} isTelegram={isTelegram} accessError={accessAuthError} startAtForm onBackToApp={()=>setShowAuth(false)} />
+          <LandingPage onEnter={setUser} isTelegram={isTelegram} accessError={accessAuthError} startAtForm startTab={authTabWanted} onBackToApp={()=>setShowAuth(false)} />
         </div>
       )}
      </TemplatesContext.Provider>

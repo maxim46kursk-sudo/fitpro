@@ -91,7 +91,13 @@ const isoOf = d => {
 const SEARCH_DEBOUNCE_MS = 300
 const SEARCH_MIN_LEN = 2
 
-export default function FoodDiary({ userId, readOnly = false, readOnlyName = '', onClose, embedded = false, headerLeft = null }) {
+/**
+ * @param {boolean} [props.guest] дневник ведёт гость: записи живут на устройстве
+ * @param {(section: string) => void} [props.onGuestValue] зовётся, когда гость
+ *   успешно записал еду — это и есть момент ценности, ради которого предлагают
+ *   завести аккаунт. Решение о показе принимает App, здесь только факт.
+ */
+export default function FoodDiary({ userId, readOnly = false, readOnlyName = '', onClose, embedded = false, headerLeft = null, guest = false, onGuestValue = null }) {
   // ── Состояние дневника (перенесено из DiaryView без изменений)
   // Инициализация из localStorage-кэша — мгновенный показ до ответа сети
   // (полная загрузка из Supabase ниже перезатирает это, как только придёт
@@ -415,6 +421,9 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
       localStorage.setItem('fitpro_food_diary', JSON.stringify(all))
       return updated
     })
+    // Запись легла — момент ценности. Только у гостя: вошедшему предлагать
+    // нечего, у него дневник и так в аккаунте.
+    if (guest) onGuestValue?.('diary')
     if (!external) setFoodForm({ name: '', kcal: '', p: '', c: '', f: '' })
   }
 

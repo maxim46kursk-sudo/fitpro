@@ -21,7 +21,11 @@ import { attemptsFor, challengeTotal, dayTotal } from '../game/day.js'
  * это делится на ноль, и проверять такое надо там, где можно, а не глазами на
  * телефоне единственного участника без истории.
  */
-export default function RoomScreen({ day = 0, onExit }) {
+/**
+ * @param {boolean} [props.guest] гость без аккаунта: у него открыт только
+ *   первый день, остальные показываются замком с подписью «С аккаунтом»
+ */
+export default function RoomScreen({ day = 0, onExit, guest = false }) {
   /**
    * Снимок на монтирование: пока человек стоит в комнате, играть он не может,
    * а значит и меняться числам не с чего.
@@ -97,18 +101,33 @@ export default function RoomScreen({ day = 0, onExit }) {
        * План при этом делает своё молча — интенсивность и замены на месте.
        */}
       <div className="mt-room__days" data-testid="room-days">
-        {room.rows.map((row) => (
-          <div
-            key={row.day}
-            className={['mt-room__day', row.done ? 'is-done' : '', row.current ? 'is-now' : '', row.future ? 'is-future' : '']
-              .filter(Boolean)
-              .join(' ')}
-            data-testid={`room-day-${row.day}`}
-          >
-            <span className="mt-room__dayNum">{row.day}</span>
-            <span className="mt-room__dayScore">{row.total > 0 ? row.total : ''}</span>
-          </div>
-        ))}
+        {room.rows.map((row) => {
+          /**
+           * У ГОСТЯ ОТКРЫТ ТОЛЬКО ПЕРВЫЙ ДЕНЬ. Остальные не прячем: тридцать
+           * дней впереди — это и есть то, ради чего заводят аккаунт, и пустая
+           * сетка сказала бы об этом хуже, чем закрытая. Подпись называет цену
+           * прямо — «С аккаунтом», а не «недоступно»: второе читается как
+           * поломка или как платная стена.
+           */
+          const locked = guest && row.day !== 1
+          return (
+            <div
+              key={row.day}
+              className={['mt-room__day', locked ? 'is-locked' : '', row.done ? 'is-done' : '', row.current ? 'is-now' : '', row.future ? 'is-future' : '']
+                .filter(Boolean)
+                .join(' ')}
+              data-testid={`room-day-${row.day}`}
+              {...(locked ? { 'data-locked': '1', title: 'С аккаунтом' } : {})}
+            >
+              <span className="mt-room__dayNum">{row.day}</span>
+              {locked ? (
+                <span className="mt-room__dayLock">С аккаунтом</span>
+              ) : (
+                <span className="mt-room__dayScore">{row.total > 0 ? row.total : ''}</span>
+              )}
+            </div>
+          )
+        })}
       </div>
 
       <button className="mt-corner mt-corner--left" onClick={onExit} aria-label="Назад">

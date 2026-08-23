@@ -1778,6 +1778,24 @@
   opacity: 1;
 }
 
+/*
+ * Гостевой замок: день закрыт до аккаунта. Гаснет сильнее будущего (тот просто
+ * ещё не наступил, а этот требует действия) и не реагирует на нажатия — чтобы
+ * не обещать переход туда, куда перехода нет.
+ */
+.mt-room__day.is-locked {
+  opacity: 0.5;
+  border-style: dashed;
+  pointer-events: none;
+}
+
+.mt-room__dayLock {
+  font-size: 8px;
+  line-height: 1.1;
+  text-align: center;
+  opacity: 0.85;
+}
+
 .mt-room__dayNum {
   font-size: 13px;
   font-weight: 800;

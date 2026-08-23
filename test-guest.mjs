@@ -138,15 +138,16 @@ await page.locator('[data-back="1"]').first().click().catch(() => {})
 await page.waitForTimeout(700)
 
 // ── 3. тренировка с одним подходом попадает в историю ──────────────────────
-await page.locator('[data-testid="tab-workouts"]').click()
-await page.waitForTimeout(900)
-// Путь человека: папка программы -> занятие -> «Начать тренировку»
-await page.locator('[data-testid="program-folder-Full Body"]').click()
-await page.waitForTimeout(1000)
-await page.locator('[data-testid="program-slot-1"]').click()
-await page.waitForTimeout(1000)
-const startBtn = page.locator('[data-testid="workout-start"]').first()
-if (await startBtn.count()) {
+/** Путь человека целиком: папка -> занятие -> старт -> подход -> сохранить. */
+async function finishOneWorkout() {
+  await page.locator('[data-testid="tab-workouts"]').click()
+  await page.waitForTimeout(900)
+  await page.locator('[data-testid="program-folder-Full Body"]').click()
+  await page.waitForTimeout(1000)
+  await page.locator('[data-testid="program-slot-1"]').click()
+  await page.waitForTimeout(1000)
+  const startBtn = page.locator('[data-testid="workout-start"]').first()
+  if (!(await startBtn.count())) return false
   await startBtn.click()
   await page.waitForTimeout(900)
   // Гость ещё не «принял» программу — приложение спрашивает, как и у всех
@@ -156,24 +157,49 @@ if (await startBtn.count()) {
   const intro = page.getByRole('button', { name: 'Понятно!' })
   if (await intro.count()) { await intro.first().click(); await page.waitForTimeout(600) }
   const kg = page.locator('[data-testid="set-kg"]').first()
-  if (await kg.count()) {
-    await kg.fill('50')
-    await page.locator('[data-testid="set-reps"]').first().fill('10')
-    await page.waitForTimeout(400)
-    // dispatchEvent, а не click: нижний бар тренировки перекрывает кнопку по
-    // координатам, и обычный клик уходит в него. Проверяем поведение, а не
-    // попадание мышью
-    await page.locator('[data-testid="workout-finish"]').dispatchEvent('click')
-    await page.waitForTimeout(900)
-    const confirm = page.locator('[data-testid="workout-save-confirm"]')
-    if (await confirm.count()) await confirm.dispatchEvent('click')
-    await page.waitForTimeout(2000)
-  }
+  if (!(await kg.count())) return false
+  await kg.fill('50')
+  await page.locator('[data-testid="set-reps"]').first().fill('10')
+  await page.waitForTimeout(400)
+  // dispatchEvent, а не click: нижний бар тренировки перекрывает кнопку по
+  // координатам, и обычный клик уходит в него. Проверяем поведение, а не
+  // попадание мышью
+  await page.locator('[data-testid="workout-finish"]').dispatchEvent('click')
+  await page.waitForTimeout(900)
+  const confirm = page.locator('[data-testid="workout-save-confirm"]')
+  if (await confirm.count()) await confirm.dispatchEvent('click')
+  await page.waitForTimeout(2000)
+  return true
 }
+
+await finishOneWorkout()
 const history = await page.evaluate(() => { try { return JSON.parse(localStorage.getItem('fitpro_history') || '[]') } catch { return [] } })
 report('тренировка гостя легла в fitpro_history', history.length >= 1, `записей: ${history.length}`)
 report('у неё нет workoutId — она нигде не сохранена, кроме устройства',
   history.length >= 1 && history[history.length - 1].workoutId == null)
+
+// ── 3б. предложение после тренировки ───────────────────────────────────────
+await page.waitForTimeout(600)
+report('после тренировки всплыло предложение завести аккаунт',
+  await page.locator('[data-testid="offer-sheet"]').count() === 1)
+report('суточный ключ раздела поставлен в момент показа',
+  await page.evaluate(() => Object.keys(localStorage).some(k => k.startsWith('fitpro_offer_workout_'))))
+
+await page.locator('[data-testid="offer-later"]').click()
+await page.waitForTimeout(500)
+report('«Не сейчас» закрывает предложение',
+  await page.locator('[data-testid="offer-sheet"]').count() === 0)
+
+/**
+ * ПОВТОРА В ТЕ ЖЕ СУТКИ БЫТЬ НЕ ДОЛЖНО. Предложение, всплывшее второй раз за
+ * вечер, перестаёт быть предложением: его закрывают не глядя, и третий раз оно
+ * уже не сработает никогда. Прогоняем тот же путь ещё раз целиком.
+ */
+await open('')
+await finishOneWorkout()
+await page.waitForTimeout(800)
+report('второй раз в те же сутки предложение не показывается',
+  await page.locator('[data-testid="offer-sheet"]').count() === 0)
 
 // ── 4. запись в дневнике питания помечена как гостевая ─────────────────────
 // Перезагрузка между этапами: она гасит все всплывшие окна разом и заодно
@@ -181,6 +207,11 @@ report('у неё нет workoutId — она нигде не сохранена
 await open('')
 report('после перезагрузки гость остался гостем',
   await page.locator('[data-testid="guest-login"]').count() === 1)
+// Ключ раздела сбрасываем: прогон идёт в одни сутки, и предложение дневника
+// не должно зависеть от того, показывали ли уже предложение тренировки.
+await page.evaluate(() => {
+  for (const k of Object.keys(localStorage)) if (k.startsWith('fitpro_offer_diary_')) localStorage.removeItem(k)
+})
 await page.locator('[data-testid="tab-nutrition"]').click()
 await page.waitForTimeout(1200)
 const mealAdd = page.locator('[data-testid^="meal-add-"]').first()
@@ -196,6 +227,25 @@ if (await mealAdd.count()) {
     await page.waitForTimeout(1200)
   }
 }
+// ── 4б. предложение после записи еды, и путь «Создать аккаунт» ─────────────
+await page.waitForTimeout(700)
+report('после записи еды всплыло предложение',
+  await page.locator('[data-testid="offer-sheet"]').count() === 1)
+
+if (await page.locator('[data-testid="offer-create"]').count()) {
+  await page.locator('[data-testid="offer-create"]').click()
+  await page.waitForTimeout(1000)
+  report('«Создать аккаунт» открывает форму сразу на вкладке регистрации',
+    await page.getByPlaceholder('Повтори пароль').count() === 1)
+  report('откуда пришёл — запомнено для register_from_offer',
+    await page.evaluate(() => sessionStorage.getItem('fitpro_offer_src')) === 'diary')
+  await page.locator('[data-testid="auth-back-to-app"]').click()
+  await page.waitForTimeout(700)
+} else {
+  report('«Создать аккаунт» открывает форму сразу на вкладке регистрации', false, 'предложение не появилось')
+  report('откуда пришёл — запомнено для register_from_offer', false, 'предложение не появилось')
+}
+
 const diary = await page.evaluate(() => { try { return JSON.parse(localStorage.getItem('fitpro_food_diary') || '{}') } catch { return {} } })
 const entries = Object.values(diary).flat()
 report('запись гостя легла в fitpro_food_diary', entries.length >= 1, `записей: ${entries.length}`)
