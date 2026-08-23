@@ -32,7 +32,7 @@ import {
   updateParticles,
   updateStarfield,
 } from '../game/space.js'
-import { pushLive, rateStats, resetRate } from '../debug/diagnostics.js'
+import { getLive, pushLive, rateStats, resetRate } from '../debug/diagnostics.js'
 import { domCounts, heapMb, noteCounts, noteFrame, noteStage, resetStages, stageReport } from '../debug/stageMeter.js'
 import { createTransitionLog, logEvent } from '../debug/logShipper.js'
 import { TARGETS_LIVE, publishTargets } from '../debug/liveTargets.js'
@@ -40,6 +40,22 @@ import { useWakeLock } from '../device/useWakeLock.js'
 
 /** Если результаты из воркера вообще перестали приходить — тоже пауза. */
 const STALE_RESULT_MS = 1000
+
+/**
+ * СКОЛЬКО ЖДАТЬ, ПРЕЖДЕ ЧЕМ ПРИЗНАТЬ, ЧТО КАМЕРА ВСТАЛА.
+ *
+ * Секунды без результата (STALE_RESULT_MS) — обычное дело: телефон ушёл думать
+ * над кадром, человек заслонил себя рукой. Три секунды — уже не заминка:
+ * распознавание отдаёт десять-двадцать поз в секунду, и три секунды тишины
+ * означают, что кадры не идут вовсе.
+ *
+ * Полевая механика бага, ради которого это писалось: камера встала (звонок,
+ * свёрнутый Safari, перегрев), `stale` стал вечным, а блокер показывал ПОСЛЕДНЮЮ
+ * причину из frameGate — «отойди дальше, не видно стоп». Человек отходил,
+ * отходил ещё, и ничего не менялось: проблема была не в нём, а карточка не
+ * давала ни правды, ни кнопок.
+ */
+const STALE_RECOVER_MS = 3000
 /**
  * Как часто экономный режим вправе отметиться в логе. Порог с гистерезисом всё
  * равно оставляет дрожание на границе, а лог должен показывать, ЧТО телефон не
@@ -337,6 +353,12 @@ export default function GameScreen({
    */
   attempt = 0,
   /**
+   * ПОДНЯТЬ КАМЕРУ ЗАНОВО. Даёт хозяин раздела — тот же переподъём, что стоит
+   * за кнопкой на экране ошибки камеры. Не задан (тесты, отладочные входы) —
+   * кнопка перезапуска не рисуется, остальное работает как есть.
+   */
+  onRestartCamera = null,
+  /**
    * УБРАТЬ УГЛОВОЙ КРЕСТИК. Нужен бою внутри сессии, и по двум причинам сразу.
    *
    * Он лежал поверх блока очков в левом верхнем углу — то есть закрывал собой
@@ -431,6 +453,14 @@ export default function GameScreen({
   const [hud, setHud] = useState(emptyHud)
   const [paused, setPaused] = useState(true)
   const [gotFrame, setGotFrame] = useState(false)
+  /**
+   * КАМЕРА ВСТАЛА — отдельно от «человека не видно», и это главное различие.
+   * Первое чинится нами, второе человеком, и путать их на карточке значит
+   * гонять его по комнате от проблемы, к которой он не имеет отношения.
+   */
+  const [cameraStalled, setCameraStalled] = useState(false)
+  /** Идёт автоматическая попытка поднять камеру. */
+  const [restarting, setRestarting] = useState(false)
   const [hitFlash, setHitFlash] = useState(0)
   /** Что показывает счётчик по ?fps=1: кадры отрисовки и текущий слой. */
   const [meter, setMeter] = useState(null)
@@ -493,6 +523,12 @@ export default function GameScreen({
   const hasFrameRef = useRef(false)
   const reasonRef = useRef(REASON.NO_PERSON)
   const lastResultAtRef = useRef(performance.now())
+  /** Попытка перезапуска за одну остановку — ровно одна, дальше руками. */
+  const restartTriedRef = useRef(false)
+  /** Остановку в журнал пишем один раз, а не каждый кадр. */
+  const stallLoggedRef = useRef(false)
+  const onRestartCameraRef = useRef(onRestartCamera)
+  onRestartCameraRef.current = onRestartCamera
   const finishedRef = useRef(false)
   /**
    * ВРЕМЯ РЕАКЦИИ ЗА БОЙ: сумма и число зачётов, из которых её считать.
@@ -1056,6 +1092,50 @@ export default function GameScreen({
       })
 
       const stale = now - lastResultAtRef.current > STALE_RESULT_MS
+      /**
+       * ДОЛГАЯ остановка — уже не заминка. Считаем её отдельно от `stale`:
+       * секунда тишины бывает у всех, три секунды означают, что кадры не идут.
+       */
+      const silentMs = now - lastResultAtRef.current
+      const dead = hasFrameRef.current && silentMs > STALE_RECOVER_MS
+      setCameraStalled((v) => (v === dead ? v : dead))
+
+      if (dead && !stallLoggedRef.current) {
+        stallLoggedRef.current = true
+        const темп = rateStats()
+        logEvent('camera.stalled', {
+          silentMs: Math.round(silentMs),
+          // чем считали до остановки — по этому в поле отличают «умер воркер»
+          // от «уснула камера»
+          thread: getLive().thread ?? null,
+          delegate: getLive().delegate ?? null,
+          grab: getLive().perf?.grabMode ?? null,
+          poseFps: темп.poseFps,
+          latencyMs: темп.latencyMs,
+          cycle,
+        })
+      }
+
+      /**
+       * ОДНА АВТОМАТИЧЕСКАЯ ПОПЫТКА. Не цикл: перезапуск гасит камеру на
+       * секунду, и повторять его по кругу значило бы держать человека в
+       * бесконечной перезагрузке вместо того, чтобы честно сказать, что не
+       * вышло, и дать кнопку.
+       */
+      if (dead && !restartTriedRef.current && onRestartCameraRef.current) {
+        restartTriedRef.current = true
+        logEvent('camera.restart', { why: 'auto', silentMs: Math.round(silentMs) })
+        setRestarting(true)
+        onRestartCameraRef.current()
+      }
+
+      if (!dead && restartTriedRef.current) {
+        // кадры вернулись — исход попытки в журнал и всё сбрасывается
+        logEvent('camera.restart.ok', { silentMs: Math.round(silentMs) })
+        restartTriedRef.current = false
+        stallLoggedRef.current = false
+        setRestarting(false)
+      }
       dodgeGraceRef.current = torsoOkRef.current && roundRef.current.getState().wallIncoming
       // Пока стена летит, а корпус виден, гейт кадра не останавливает раунд:
       // иначе шаг в сторону сам себя и наказывает — человек уходит к краю,
@@ -1415,10 +1495,71 @@ export default function GameScreen({
       {paused && !blocked && gotFrame && (
         <div className="mt-blocker mt-blocker--hard" data-testid="frame-blocker">
           <div className="mt-blocker__card">
-            <div className="mt-blocker__title">
-              {REASON_TEXT[reasonRef.current] || 'Встань в кадр'}
+            {/**
+              * ДВА РАЗНЫХ СОСТОЯНИЯ, И ПУТАТЬ ИХ НЕЛЬЗЯ.
+              *
+              * «Не видно стоп» — про человека: он вышел из кадра, и вернуть его
+              * может только он сам. «Камера остановилась» — про нас: кадры не
+              * идут вовсе, и человек тут бессилен.
+              *
+              * Раньше показывалась только первая, ПОСЛЕДНЯЯ известная причина
+              * из frameGate. Когда камера вставала, она застывала на экране
+              * навсегда — и человек отходил от телефона, подходил, отходил
+              * снова, потому что игра всё это время говорила ему, что дело в
+              * нём. Причину из frameGate теперь не показываем вовсе, пока
+              * кадры не идут: она устарела ровно в тот момент, когда они
+              * перестали приходить.
+              */}
+            {cameraStalled ? (
+              <>
+                <div className="mt-blocker__title" data-testid="blocker-stalled">
+                  Камера остановилась
+                </div>
+                <div className="mt-blocker__text">
+                  {restarting
+                    ? 'Пробуем поднять её заново…'
+                    : 'Заход на паузе — камера перестала отдавать кадры'}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="mt-blocker__title">
+                  {REASON_TEXT[reasonRef.current] || 'Встань в кадр'}
+                </div>
+                <div className="mt-blocker__text">Полёт на паузе, пока тебя не видно</div>
+              </>
+            )}
+
+            {/**
+              * КНОПКИ БЫЛИ НУЖНЫ КАРТОЧКЕ С САМОГО НАЧАЛА. Без них человек,
+              * у которого встала камера, оказывался заперт: тренировка на
+              * паузе, текст врёт, выйти можно только закрыв вкладку — а вместе
+              * с ней уходил и результат захода.
+              */}
+            <div className="mt-blocker__actions">
+              {cameraStalled && onRestartCamera && (
+                <button
+                  type="button"
+                  className="mt-blocker__btn"
+                  data-testid="blocker-restart"
+                  onClick={() => {
+                    logEvent('camera.restart', { why: 'manual' })
+                    setRestarting(true)
+                    onRestartCamera()
+                  }}
+                >
+                  Перезапустить камеру
+                </button>
+              )}
+              <button
+                type="button"
+                className="mt-blocker__btn mt-blocker__btn--quiet"
+                data-testid="blocker-exit"
+                onClick={cancel}
+              >
+                Выйти из захода
+              </button>
             </div>
-            <div className="mt-blocker__text">Полёт на паузе, пока тебя не видно</div>
           </div>
         </div>
       )}

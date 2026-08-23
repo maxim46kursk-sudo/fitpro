@@ -586,6 +586,38 @@
   color: #b9c2d0;
 }
 
+/*
+ * Кнопки на карточке блокера. Раньше их не было вовсе, и человек с вставшей
+ * камерой оказывался заперт: тренировка на паузе, выйти можно только закрыв
+ * вкладку — а вместе с ней уходил и результат захода.
+ */
+.mt-blocker__actions {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mt-blocker__btn {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 12px;
+  background: #9ff0ff;
+  color: #06202c;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Выход рядом с перезапуском не должен выглядеть равным ему по весу: сперва
+   стоит попробовать поднять камеру, и только потом уходить. */
+.mt-blocker__btn--quiet {
+  background: rgba(255, 255, 255, 0.08);
+  color: #b9c2d0;
+  font-weight: 600;
+}
+
 .mt-blocker__detail {
   margin-top: 10px;
   font-size: 11px;

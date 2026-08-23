@@ -338,10 +338,49 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
   const cameraError = camera.errorCode
   const poseError = pose.status === 'error' ? pose.errorCode : null
   const blockingError = cameraError || poseError
-  // Держим заставку до первого распознанного кадра: иначе экран калибровки
-  // успевает соврать «отойди дальше», пока модель ещё прогревается.
+
+  /**
+   * ЗАСТАВКА НЕ ИМЕЕТ ПРАВА СНЕСТИ ИДУЩИЙ ЗАХОД.
+   *
+   * `booting` гасит все экраны, пока конвейер не поднялся, — и это правильно на
+   * первом старте: экран калибровки иначе успевает соврать «отойди дальше»,
+   * пока модель прогревается.
+   *
+   * Но у перезапуска камеры посреди захода (см. `restartPipeline` ниже) камера
+   * на секунду уходит из `ready`, и по прежнему правилу это размонтировало бы
+   * бой целиком: человек, у которого просто встала камера, терял бы заход
+   * вместо того, чтобы дождаться её возвращения. Поэтому во время тренировки, и
+   * только если конвейер УЖЕ был живым, заставка не показывается: боем в этот
+   * момент управляет его собственный блокер, который честно говорит, что
+   * камера остановилась, и даёт кнопки.
+   *
+   * Настоящая поломка камеры сюда не попадает — она приходит `blockingError`ом
+   * и показывает свой экран, как и раньше.
+   */
+  const wasLiveRef = useRef(false)
+  if (!blockingError && camera.status === 'ready' && pose.status === 'ready' && pose.warm) {
+    wasLiveRef.current = true
+  }
   const booting =
-    !blockingError && (camera.status !== 'ready' || pose.status !== 'ready' || !pose.warm)
+    !blockingError &&
+    (camera.status !== 'ready' || pose.status !== 'ready' || !pose.warm) &&
+    !(wasLiveRef.current && screen === 'workout')
+
+  /**
+   * ПОДНЯТЬ КОНВЕЙЕР ЗАНОВО — одной кнопкой и одним способом.
+   *
+   * Переподъём уже умеет `useCamera`: он заново спрашивает getUserMedia и
+   * отдаёт свежий поток. Насос кадров при этом перезапускается сам —
+   * `usePoseLandmarker` держит его на `active: camera.status === 'ready'`, и
+   * уход камеры из `ready` снимает старый цикл, а возврат заводит новый.
+   *
+   * Движок распознавания НЕ пересобираем. Его собственный сторож уже вытаскивает
+   * потерянный ответ воркера (STALL_TIMEOUT_MS), а полная пересборка стоит
+   * секунд и выбросила бы прогрев — ради случая, который сторож и так закрывает.
+   */
+  const restartPipeline = useCallback(() => {
+    camera.retry()
+  }, [camera.retry])
 
   /**
    * ОТКРЫТИЕ РАЗДЕЛА — раньше всего остального.
@@ -638,6 +677,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
             guest={guest}
             onGuestValue={offerGuestValue}
             resume={resume}
+            onRestartCamera={restartPipeline}
             onExit={() => {
               setResume(null)
               setRunId((n) => n + 1)
@@ -659,6 +699,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
           tier={tier}
           videoRef={videoRef}
           blocked={landscapeBlocked}
+          onRestartCamera={restartPipeline}
           onFinish={(result) => {
             setStats(result)
             setScreen('result')

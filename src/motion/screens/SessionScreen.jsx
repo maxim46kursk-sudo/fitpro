@@ -42,7 +42,7 @@ import { useWakeLock } from '../device/useWakeLock.js'
  *   Задан — продолжаем ТУ ЖЕ попытку с накопленным счётом; не задан — новый
  *   заход с новой попыткой.
  */
-export default function SessionScreen({ subscribe, videoRef = null, tier, day = 1, onExit, guest = false, onGuestValue = null, resume = null }) {
+export default function SessionScreen({ subscribe, videoRef = null, tier, day = 1, onExit, guest = false, onGuestValue = null, resume = null, onRestartCamera = null }) {
   /**
    * ЭКРАН НЕ ГАСНЕТ ВСЮ СЕССИЮ, а не только в бою.
    *
@@ -593,6 +593,7 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
         // номер захода: вместе с днём, уровнем и уже переданным номером круга
         // он и составляет сид трассы (см. attemptSeed)
         attempt={attemptNo.current}
+        onRestartCamera={onRestartCamera}
         onFinish={finishFight}
         onCancel={exitSession}
       />
