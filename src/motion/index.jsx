@@ -76,7 +76,7 @@ import './motion.css'
  * @param {() => void} [props.onGuestMotionApplied] применили — хозяин может
  *   убрать их из буфера.
  */
-export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null, guest = false, onGuestValue = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null } = {}) {
+export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null } = {}) {
   /**
    * ГОСТЬ ПИШЕТ В ПАМЯТЬ, А НЕ НА УСТРОЙСТВО — и решается это здесь, раньше
    * всего остального.
@@ -238,6 +238,7 @@ export default function MotionApp({ onExit, day, tier, paused = false, log = nul
         paused={paused}
         guest={guest}
         onGuestValue={onGuestValue}
+        onGuestOffer={onGuestOffer}
         onGuestProgress={onGuestProgress}
         guestMotion={guestMotion}
         onGuestMotionApplied={onGuestMotionApplied}
@@ -302,7 +303,7 @@ function readBlockMode() {
   }
 }
 
-function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, guest = false, onGuestValue = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null }) {
+function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null }) {
   // calibration | setup | levels | room | workout | result
   // выбор уровня и настройка под себя — только в игре
   const [screen, setScreen] = useState('calibration')
@@ -750,6 +751,20 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
           key={`levels-${runId}`}
           challengeDay={day}
           challengeDays={DAYS}
+          /**
+           * УЧАСТНИК ЧЕЛЛЕНДЖА — тот, чьи заходы вообще идут в зачёт. Граница
+           * проходит по аккаунту: у вошедшего человека попытка записывается,
+           * день сдаётся и сумма растёт, у гостя не происходит ничего из
+           * этого — его результат живёт в памяти вкладки и до челленджа
+           * доберётся только вместе с регистрацией.
+           *
+           * Поэтому гостю не показываются ни счётчик попыток, ни правило трёх:
+           * это правила зачёта, а он вне зачёта. Ограничивать его игру нечем —
+           * и незачем: сам зачёт от этого не меняется, лимит по-прежнему
+           * применяется при записи (`submitAttempt`), в том числе когда
+           * сыгранное переезжает в новый аккаунт.
+           */
+          challengeMember={!guest}
           // человек перешёл к следующему дню — сессия обязана собраться по
           // нему, иначе переход был бы обманом
           onAdvance={(next) => setDay(next)}
@@ -792,6 +807,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
             day={day}
             guest={guest}
             onGuestValue={offerGuestValue}
+            onGuestOffer={onGuestOffer}
             onGuestProgress={reportGuestProgress}
             resume={resume}
             onRestartCamera={restartPipeline}
@@ -987,9 +1003,6 @@ function BootOverlay({ cameraReady, modelReady, progress, onRoom }) {
             <div className="mt-boot-bar__fill" style={{ width: `${pct}%` }} />
           </div>
         )}
-        <div className="mt-blocker__detail">
-          При первом запуске качается ~8 МБ, потом берётся из кэша
-        </div>
         {/* Восемь мегабайт — это долго на плохой сети, а комната готова сразу:
             она читает хранилище, и ждать модель ей незачем */}
         {onRoom && (

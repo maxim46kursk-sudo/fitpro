@@ -18,7 +18,7 @@ import { tierById } from '../game/levels.js'
 import { cueCountdown, cueStart, cueTick } from '../feedback/audio.js'
 import { getLive } from '../debug/diagnostics.js'
 import { flush, logEvent } from '../debug/logShipper.js'
-import { closePending, holdAttempt, startAttempt } from '../game/day.js'
+import { closePending, dropPending, dropSession, holdAttempt, startAttempt } from '../game/day.js'
 import { completeDay } from '../game/challenge.js'
 
 /**
@@ -42,6 +42,8 @@ vi.mock('../game/day.js', async (importOriginal) => ({
   startAttempt: vi.fn(() => 4),
   holdAttempt: vi.fn(),
   closePending: vi.fn(() => ({ recorded: true, attempt: 4, attemptsLeft: 0, score: 1, best: 1, isBest: false, day: 1, dayTotal: 1, challengeTotal: 1 })),
+  dropPending: vi.fn(),
+  dropSession: vi.fn(),
 }))
 vi.mock('../game/challenge.js', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -560,7 +562,7 @@ describe('меню тренировки', () => {
     expect(screen.getByTestId('rest-screen')).toBeTruthy()
   })
 
-  it('выйти зовёт наружу — к выбору уровня', () => {
+  it('выйти сперва спрашивает, а не выходит молча', () => {
     const onExit = vi.fn()
     render(<SessionScreen subscribe={noopSubscribe} tier="pro" onExit={onExit} />)
     act(() => {
@@ -569,7 +571,48 @@ describe('меню тренировки', () => {
     act(() => {
       screen.getByTestId('menu-exit').click()
     })
+
+    expect(screen.getByTestId('exit-choice')).toBeTruthy()
+    // самого выхода ещё не было: человек только открыл вопрос
+    expect(onExit).not.toHaveBeenCalled()
+
+    act(() => {
+      screen.getByTestId('exit-save').click()
+    })
     expect(onExit).toHaveBeenCalled()
+  })
+
+  it('«отмена» в вопросе о выходе возвращает в тренировку', () => {
+    const onExit = vi.fn()
+    render(<SessionScreen subscribe={noopSubscribe} tier="pro" onExit={onExit} />)
+    act(() => { screen.getByTestId('session-menu-button').click() })
+    act(() => { screen.getByTestId('menu-exit').click() })
+    act(() => { screen.getByTestId('exit-cancel').click() })
+
+    expect(screen.queryByTestId('exit-choice')).toBeNull()
+    expect(onExit).not.toHaveBeenCalled()
+    // тренировка осталась на паузе — вопрос её ставил, и снимать её молча нельзя
+    expect(screen.getByTestId('session-paused')).toBeTruthy()
+  })
+
+  /**
+   * Экран паузы отправлял человека «открыть меню» — то есть искать кнопку с
+   * тремя точками в углу, стоя в двух метрах от телефона. Оба решения, которые
+   * он здесь принимает, обязаны быть кнопками.
+   */
+  it('на паузе есть свои кнопки: продолжить и выйти', () => {
+    render(<SessionScreen subscribe={noopSubscribe} tier="pro" />)
+    act(() => { screen.getByTestId('session-menu-button').click() })
+    act(() => { screen.getByTestId('menu-close').click() })
+
+    expect(screen.getByTestId('session-paused')).toBeTruthy()
+    act(() => { screen.getByTestId('paused-resume').click() })
+    expect(screen.queryByTestId('session-paused')).toBeNull()
+
+    act(() => { screen.getByTestId('session-menu-button').click() })
+    act(() => { screen.getByTestId('menu-close').click() })
+    act(() => { screen.getByTestId('paused-exit').click() })
+    expect(screen.getByTestId('exit-choice')).toBeTruthy()
   })
 
   it('начать заново возвращает к первому отсчёту', () => {
@@ -772,7 +815,7 @@ describe('заход закрывается попыткой при любом �
     expect(startAttempt.mock.calls[0][0]).toBe('pro')
   })
 
-  it('выход через меню закрывает попытку, но день не сдаёт', () => {
+  it('«сохранить и выйти» закрывает попытку, но день не сдаёт', () => {
     const onExit = vi.fn()
     открыть({ onExit })
     act(() => {
@@ -781,11 +824,51 @@ describe('заход закрывается попыткой при любом �
     act(() => {
       screen.getByTestId('menu-exit').click()
     })
+    act(() => {
+      screen.getByTestId('exit-save').click()
+    })
 
     expect(closePending).toHaveBeenCalledTimes(1)
     // ГЛАВНОЕ: день не пройден, значит и не сдан
     expect(completeDay).not.toHaveBeenCalled()
     expect(onExit).toHaveBeenCalled()
+  })
+
+  /**
+   * ВЫХОД БЕЗ СОХРАНЕНИЯ. Человек, взявший слишком высокий уровень, сжигал на
+   * нём одну из трёх попыток дня и узнавал об этом уже на выборе уровня.
+   */
+  it('«выйти без сохранения» стирает черновик и не пишет попытку', () => {
+    const onExit = vi.fn()
+    открыть({ onExit })
+    act(() => { screen.getByTestId('session-menu-button').click() })
+    act(() => { screen.getByTestId('menu-exit').click() })
+    act(() => { screen.getByTestId('exit-discard').click() })
+
+    expect(dropPending).toHaveBeenCalledTimes(1)
+    expect(closePending).not.toHaveBeenCalled()
+    expect(completeDay).not.toHaveBeenCalled()
+    // продолжать нечего: снимок снят вместе с черновиком
+    expect(dropSession).toHaveBeenCalled()
+    expect(onExit).toHaveBeenCalled()
+  })
+
+  /**
+   * Черновик не должен вернуться через заднюю дверь: слушатели ухода со
+   * страницы зовут holdAttempt, и выброшенный заход воскрес бы при следующем
+   * открытии раздела как незакрытая попытка.
+   */
+  it('после выхода без сохранения уход со страницы ничего не кладёт', () => {
+    открыть()
+    act(() => { screen.getByTestId('session-menu-button').click() })
+    act(() => { screen.getByTestId('menu-exit').click() })
+    act(() => { screen.getByTestId('exit-discard').click() })
+    holdAttempt.mockClear()
+
+    act(() => { window.dispatchEvent(new Event('pagehide')) })
+
+    expect(holdAttempt).not.toHaveBeenCalled()
+    expect(closePending).not.toHaveBeenCalled()
   })
 
   it('уход со страницы кладёт ЧЕРНОВИК, а не попытку', () => {
@@ -820,6 +903,7 @@ describe('заход закрывается попыткой при любом �
     открыть({ onExit })
     act(() => { screen.getByTestId('session-menu-button').click() })
     act(() => { screen.getByTestId('menu-exit').click() })
+    act(() => { screen.getByTestId('exit-save').click() })
     act(() => { window.dispatchEvent(new Event('pagehide')) })
 
     expect(closePending).toHaveBeenCalledTimes(1)

@@ -211,3 +211,66 @@ describe('суммы и правила на экране', () => {
     expect(note).toContain('Перешёл к следующему дню — прошлый закрыт')
   })
 })
+
+/**
+ * ПОПЫТКИ — ЭТО ПРАВИЛО ЗАЧЁТА, И ГОВОРИТЬ О НЁМ НАДО ТОЛЬКО ТЕМ, КОГО ОНО
+ * КАСАЕТСЯ.
+ *
+ * Гость играет вне зачёта: его заход не сдаёт день и не растит сумму
+ * челленджа, пока нет аккаунта. Счётчик «попытка 2 из 3» обещал бы ему
+ * ограничение, которого нет, а погасший уровень был бы прямым запретом играть
+ * там, где запрещать нечего.
+ *
+ * САМ ЗАЧЁТ ПРИ ЭТОМ НЕ МЕНЯЕТСЯ. Лимит трёх попыток по-прежнему стоит на
+ * записи (`submitAttempt`) — в том числе когда сыгранное гостем переезжает в
+ * новый аккаунт. Меняется только то, что человеку показывают.
+ */
+describe('счётчик попыток виден участнику челленджа, и только ему', () => {
+  it('участнику — попытки и правило трёх на месте', () => {
+    render(<LevelSelectScreen challengeDay={1} challengeMember />)
+
+    expect(document.querySelector('.mt-level__attempts').textContent).toContain('попытка 1 из 3')
+    expect(document.querySelector('.mt-levels__note')).toBeTruthy()
+  })
+
+  it('вне челленджа — ни счётчика, ни правила, ни слова «попытки»', () => {
+    render(<LevelSelectScreen challengeDay={1} challengeMember={false} />)
+
+    expect(document.querySelector('.mt-level__attempts')).toBeNull()
+    expect(document.querySelector('.mt-levels__note')).toBeNull()
+    expect(document.body.textContent).not.toContain('попыт')
+  })
+
+  it('лучший результат вне челленджа показывается по-прежнему', () => {
+    submitAttempt('pro', { score: 700 }, 1)
+    render(<LevelSelectScreen challengeDay={1} challengeMember={false} />)
+
+    const pro = screen.getByTestId('level-pro')
+    expect(pro.querySelector('.mt-level__best').textContent).toContain('лучший 700')
+  })
+
+  it('участнику три сыгранные попытки гасят уровень', () => {
+    for (let i = 0; i < 3; i += 1) submitAttempt('pro', { score: 100 + i }, 1)
+    render(<LevelSelectScreen challengeDay={1} challengeMember />)
+
+    const pro = screen.getByTestId('level-pro')
+    expect(pro.disabled).toBe(true)
+    expect(pro.querySelector('.mt-level__attempts').textContent).toContain('попытки кончились')
+  })
+
+  /** Главное в этом наборе: играть дальше вне зачёта никто не мешает. */
+  it('ВНЕ ЧЕЛЛЕНДЖА уровень не гаснет и после трёх — играть можно дальше', () => {
+    for (let i = 0; i < 3; i += 1) submitAttempt('pro', { score: 100 + i }, 1)
+    const onPick = vi.fn()
+    render(<LevelSelectScreen challengeDay={1} challengeMember={false} onPick={onPick} />)
+
+    expect(screen.getByTestId('level-pro').disabled).toBe(false)
+    act(() => screen.getByTestId('level-pro').click())
+    expect(onPick).toHaveBeenCalledWith('pro')
+  })
+
+  it('по умолчанию экран считает человека участником — прежнее поведение', () => {
+    render(<LevelSelectScreen challengeDay={1} />)
+    expect(document.querySelector('.mt-level__attempts')).toBeTruthy()
+  })
+})

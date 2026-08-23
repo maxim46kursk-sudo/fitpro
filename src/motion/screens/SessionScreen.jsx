@@ -3,6 +3,7 @@ import GameScreen from './GameScreen.jsx'
 import StrengthBlock from './StrengthBlock.jsx'
 import RestScreen from './RestScreen.jsx'
 import SessionResult from './SessionResult.jsx'
+import ExitChoice from '../components/ExitChoice.jsx'
 import SessionMenu from '../components/SessionMenu.jsx'
 import { obstaclePointsFor, tierById } from '../game/levels.js'
 import {
@@ -16,7 +17,7 @@ import {
 } from '../game/session.js'
 import { cueCountdown, cueTick } from '../feedback/audio.js'
 import { completeDay } from '../game/challenge.js'
-import { closePending, dropSession, holdAttempt, holdSession, startAttempt } from '../game/day.js'
+import { closePending, dropPending, dropSession, holdAttempt, holdSession, startAttempt } from '../game/day.js'
 import { submitScore } from '../game/record.js'
 import { flush, logEvent } from '../debug/logShipper.js'
 import { cleanNote, pushLive, snapshotOf } from '../debug/diagnostics.js'
@@ -42,7 +43,7 @@ import { useWakeLock } from '../device/useWakeLock.js'
  *   Задан — продолжаем ТУ ЖЕ попытку с накопленным счётом; не задан — новый
  *   заход с новой попыткой.
  */
-export default function SessionScreen({ subscribe, videoRef = null, tier, day = 1, onExit, guest = false, onGuestValue = null, onGuestProgress = null, resume = null, onRestartCamera = null }) {
+export default function SessionScreen({ subscribe, videoRef = null, tier, day = 1, onExit, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, resume = null, onRestartCamera = null }) {
   /**
    * ЭКРАН НЕ ГАСНЕТ ВСЮ СЕССИЮ, а не только в бою.
    *
@@ -96,6 +97,8 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
    * паузы человеку не припишется и не потеряется.
    */
   const [paused, setPaused] = useState(false)
+  /** Открыт ли вопрос «сохранить или нет» — единственная дверь наружу. */
+  const [exiting, setExiting] = useState(false)
   /** Номер захода: меняется на «начать заново» и пересоздаёт всё под собой. */
   const [runId, setRunId] = useState(0)
   const totals = useRef(
@@ -286,6 +289,60 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
   }
 
   /**
+   * ВЫЙТИ, НИЧЕГО НЕ ЗАПИСАВ. Зеркало `exitSession` и ровно его противоположность:
+   * там черновик становится попыткой, здесь — стирается.
+   *
+   * `submitted` взводится первым делом. Без него черновик вернулся бы через
+   * заднюю дверь: слушатели ухода со страницы зовут `holdNow`, и заход,
+   * выброшенный человеком, воскрес бы при следующем открытии раздела как
+   * незакрытая попытка.
+   *
+   * Снимок сессии снимается тем же движением: продолжать нечего, а предложить
+   * «продолжить» выброшенный заход значило бы вернуть его вопреки решению.
+   */
+  const discardSession = () => {
+    if (submitted.current) return
+    submitted.current = true
+    dropPending()
+    dropSession()
+    logEvent('session.discard', {
+      tier: level.id,
+      day: plan.current.plan.day,
+      cycle,
+      // что именно человек отказался записывать — по этому видно, бросают ли
+      // заходы пустыми (взял не тот уровень) или уже набранными
+      score: totals.current.score,
+      guest,
+    })
+    onExit?.()
+  }
+
+  /**
+   * ГОСТЬ ВЫБРАЛ АККАУНТ. Заход закрывается ОБЫЧНЫМ путём — тем же, что у
+   * всех: только став попыткой, он попадёт в память раздела, оттуда в буфер
+   * переезда и уже с ним в аккаунт. Форму открывает хозяин, он же считает
+   * согласие.
+   */
+  const saveByRegistering = () => {
+    exitSession()
+    onGuestOffer?.('accepted')
+  }
+
+  /**
+   * СПРОСИТЬ ПЕРЕД ВЫХОДОМ. Пауза ставится вместе с вопросом: человек в этот
+   * момент стоит у телефона и читает, а не тренируется, — и списывать ему
+   * время и мишени за чтение нельзя.
+   */
+  const askExit = () => {
+    if (exiting) return
+    setPaused(true)
+    setExiting(true)
+    // Гостю этот вопрос — предложение завести аккаунт, и считается он так же,
+    // как остальные предложения сохранить.
+    if (guest) onGuestOffer?.('shown')
+  }
+
+  /**
    * ЖАЛОБА ЧЕЛОВЕКА — тот же снимок состояния, что и в журнале отклонений.
    *
    * Ценность жалобы не в словах (их всё равно не напишут в спортзале), а в
@@ -324,7 +381,7 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
       onPause={() => setPaused(true)}
       onResume={() => setPaused(false)}
       onRestart={restart}
-      onExit={exitSession}
+      onExit={askExit}
       onReport={reportProblem}
     />
   )
@@ -490,7 +547,14 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
           hitPoints: obstaclePointsFor(level.id),
           day: plan.current.plan.day,
           days: 30,
-          attempt: attemptRef.current,
+          /**
+           * ВЕРДИКТ ЗАЧЁТА — только тому, у кого зачёт есть. Гостю строка
+           * «попытка 2 из 3» обещала бы ограничение, которого для него нет, а
+           * на четвёртом заходе он прочёл бы «попытки кончились» — и это было
+           * бы прямой неправдой: играть ему никто не мешает, просто его
+           * результат никуда не идёт, пока нет аккаунта.
+           */
+          attempt: guest ? null : attemptRef.current,
         }}
         onExit={exitSession}
         onRestart={restart}
@@ -508,13 +572,60 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
    * Проверка стоит ВЫШЕ всех фаз и ниже финала: на финальном листе паузе делать
    * нечего, тренировка уже кончилась.
    */
+  /**
+   * ВОПРОС О ВЫХОДЕ ПЕРЕКРЫВАЕТ ВСЁ, включая паузу: пока человек его читает,
+   * никакая фаза не должна оставаться на экране и получать кадры. Ниже финала
+   * он не нужен — там заход уже закрыт, и спрашивать не о чем.
+   */
+  if (exiting) {
+    return (
+      <>
+        <div className="mt-screen mt-screen--game mt-paused" data-testid="session-paused">
+          <div className="mt-rest__veil" aria-hidden="true" />
+        </div>
+        <ExitChoice
+          guest={guest}
+          onSave={guest ? saveByRegistering : exitSession}
+          onDiscard={() => {
+            if (guest) onGuestOffer?.('closed')
+            discardSession()
+          }}
+          onCancel={() => setExiting(false)}
+        />
+      </>
+    )
+  }
+
   if (paused) {
     return (
       <>
         <div className="mt-screen mt-screen--game mt-paused" data-testid="session-paused">
           <div className="mt-rest__veil" aria-hidden="true" />
           <div className="mt-paused__title">ПАУЗА</div>
-          <div className="mt-paused__text">Тренировка ждёт — открой меню и продолжи</div>
+          {/**
+            * КНОПКИ, А НЕ ОТСЫЛКА К МЕНЮ. Экран говорил «открой меню и
+            * продолжи» — то есть отправлял человека искать кнопку с тремя
+            * точками в углу, стоя в двух метрах от телефона. Оба решения,
+            * которые он здесь принимает, теперь названы прямо.
+            */}
+          <div className="mt-paused__actions">
+            <button
+              type="button"
+              className="mt-menu__item mt-menu__item--main"
+              onClick={() => setPaused(false)}
+              data-testid="paused-resume"
+            >
+              Продолжить
+            </button>
+            <button
+              type="button"
+              className="mt-menu__item"
+              onClick={askExit}
+              data-testid="paused-exit"
+            >
+              Выйти
+            </button>
+          </div>
         </div>
         {menu}
       </>
@@ -598,7 +709,7 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
         attempt={attemptNo.current}
         onRestartCamera={onRestartCamera}
         onFinish={finishFight}
-        onCancel={exitSession}
+        onCancel={askExit}
       />
       {menu}
     </>

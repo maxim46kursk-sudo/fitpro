@@ -143,7 +143,7 @@ function motionSyncFor(userId) {
  * @param {object|null} [props.guestMotion] попытки из буфера переезда
  * @param {() => void} [props.onGuestMotionApplied]
  */
-function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null }) {
+function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null }) {
   /**
    * Адаптер собирается ОДИН раз на человека. Новый объект на каждый рендер
    * означал бы новую загрузку прогресса на каждый рендер — то есть заставку,
@@ -197,6 +197,7 @@ function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onG
           sync={sync}
           guest={guest}
           onGuestValue={onGuestValue}
+          onGuestOffer={onGuestOffer}
           onGuestProgress={onGuestProgress}
           guestMotion={guestMotion}
           onGuestMotionApplied={onGuestMotionApplied}
@@ -7349,7 +7350,7 @@ const OFFER_TEXTS = {
  * того как человек куда-либо нажал, — но занижать слой ради этого не стоит:
  * правило «плашки поверх всего» проще одного исключения.
  */
-function WelcomeSheet({ onPlans, onClose }) {
+function WelcomeSheet({ onClose }) {
   return (
     <div
       data-testid="welcome-sheet"
@@ -7369,23 +7370,21 @@ function WelcomeSheet({ onPlans, onClose }) {
         <div style={{ fontSize: 14, color: TXT2, lineHeight: 1.5, marginBottom: 22 }}>
           Тренировки, питание и фитнес-игра с камерой. Пробуй всё — бесплатно и без регистрации
         </div>
-        <button
-          data-testid="welcome-plans"
-          onClick={onPlans}
-          style={{
-            width: '100%', padding: '14px', borderRadius: 13, border: 'none', cursor: 'pointer',
-            background: `linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color: '#fff', fontSize: 16, fontWeight: 700,
-          }}>
-          Смотреть цены
-        </button>
+        {/*
+          ОДНА КНОПКА, И ОНА НЕ ПРО ДЕНЬГИ. Цены здесь стояли и были убраны по
+          полевому прогону: человек, который ещё ничего не попробовал, не может
+          оценить пакет, и предложение купить на первом экране читается как
+          та же анкета, от которой уходили. Тарифы никуда не делись — они в
+          Настройках, и приходят к ним, когда упрутся в платное.
+        */}
         <button
           data-testid="welcome-close"
           onClick={onClose}
           style={{
-            width: '100%', marginTop: 10, padding: '12px', borderRadius: 13,
-            border: 'none', background: 'none', color: TXT3, fontSize: 14, cursor: 'pointer',
+            width: '100%', padding: '14px', borderRadius: 13, border: 'none', cursor: 'pointer',
+            background: `linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color: '#fff', fontSize: 16, fontWeight: 700,
           }}>
-          Понятно
+          Начать
         </button>
       </div>
     </div>
@@ -10724,6 +10723,28 @@ export default function App() {
 
 
   /**
+   * ВЫХОД ГОСТЯ ИЗ ЗАХОДА MOTION — то же предложение сохранить, но своим окном.
+   *
+   * Окно рисует сам раздел (человек в этот момент в полноэкранной игре, и
+   * подменять ему экран чужой плашкой посреди решения «выходить или нет»
+   * значит сбивать с толку), а считается оно как остальные предложения: те же
+   * три события и тот же путь на форму с пометкой источника.
+   *
+   * Задвоения с итоговым экраном нет по устройству: окно выхода появляется
+   * только когда человек прерывает заход, а итоговый — только когда заход
+   * дошёл до конца. Одновременно они не встречаются.
+   */
+  const handleGuestMotionOffer=useCallback((kind)=>{
+    if(!guestMode)return
+    if(kind==='shown'){bump('offer_shown_motion');return}
+    if(kind==='closed'){bump('offer_closed_motion');return}
+    bump('offer_accepted_motion')
+    try{sessionStorage.setItem('fitpro_offer_src','motion')}catch{/* приватный режим */}
+    setAuthTabWanted('register')
+    setShowAuth(true)
+  },[guestMode])
+
+  /**
    * ГОСТЬ ОТКРЫЛ ПРИЛОЖЕНИЕ — верхняя ступень его воронки. Отдельно от `open`:
    * тот считает всех, кто дошёл до входного экрана, а этот — только тех, кто
    * попал внутрь без анкеты. Сравнение этих двух чисел и есть ответ на вопрос,
@@ -11915,12 +11936,20 @@ export default function App() {
               <Av lbl={user.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={36} photo={user.photoURL} gender={user.gender} />
             </button>
             ):(
-            /* У гостя нет ни имени, ни аватара — на их месте вход. Единственная
-               кнопка, которая ведёт из гостевого режима в аккаунт. */
+            /* У гостя нет ни имени, ни аватара — на их месте вход и цены.
+               Настройки на телефоне открываются из шторки профиля, а её у
+               гостя нет вовсе: без этой кнопки тарифы на телефоне были бы
+               недостижимы иначе как упёршись в платное. */
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <button data-testid="guest-plans" onClick={openPlans}
+              style={{ padding:'6px 12px', borderRadius:10, border:'none', background:'transparent', color:TXT3, fontSize:13, fontWeight:600, cursor:'pointer', minHeight:'unset' }}>
+              Тарифы
+            </button>
             <button data-testid="guest-login" onClick={()=>{setAuthTabWanted('login');setShowAuth(true)}}
               style={{ padding:'6px 14px', borderRadius:10, border:`1px solid ${SEP}`, background:'transparent', color:TXT, fontSize:13, fontWeight:700, cursor:'pointer', minHeight:'unset' }}>
               Войти
             </button>
+            </div>
             )}
             <div style={{ display:'flex', alignItems:'center', gap:7 }}>
               <GlassIcon name="dumbbell" size={24} />
@@ -12109,6 +12138,7 @@ export default function App() {
           userId={user?.id}
           guest={guestMode}
           onGuestValue={handleGuestValue}
+          onGuestOffer={handleGuestMotionOffer}
           onGuestProgress={setGuestMotion}
           guestMotion={guestMotionPending}
           onGuestMotionApplied={dropGuestPendingMotion}
@@ -12147,10 +12177,7 @@ export default function App() {
           но одновременно они не встречаются: предложение приходит по итогу
           работы, а приветствие — до первого нажатия. */}
       {guestMode&&!welcomeSeen&&!authOpen&&(
-        <WelcomeSheet
-          onPlans={()=>{closeWelcome();openPlans()}}
-          onClose={closeWelcome}
-        />
+        <WelcomeSheet onClose={closeWelcome} />
       )}
 
       {offer&&(

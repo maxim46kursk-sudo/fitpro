@@ -2862,6 +2862,17 @@
   font: 500 15px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
+/* Кнопки паузы. Ширина как у карточки меню: человек смотрит на телефон с двух
+   метров, и обе кнопки должны читаться и попадаться, не заставляя целиться. */
+.mt-paused__actions {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(320px, 78vw);
+  margin-top: 14px;
+}
+
 /* --- финальный лист: две кнопки --- */
 
 .mt-final__actions {

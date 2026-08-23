@@ -43,6 +43,12 @@ export default function LevelSelectScreen({
   onAdvance,
   challengeDay = 0,
   challengeDays = DAYS,
+  /**
+   * Идут ли заходы этого человека в зачёт челленджа. Нет — счётчик попыток и
+   * правило трёх с экрана убираются, а уровни не гаснут: см. пояснение на
+   * месте вызова (index.jsx). Сам зачёт при этом не меняется ни на строку.
+   */
+  challengeMember = true,
 }) {
   /**
    * Снимок берётся при монтировании и пересчитывается ТОЛЬКО по переходу дня:
@@ -201,18 +207,23 @@ export default function LevelSelectScreen({
         {day.tiers.map((tier) => (
           <button
             key={tier.id}
-            className={`mt-level ${tier.locked ? 'is-locked' : ''}`}
+            className={`mt-level ${challengeMember && tier.locked ? 'is-locked' : ''}`}
             data-testid={`level-${tier.id}`}
-            disabled={tier.locked}
+            disabled={challengeMember && tier.locked}
             onClick={() => onPick?.(tier.id)}
           >
             <div className="mt-level__name">{tier.name}</div>
             <div className="mt-level__price">{tier.obstaclePoints} очков за препятствие</div>
 
             <div className="mt-level__row">
-              <span className="mt-level__attempts">
-                {tier.locked ? 'попытки кончились' : `попытка ${tier.used + 1} из ${MAX_ATTEMPTS}`}
-              </span>
+              {/* Счётчик попыток — только тому, у кого они считаются. Остальным
+                  он обещал бы ограничение там, где его нет, и заодно называл бы
+                  зачётом игру, которая в зачёт не идёт. */}
+              {challengeMember && (
+                <span className="mt-level__attempts">
+                  {tier.locked ? 'попытки кончились' : `попытка ${tier.used + 1} из ${MAX_ATTEMPTS}`}
+                </span>
+              )}
               <span className="mt-level__best">
                 {tier.best > 0 ? `лучший ${tier.best}` : 'ещё не играл'}
               </span>
@@ -236,10 +247,12 @@ export default function LevelSelectScreen({
           Моя комната
         </button>
       )}
-      <div className="mt-levels__note">
-        До {MAX_ATTEMPTS} попыток на уровень, в зачёт — лучшая. Итог дня — сумма по уровням.
-        Перешёл к следующему дню — прошлый закрыт.
-      </div>
+      {challengeMember && (
+        <div className="mt-levels__note">
+          До {MAX_ATTEMPTS} попыток на уровень, в зачёт — лучшая. Итог дня — сумма по уровням.
+          Перешёл к следующему дню — прошлый закрыт.
+        </div>
+      )}
 
       {/* Неброско и внизу: сюда приходят раз в жизни и по своей воле. Кнопка
           крупнее спорила бы с уровнями, а именно они здесь главные. */}

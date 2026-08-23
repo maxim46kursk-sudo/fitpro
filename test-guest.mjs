@@ -122,10 +122,29 @@ report('лендинг сам по себе не показывается',
 report('на первом заходе показано приветствие',
   await page.locator('[data-testid="welcome-sheet"]').count() === 1)
 
-// «Смотреть цены» — единственный путь гостя к тарифам на узком экране
-await page.locator('[data-testid="welcome-plans"]').click()
+// Кнопка одна и она не про деньги: цены с приветствия убраны по полевому
+// прогону — человек, который ещё ничего не попробовал, пакет не оценит.
+report('в приветствии одна кнопка «Начать», ценами не встречаем',
+  await page.locator('[data-testid="welcome-close"]').count() === 1
+  && await page.locator('[data-testid="welcome-plans"]').count() === 0
+  && (await page.locator('[data-testid="welcome-close"]').textContent()).trim() === 'Начать')
+
+await page.locator('[data-testid="welcome-close"]').click()
+await page.waitForTimeout(500)
+report('«Начать» убирает приветствие',
+  await page.locator('[data-testid="welcome-sheet"]').count() === 0)
+// обещано «один раз на устройстве», а не «один раз за вкладку»
+await open('')
+report('и после перезагрузки оно не возвращается',
+  await page.locator('[data-testid="welcome-sheet"]').count() === 0)
+
+// ── 1в. тарифы гостю на чтение ─────────────────────────────────────────────
+// Приветствие ценами больше не встречает, поэтому путь к ним обязан быть в
+// самом приложении: на телефоне шторки профиля у гостя нет, и без кнопки в
+// шапке тарифы были бы недостижимы иначе как упёршись в платное.
+await page.locator('[data-testid="guest-plans"]').click()
 await page.waitForTimeout(1300)
-report('«Смотреть цены» открывает тарифы, а не заставку загрузки',
+report('гость открывает тарифы из шапки, а не заставку загрузки',
   await page.locator('[data-testid="plans-buy-create-account"]').count() === 1)
 report('у гостя нет ни покупки, ни пробного — только «Создать аккаунт»',
   await page.locator('[data-testid="trial-start"]').count() === 0
@@ -140,22 +159,8 @@ report('и помечает источник — по нему считаетс�
 
 await page.locator('[data-testid="auth-back-to-app"]').click()
 await page.waitForTimeout(800)
-report('приветствие не возвращается в том же заходе',
-  await page.locator('[data-testid="welcome-sheet"]').count() === 0)
-
-// Теперь то же самое, но закрытое именно кнопкой «Понятно», и с перезагрузкой:
-// обещано «один раз на устройстве», а не «один раз за вкладку».
-await page.evaluate(() => localStorage.removeItem('fitpro_welcome_seen'))
-await open('')
-report('после сброса отметки приветствие показывается снова',
-  await page.locator('[data-testid="welcome-sheet"]').count() === 1)
-await page.locator('[data-testid="welcome-close"]').click()
-await page.waitForTimeout(500)
-report('«Понятно» убирает приветствие',
-  await page.locator('[data-testid="welcome-sheet"]').count() === 0)
-await open('')
-report('и после перезагрузки оно не возвращается',
-  await page.locator('[data-testid="welcome-sheet"]').count() === 0)
+report('из формы гость возвращается в приложение',
+  await page.locator('[data-testid="guest-login"]').count() === 1)
 
 for (const tab of ['workouts', 'nutrition', 'library', 'progress']) {
   const btn = page.locator(`[data-testid="tab-${tab}"]`)
