@@ -2576,7 +2576,26 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   // модалка-источник вызова остаётся открытой (см. её кнопку — retry без
   // повторной навигации), клиенту показывается тост-ошибка.
   const selectProgram=async(folder)=>{
-    if(!userId)return{ok:false}
+    /**
+     * У ГОСТЯ ВЫБОР ПРОГРАММЫ ЖИВЁТ В ПАМЯТИ, И БЕЗ ЭТОГО ОН НЕ НАЧНЁТ НИЧЕГО.
+     *
+     * Выбранная программа хранится в `profiles.program`, и раньше отказ здесь
+     * был правильным: писать её без владельца некуда. Но через эту же функцию
+     * проходит принятие программы, а через него — ЕДИНСТВЕННЫЙ путь к кнопке
+     * «Начать тренировку»: у гостя `selectedProgram` пуст, он получает модалку
+     * «принять программу», её подтверждение молча возвращает `{ok:false}` — и
+     * человек, пришедший попробовать тренировку, не может начать ни одну.
+     *
+     * Для гостя это просто предпочтение экрана, и держать его в памяти
+     * достаточно. В хранилище не кладём намеренно: при регистрации оно
+     * разъехалось бы с пустым `profiles.program`, а переносить выбор программы
+     * этот этап не обещал.
+     */
+    if(!userId){
+      setSelectedProgram(folder)
+      setInfoFolder(null)
+      return{ok:true}
+    }
     const{error}=await supabase.from('profiles').update({program:folder}).eq('id',userId)
     if(error){
       console.error('Ошибка сохранения выбранной программы:',error)
@@ -5170,7 +5189,14 @@ function NutritionView({ userId }){
     }
     const raw=localStorage.getItem('fitpro_food_diary')
     const diary=raw?JSON.parse(raw):{}
-    diary[date]=[...(diary[date]||[]),...newEntries]
+    /**
+     * МАРКЕР ГОСТЕВОЙ ЗАПИСИ — тот же, что в FoodDiary.addFood. Без него рацион,
+     * добавленный гостем отсюда, при регистрации не переехал бы в аккаунт:
+     * перенос (src/foodDiaryMigrate.js) видит только помеченные записи, и эта
+     * еда просто пропала бы с первой же загрузкой дневника из облака.
+     */
+    const toStore=userId?newEntries:newEntries.map(e=>({...e,local:true}))
+    diary[date]=[...(diary[date]||[]),...toStore]
     localStorage.setItem('fitpro_food_diary',JSON.stringify(diary))
     window.dispatchEvent(new CustomEvent('fitpro:diary-update'))
     setLogDone(true)
@@ -6214,7 +6240,7 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
 // accessLevel — уровень пакета: «Прогресс по упражнениям» требует БАЗУ (1).
 // Остальные разделы Дневника (тоннаж, тренировки, питание, 1ПМ) бесплатны.
 // readOnly — просмотр чужого дневника тренером, там гейт не применяем.
-function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, userId, initialSection, diaryJumpToken, onSectionChange, historyLoading, historyLoadError, onRetryHistory, readOnly=false, readOnlyName='', accessLevel = 0, openPlans }) {
+function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorkout, onWorkoutAction, isMobile, userId, initialSection, diaryJumpToken, onSectionChange, historyLoading, historyLoadError, onRetryHistory, readOnly=false, readOnlyName='', accessLevel = 0, openPlans, guest = false, onGuestLock = null }) {
   const { exercises: catalogExercises } = useContext(CatalogContext) // для labelOf (имена в истории — ключи)
   const exercisesLocked=!readOnly&&accessLevel<SLOTS_MIN_LEVEL
   const [showExLock,setShowExLock]=useState(false)
@@ -6877,6 +6903,10 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                     setShowWorkoutMenu(false)
                     if(item.key==='template'){openTemplatePicker()}
                     else if(item.key){if(onWorkoutAction)onWorkoutAction(item.key)}
+                    // План живёт в planned_workouts и нужен ради напоминаний и
+                    // переноса между устройствами — без аккаунта у него нет ни
+                    // того, ни другого
+                    else if(guest){onGuestLock?.('Планирование тренировок доступно после регистрации')}
                     else{setShowScheduleForm(true)}
                   }} style={{ display:'flex',alignItems:'center',gap:11,width:'100%',padding:'11px 15px',border:'none',borderTop:idx>0?`1px solid ${HAIR}`:'none',background:'transparent',cursor:'pointer',textAlign:'left' }}>
                     <GlassIcon name={item.ic} size={26} />
@@ -6975,7 +7005,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
                               setOpenCardMenu(null)
                               if(item.label==='Редактировать тренировку'){if(onEditWorkout)onEditWorkout(workoutHistory[w.histIdx],w.histIdx)}
                               else if(item.label==='Копировать тренировку'){if(onCopyWorkout)onCopyWorkout(workoutHistory[w.histIdx])}
-                              else if(item.label==='Сделать шаблон'){saveTemplate(workoutHistory[w.histIdx])}
+                              else if(item.label==='Сделать шаблон'){guest?onGuestLock?.('Свои шаблоны доступны после регистрации'):saveTemplate(workoutHistory[w.histIdx])}
                               else if(item.label==='Удалить тренировку'){
                                 if(await askConfirm(`Удалить тренировку «${w.name}»?`)){if(onDeleteWorkout)onDeleteWorkout(w.histIdx);setSelIdx(null)}
                               }
@@ -7232,11 +7262,44 @@ function PasswordInput({ value, onChange, placeholder, onKeyDown }) {
   )
 }
 
+/**
+ * ЗАМОК ГОСТЯ — один на всё приложение.
+ *
+ * Ставится там, где без аккаунта либо нет смысла (планирование, привязка к
+ * тренеру), либо нужна запись в облако (настройки в profiles, покупка тарифа,
+ * ИИ-ассистент). Текст один и тот же везде намеренно: человек, встретивший его
+ * во второй раз, должен узнать знакомое, а не читать заново.
+ *
+ * Слово «бесплатный» здесь несёт всю нагрузку. Гость пришёл пробовать и ждёт
+ * подвоха с оплатой; без него замок читается как платная стена, и человек
+ * уходит, не нажав.
+ */
+function GuestLock({ onLogin, what }) {
+  return (
+    <div data-testid="guest-lock" style={{
+      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+      gap:14, padding:'40px 24px', textAlign:'center',
+    }}>
+      <GlassIcon name="lock" size={44} />
+      <div style={{ fontSize:16, fontWeight:700, color:TXT, maxWidth:320, lineHeight:1.4 }}>
+        {what || 'Для этого нужен бесплатный аккаунт'}
+      </div>
+      <div style={{ fontSize:13, color:TXT3, maxWidth:320, lineHeight:1.5 }}>
+        Всё, что ты уже попробовал, сохранится — ничего не потеряется.
+      </div>
+      <button data-testid="guest-lock-login" onClick={onLogin} style={{
+        marginTop:4, padding:'11px 26px', borderRadius:12, border:'none', cursor:'pointer',
+        background:PUR, color:'#fff', fontSize:15, fontWeight:700,
+      }}>Войти</button>
+    </div>
+  )
+}
+
 // accessError — сообщение о неудачном входе по ссылке доступа (?access=,
 // см. App). Показывается плашкой в шапке: клиент, которого завёл тренер, попал
 // сюда не по своей воле, и обычная форма входа ему ничего не говорит — у него
 // нет ни пароля, ни почты, только ссылка.
-function LandingPage({ onEnter, isTelegram, accessError }) {
+function LandingPage({ onEnter, isTelegram, accessError, startAtForm = false, onBackToApp = null }) {
   /**
    * ЗАХОД ЧЕЛОВЕКА — верхняя ступень воронки. Отмечается здесь, а не в App():
    * это единственное место, куда попадает именно ПОСЕТИТЕЛЬ, ещё не вошедший.
@@ -7245,7 +7308,12 @@ function LandingPage({ onEnter, isTelegram, accessError }) {
    */
   useEffect(()=>{bump('open')},[])
 
-  const [view,setView]=useState('hero')
+  /**
+   * `startAtForm` — гость нажал «Войти» из самого приложения. Показывать ему
+   * заголовок с описанием продукта незачем: он его уже потрогал руками, это
+   * убедительнее любого текста. Открываемся прямо на форме.
+   */
+  const [view,setView]=useState(startAtForm?'form':'hero')
   const [authTab,setAuthTab]=useState('login')
   const [form,setForm]=useState({name:'',email:'',password:'',confirm:''})
   const [mobile,setMobile]=useState(()=>window.innerWidth<640)
@@ -7467,8 +7535,18 @@ function LandingPage({ onEnter, isTelegram, accessError }) {
         /* ── Форма входа / регистрации */
         <div style={{ minHeight:'calc(100vh - 62px)',display:'flex',alignItems:'center',justifyContent:'center',padding:'28px 18px' }}>
           <div style={{ width:'100%',maxWidth:400 }}>
-            <button data-back="1" onClick={()=>{setView('hero');setAuthError('');setForgotMode(false);setForgotError('')}} style={{ background:'none',border:'none',color:'rgba(255,255,255,0.38)',fontSize:14,cursor:'pointer',padding:'0 0 18px',display:'flex',alignItems:'center',gap:6 }}>
-              <GlassIcon name="back" size={16} />Назад
+            {/*
+              Гостю «назад» ведёт не на заголовок, а обратно в приложение: hero
+              он уже проскочил, и вернуть его туда значило бы запереть — из
+              лендинга внутрь без регистрации хода нет.
+            */}
+            <button data-back="1" data-testid={onBackToApp?'auth-back-to-app':'auth-back'}
+              onClick={()=>{
+                if(onBackToApp){onBackToApp();return}
+                setView('hero');setAuthError('');setForgotMode(false);setForgotError('')
+              }}
+              style={{ background:'none',border:'none',color:'rgba(255,255,255,0.38)',fontSize:14,cursor:'pointer',padding:'0 0 18px',display:'flex',alignItems:'center',gap:6 }}>
+              <GlassIcon name="back" size={16} />{onBackToApp?'Продолжить без входа':'Назад'}
             </button>
             <div style={{ background:'rgba(255,255,255,0.04)',border:GB,borderRadius:20,padding:'30px 24px' }}>
 
@@ -10092,6 +10170,29 @@ function ConnectionErrorView({ onRetry, retrying }) {
 
 export default function App() {
   const [user,setUser]=useState(null)
+  /**
+   * ГОСТЕВОЙ РЕЖИМ — ПОКА ТОЛЬКО ЗА ФЛАГОМ.
+   *
+   * Приложение целиком умеет работать без аккаунта, но включается это `?guest=1`
+   * и ничем больше: без ключа поведение прода не меняется ни на пиксель — тот
+   * же LandingPage на входе, те же гейты. Ключ запоминается в localStorage,
+   * иначе перезагрузка (а её делает и страховка от чёрного экрана в index.html)
+   * выбивала бы человека обратно на форму регистрации.
+   *
+   * Префикс `fitpro_` не для красоты: `clearFitproData` чистит ровно по нему, и
+   * флаг обязан уходить вместе с остальным при выходе и при смене владельца.
+   */
+  const [guestFlag,setGuestFlag]=useState(()=>{
+    try{
+      const p=new URLSearchParams(window.location.search)
+      if(p.get('guest')==='1'){localStorage.setItem('fitpro_guest','1');return true}
+      return localStorage.getItem('fitpro_guest')==='1'
+    }catch{return false}
+  })
+  /** Форма входа поверх приложения — единственный путь гостя к регистрации. */
+  const [showAuth,setShowAuth]=useState(false)
+  /** Текст замка гостя; null — замок закрыт. */
+  const [guestLockWhat,setGuestLockWhat]=useState(null)
   const [authLoading,setAuthLoading]=useState(true)
   // Сессию не удалось подтвердить из-за временного сбоя (сеть/5xx), при этом
   // токены в localStorage целы. НЕ то же самое, что "пользователь вышел":
@@ -10294,6 +10395,19 @@ export default function App() {
   const [sc,setSC]=useState(null)
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768)
   // Telegram Mini App — понадобится дальше (авторизацию/движок пока не трогаем).
+  /**
+   * Человек завёлся — гостевого режима больше нет. Флаг снимаем и из
+   * хранилища: иначе следующий выход из аккаунта высадил бы его не на форму
+   * входа, а обратно в гостя, и он бы не понял, почему его данных не видно.
+   */
+  useEffect(()=>{
+    if(!user)return
+    // Только хранилище: `guestMode` ниже и так ложен, пока человек есть, а
+    // ставить состояние из эффекта ради уже верного значения — лишний рендер.
+    // В памяти флаг гасит выход из аккаунта (см. performLogout).
+    try{localStorage.removeItem('fitpro_guest')}catch{/* приватный режим */}
+  },[user])
+
   const [isTelegram,setIsTelegram]=useState(false)
   // Авто-вход внутри Telegram (см. эффект ниже) — пока идёт попытка, вместо
   // LandingPage показываем "Входим…"; при неудаче тихо откатываемся на
@@ -10889,6 +11003,14 @@ export default function App() {
       if (!ok) return
     }
     setUser(null)
+    /**
+     * Гостевой флаг гасим ЗДЕСЬ, а не эффектом на появление человека.
+     * `clearFitproData()` ниже убирает ключ из хранилища, но состояние в памяти
+     * пережило бы выход, и вышедший попал бы не на форму входа, а обратно в
+     * гостевой режим — с пустым приложением вместо своих данных.
+     */
+    setGuestFlag(false)
+    setShowAuth(false)
     // Явный выход — состояние достоверно известно, экран "нет связи" тут
     // показывать нельзя: он перекрыл бы LandingPage, если баннер висел до этого.
     setAuthError(false)
@@ -11230,19 +11352,35 @@ export default function App() {
   // на !user — если сессия уже подтверждена, временный сбой рефреша не должен
   // выбрасывать человека из приложения вообще.
   if(!user&&authError) return <ConnectionErrorView onRetry={()=>{setAuthRetrying(true);setAuthRetryToken(t=>t+1)}} retrying={authRetrying} />
+  /**
+   * Гость — это «человека нет, но флаг стоит». Считается ЗДЕСЬ, после всех
+   * проверок выше: пока сессия ещё проверяется или её не удалось подтвердить,
+   * решать «гость или нет» рано — можно высадить в гостевой режим того, у кого
+   * просто отвалилась сеть, и показать ему пустое приложение вместо его данных.
+   */
+  const guestMode = !user && guestFlag
   // GlassDefs обязателен и здесь. Он объявляет <linearGradient>, на которые
   // ссылаются ВСЕ GlassIcon; ниже по коду он монтируется в основном layout, но
   // до него дело не доходит — этот return срабатывает раньше. Без определений
   // иконки на стартовом экране рисовались пустыми квадратами.
-  if(!user) return (<>
+  if(!user&&!guestMode) return (<>
     <GlassDefs/>
     <LandingPage onEnter={setUser} isTelegram={isTelegram} accessError={accessAuthError} />
   </>)
-  if(!consentLoaded) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:BG,color:TXT3,fontSize:14}}>Загрузка…</div>
+  /**
+   * СОГЛАСИЕ — ТОЛЬКО ДЛЯ ВОШЕДШИХ, и это не послабление.
+   *
+   * Согласие по 152-ФЗ спрашивают перед обработкой персональных данных. У гостя
+   * обработки нет вовсе: всё, что он делает, лежит в localStorage его телефона
+   * и никуда не уезжает. Спросить его здесь — значит поставить ту же анкету на
+   * входе, только другими словами. Обработка начинается ровно в момент
+   * регистрации, и там его встречает этот же ConsentGate, ничего не потеряв.
+   */
+  if(user&&!consentLoaded) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:BG,color:TXT3,fontSize:14}}>Загрузка…</div>
   // Профиль не прочитался и согласия мы за эту сессию так и не подтвердили —
   // честно говорим про связь вместо того, чтобы требовать согласие повторно.
-  if(consentError&&!consentGiven) return <ConnectionErrorView onRetry={()=>setConsentRetryToken(t=>t+1)} retrying={false} />
-  if(!consentGiven) return <ConsentGate user={user} onAccepted={()=>setConsentGiven(true)} onDecline={performLogout} />
+  if(user&&consentError&&!consentGiven) return <ConnectionErrorView onRetry={()=>setConsentRetryToken(t=>t+1)} retrying={false} />
+  if(user&&!consentGiven) return <ConsentGate user={user} onAccepted={()=>setConsentGiven(true)} onDecline={performLogout} />
 
   // Всё, КРОМЕ Тренировок — обычная свитч-навигация, монтируется/
   // размонтируется по nav, как и раньше.
@@ -11267,7 +11405,7 @@ export default function App() {
       case 'constructor': return userRole==='trainer'
         ? <ConstructorView userId={user?.id} sessionMeta={pendingConstructorMeta} onClearSessionMeta={()=>setPendingConstructorMeta(null)} onWorkoutComplete={handleWorkoutComplete} setNav={handleNav} />
         : null
-      case 'progress':  return <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} accessLevel={access.level} openPlans={openPlans} />
+      case 'progress':  return <DiaryView key={user?.id} workoutHistory={workoutHistory} onEditWorkout={handleEditWorkout} onDeleteWorkout={handleDeleteWorkout} onCopyWorkout={handleCopyWorkout} onWorkoutAction={handleWorkoutAction} isMobile={isMobile} userId={user?.id} initialSection={pendingSectionRestoreRef.current} diaryJumpToken={diaryJumpToken} onSectionChange={s=>{diarySectionRef.current=s}} historyLoading={historyLoading} historyLoadError={historyLoadError} onRetryHistory={()=>setHistoryReloadToken(t=>t+1)} accessLevel={access.level} openPlans={openPlans} guest={guestMode} onGuestLock={setGuestLockWhat} />
       default:          return null
     }
   }
@@ -11367,10 +11505,19 @@ export default function App() {
               не держать пустую полосу сверху (см. workoutFullscreen). */}
           {!workoutFullscreen&&(
           <div style={{ position:'fixed', top:0, left:0, right:0, height:MOBILE_TOP_H, background:BG, borderBottom:`1px solid ${SEP}`, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 16px', zIndex:901, flexShrink:0 }}>
+            {user?(
             <button onClick={()=>setShowProfileSheet(true)}
               style={{ width:36, height:36, borderRadius:'50%', border:'none', background:'transparent', padding:0, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset', overflow:'hidden' }}>
               <Av lbl={user.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={36} photo={user.photoURL} gender={user.gender} />
             </button>
+            ):(
+            /* У гостя нет ни имени, ни аватара — на их месте вход. Единственная
+               кнопка, которая ведёт из гостевого режима в аккаунт. */
+            <button data-testid="guest-login" onClick={()=>setShowAuth(true)}
+              style={{ padding:'6px 14px', borderRadius:10, border:`1px solid ${SEP}`, background:'transparent', color:TXT, fontSize:13, fontWeight:700, cursor:'pointer', minHeight:'unset' }}>
+              Войти
+            </button>
+            )}
             <div style={{ display:'flex', alignItems:'center', gap:7 }}>
               <GlassIcon name="dumbbell" size={24} />
               <span style={{ fontSize:16, fontWeight:800, color:TXT, letterSpacing:'-0.3px' }}>FitPro</span>
@@ -11405,7 +11552,7 @@ export default function App() {
           </nav>
 
           {/* Профиль — bottom sheet */}
-          {showProfileSheet&&(
+          {showProfileSheet&&user&&(
             <>
               <div onClick={()=>setShowProfileSheet(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:1100 }} />
               <div style={{ position:'fixed', bottom:0, left:0, right:0, background:SURF, borderRadius:'18px 18px 0 0', zIndex:1101, padding:'20px 20px 36px' }}>
@@ -11472,6 +11619,7 @@ export default function App() {
         <div style={{ display:'flex', minHeight:'100vh', fontFamily:'system-ui,sans-serif', background:BG, color:TXT }}>
           <div style={{ width:190, background:SURF, borderRight:`1px solid ${HAIR}`, display:'flex', flexDirection:'column', flexShrink:0 }}>
             <div style={{ padding:'16px 14px 12px', borderBottom:`1px solid ${HAIR}` }}>
+              {user?(
               <div onClick={()=>setShowProfileView(true)} style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
                 <Av lbl={user.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()} sz={34} photo={user.photoURL} gender={user.gender} />
                 <div style={{ minWidth:0 }}>
@@ -11479,6 +11627,12 @@ export default function App() {
                   <div style={{ fontSize:11, color:TXT3 }}>{userRole==='trainer'?'Тренер':'Клиент'}</div>
                 </div>
               </div>
+              ):(
+              <button data-testid="guest-login" onClick={()=>setShowAuth(true)}
+                style={{ width:'100%', padding:'9px 12px', borderRadius:10, border:`1px solid ${SEP}`, background:'transparent', color:TXT, fontSize:13, fontWeight:700, cursor:'pointer', minHeight:'unset' }}>
+                Войти
+              </button>
+              )}
             </div>
             <nav style={{ padding:'8px', flex:1 }}>
               {NAV.filter(item=>userRole==='trainer'||item.id!=='clients').map(item=>(
@@ -11486,11 +11640,11 @@ export default function App() {
               ))}
             </nav>
             <div style={{ padding:'12px 14px', borderTop:`1px solid ${HAIR}` }}>
-              <button onClick={openSettings}
+              <button onClick={()=>user?openSettings():setShowAuth(true)}
                 style={{ display:'flex',alignItems:'center',gap:7,fontSize:12,color:TXT3,background:'none',border:'none',cursor:'pointer',padding:'4px 0',marginBottom:4,width:'100%' }}>
                 <span>⚙️</span> Настройки
               </button>
-              {!isTelegram&&(
+              {user&&!isTelegram&&(
                 <button onClick={performLogout}
                   style={{ fontSize:11, color:TXT3, background:'none', border:'none', cursor:'pointer', padding:0, marginTop:2, display:'block' }}>
                   Выйти →
@@ -11504,10 +11658,10 @@ export default function App() {
         </div>
       )}
       {/* Экран "Мои данные" (mobile + desktop) */}
-      {showProfileView&&<ProfileView user={user} onClose={()=>setShowProfileView(false)} onOpenAI={m=>aiRef.current?.open(m)} onUserUpdate={u=>setUser(u)} />}
+      {showProfileView&&user&&<ProfileView user={user} onClose={()=>setShowProfileView(false)} onOpenAI={m=>aiRef.current?.open(m)} onUserUpdate={u=>setUser(u)} />}
 
       {/* Экран "Настройки" (mobile + desktop) */}
-      {showSettingsView&&(
+      {showSettingsView&&user&&(
         <div style={{position:'fixed',inset:0,background:BG,zIndex:1060,display:'flex',flexDirection:'column',fontFamily:'system-ui,sans-serif'}}>
           <div style={{background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
             <button data-back="1" onClick={closeSettingsOrSubPage} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset'}}><GlassIcon name="back" size={26} /></button>
@@ -11544,7 +11698,46 @@ export default function App() {
           и только оно гасит камеру (см. MotionOverlay). */}
       {motionOpen&&<MotionOverlay onExit={closeMotion} userId={user?.id} />}
 
+      {/*
+        ИИ-АССИСТЕНТ ГОСТЮ НЕ МОНТИРУЕТСЯ ВОВСЕ. У него свой платный гейт по
+        уровню пакета, и гость в него попадает как «нужен тариф ПРОФИТ» — а ему
+        нужен сперва аккаунт, и бесплатный. Показывать человеку не ту дверь хуже,
+        чем не показывать никакой, поэтому здесь своя кнопка и общий замок.
+      */}
+      {guestMode?(
+        <>
+          {!workoutFullscreen&&!trainerSessionActive&&(
+            <button data-testid="guest-ai-open" onClick={()=>setGuestLockWhat('ИИ-ассистент доступен после регистрации')} style={{
+              position:'fixed', bottom:(isMobile?78:24)+(workoutMinimized?MINIMIZED_BAR_H:0), right:18, zIndex:1070,
+              width:52, height:52, borderRadius:'50%', border:'none',
+              background:'linear-gradient(135deg,#7C7AF0,#5b54c4)',
+              color:'#fff', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'unset',
+            }}><GlassIcon name="robot" size={30} /></button>
+          )}
+        </>
+      ):(
       <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} hideButton={workoutFullscreen||trainerSessionActive} extraBottomOffset={workoutMinimized?MINIMIZED_BAR_H:0} accessLevel={access.level} openPlans={openPlans} programLabelOf={programLabelOf} />
+      )}
+
+      {/* Замок гостя как отдельное окно — его открывают кнопки из разных мест. */}
+      {guestLockWhat&&(
+        <div onClick={()=>setGuestLockWhat(null)} style={{ position:'fixed', inset:0, zIndex:1500, background:'rgba(0,0,0,0.55)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:SURF, borderRadius:18, maxWidth:380, width:'100%' }}>
+            <GuestLock what={guestLockWhat===true?undefined:guestLockWhat} onLogin={()=>{setGuestLockWhat(null);setShowAuth(true)}} />
+          </div>
+        </div>
+      )}
+
+      {/*
+        ФОРМА ВХОДА ПОВЕРХ ПРИЛОЖЕНИЯ. Тот же LandingPage, но открытый сразу на
+        форме: гость уже видел, что внутри, и пересказывать ему это заголовком
+        не надо. Выйти можно без входа — иначе кнопка «Войти» стала бы ловушкой.
+      */}
+      {showAuth&&!user&&(
+        <div style={{ position:'fixed', inset:0, zIndex:2000, overflowY:'auto', background:BG }}>
+          <LandingPage onEnter={setUser} isTelegram={isTelegram} accessError={accessAuthError} startAtForm onBackToApp={()=>setShowAuth(false)} />
+        </div>
+      )}
      </TemplatesContext.Provider>
     </CatalogContext.Provider>
   )
