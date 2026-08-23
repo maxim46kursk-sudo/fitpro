@@ -1071,13 +1071,43 @@ async function handleMotionHealth(req, res) {
     }
   }
 
+  /**
+   * ВОРОНКА ГОСТЯ — рядом со сводкой Motion, а не отдельной ручкой: новых
+   * файлов в api/ заводить нельзя (лимит функций тарифа исчерпан), а смотреть
+   * эти цифры будет тот же человек и тем же ключом.
+   *
+   * Две недели — столько, чтобы видеть будни против выходных и эффект правки
+   * «до/после», и не столько, чтобы ответ раздулся.
+   *
+   * Ошибка чтения роняет ТОЛЬКО этот блок. Сводка Motion следит за живой бетой,
+   * и уронить её из-за вспомогательного счётчика было бы обменом важного на
+   * второстепенное.
+   */
+  const воронка = async () => {
+    try {
+      const от = new Date(сейчас - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      const { data, error } = await db
+        .from('funnel_counts')
+        .select('day,event,n')
+        .gte('day', от)
+        .order('day')
+        .order('event')
+      if (error) throw new Error(error.message)
+      return data ?? []
+    } catch (e) {
+      reportError('api:set-exercise:motion-health', ['воронка не прочиталась:', e], { message: e?.message, status: 500 })
+      return null
+    }
+  }
+
   try {
-    const [час, сутки, последнееLog, последнееAtt, последнееErr] = await Promise.all([
+    const [час, сутки, последнееLog, последнееAtt, последнееErr, funnel] = await Promise.all([
       окно(окна.час),
       окно(окна.сутки),
       последняя('motion_log', 'at'),
       последняя('motion_attempts', 'at'),
       последняя('error_log', 'created_at'),
+      воронка(),
     ])
     return res.status(200).json({
       снято: new Date(сейчас).toISOString(),
@@ -1088,11 +1118,114 @@ async function handleMotionHealth(req, res) {
         motion_attempts: последнееAtt,
         error_log: последнееErr,
       },
+      funnel,
     })
   } catch (e) {
     reportError('api:set-exercise:motion-health', ['сводка не собралась:', e], { message: e?.message, status: 500 })
     return res.status(500).json({ error: 'Сводка недоступна' })
   }
+}
+
+/**
+ * СЧЁТЧИК ВОРОНКИ — этап 0 гостевого режима.
+ *
+ * Зачем. Переходы из Инстаграма есть, регистраций почти нет, и до сих пор это
+ * знание держалось на ощущении: продуктовой аналитики в проекте нет вовсе — ни
+ * метрики, ни счётчиков. Прежде чем убирать стену регистрации, нужен способ
+ * увидеть, помогло ли: сколько людей открыло, сколько потрогало разделы,
+ * сколько дошло до предложения и сколько завелось.
+ *
+ * ПУБЛИЧНАЯ И БЕЗ ТОКЕНА — иначе она не измерит ровно тех, ради кого затеяна:
+ * у гостя токена нет и не будет до самой регистрации.
+ *
+ * ЧТО ЗДЕСЬ НЕ ХРАНИТСЯ. Ни личности, ни устройства, ни адреса — только
+ * «событие такое-то случилось ещё раз сегодня». Таблица `funnel_counts` это
+ * счётчики по дням, а не журнал: строку нельзя связать ни с человеком, ни с
+ * заходом. Поэтому в USER_TABLES она не входит и под выгрузку с удалением по
+ * 152-ФЗ не попадает — связывать там нечего.
+ *
+ * ЛИМИТ ТОЛЬКО ПО IP. Соблазн считать по deviceId с клиента здесь особенно
+ * велик — и запрещён правилом самого лимитера (_ratelimit.js): всё, что пришло
+ * телом запроса, подделывается сменой одного поля, и лимит перестаёт быть
+ * лимитом. Пусть за одним NAT счётчик общий: испортить можно только точность
+ * собственных цифр, а не чужую работу.
+ *
+ * ОТВЕТ ВСЕГДА 200. Счётчик — вспомогательная вещь, и клиент про его проблемы
+ * знать не должен: он шлёт событие и забывает (см. src/funnel.js). Ошибка
+ * записи, незнакомое событие, ненастроенный ключ — наружу одинаковое
+ * `{ok:true}`. Единственное, что 200 обязан означать, — «запрос принят и
+ * дальше не твоя забота».
+ */
+
+/**
+ * СПИСОК РАЗРЕШЁННЫХ СОБЫТИЙ, и он закрытый.
+ *
+ * Ветка публичная: без списка любой желающий насыпал бы в таблицу
+ * произвольных строк, и она перестала бы читаться. Незнакомое имя не ошибка и
+ * не повод для 400 — просто ничего не пишем: у людей в кэше живут старые
+ * сборки, и присланное ими имя из прошлой версии не должно выглядеть как атака.
+ */
+const FUNNEL_EVENTS = new Set([
+  // заход
+  'open',
+  'open_guest',
+  // потрогал раздел
+  'try_motion',
+  'try_workout',
+  'try_diary',
+  // дошёл до ценности
+  'value_motion',
+  'value_workout',
+  'value_diary',
+  // увидел предложение сохранить
+  'offer_shown_motion',
+  'offer_shown_workout',
+  'offer_shown_diary',
+  // закрыл предложение
+  'offer_closed_motion',
+  'offer_closed_workout',
+  'offer_closed_diary',
+  // принял предложение
+  'offer_accepted_motion',
+  'offer_accepted_workout',
+  'offer_accepted_diary',
+  // завёлся
+  'register',
+  'register_from_offer',
+  // гостевые данные переехали в аккаунт
+  'migrated',
+])
+
+async function handleFunnel(req, res) {
+  // Свои CORS-заголовки: у ветки свой метод и нет авторизации.
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  if (req.method === 'OPTIONS') return res.status(200).end()
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+
+  // Свой ключ лимита, как у остальных публичных веток: счётчики не смешиваются.
+  // Шестьдесят в минуту — событий у одного человека за заход единицы, а за
+  // одним IP их бывает несколько.
+  if (!rateLimit(req, res, { name: 'funnel', limit: 60 })) return
+
+  const event = typeof req.body?.event === 'string' ? req.body.event : ''
+  if (!FUNNEL_EVENTS.has(event)) return res.status(200).json({ ok: true })
+
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  // Без ключа считать нечем. Молча: счётчик не тот повод, чтобы отвечать
+  // ошибкой человеку, который просто открыл приложение.
+  if (!serviceRoleKey) return res.status(200).json({ ok: true })
+
+  try {
+    const db = createClient(SUPABASE_URL, serviceRoleKey)
+    // Функция в базе (security definer): права на неё отобраны у anon и
+    // authenticated, вызвать её может только service role — то есть эта ветка.
+    await db.rpc('funnel_bump', { ev: event })
+  } catch {
+    // Счётчик не работает — приложение работает. Молчим.
+  }
+  return res.status(200).json({ ok: true })
 }
 
 export default async function handler(req, res) {
@@ -1110,6 +1243,9 @@ export default async function handler(req, res) {
   // ключу наблюдателя, и 401 «требуется авторизация» ей не подходит — см.
   // порядок веток в шапке файла.
   if (req.query?.action === 'motion-health') return handleMotionHealth(req, res)
+  // Счётчик воронки. Тоже до проверки метода и токена: ветка публичная по
+  // построению — у гостя, ради которого она заведена, токена нет.
+  if (req.query?.action === 'funnel') return handleFunnel(req, res)
 
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')

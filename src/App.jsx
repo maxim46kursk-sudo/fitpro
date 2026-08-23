@@ -23,6 +23,7 @@ import { VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, ef
 import { clampNum } from './nutrition.js'
 import FoodDiary from './FoodDiary.jsx'
 import HubCard from './HubCard.jsx'
+import { bump } from './funnel.js'
 
 /**
  * MOTION — ТРЕНИРОВКА С КАМЕРОЙ. Единственная ленивая граница раздела.
@@ -7236,6 +7237,14 @@ function PasswordInput({ value, onChange, placeholder, onKeyDown }) {
 // сюда не по своей воле, и обычная форма входа ему ничего не говорит — у него
 // нет ни пароля, ни почты, только ссылка.
 function LandingPage({ onEnter, isTelegram, accessError }) {
+  /**
+   * ЗАХОД ЧЕЛОВЕКА — верхняя ступень воронки. Отмечается здесь, а не в App():
+   * это единственное место, куда попадает именно ПОСЕТИТЕЛЬ, ещё не вошедший.
+   * Само событие раз в сутки на устройство (см. DAILY в src/funnel.js) — экран
+   * монтируется заново после каждого «назад» и каждой неудачной попытки входа.
+   */
+  useEffect(()=>{bump('open')},[])
+
   const [view,setView]=useState('hero')
   const [authTab,setAuthTab]=useState('login')
   const [form,setForm]=useState({name:'',email:'',password:'',confirm:''})
@@ -7270,6 +7279,9 @@ function LandingPage({ onEnter, isTelegram, accessError }) {
       options:{data:{name:form.name.trim()}}
     })
     if(error){setAuthError(error.message);setAuthBusy(false);return}
+    // Нижняя ступень воронки — ПОСЛЕ проверки ошибки: считаем заведённые
+    // аккаунты, а не нажатия на кнопку.
+    bump('register')
     // Запись в public.profiles создаётся автоматически триггером on_auth_user_created в Supabase —
     // делать это здесь на клиенте ненадёжно, т.к. сразу после signUp сессии ещё может не быть (email-подтверждение)
     setAuthBusy(false)
