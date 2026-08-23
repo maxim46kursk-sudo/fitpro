@@ -172,6 +172,12 @@ export function usePoseLandmarker({ videoRef, active = true, onResult }) {
     let disposed = false
     /** Резерв запускается только один раз, иначе можно уйти в цикл. */
     let fellBack = false
+    /**
+     * Обстановка в воркере из последнего отказа. Откат зовётся и оттуда, где
+     * самого сообщения уже нет (`onerror` воркера), поэтому она запоминается:
+     * строка `worker.fallback` без неё в поле снова стала бы нечитаемой.
+     */
+    let lastWorkerEnv = null
 
     const spawnWorker = () => {
       const w = new Worker(new URL('./poseWorker.js', import.meta.url), {
@@ -192,7 +198,7 @@ export function usePoseLandmarker({ videoRef, active = true, onResult }) {
       if (fellBack || disposed) return
       fellBack = true
       console.warn('[motion] воркер не поднялся, считаем на главном потоке:', why)
-      logEvent('worker.fallback', { why: String(why).slice(0, 300) })
+      logEvent('worker.fallback', { why: String(why).slice(0, 300), env: lastWorkerEnv })
 
       try {
         workerRef.current?.terminate?.()
@@ -311,8 +317,17 @@ export function usePoseLandmarker({ videoRef, active = true, onResult }) {
       if (data.type === 'error') {
         pendingRef.current = false
         // Пользователю показываем человеческий текст, в консоль — техническую причину.
-        console.error('[motion]', data.code, data.stage || '', data.message)
-        logEvent('model.error', { code: data.code, stage: data.stage, message: data.message })
+        if (data.env) lastWorkerEnv = data.env
+        console.error('[motion]', data.code, data.stage || '', data.message, data.env ?? '')
+        // `env` — обстановка в воркере на момент отказа (см. poseWorker.js).
+        // Без неё откат на главный поток в поле неотличим: причина одна и та же
+        // строка, а веток у неё две.
+        logEvent('model.error', {
+          code: data.code,
+          stage: data.stage,
+          message: data.message,
+          env: data.env,
+        })
         if (data.code === 'MODEL_INIT_FAILED' && !fellBack) {
           // движок не поднялся в воркере — это ещё не приговор
           fallbackToMainThread(data.message)

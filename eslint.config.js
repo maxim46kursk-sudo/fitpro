@@ -5,7 +5,8 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // tools/.cache — сборка страницы прогона и файл модели, не исходники
+  globalIgnores(['dist', 'tools/.cache']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

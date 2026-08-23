@@ -35,6 +35,7 @@ import {
 import { pushLive, rateStats, resetRate } from '../debug/diagnostics.js'
 import { domCounts, heapMb, noteCounts, noteFrame, noteStage, resetStages, stageReport } from '../debug/stageMeter.js'
 import { createTransitionLog, logEvent } from '../debug/logShipper.js'
+import { TARGETS_LIVE, publishTargets } from '../debug/liveTargets.js'
 import { useWakeLock } from '../device/useWakeLock.js'
 
 /** Если результаты из воркера вообще перестали приходить — тоже пауза. */
@@ -1087,6 +1088,20 @@ export default function GameScreen({
       // один снимок на кадр: и картинке, и HUD нужен один и тот же
       const round = roundRef.current.getState()
 
+      /**
+       * ЧТО ВИСИТ НА ЭКРАНЕ — наружу, и ТОЛЬКО при включённой отладке.
+       *
+       * Нужно виртуальному тестировщику: без этого он бьёт вслепую, зачётов
+       * набирает 8% против 57% в поле, и сцена в бою стоит пустая — то есть
+       * отрисовка и эффекты попадания прогоном не проверяются вовсе.
+       *
+       * `TARGETS_LIVE` — константа, посчитанная один раз при загрузке модуля.
+       * В боевом заходе здесь остаётся ровно проверка булева значения: ни
+       * вызова, ни выделений, ни чтения полей мишени (см. liveTargets.js и его
+       * тест).
+       */
+      if (TARGETS_LIVE) publishTargets(clockRef.current, round.mode, round.incoming)
+
       // Разгон должен читаться глазами, а не только по расписанию: звёзды
       // ускоряются вместе с темпом раунда. На паузе полёт почти замирает.
       updateStarfield(starsRef.current, dt, isPaused ? 0.15 : 1 + round.tempo * 1.6)
@@ -1229,11 +1244,33 @@ export default function GameScreen({
        */
       if (now - countsSince >= 1000) {
         countsSince = now
+        /**
+         * ЭФФЕКТЫ ПОПАДАНИЯ СЧИТАЛИСЬ МИМО СТОЛБЦА «частицы» — и это была дыра
+         * ровно там, где искали.
+         *
+         * В формате «человек герой» (он же основной) `particlesRef` не
+         * используется вовсе: частицы, кольца, всплывающие очки, конфетти,
+         * вспышки и следы зачёта живут внутри слоя мишеней. В таблице разбора
+         * столбец стоял в нуле всю сессию — не потому, что объектов нет, а
+         * потому, что считали не тот список. Подозрение «растёт число живых
+         * объектов» этой таблицей было не проверяемо в принципе.
+         *
+         * Читается готовый геттер `effects` (он же в тестах слоя), раз в
+         * секунду и только длины: обхода структур здесь нет.
+         */
+        const fx = targetsRef.current.effects
         noteCounts({
           // мишени/препятствия в полёте прямо сейчас (см. incoming в движке)
           targets: round.incoming?.length ?? 0,
           obstacles: drawnRef.current.length,
-          particles: particlesRef.current.length,
+          particles:
+            particlesRef.current.length +
+            fx.parts.length +
+            fx.rings.length +
+            fx.floats.length +
+            fx.confetti.length +
+            fx.flashes.length +
+            fx.hits.length,
           stars: starsRef.current.length,
           heapMb: heapMb(),
           ...domCounts(),

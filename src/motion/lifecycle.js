@@ -32,6 +32,7 @@ import { resetDiagnostics } from './debug/diagnostics.js'
 import { resetErrorReporter, installErrorReporter } from './debug/errorReporter.js'
 import { attachLogShipper, flush, resetLogShipper } from './debug/logShipper.js'
 import { resetRecorder } from './debug/recorder.js'
+import { resetLiveTargets } from './debug/liveTargets.js'
 
 /**
  * Открыть раздел: забыть прошлый заход и повесить то, что живёт дольше рендера.
@@ -48,6 +49,7 @@ export function openMotion() {
   resetErrorReporter()
   resetDiagnostics()
   resetRecorder()
+  resetLiveTargets()
   resetCalibration()
 
   const detachLog = attachLogShipper()
@@ -73,6 +75,7 @@ export function openMotion() {
 
     disposeAudio()
     resetRecorder()
+    resetLiveTargets()
     resetCalibration()
   }
 }

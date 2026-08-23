@@ -1,0 +1,81 @@
+{
+  "collectedAt": "2026-08-23T10:11:17.896Z",
+  "windowDays": 60,
+  "sessions": 12,
+  "events": 1734,
+  "tags": {
+    "session.start": 19,
+    "snapshot": 726,
+    "assets.source": 17,
+    "model.error": 6,
+    "worker.fallback": 6,
+    "camera.ready": 10,
+    "model.ready": 10,
+    "calibration": 7,
+    "workout.start": 7,
+    "setup.move": 9,
+    "setup.done": 3,
+    "block.start": 16,
+    "block.attempt": 169,
+    "block.end": 16,
+    "session.strength": 16,
+    "render.cheap": 27,
+    "game.clear": 364,
+    "game.miss": 263,
+    "game.end": 11,
+    "session.fight": 11,
+    "wakelock.lost": 4,
+    "page.hidden": 7,
+    "orientation.change": 2,
+    "wakelock.paused": 5,
+    "audio.blocked": 2,
+    "user.report": 1
+  },
+  "sessionMs": {
+    "median": 485752,
+    "max": 876716
+  },
+  "strengthRepMs": {
+    "barrier": {
+      "reps": 3,
+      "periodMs": 10000,
+      "n": 12
+    },
+    "lunge": {
+      "reps": 8,
+      "periodMs": 3750,
+      "n": 10
+    },
+    "jack": {
+      "reps": 17,
+      "periodMs": 1765,
+      "n": 10
+    }
+  },
+  "fightSpawnMs": {
+    "median": 1957,
+    "n": 11
+  },
+  "reactionMs": {
+    "median": 1401,
+    "p75": 1653,
+    "n": 364
+  },
+  "poseRate": {
+    "median": 10,
+    "p10": 3,
+    "min": null,
+    "n": 727
+  },
+  "inferenceMs": {
+    "median": null,
+    "p90": null,
+    "n": 0
+  },
+  "latencyMs": {
+    "median": 61,
+    "p90": 135,
+    "n": 727
+  },
+  "hitRate": 0.573
+}

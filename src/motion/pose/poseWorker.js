@@ -62,6 +62,20 @@ function installImportScriptsShim() {
 
 const importScriptsShimmed = installImportScriptsShim()
 
+/**
+ * Есть ли в воркере webgl2 поверх OffscreenCanvas. Спрашивается ОДИН РАЗ и
+ * только на пути отказа: создание контекста стоит заметно, и звать это в
+ * рабочем цикле было бы платой за диагностику из кармана человека.
+ */
+function hasWorkerWebgl2() {
+  try {
+    if (typeof OffscreenCanvas === 'undefined') return false
+    return !!new OffscreenCanvas(4, 4).getContext('webgl2')
+  } catch {
+    return false
+  }
+}
+
 let landmarker = null
 let busy = false
 let lastTimestamp = -1
@@ -302,13 +316,38 @@ async function init({ sources = [], delegate = 'GPU' }) {
     }
   }
 
-  // Все причины разом: по одной ошибке в поле не разобраться, какая попытка
-  // на чём споткнулась.
+  /**
+   * Все причины разом: по одной ошибке в поле не разобраться, какая попытка
+   * на чём споткнулась.
+   *
+   * И СРАЗУ — ОБСТАНОВКА В ВОРКЕРЕ. Полевой разбор откатов упёрся ровно в её
+   * отсутствие: шесть сессий из двенадцати ушли считать на главный поток с
+   * одинаковым «Can't find variable: document» на всех трёх попытках, и по
+   * журналу нельзя было сказать, ПОЧЕМУ MediaPipe вообще полез за документом.
+   * Веток у него две, и они означают разное:
+   *
+   *   нет `importScripts` — не подхватился загрузчик wasm (тогда важно, встала
+   *     ли наша заглушка, `shimmed`);
+   *   нет `OffscreenCanvas` — не на чем поднять GL-контекст в воркере, и это
+   *     совсем другой разговор: Safari умеет его с 16.4, а вот WKWebView
+   *     (то есть любой сторонний браузер на iOS) — не всегда.
+   *
+   * Три флага и строка версии стоят одного сообщения раз в сессию, зато
+   * следующий откат в поле читается по журналу, а не гаданием по исходникам
+   * MediaPipe.
+   */
   self.postMessage({
     type: 'error',
     code: 'MODEL_INIT_FAILED',
     stage: 'init',
     message: failures.join(' | '),
+    env: {
+      offscreen: typeof OffscreenCanvas !== 'undefined',
+      importScripts: typeof importScripts === 'function',
+      shimmed: importScriptsShimmed,
+      // без webgl2 в воркере разговор про делегат GPU вообще не имеет смысла
+      webgl2: hasWorkerWebgl2(),
+    },
   })
 }
 

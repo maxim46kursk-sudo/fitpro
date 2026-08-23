@@ -1,0 +1,510 @@
+{
+  "collectedAt": "2026-08-23T11:11:39.927Z",
+  "windowDays": 90,
+  "sessions": [
+    {
+      "id": "session-20260818-231259",
+      "durationMs": 270601,
+      "fellBack": true,
+      "thread": "worker",
+      "delegate": null,
+      "reasons": [
+        "GPU/buffer: Can't find variable: document | CPU/buffer: Can't find variable: document | CPU/path: Can't find variable: document"
+      ],
+      "modelErrors": [
+        {
+          "code": "MODEL_INIT_FAILED",
+          "stage": "init",
+          "message": "GPU/buffer: Can't find variable: document | CPU/buffer: Can't find variable: document | CPU/path: Can't find variable: document"
+        }
+      ],
+      "camera": null,
+      "assets": [
+        "own"
+      ],
+      "fpsMedian": null,
+      "fpsSamples": 0,
+      "latMedian": null,
+      "cheapTransitions": 0,
+      "cleared": 0,
+      "missed": 0,
+      "hitRate": null,
+      "reps": 0,
+      "cycles": {}
+    },
+    {
+      "id": "session-20260818-232342",
+      "durationMs": 570357,
+      "fellBack": false,
+      "thread": "worker",
+      "delegate": "GPU",
+      "reasons": [],
+      "modelErrors": [],
+      "camera": {
+        "width": 480,
+        "height": 640,
+        "frameRate": 30,
+        "facingMode": "user",
+        "zoom": 1,
+        "zoomRange": {
+          "min": 1,
+          "max": 10
+        }
+      },
+      "assets": [
+        "own"
+      ],
+      "fpsMedian": 7,
+      "fpsSamples": 111,
+      "latMedian": 121,
+      "cheapTransitions": 3,
+      "cleared": 47,
+      "missed": 41,
+      "hitRate": 0.534,
+      "reps": 17,
+      "cycles": {
+        "1": {
+          "fps": 7,
+          "lat": 123,
+          "n": 36
+        },
+        "2": {
+          "fps": 7,
+          "lat": 121,
+          "n": 33
+        },
+        "3": {
+          "fps": 6,
+          "lat": 153,
+          "n": 24
+        }
+      }
+    },
+    {
+      "id": "session-20260818-232424",
+      "durationMs": 477691,
+      "fellBack": true,
+      "thread": "main",
+      "delegate": "GPU",
+      "reasons": [
+        "GPU/buffer: Can't find variable: document | CPU/buffer: Can't find variable: document | CPU/path: Can't find variable: document"
+      ],
+      "modelErrors": [
+        {
+          "code": "MODEL_INIT_FAILED",
+          "stage": "init",
+          "message": "GPU/buffer: Can't find variable: document | CPU/buffer: Can't find variable: document | CPU/path: Can't find variable: document"
+        }
+      ],
+      "camera": {
+        "width": 640,
+        "height": 480,
+        "frameRate": 30,
+        "facingMode": "user",
+        "zoom": 1,
+        "zoomRange": {
+          "min": 1,
+          "max": 10
+        }
+      },
+      "assets": [
+        "own"
+      ],
+      "fpsMedian": 22,
+      "fpsSamples": 95,
+      "latMedian": 27,
+      "cheapTransitions": 3,
+      "cleared": 14,
+      "missed": 67,
+      "hitRate": 0.173,
+      "reps": 24,
+      "cycles": {
+        "1": {
+          "fps": 22,
+          "lat": 28,
+          "n": 35
+        },
+        "2": {
+          "fps": 24,
+          "lat": 27,
+          "n": 33
+        },
+        "3": {
+          "fps": 22,
+          "lat": 28,
+          "n": 12
+        }
+      }
+    },
+    {
+      "id": "session-20260819-113546",
+      "durationMs": 210004,
+      "fellBack": false,
+      "thread": "worker",
+      "delegate": "GPU",
+      "reasons": [],
+      "modelErrors": [],
+      "camera": {
+        "width": 480,
+        "height": 640,
+        "frameRate": 30,
+        "facingMode": "user",
+        "zoom": 1,
+        "zoomRange": {
+          "min": 1,
+          "max": 10
+        }
+      },
+      "assets": [
+        "own"
+      ],
+      "fpsMedian": 9,
+      "fpsSamples": 41,
+      "latMedian": 99,
+      "cheapTransitions": 0,
+      "cleared": 0,
+      "missed": 0,
+      "hitRate": null,
+      "reps": 0,
+      "cycles": {}
+    },
+    {
+      "id": "session-20260819-120957",
+      "durationMs": 10272,
+      "fellBack": true,
+      "thread": "worker",
+      "delegate": null,
+      "reasons": [
+        "GPU/buffer: Can't find variable: document | CPU/buffer: Can't find variable: document | CPU/path: Can't find variable: document"
+      ],
+      "modelErrors": [
+        {
+          "code": "MODEL_INIT_FAILED",
+          "stage": "init",
+          "message": "GPU/buffer: Can't find variable: document | CPU/buffer: Can't find variable: document | CPU/path: Can't find variable: document"
+        }
+      ],
+      "camera": null,
+      "assets": [
+        "own"
+      ],
+      "fpsMedian": null,
+      "fpsSamples": 0,
+      "latMedian": null,
+      "cheapTransitions": 0,
+      "cleared": 0,
+      "missed": 0,
+      "hitRate": null,
+      "reps": 0,
+      "cycles": {}
+    },
+    {
+      "id": "session-20260819-131315",
+      "durationMs": 546754,
+      "fellBack": true,
+      "thread": "main",
+      "delegate": "GPU",
+      "reasons": [
+        "GPU/buffer: Can't find variable: document | CPU/buffer: Can't find variable: document | CPU/path: Can't find variable: document"
+      ],
+      "modelErrors": [
+        {
+          "code": "MODEL_INIT_FAILED",
+          "stage": "init",
+          "message": "GPU/buffer: Can't find variable: document | CPU/buffer: Can't find variable: document | CPU/path: Can't find variable: document"
+        }
+      ],
+      "camera": {
+        "width": 640,
+        "height": 480,
+        "frameRate": 30,
+        "facingMode": "user",
+        "zoom": 1,
+        "zoomRange": {
+          "min": 1,
+          "max": 10
+        }
+      },
+      "assets": [
+        "own"
+      ],
+      "fpsMedian": 20,
+      "fpsSamples": 98,
+      "latMedian": 18,
+      "cheapTransitions": 1,
+      "cleared": 71,
+      "missed": 29,
+      "hitRate": 0.71,
+      "reps": 39,
+      "cycles": {
+        "1": {
+          "fps": 20,
+          "lat": 18,
+          "n": 35
+        },
+        "2": {
+          "fps": 21,
+          "lat": 18,
+          "n": 33
+        },
+        "3": {
+          "fps": 20,
+          "lat": 18,
+          "n": 23
+        }
+      }
+    },
+    {
+      "id": "session-20260819-131406",
+      "durationMs": 550143,
+      "fellBack": false,
+      "thread": "worker",
+      "delegate": "GPU",
+      "reasons": [],
+      "modelErrors": [],
+      "camera": {
+        "width": 480,
+        "height": 640,
+        "frameRate": 30,
+        "facingMode": "user",
+        "zoom": 1,
+        "zoomRange": {
+          "min": 1,
+          "max": 10
+        }
+      },
+      "assets": [
+        "own"
+      ],
+      "fpsMedian": 9,
+      "fpsSamples": 110,
+      "latMedian": 96,
+      "cheapTransitions": 3,
+      "cleared": 30,
+      "missed": 54,
+      "hitRate": 0.357,
+      "reps": 39,
+      "cycles": {
+        "1": {
+          "fps": 9,
+          "lat": 93,
+          "n": 35
+        },
+        "2": {
+          "fps": 9,
+          "lat": 89,
+          "n": 33
+        },
+        "3": {
+          "fps": 9,
+          "lat": 108,
+          "n": 35
+        }
+      }
+    },
+    {
+      "id": "session-20260819-132505",
+      "durationMs": 485752,
+      "fellBack": false,
+      "thread": "worker",
+      "delegate": "GPU",
+      "reasons": [],
+      "modelErrors": [],
+      "camera": {
+        "width": 640,
+        "height": 480,
+        "frameRate": 30,
+        "facingMode": "user",
+        "zoom": 1,
+        "zoomRange": {
+          "min": 1,
+          "max": 10
+        }
+      },
+      "assets": [
+        "own"
+      ],
+      "fpsMedian": 20,
+      "fpsSamples": 8,
+      "latMedian": 17,
+      "cheapTransitions": 0,
+      "cleared": 0,
+      "missed": 0,
+      "hitRate": null,
+      "reps": 0,
+      "cycles": {}
+    },
+    {
+      "id": "session-20260819-155350",
+      "durationMs": 15326,
+      "fellBack": true,
+      "thread": "main",
+      "delegate": "GPU",
+      "reasons": [
+        "GPU/buffer: Can't find variable: document | CPU/buffer: Can't find variable: document | CPU/path: Can't find variable: document"
+      ],
+      "modelErrors": [
+        {
+          "code": "MODEL_INIT_FAILED",
+          "stage": "init",
+          "message": "GPU/buffer: Can't find variable: document | CPU/buffer: Can't find variable: document | CPU/path: Can't find variable: document"
+        }
+      ],
+      "camera": {
+        "width": 480,
+        "height": 640,
+        "frameRate": 30,
+        "facingMode": "user",
+        "zoom": 1,
+        "zoomRange": {
+          "min": 1,
+          "max": 10
+        }
+      },
+      "assets": [
+        "own"
+      ],
+      "fpsMedian": 21,
+      "fpsSamples": 2,
+      "latMedian": 11,
+      "cheapTransitions": 0,
+      "cleared": 0,
+      "missed": 0,
+      "hitRate": null,
+      "reps": 0,
+      "cycles": {}
+    },
+    {
+      "id": "session-20260819-155419",
+      "durationMs": 226587,
+      "fellBack": false,
+      "thread": "worker",
+      "delegate": "GPU",
+      "reasons": [],
+      "modelErrors": [],
+      "camera": {
+        "width": 640,
+        "height": 480,
+        "frameRate": 30,
+        "facingMode": "user",
+        "zoom": 1,
+        "zoomRange": {
+          "min": 1,
+          "max": 10
+        }
+      },
+      "assets": [
+        "own"
+      ],
+      "fpsMedian": 20,
+      "fpsSamples": 45,
+      "latMedian": 34,
+      "cheapTransitions": 0,
+      "cleared": 37,
+      "missed": 14,
+      "hitRate": 0.725,
+      "reps": 16,
+      "cycles": {
+        "1": {
+          "fps": 20,
+          "lat": 35,
+          "n": 35
+        }
+      }
+    },
+    {
+      "id": "session-20260819-160114",
+      "durationMs": 243022,
+      "fellBack": true,
+      "thread": "main",
+      "delegate": "GPU",
+      "reasons": [
+        "GPU/buffer: Can't find variable: document | CPU/buffer: Can't find variable: document | CPU/path: Can't find variable: document"
+      ],
+      "modelErrors": [
+        {
+          "code": "MODEL_INIT_FAILED",
+          "stage": "init",
+          "message": "GPU/buffer: Can't find variable: document | CPU/buffer: Can't find variable: document | CPU/path: Can't find variable: document"
+        }
+      ],
+      "camera": {
+        "width": 480,
+        "height": 640,
+        "frameRate": 30,
+        "facingMode": "user",
+        "zoom": 1,
+        "zoomRange": {
+          "min": 1,
+          "max": 10
+        }
+      },
+      "assets": [
+        "own"
+      ],
+      "fpsMedian": 22,
+      "fpsSamples": 29,
+      "latMedian": 16,
+      "cheapTransitions": 0,
+      "cleared": 0,
+      "missed": 0,
+      "hitRate": null,
+      "reps": 0,
+      "cycles": {
+        "1": {
+          "fps": 22,
+          "lat": 16,
+          "n": 23
+        }
+      }
+    },
+    {
+      "id": "session-20260820-163327",
+      "durationMs": 876716,
+      "fellBack": false,
+      "thread": "worker",
+      "delegate": "GPU",
+      "reasons": [],
+      "modelErrors": [],
+      "camera": {
+        "width": 640,
+        "height": 480,
+        "frameRate": 30,
+        "facingMode": "user",
+        "zoom": 1,
+        "zoomRange": {
+          "min": 1,
+          "max": 10
+        }
+      },
+      "assets": [
+        "own"
+      ],
+      "fpsMedian": 10,
+      "fpsSamples": 161,
+      "latMedian": 90,
+      "cheapTransitions": 1,
+      "cleared": 98,
+      "missed": 16,
+      "hitRate": 0.86,
+      "reps": 24,
+      "cycles": {
+        "1": {
+          "fps": 20,
+          "lat": 35,
+          "n": 35
+        },
+        "2": {
+          "fps": 14,
+          "lat": 59,
+          "n": 35
+        },
+        "3": {
+          "fps": 3,
+          "lat": 135,
+          "n": 87
+        }
+      }
+    }
+  ]
+}

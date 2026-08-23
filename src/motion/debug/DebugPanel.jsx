@@ -30,6 +30,7 @@ import { getShippedText, isShipping, logSessionId } from './logShipper.js'
 import { describeAspect } from '../pose/viewport.js'
 import MoveCalibration from './MoveCalibration.jsx'
 import { KEYS, readRaw, writeRaw } from '../storage.js'
+import { DEBUG_PARAM, readDebugParam } from './debugParam.js'
 
 const ZONE_RU = {
   head: 'голова',
@@ -41,10 +42,14 @@ const ZONE_RU = {
 
 const STORAGE_KEY = KEYS.debugOpen
 /**
- * Имя ключа в адресе. Своё, а не общее `debug`: см. readDebugParam ниже.
- * Экспортируется, чтобы тест проверял именно его, а не свою копию строки.
+ * Имя ключа и его чтение переехали в `debugParam.js` — без React и без панели.
+ * Тот же ключ теперь решает, публиковать ли список летящих мишеней
+ * (`liveTargets.js`), а тот модуль тянется из экрана боя: импортируй он панель,
+ * в бой уехала бы вся панель ради одной строки.
+ *
+ * Реэкспорт остаётся: на `DEBUG_PARAM` из этого файла ссылаются тесты панели.
  */
-export const DEBUG_PARAM = 'motion-debug'
+export { DEBUG_PARAM }
 /** Три тапа должны уложиться в это время, иначе счётчик сбрасывается. */
 const TAP_WINDOW_MS = 1200
 const TAPS_REQUIRED = 3
@@ -75,18 +80,6 @@ const REFRESH_MS = 100
  * собирает его как `pathname + '?' + params`, то есть хеш теряется до того, как
  * раздел вообще откроется.
  */
-function readDebugParam() {
-  try {
-    const search = new URLSearchParams(globalThis.location?.search || '')
-    const hash = (globalThis.location?.hash || '').toLowerCase()
-    if (search.get(DEBUG_PARAM) === '0') return false
-    if (search.has(DEBUG_PARAM) || hash.includes(DEBUG_PARAM)) return true
-  } catch {
-    // нет location — не беда
-  }
-  return null
-}
-
 /**
  * ПАНЕЛИ НЕТ В ПРОДЕ ВОВСЕ — ни панели, ни тапов по углу, ни памяти о том, что
  * она когда-то была открыта. Пускает только `?motion-debug=1`.
