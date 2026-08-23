@@ -1,0 +1,92 @@
+# .github/workflows/fitpro-monitor.yml
+# Сторож FitPro: аптайм сайта и сервера базы + здоровье беты Motion.
+# Тишина = норма. Пишет в Telegram только при проблеме.
+# Секреты репозитория (Settings → Secrets → Actions):
+#   TELEGRAM_BOT_TOKEN — токен бота
+#   TELEGRAM_CHAT_ID   — chat_id Максима
+#   MOTION_HEALTH_URL  — https://fitproapp.ru/api/motion-health/<ключ>
+
+name: FitPro monitor
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # аптайм — каждые 10 минут
+    - cron: "7 * * * *"      # Motion — раз в час
+  workflow_dispatch:         # ручной запуск для теста (проверяет всё)
+
+jobs:
+  uptime:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '*/10 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Проверка сайта и сервера базы
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -u
+          alert() { curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+                    -d chat_id="${TG_CHAT}" --data-urlencode text="$1" >/dev/null; }
+
+          # сайт: жив, если код 2xx/3xx и в ответе есть HTML
+          check_site() {
+            body=$(curl -sS -m 20 -L -w '\n%{http_code}' https://fitproapp.ru 2>/dev/null) || return 1
+            code=${body##*$'\n'}
+            [[ $code =~ ^[23] ]] && grep -qi '<html' <<<"$body"
+          }
+          # сервер базы: жив при любом ответе, кроме таймаута/обрыва/5xx (401/403 — норма, шлюз Kong просит ключ)
+          check_api() {
+            code=$(curl -sS -m 20 -o /dev/null -w '%{http_code}' https://api.fitproapp.ru/auth/v1/health 2>/dev/null) || return 1
+            [[ $code != 000 ]] && [[ ! $code =~ ^5 ]]
+          }
+
+          fail=""
+          if ! check_site; then sleep 120; check_site || fail+="site"; fi
+          if ! check_api;  then sleep 120; check_api  || fail+=" api"; fi
+
+          [[ -z $fail ]] && { echo "Проверка: всё работает"; exit 0; }
+
+          msg="🔴 FitPro упал:"
+          [[ $fail == *site* ]] && msg+=$'\n'"— сайт fitproapp.ru (Vercel). Шаг 1: vercel.com → fitpro → Deployments → Instant Rollback на последнюю зелёную сборку."
+          [[ $fail == *api* ]]  && msg+=$'\n'"— сервер базы api.fitproapp.ru (VPS/Supabase). Шаг 1: ssh fitpro; cd /root/supabase && docker compose ps."
+          alert "$msg"
+          echo "$msg"
+
+  motion:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '7 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Проверка беты Motion
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          URL: ${{ secrets.MOTION_HEALTH_URL }}
+        run: |
+          set -u
+          alert() { curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+                    -d chat_id="${TG_CHAT}" --data-urlencode text="$1" >/dev/null; }
+
+          fetch() { curl -sS -m 20 "$URL" 2>/dev/null | jq -e '.["час"]' >/dev/null 2>&1 && curl -sS -m 20 "$URL"; }
+          json=$(fetch) || { sleep 120; json=$(fetch) || { alert "🟠 Motion: сводка не открылась дважды — наблюдение ослепло. Проверь $URL"; exit 0; }; }
+
+          h() { jq -r "$1 // 0" <<<"$json"; }
+          errors=$(h '.["час"].error_log.["записей"]')
+          reports=$(h '.["час"].motion_log.["по_типам"].["user.report"]')
+          model=$(h '.["час"].motion_log.["по_типам"].["model.error"]')
+          assets=$(h '.["час"].motion_log.["по_типам"].["assets.fallback"]')
+          events=$(h '.["час"].motion_log.["событий"]')
+          tries=$(h '.["сутки"].motion_attempts.["попыток"]')
+          people=$(h '.["сутки"].motion_attempts.["уникальных_людей"]')
+
+          problems=""
+          (( errors  > 0 )) && problems+=$'\n'"— error_log за час: $errors"
+          (( reports > 0 )) && problems+=$'\n'"— жалобы user.report за час: $reports"
+          (( model   >= 5 )) && problems+=$'\n'"— model.error за час: $model"
+          (( assets  >= 5 )) && problems+=$'\n'"— assets.fallback за час: $assets"
+
+          if [[ -z $problems ]]; then
+            echo "Бета в порядке: событий за час $events; за сутки попыток $tries, людей $people"
+          else
+            alert "🟠 ПРОБЛЕМА в бете Motion:$problems"$'\n'"Событий за час: $events; за сутки попыток $tries, людей $people"
+            echo "ПРОБЛЕМА:$problems"
+          fi
