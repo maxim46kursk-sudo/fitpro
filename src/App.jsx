@@ -223,6 +223,12 @@ import './App.css'
 // не менялись. Имена оставлены прежними, поэтому ниже по файлу ничего править
 // не пришлось.
 
+/**
+ * Отметка «этот телефон уже видел приветствие гостя». Префикс `fitpro_` —
+ * общее правило, и чистка ниже её уносит вместе с остальным (см. WelcomeSheet).
+ */
+const WELCOME_KEY = 'fitpro_welcome_seen'
+
 const clearFitproData = () => {
   Object.keys(localStorage)
     /**
@@ -7329,6 +7335,63 @@ const OFFER_TEXTS = {
   },
 }
 
+/**
+ * ПРИВЕТСТВИЕ ГОСТЮ — один раз на устройстве.
+ *
+ * Отдельного экрана-лендинга больше нет: посетитель попадает сразу в
+ * приложение. Но приложение без единого слова о себе — это набор вкладок, и
+ * человек, пришедший по ссылке из Инстаграма, не понимает, куда попал и почему
+ * у него ничего не спросили. Плашка отвечает ровно на это, одной строкой, и
+ * уходит навсегда.
+ *
+ * Слой тот же, что у OfferSheet (3000): она перекрывает и оверлей Motion.
+ * Появиться поверх игры она не может — показывается на первом же заходе, до
+ * того как человек куда-либо нажал, — но занижать слой ради этого не стоит:
+ * правило «плашки поверх всего» проще одного исключения.
+ */
+function WelcomeSheet({ onPlans, onClose }) {
+  return (
+    <div
+      data-testid="welcome-sheet"
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 3000,
+        background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: SURF, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 460,
+          padding: '24px 22px 32px', textAlign: 'center',
+        }}>
+        <div style={{ width: 36, height: 4, borderRadius: 2, background: SURF2, margin: '0 auto 18px' }} />
+        <div style={{ fontSize: 22, fontWeight: 800, color: TXT, lineHeight: 1.25, marginBottom: 10 }}>FitPro</div>
+        <div style={{ fontSize: 14, color: TXT2, lineHeight: 1.5, marginBottom: 22 }}>
+          Тренировки, питание и фитнес-игра с камерой. Пробуй всё — бесплатно и без регистрации
+        </div>
+        <button
+          data-testid="welcome-plans"
+          onClick={onPlans}
+          style={{
+            width: '100%', padding: '14px', borderRadius: 13, border: 'none', cursor: 'pointer',
+            background: `linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color: '#fff', fontSize: 16, fontWeight: 700,
+          }}>
+          Смотреть цены
+        </button>
+        <button
+          data-testid="welcome-close"
+          onClick={onClose}
+          style={{
+            width: '100%', marginTop: 10, padding: '12px', borderRadius: 13,
+            border: 'none', background: 'none', color: TXT3, fontSize: 14, cursor: 'pointer',
+          }}>
+          Понятно
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function OfferSheet({ section, score, onCreate, onLater }) {
   const t = OFFER_TEXTS[section]
   if (!t) return null
@@ -8239,7 +8302,7 @@ function AnalyticsView({ userRole }) {
 // внутри Настроек, но кнопка «назад» живёт в шапке уровнем выше — без общего
 // состояния она не знала бы, что открыта под-страница, и уводила бы сразу на
 // Главную.
-function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPage, onProfileChanged, userRole }) {
+function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPage, onProfileChanged, userRole, guest, onCreateAccount }) {
   const load=(k,def)=>{try{return JSON.parse(localStorage.getItem(k)??'null')??def}catch{return def}}
   const [notifs,setNotifs]=useState(()=>normalizeNotifs(load('fitpro_notifs',null)))
   // Есть ли вообще куда слать напоминание. Считается ровно так же, как это
@@ -8419,7 +8482,7 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
   // Аналитика — только тренеру. Двойная защита: пункт скрыт ниже, и здесь при
   // не-тренере подстраница не открывается.
   if(subPage==='analytics') return userRole==='trainer' ? <AnalyticsView userRole={userRole} trainerId={user?.id} /> : null
-  if(subPage==='plans') return <PlansView user={user} hideBack onClose={()=>setSubPage(null)} onChanged={onProfileChanged} />
+  if(subPage==='plans') return <PlansView user={user} hideBack onClose={()=>setSubPage(null)} onChanged={onProfileChanged} guest={guest} onCreateAccount={onCreateAccount} />
   if(subPage==='policy') return <PolicyView hideBack onClose={()=>setSubPage(null)} />
   if(subPage==='consent') return <ConsentDocView user={user} hideBack onClose={()=>setSubPage(null)} />
 
@@ -8834,7 +8897,16 @@ const openExternal = url => {
   window.open(url,'_blank','noopener,noreferrer')
 }
 
-function PlansView({ user, onClose, hideBack, onChanged }) {
+/**
+ * ТАРИФЫ ЧИТАЕТ И ГОСТЬ.
+ *
+ * `guest` — «человека нет, но экран показать полностью». Цены и состав пакетов
+ * видны целиком: прятать их от того, кто ещё не зарегистрировался, — прятать
+ * ровно тот довод, ради которого он и заглянул. Меняются только кнопки
+ * действия: покупка и пробный требуют аккаунта, поэтому у гостя на их месте
+ * стоит «Создать аккаунт». Ни одного запроса оплаты гость не делает.
+ */
+function PlansView({ user, onClose, hideBack, onChanged, guest, onCreateAccount }) {
   const [profile,setProfile]=useState(null)
   const [loading,setLoading]=useState(true)
   const [loadError,setLoadError]=useState(false)
@@ -8850,7 +8922,10 @@ function PlansView({ user, onClose, hideBack, onChanged }) {
   const flash=(text,isError)=>{setMsg(text);setMsgError(!!isError);setTimeout(()=>setMsg(''),5000)}
 
   const loadProfile=async()=>{
-    if(!user?.id)return
+    // Человека нет — грузить нечего. Именно снять заставку, а не просто выйти:
+    // `loading` заведён включённым, и молчаливый возврат оставил бы гостя
+    // навсегда на «Загрузка…» вместо цен.
+    if(!user?.id){setLoading(false);return}
     setLoading(true);setLoadError(false)
     const{data,error}=await supabase.from('profiles')
       // role нужен, чтобы решить, показывать ли служебные тарифы (staff).
@@ -8899,7 +8974,10 @@ function PlansView({ user, onClose, hideBack, onChanged }) {
   const access=effectiveAccess(profile)
   // Пробный предлагаем, только если его ещё не брали и сейчас нет вообще
   // никакого активного доступа (ни платного, ни пробного).
-  const canStartTrial=!!profile&&!profile.trial_used&&access.level===0
+  // Гостю баннер пробного показываем: это и есть довод завести аккаунт, а
+  // обещание правдиво — у свежего аккаунта пробный не использован и доступа нет,
+  // так что он получит ровно то, что здесь написано.
+  const canStartTrial=guest||(!!profile&&!profile.trial_used&&access.level===0)
   // Активная ПЛАТНАЯ подписка (не пробный) — для кнопки отмены.
   const hasActivePaid=access.level>0&&!access.isTrial
   const hasCoach=!!profile?.coach_id
@@ -9000,7 +9078,7 @@ function PlansView({ user, onClose, hideBack, onChanged }) {
   const isHit=!isVip&&!!selectedPlan.highlight
   // «Твой пакет» — сравнение с текущим доступом (во время пробного access.planKey
   // указывает на ПРОФИТ, что и есть фактический пакет пользователя).
-  const isCurrent=!isVip&&access.planKey===selectedKey
+  const isCurrent=!guest&&!isVip&&access.planKey===selectedKey
 
   if(loading) return (
     <div style={{minHeight:'100vh',background:BG,display:'flex',alignItems:'center',justifyContent:'center',color:TXT3,fontSize:14}}>Загрузка…</div>
@@ -9055,11 +9133,15 @@ function PlansView({ user, onClose, hideBack, onChanged }) {
             <div style={{fontSize:13,lineHeight:1.5,color:'rgba(255,255,255,0.85)',marginBottom:14}}>
               Попробуй ИИ-ассистента и все тренировки без оплаты. Карта не нужна.
             </div>
-            <button data-testid="trial-start" onClick={startTrial} disabled={trialBusy} style={{
-              width:'100%',padding:'13px',borderRadius:12,border:'none',
-              background:'#fff',color:PUR,fontSize:15,fontWeight:800,
-              cursor:trialBusy?'not-allowed':'pointer',opacity:trialBusy?0.7:1,minHeight:'unset',
-            }}>{trialBusy?'Активируем…':'Активировать пробный период'}</button>
+            <button
+              data-testid={guest?'plans-create-account':'trial-start'}
+              onClick={guest?onCreateAccount:startTrial}
+              disabled={!guest&&trialBusy}
+              style={{
+                width:'100%',padding:'13px',borderRadius:12,border:'none',
+                background:'#fff',color:PUR,fontSize:15,fontWeight:800,
+                cursor:trialBusy&&!guest?'not-allowed':'pointer',opacity:trialBusy&&!guest?0.7:1,minHeight:'unset',
+              }}>{guest?'Создать аккаунт':(trialBusy?'Активируем…':'Активировать пробный период')}</button>
           </div>
         )}
 
@@ -9159,6 +9241,16 @@ function PlansView({ user, onClose, hideBack, onChanged }) {
               border:`1px solid ${TEA}40`,background:`${TEA}18`,color:TEA,
               fontSize:15,fontWeight:700,cursor:'default',minHeight:'unset',
             }}>Твой пакет</button>
+          ):guest&&selectedPlan.level>0?(
+            /* Оплата требует аккаунта — и дело не в правилах: платёж
+               привязывается к userId (api/create-payment.js подписывает ссылку
+               им), и купленное гостем некуда было бы записать. */
+            <button data-testid="plans-buy-create-account" onClick={onCreateAccount} style={{
+              width:'100%',padding:'13px',borderRadius:12,border:'none',
+              background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',
+              fontSize:15,fontWeight:800,cursor:'pointer',minHeight:'unset',
+              boxShadow:`0 8px 24px ${PUR}45`,
+            }}>Создать аккаунт</button>
           ):selectedPlan.level>0?(
             <button onClick={()=>pay(selectedPlan)} disabled={payBusy} style={{
               width:'100%',padding:'13px',borderRadius:12,border:'none',
@@ -10325,25 +10417,6 @@ function ConnectionErrorView({ onRetry, retrying }) {
 
 export default function App() {
   const [user,setUser]=useState(null)
-  /**
-   * ГОСТЕВОЙ РЕЖИМ — ПОКА ТОЛЬКО ЗА ФЛАГОМ.
-   *
-   * Приложение целиком умеет работать без аккаунта, но включается это `?guest=1`
-   * и ничем больше: без ключа поведение прода не меняется ни на пиксель — тот
-   * же LandingPage на входе, те же гейты. Ключ запоминается в localStorage,
-   * иначе перезагрузка (а её делает и страховка от чёрного экрана в index.html)
-   * выбивала бы человека обратно на форму регистрации.
-   *
-   * Префикс `fitpro_` не для красоты: `clearFitproData` чистит ровно по нему, и
-   * флаг обязан уходить вместе с остальным при выходе и при смене владельца.
-   */
-  const [guestFlag,setGuestFlag]=useState(()=>{
-    try{
-      const p=new URLSearchParams(window.location.search)
-      if(p.get('guest')==='1'){localStorage.setItem('fitpro_guest','1');return true}
-      return localStorage.getItem('fitpro_guest')==='1'
-    }catch{return false}
-  })
   /** Форма входа поверх приложения — единственный путь гостя к регистрации. */
   const [showAuth,setShowAuth]=useState(false)
   /**
@@ -10364,16 +10437,38 @@ export default function App() {
    */
   const [guestMotionPending]=useState(guestPendingMotion)
   /**
-   * Гость — это «человека нет, но флаг стоит».
+   * ГОСТЬ — ЭТО ПРОСТО «ЧЕЛОВЕКА НЕТ».
    *
-   * Значение считается здесь, рядом с флагом, а не у роутинга ниже: его читает
-   * `showOffer`, который объявлен выше по файлу, и вычисляй мы его позже —
-   * список зависимостей `useCallback` обращался бы к ещё не созданной константе.
-   * На смысл это не влияет: во всех заходах, где решать «гость или нет» рано
-   * (сессия проверяется, не подтвердилась), роутинг возвращает свой экран
-   * раньше, чем значение кому-нибудь понадобится.
+   * Флага больше нет: гостевой режим открыт по основной ссылке, и посетитель
+   * fitproapp.ru попадает сразу в приложение. Ради этого всё и делалось —
+   * переходы из Инстаграма есть, а регистраций почти нет, потому что на входе
+   * стояла анкета.
+   *
+   * Значение считается здесь, рядом с состоянием, а не у роутинга ниже: его
+   * читает `showOffer`, объявленный выше по файлу, и вычисляй мы его позже —
+   * список зависимостей `useCallback` обращался бы к ещё не созданной
+   * константе. На смысл это не влияет: во всех заходах, где решать «гость или
+   * нет» рано (сессия проверяется, не подтвердилась, идёт автовход в Telegram),
+   * роутинг возвращает свой экран раньше, чем значение кому-нибудь понадобится.
    */
-  const guestMode = !user && guestFlag
+  const guestMode = !user
+
+  /**
+   * Видел ли этот телефон приветствие. Читается один раз при запуске: показать
+   * плашку надо на первом кадре, а не после эффекта, иначе она моргнёт поверх
+   * уже нарисованного приложения.
+   *
+   * Ключ живёт по общему правилу `fitpro_` и, значит, стирается при выходе из
+   * аккаунта. Так и задумано: выход — это чаще всего смена человека за
+   * телефоном, а новому приложение представляется заново.
+   */
+  const [welcomeSeen,setWelcomeSeen]=useState(()=>{
+    try{return localStorage.getItem(WELCOME_KEY)==='1'}catch{return true}
+  })
+  const closeWelcome=()=>{
+    try{localStorage.setItem(WELCOME_KEY,'1')}catch{/* приватный режим */}
+    setWelcomeSeen(true)
+  }
   const [authLoading,setAuthLoading]=useState(true)
   // Сессию не удалось подтвердить из-за временного сбоя (сеть/5xx), при этом
   // токены в localStorage целы. НЕ то же самое, что "пользователь вышел":
@@ -10581,13 +10676,6 @@ export default function App() {
    * хранилища: иначе следующий выход из аккаунта высадил бы его не на форму
    * входа, а обратно в гостя, и он бы не понял, почему его данных не видно.
    */
-  useEffect(()=>{
-    if(!user)return
-    // Только хранилище: `guestMode` ниже и так ложен, пока человек есть, а
-    // ставить состояние из эффекта ради уже верного значения — лишний рендер.
-    // В памяти флаг гасит выход из аккаунта (см. performLogout).
-    try{localStorage.removeItem('fitpro_guest')}catch{/* приватный режим */}
-  },[user])
 
   /**
    * ПОКАЗАТЬ ПРЕДЛОЖЕНИЕ. Единственная точка входа, и все проверки здесь:
@@ -10672,6 +10760,17 @@ export default function App() {
   const accessAuthTriedRef=useRef(false)
   const [accessAuthPending,setAccessAuthPending]=useState(false)
   const [accessAuthError,setAccessAuthError]=useState('')
+
+  /**
+   * ОТКРЫТА ЛИ ФОРМА ВХОДА.
+   *
+   * Второе слагаемое — не украшение. Ссылка доступа от тренера (`?access=`)
+   * раньше при неудаче приводила на экран-лендинг, и человек читал там, что
+   * ссылка устарела. Лендинга больше нет, и без этой строки протухшая ссылка
+   * молча высаживала бы его в гостевой режим: приложение работает, тренер не
+   * подключился, и почему — не сказано.
+   */
+  const authOpen = (showAuth||!!accessAuthError)&&!user
   const [pendingWorkoutAction,setPendingWorkoutAction]=useState(null)
   const [showProfileView,setShowProfileView]=useState(false)
   const [showProfileSheet,setShowProfileSheet]=useState(false)
@@ -10726,7 +10825,10 @@ export default function App() {
   // Раньше стрелка всегда закрывала Настройки целиком, и из Политики/Оферты
   // пользователь улетал на Главную, минуя список настроек.
   const closeSettingsOrSubPage=()=>{
-    if(settingsSubPage){setSettingsSubPage(null);return}
+    // У гостя за под-страницей ничего нет: список Настроек — про аккаунт,
+    // которого у него нет. «Назад» с тарифов возвращает его в приложение.
+    if(settingsSubPage&&!guestMode){setSettingsSubPage(null);return}
+    setSettingsSubPage(null)
     setShowSettingsView(false)
   }
 
@@ -10740,9 +10842,29 @@ export default function App() {
   // Открыть Тарифы из любой точки приложения (подсказки «доступно в ПРОФИТ»).
   // Настройки открываются сразу на под-странице тарифов; «назад» из неё, как и
   // обычно, вернёт в список Настроек — см. closeSettingsOrSubPage.
+  //
+  // Гостю тоже: цены — единственный экран Настроек, который ему что-то говорит,
+  // и прятать их от него незачем. Возврат из них у гостя закрывает всё окно —
+  // списка Настроек за ними для него нет.
   const openPlans=()=>{
     setShowSettingsView(true)
     setSettingsSubPage('plans')
+  }
+
+  /**
+   * Гость решил завести аккаунт с экрана тарифов.
+   *
+   * Пометка `fitpro_offer_src` та же, что у предложений сохранить: по ней при
+   * регистрации считается `register_from_offer`. Отдельного события не заводим —
+   * вопрос, на который она отвечает, один: сколько людей завелось не «само по
+   * себе», а после конкретного момента.
+   */
+  const createAccountFromPlans=()=>{
+    try{sessionStorage.setItem('fitpro_offer_src','plans')}catch{/* приватный режим */}
+    setShowSettingsView(false)
+    setSettingsSubPage(null)
+    setAuthTabWanted('register')
+    setShowAuth(true)
   }
 
   // Проверка ?trainer=1 в URL при загрузке
@@ -11269,13 +11391,6 @@ export default function App() {
       if (!ok) return
     }
     setUser(null)
-    /**
-     * Гостевой флаг гасим ЗДЕСЬ, а не эффектом на появление человека.
-     * `clearFitproData()` ниже убирает ключ из хранилища, но состояние в памяти
-     * пережило бы выход, и вышедший попал бы не на форму входа, а обратно в
-     * гостевой режим — с пустым приложением вместо своих данных.
-     */
-    setGuestFlag(false)
     setShowAuth(false)
     // память гостя не под властью clearFitproData: она в модуле, а не в
     // хранилище, и пережила бы выход вместе с чужой едой и тренировками
@@ -11643,14 +11758,19 @@ export default function App() {
   // выбрасывать человека из приложения вообще.
   if(!user&&authError) return <ConnectionErrorView onRetry={()=>{setAuthRetrying(true);setAuthRetryToken(t=>t+1)}} retrying={authRetrying} />
 
-  // GlassDefs обязателен и здесь. Он объявляет <linearGradient>, на которые
-  // ссылаются ВСЕ GlassIcon; ниже по коду он монтируется в основном layout, но
-  // до него дело не доходит — этот return срабатывает раньше. Без определений
-  // иконки на стартовом экране рисовались пустыми квадратами.
-  if(!user&&!guestMode) return (<>
-    <GlassDefs/>
-    <LandingPage onEnter={setUser} isTelegram={isTelegram} accessError={accessAuthError} />
-  </>)
+  /**
+   * ДАЛЬШЕ — ПРИЛОЖЕНИЕ, ДАЖЕ БЕЗ ЧЕЛОВЕКА.
+   *
+   * Отдельного экрана-лендинга больше нет: посетитель попадает сразу внутрь и
+   * пробует руками. `LandingPage` остался ровно формой входа и регистрации —
+   * его открывает кнопка «Войти» и предложения сохранить (см. `showAuth` внизу).
+   *
+   * Всё, что решается ДО этой строки, не тронуто и решается по-прежнему:
+   * восстановление пароля по ссылке из письма, проверка сессии, автовход в
+   * Telegram и вход по ссылке доступа (`?access=`), неподтверждённая сессия при
+   * сбое сети. Гостем человек становится только когда ни одно из них не
+   * сработало — то есть когда он действительно просто пришёл посмотреть.
+   */
   /**
    * СОГЛАСИЕ — ТОЛЬКО ДЛЯ ВОШЕДШИХ, и это не послабление.
    *
@@ -11924,7 +12044,10 @@ export default function App() {
               ))}
             </nav>
             <div style={{ padding:'12px 14px', borderTop:`1px solid ${HAIR}` }}>
-              <button onClick={()=>{if(user){openSettings();return}setAuthTabWanted('login');setShowAuth(true)}}
+              {/* Гостя эта кнопка вела на форму входа. Теперь ведёт туда, где
+                  для него что-то есть, — на тарифы: остальные Настройки про
+                  аккаунт, которого у него пока нет. */}
+              <button onClick={()=>{if(user){openSettings();return}openPlans()}}
                 style={{ display:'flex',alignItems:'center',gap:7,fontSize:12,color:TXT3,background:'none',border:'none',cursor:'pointer',padding:'4px 0',marginBottom:4,width:'100%' }}>
                 <span>⚙️</span> Настройки
               </button>
@@ -11945,14 +12068,14 @@ export default function App() {
       {showProfileView&&user&&<ProfileView user={user} onClose={()=>setShowProfileView(false)} onOpenAI={m=>aiRef.current?.open(m)} onUserUpdate={u=>setUser(u)} />}
 
       {/* Экран "Настройки" (mobile + desktop) */}
-      {showSettingsView&&user&&(
+      {showSettingsView&&(user||settingsSubPage==='plans')&&(
         <div style={{position:'fixed',inset:0,background:BG,zIndex:1060,display:'flex',flexDirection:'column',fontFamily:'system-ui,sans-serif'}}>
           <div style={{background:SURF,borderBottom:`1px solid ${HAIR}`,padding:'14px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
             <button data-back="1" onClick={closeSettingsOrSubPage} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:TXT3,lineHeight:1,padding:0,minHeight:'unset'}}><GlassIcon name="back" size={26} /></button>
             <span style={{fontSize:18,fontWeight:800,color:TXT,flex:1}}>{settingsSubPage?SETTINGS_SUBPAGE_TITLES[settingsSubPage]:'Настройки'}</span>
           </div>
           <div style={{flex:1,overflowY:'auto'}}>
-            <SettingsView user={user} performLogout={performLogout} onAccountDeleted={resetAfterAccountDelete} subPage={settingsSubPage} setSubPage={setSettingsSubPage} onProfileChanged={()=>setProfileReloadToken(t=>t+1)} userRole={userRole} />
+            <SettingsView user={user} performLogout={performLogout} onAccountDeleted={resetAfterAccountDelete} subPage={settingsSubPage} setSubPage={setSettingsSubPage} onProfileChanged={()=>setProfileReloadToken(t=>t+1)} userRole={userRole} guest={guestMode} onCreateAccount={createAccountFromPlans} />
           </div>
         </div>
       )}
@@ -12020,6 +12143,16 @@ export default function App() {
         другом. Разметки Motion при этом не касаемся ни в чём: это отдельный
         слой поверх, как и всё остальное в этом файле.
       */}
+      {/* Приветствие гостю. Ниже предложений сохранить по порядку в разметке,
+          но одновременно они не встречаются: предложение приходит по итогу
+          работы, а приветствие — до первого нажатия. */}
+      {guestMode&&!welcomeSeen&&!authOpen&&(
+        <WelcomeSheet
+          onPlans={()=>{closeWelcome();openPlans()}}
+          onClose={closeWelcome}
+        />
+      )}
+
       {offer&&(
         <OfferSheet
           section={offer.section}
@@ -12054,9 +12187,9 @@ export default function App() {
         форме: гость уже видел, что внутри, и пересказывать ему это заголовком
         не надо. Выйти можно без входа — иначе кнопка «Войти» стала бы ловушкой.
       */}
-      {showAuth&&!user&&(
+      {authOpen&&(
         <div style={{ position:'fixed', inset:0, zIndex:2000, overflowY:'auto', background:BG }}>
-          <LandingPage onEnter={setUser} isTelegram={isTelegram} accessError={accessAuthError} startAtForm startTab={authTabWanted} onBackToApp={()=>setShowAuth(false)} />
+          <LandingPage onEnter={setUser} isTelegram={isTelegram} accessError={accessAuthError} startAtForm startTab={authTabWanted} onBackToApp={()=>{setShowAuth(false);setAccessAuthError('')}} />
         </div>
       )}
      </TemplatesContext.Provider>

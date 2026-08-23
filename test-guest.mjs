@@ -1,9 +1,13 @@
-// test-guest.mjs — приложение целиком работает БЕЗ аккаунта, за флагом ?guest=1.
+// test-guest.mjs — приложение целиком работает БЕЗ аккаунта, по основной ссылке.
 //
 // Зачем этот набор. Переходы из Инстаграма есть, регистраций почти нет: людей
 // останавливает анкета на входе. Гостевой режим убирает её — но убирает и все
 // гарантии, на которых держалось приложение: `user` перестаёт существовать, а
 // на него завязаны и разметка (имя, аватар), и каждая запись в облако.
+//
+// Флага больше нет: гость — это просто «человека нет», и проверяется теперь
+// сам корневой адрес. Ошибка здесь видна не части людей с флагом в ссылке, а
+// каждому, кто открыл приложение.
 //
 // Проверяется ровно два класса поломок и одно обещание:
 //
@@ -69,6 +73,9 @@ page.on('console', m => {
   // Отсутствие сети до Supabase — не поломка гостевого режима: клиент
   // инициализируется всегда, а сервера в прогоне нет вовсе.
   if (/Failed to load resource|net::ERR|ERR_CONNECTION|supabase/i.test(t)) return
+  // Заведомо негодная ссылка доступа из раздела 8 — приложение о ней и должно
+  // сообщать. Это проверяемое поведение, а не поломка страницы.
+  if (/Вход по ссылке не удался/.test(t)) return
   pageErrors.push('console: ' + t.slice(0, 200))
 })
 
@@ -99,12 +106,56 @@ const open = async (qs) => {
   await page.waitForTimeout(2500)
 }
 
-// ── 1. приложение открывается гостем, все вкладки живы ─────────────────────
-await open('?guest=1')
+// ── 1. приложение открывается по основной ссылке, без всякого флага ────────
+await open('')
 
-report('гость: приложение отрисовалось, а не форма регистрации',
+report('по корневому адресу открывается приложение, а не форма регистрации',
   await page.evaluate(() => document.getElementById('root').childElementCount > 0)
   && await page.locator('[data-testid="guest-login"]').count() === 1)
+
+// Лендинга самого по себе больше нет: форма входа существует только как окно
+// поверх приложения, и без нажатия «Войти» её на экране быть не должно.
+report('лендинг сам по себе не показывается',
+  await page.locator('[data-testid="auth-back-to-app"]').count() === 0)
+
+// ── 1б. приветствие: один раз на устройстве ────────────────────────────────
+report('на первом заходе показано приветствие',
+  await page.locator('[data-testid="welcome-sheet"]').count() === 1)
+
+// «Смотреть цены» — единственный путь гостя к тарифам на узком экране
+await page.locator('[data-testid="welcome-plans"]').click()
+await page.waitForTimeout(1300)
+report('«Смотреть цены» открывает тарифы, а не заставку загрузки',
+  await page.locator('[data-testid="plans-buy-create-account"]').count() === 1)
+report('у гостя нет ни покупки, ни пробного — только «Создать аккаунт»',
+  await page.locator('[data-testid="trial-start"]').count() === 0
+  && await page.locator('[data-testid="plans-create-account"]').count() === 1)
+
+await page.locator('[data-testid="plans-buy-create-account"]').click()
+await page.waitForTimeout(1000)
+report('кнопка тарифа ведёт на форму регистрации',
+  await page.locator('[data-testid="auth-back-to-app"]').count() === 1)
+report('и помечает источник — по нему считается register_from_offer',
+  await page.evaluate(() => sessionStorage.getItem('fitpro_offer_src')) === 'plans')
+
+await page.locator('[data-testid="auth-back-to-app"]').click()
+await page.waitForTimeout(800)
+report('приветствие не возвращается в том же заходе',
+  await page.locator('[data-testid="welcome-sheet"]').count() === 0)
+
+// Теперь то же самое, но закрытое именно кнопкой «Понятно», и с перезагрузкой:
+// обещано «один раз на устройстве», а не «один раз за вкладку».
+await page.evaluate(() => localStorage.removeItem('fitpro_welcome_seen'))
+await open('')
+report('после сброса отметки приветствие показывается снова',
+  await page.locator('[data-testid="welcome-sheet"]').count() === 1)
+await page.locator('[data-testid="welcome-close"]').click()
+await page.waitForTimeout(500)
+report('«Понятно» убирает приветствие',
+  await page.locator('[data-testid="welcome-sheet"]').count() === 0)
+await open('')
+report('и после перезагрузки оно не возвращается',
+  await page.locator('[data-testid="welcome-sheet"]').count() === 0)
 
 for (const tab of ['workouts', 'nutrition', 'library', 'progress']) {
   const btn = page.locator(`[data-testid="tab-${tab}"]`)
@@ -113,8 +164,8 @@ for (const tab of ['workouts', 'nutrition', 'library', 'progress']) {
   report(`вкладка «${tab}» открывается`, has === 1 && await page.evaluate(() => document.querySelector('.mobile-content')?.childElementCount > 0))
 }
 
-report('флаг гостя пережил бы перезагрузку (лежит в localStorage)',
-  await page.evaluate(() => localStorage.getItem('fitpro_guest') === '1'))
+report('следа от прежнего флага не осталось ни в адресе, ни на диске',
+  await page.evaluate(() => !localStorage.getItem('fitpro_guest')))
 
 // ── 2. замок на планировании (до тренировки: потом мешает свёрнутая) ───────
 await page.locator('[data-testid="tab-progress"]').click()
@@ -332,12 +383,29 @@ report('«Продолжить без входа» возвращает в пр�
   await page.locator('[data-testid="guest-login"]').count() === 1
   && await page.locator('[data-testid="auth-back-to-app"]').count() === 0)
 
-// ── 7. без флага — всё как было ────────────────────────────────────────────
+// ── 7. прежний флаг в ссылке просто ничего не значит ───────────────────────
 await page.evaluate(() => localStorage.clear())
-await open('')
-report('БЕЗ флага гость не включается: на входе прежний экран регистрации',
-  await page.locator('[data-testid="guest-login"]').count() === 0
-  && await page.locator('[data-testid="tab-workouts"]').count() === 0)
+await open('?guest=1')
+report('?guest=1 в адресе игнорируется — то же самое приложение',
+  await page.locator('[data-testid="guest-login"]').count() === 1
+  && await page.locator('[data-testid="tab-workouts"]').count() === 1)
+report('и на диск он ничего не пишет',
+  await page.evaluate(() => !localStorage.getItem('fitpro_guest')))
+
+// ── 8. ссылка доступа тренера не перехвачена гостевым правилом ─────────────
+// Токен заведомо негодный, и сеть в прогоне заглушена — важно ровно одно:
+// человек НЕ проваливается молча в гостевой режим. Он должен увидеть форму
+// входа с объяснением, иначе протухшая ссылка выглядит как «тренер пропал».
+await page.evaluate(() => localStorage.clear())
+await open('?access=nosuchtoken')
+report('протухшая ссылка ?access= показывает форму входа, а не молчит',
+  await page.locator('[data-testid="auth-back-to-app"]').count() === 1)
+report('и приветствие поверх неё не лезет',
+  await page.locator('[data-testid="welcome-sheet"]').count() === 0)
+await page.locator('[data-testid="auth-back-to-app"]').click()
+await page.waitForTimeout(800)
+report('из неё можно уйти в приложение гостем',
+  await page.locator('[data-testid="guest-login"]').count() === 1)
 
 // ── итог ───────────────────────────────────────────────────────────────────
 report('ни одной ошибки на странице за весь прогон', pageErrors.length === 0,
