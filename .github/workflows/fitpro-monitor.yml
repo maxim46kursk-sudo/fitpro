@@ -57,7 +57,7 @@ jobs:
           [[ -z $fail ]] && { echo "Проверка: всё работает"; exit 0; }
 
           msg="🔴 FitPro упал:"
-          [[ $fail == *site* ]] && msg+=$'\n'"— сайт fitproapp.ru (Vercel). Шаг 1: vercel.com → fitpro → Deployments → Instant Rollback на последнюю зелёную сборку."
+          [[ $fail == *site* ]] && msg+=$'\n'"— сайт fitproapp.ru (свой сервер, host fitpro). Шаг 1: systemctl status fitpro-app; systemctl status caddy. Откат: вернуть A-записи fitproapp.ru и www на 216.198.79.1 в панели Timeweb — Vercel держим запасным примерно до 31.08."
           [[ $fail == *api* ]]  && msg+=$'\n'"— сервер базы api.fitproapp.ru (VPS/Supabase). Шаг 1: ssh fitpro; cd /root/supabase && docker compose ps."
           alert "$msg"
           echo "$msg"
