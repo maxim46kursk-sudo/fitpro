@@ -17,7 +17,7 @@
     "check:webkit": "node tools/webkit-check.mjs && vite build && node test-webkit-boot.mjs",
     "motion:profile": "node tools/motion-persona/prod-stats.mjs --days 60",
     "test:motion-session": "node tools/motion-persona/run.mjs",
-    "shots:rules": "node scripts/rules-shots.mjs",
+    "shots:challenge": "node scripts/challenge-shots.mjs",
     "prepare": "node scripts/install-hooks.mjs"
   },
   "dependencies": {

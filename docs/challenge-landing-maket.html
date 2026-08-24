@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Челлендж FitPro Motion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800;900&display=swap">
+<style>
+:root{
+  /* палитра приложения — src/theme.js */
+  --bg:#0b0b0d;
+  --surf:#1c1c1e;
+  --surf2:#2c2c2e;
+  --sep:rgba(255,255,255,.09);
+  --hair:rgba(255,255,255,.12);
+  --tx:#ffffff;
+  --tx2:rgba(235,235,245,.62);
+  --tx3:rgba(235,235,245,.34);
+  --pur:#7C7AF0;
+  --acc:#9D96FF;
+  --tea:#30D158;
+  --blu:#0A84FF;
+  --cor:#FF9F0A;
+  --kcal:#BF5AF2;
+  --grad:linear-gradient(180deg,#9D96FF,#7C7AF0);
+  --glow:0 10px 26px rgba(124,122,240,.4);
+  --f:'Golos Text',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:#050506;font-family:var(--f);color:var(--tx);-webkit-font-smoothing:antialiased}
+
+.outer{display:flex;justify-content:center;padding:26px 14px 50px}
+.phone{
+  width:390px;max-width:100%;background:var(--bg);
+  border:1px solid var(--hair);border-radius:34px;
+  box-shadow:0 50px 90px -34px #000,0 0 0 7px #101012;
+  overflow:hidden;position:relative;
+}
+.view{height:760px;overflow-y:auto;overscroll-behavior:contain;scroll-behavior:smooth;position:relative}
+.view::-webkit-scrollbar{width:0}
+
+/* ── кнопки как в приложении ── */
+.btn{
+  font-family:var(--f);font-weight:700;font-size:16px;letter-spacing:-.01em;
+  border:0;border-radius:14px;padding:16px 18px;cursor:pointer;width:100%;
+  background:var(--grad);color:#fff;box-shadow:var(--glow);
+}
+.btn:active{transform:scale(.985)}
+.btn[disabled]{background:var(--surf2);color:var(--tx3);box-shadow:none;cursor:not-allowed}
+.btn-line{background:var(--surf);color:var(--tx);border:1px solid var(--hair);box-shadow:none}
+
+/* ── липкая полоса ── */
+.bar{
+  position:sticky;bottom:0;z-index:20;
+  background:linear-gradient(to top,var(--bg) 60%,rgba(11,11,13,0));
+  padding:14px 18px 18px;display:flex;gap:11px;align-items:center;
+  transform:translateY(130%);transition:transform .28s cubic-bezier(.4,0,.2,1);
+}
+.bar.on{transform:translateY(0)}
+.bar-price{font-weight:800;font-size:17px;letter-spacing:-.02em;white-space:nowrap}
+.bar .btn{flex:1}
+
+/* ── герой ── */
+.hero{position:relative;padding:0 0 30px;overflow:hidden}
+.hero canvas{position:absolute;inset:0;width:100%;height:100%}
+.hero-in{position:relative;padding:54px 22px 0}
+.tag{
+  display:inline-flex;align-items:center;gap:7px;font-size:10.5px;font-weight:700;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--acc);
+  border:1px solid rgba(157,150,255,.32);border-radius:99px;padding:6px 12px;
+  background:rgba(157,150,255,.09);
+}
+.big{font-weight:900;font-size:58px;line-height:.88;letter-spacing:-.05em;margin:20px 0 0}
+.big small{display:block;font-size:22px;letter-spacing:-.03em;font-weight:700;color:var(--acc);margin-top:10px}
+.hero-p{margin:18px 0 0;font-size:16px;line-height:1.5;color:var(--tx2)}
+.hero-p b{color:var(--tx);font-weight:600}
+.hero-cta{margin-top:22px;display:flex;flex-direction:column;gap:9px}
+.hero-note{font-size:12px;color:var(--tx3);text-align:center;margin:3px 0 0}
+
+/* ── секции ── */
+section{padding:36px 22px}
+.sep{height:1px;background:var(--sep);margin:0 22px}
+.kicker{font-size:10.5px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--tx3);margin:0 0 12px}
+h2{font-weight:800;font-size:27px;line-height:1.12;letter-spacing:-.035em;margin:0 0 14px;text-wrap:balance}
+h2 em{font-style:normal;color:var(--acc)}
+h3{font-weight:700;font-size:18px;letter-spacing:-.025em;margin:0 0 9px;line-height:1.25}
+p{margin:0 0 13px;font-size:15.5px;line-height:1.6;color:var(--tx2)}
+p b{color:var(--tx);font-weight:600}
+p:last-child{margin-bottom:0}
+
+/* ── боль / что даёт движение ── */
+.pain{display:flex;flex-direction:column;gap:10px;margin:0 0 18px;padding:0;list-style:none}
+.pain li{
+  display:flex;gap:12px;align-items:flex-start;background:var(--surf);
+  border:1px solid var(--hair);border-radius:14px;padding:14px 15px;
+  font-size:15px;line-height:1.45;color:var(--tx2);
+}
+.pain li > span,.inc li > span{flex:1 1 auto;min-width:0}
+.pain li b{color:var(--tx);font-weight:600}
+.pain i{
+  flex:0 0 auto;width:22px;height:22px;border-radius:8px;margin-top:1px;
+  display:flex;align-items:center;justify-content:center;font-style:normal;font-size:12px;font-weight:800;
+}
+.i-cor{background:rgba(255,159,10,.15);color:var(--cor)}
+.punch{font-weight:700;font-size:19px;line-height:1.35;letter-spacing:-.025em;color:var(--tx);margin:0}
+.punch em{font-style:normal;color:var(--acc)}
+
+/* ── шаги ── */
+.step{margin:0 0 32px}
+.step:last-child{margin-bottom:0}
+.step-n{font-weight:800;font-size:12.5px;letter-spacing:.08em;color:var(--acc);margin-bottom:8px}
+.shot{
+  width:100%;aspect-ratio:9/17;border-radius:20px;overflow:hidden;position:relative;
+  background:var(--surf);border:1px solid var(--hair);margin:14px 0 0;
+}
+.shot canvas{position:absolute;inset:0;width:100%;height:100%}
+.shot-cap{
+  position:absolute;left:0;right:0;bottom:0;padding:26px 15px 13px;
+  background:linear-gradient(to top,rgba(5,5,6,.95),rgba(5,5,6,0));
+  font-size:12.5px;color:var(--tx2);line-height:1.4;
+}
+
+/* ── числа ── */
+.nums{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.num{background:var(--surf);border:1px solid var(--hair);border-radius:16px;padding:16px 15px}
+.num-v{font-weight:800;font-size:25px;letter-spacing:-.035em;line-height:1;font-variant-numeric:tabular-nums}
+.num-l{font-size:12px;line-height:1.4;color:var(--tx3);margin-top:7px}
+
+/* ── призы ── */
+.prize{
+  background:radial-gradient(130% 110% at 0% 0%,rgba(157,150,255,.18),transparent 60%),var(--surf);
+  border:1px solid rgba(157,150,255,.22);border-radius:20px;padding:20px 19px;
+}
+.fund-lbl{font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--tx3);margin-bottom:8px}
+.fund{font-weight:900;font-size:42px;letter-spacing:-.05em;line-height:1;color:var(--acc);font-variant-numeric:tabular-nums}
+.fund-l{font-size:13px;color:var(--tx2);margin-top:9px;line-height:1.5}
+.places{margin-top:15px;display:flex;flex-direction:column;gap:9px}
+.pl{background:rgba(255,255,255,.04);border:1px solid var(--hair);border-radius:14px;padding:13px 14px}
+.pl-n{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);margin-bottom:8px}
+.pl-n i{
+  width:20px;height:20px;border-radius:50%;background:var(--grad);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-style:normal;font-size:11px;font-weight:800;letter-spacing:0;
+}
+.pl-d{font-size:13.5px;line-height:1.5;color:var(--tx2)}
+.pl-d b{color:var(--tx);font-weight:600}
+.pl-v{font-size:12px;font-weight:700;color:var(--acc);font-variant-numeric:tabular-nums;white-space:nowrap}
+.proj{margin-top:14px;border-top:1px solid var(--hair)}
+.proj-r{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--hair);font-size:13.5px;color:var(--tx2)}
+.proj-r b{font-weight:800;font-size:15px;color:var(--tx);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.early{
+  background:var(--surf);border:1px dashed rgba(157,150,255,.45);border-radius:16px;
+  padding:15px 16px;margin-top:16px;
+}
+.early-t{font-size:13.5px;font-weight:700;color:var(--acc);margin-bottom:6px}
+.early-p{font-size:13.5px;color:var(--tx2);line-height:1.5;margin:0}
+.early-p b{color:var(--tx);font-weight:600}
+.old{color:var(--tx3);text-decoration:line-through;font-weight:600}
+.split{display:flex;gap:8px;margin-top:16px}
+.split div{flex:1;background:rgba(255,255,255,.04);border:1px solid var(--hair);border-radius:12px;padding:11px 8px;text-align:center}
+.split b{display:block;font-weight:800;font-size:17px;letter-spacing:-.03em}
+.split span{display:block;font-size:10.5px;color:var(--tx3);margin-top:4px}
+
+/* ── что входит ── */
+.inc{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+.inc li{display:flex;gap:12px;font-size:15px;line-height:1.45;color:var(--tx2)}
+.inc b{color:var(--tx);font-weight:600}
+.inc i{
+  flex:0 0 auto;width:21px;height:21px;border-radius:7px;margin-top:1px;
+  background:rgba(48,209,88,.16);color:var(--tea);
+  display:flex;align-items:center;justify-content:center;font-style:normal;font-size:11px;font-weight:900;
+}
+
+/* ── после оплаты ── */
+.flow{display:flex;flex-direction:column;gap:0;margin:0}
+.fl{display:flex;gap:14px;position:relative;padding-bottom:20px}
+.fl:last-child{padding-bottom:0}
+.fl-dot{
+  flex:0 0 auto;width:28px;height:28px;border-radius:50%;background:var(--surf2);
+  border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:800;color:var(--acc);z-index:1;
+}
+.fl:not(:last-child)::before{
+  content:'';position:absolute;left:13.5px;top:28px;bottom:0;width:1px;background:var(--hair);
+}
+.fl-t{font-size:15px;font-weight:600;color:var(--tx);line-height:1.35;margin-bottom:4px}
+.fl-d{font-size:13.5px;color:var(--tx2);line-height:1.5}
+
+/* ── правила ── */
+.rule{margin:0 0 26px}
+.rule:last-child{margin-bottom:0}
+.quote{
+  border-left:3px solid var(--acc);background:rgba(157,150,255,.08);
+  border-radius:0 14px 14px 0;padding:14px 16px;margin:0 0 13px;
+  font-size:16px;line-height:1.45;font-weight:700;color:var(--tx);
+}
+.ul{list-style:none;margin:0 0 13px;padding:0;display:flex;flex-direction:column;gap:10px}
+.ul li{position:relative;padding-left:16px;font-size:15px;line-height:1.5;color:var(--tx2)}
+.ul li::before{content:'';position:absolute;left:0;top:9px;width:5px;height:5px;border-radius:50%;background:var(--acc)}
+.ul b{color:var(--tx);font-weight:600}
+.calc{background:var(--surf);border:1px solid var(--hair);border-radius:14px;overflow:hidden;margin:0 0 13px}
+.calc-h,.calc-r{display:grid;grid-template-columns:1.05fr 1fr 1fr .55fr;align-items:center;gap:6px;padding:11px 13px}
+.calc-h{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--tx3);border-bottom:1px solid var(--hair)}
+.calc-r{font-size:13.5px;color:var(--tx2);border-bottom:1px solid var(--hair)}
+.calc-r:last-child{border-bottom:0}
+.calc-r span:first-child{color:var(--tx);font-weight:600}
+.calc-r b{text-align:right;font-weight:800;font-size:17px;color:var(--tx3);font-variant-numeric:tabular-nums}
+.calc-r.win{background:rgba(157,150,255,.09)}
+.calc-r.win b{color:var(--acc)}
+.tiers{display:flex;flex-direction:column;gap:9px;margin:0 0 13px}
+.tier{background:var(--surf);border:1px solid var(--hair);border-radius:15px;padding:14px 15px}
+.tier-n{font-weight:800;font-size:13.5px;letter-spacing:.04em;color:var(--acc);margin-bottom:8px}
+.tier-r{display:flex;justify-content:space-between;font-size:13.5px;line-height:1.95;color:var(--tx3)}
+.tier-r b{color:var(--tx);font-weight:600}
+
+/* ── вопросы ── */
+.faq{border-top:1px solid var(--sep)}
+.q{border-bottom:1px solid var(--sep)}
+.q button{
+  width:100%;background:none;border:0;padding:16px 0;text-align:left;cursor:pointer;
+  font-family:var(--f);font-size:15.5px;font-weight:600;color:var(--tx);
+  display:flex;justify-content:space-between;gap:14px;align-items:center;line-height:1.35;
+}
+.q button span{flex:0 0 auto;color:var(--acc);font-size:19px;transition:transform .22s;line-height:1}
+.q.open button span{transform:rotate(45deg)}
+.q-a{max-height:0;overflow:hidden;transition:max-height .28s ease}
+.q.open .q-a{max-height:360px}
+.q-a p{font-size:14.5px;padding-bottom:16px;margin:0}
+
+/* ── финал ── */
+.final{padding-bottom:26px}
+.pricebox{background:var(--surf);border:1px solid var(--hair);border-radius:20px;padding:20px 19px;margin-bottom:16px}
+.pr{display:flex;align-items:baseline;gap:11px}
+.pr b{font-weight:900;font-size:40px;letter-spacing:-.05em;line-height:1}
+.pr span{font-size:13px;color:var(--tx3);line-height:1.35}
+.pricebox p{margin:13px 0 0;font-size:13.5px}
+.agree{
+  display:flex;align-items:center;gap:12px;min-height:56px;background:var(--surf);
+  border:1px solid var(--hair);border-radius:16px;padding:0 16px;cursor:pointer;
+  user-select:none;margin-bottom:11px;
+}
+.agree.on{border-color:rgba(157,150,255,.5);background:rgba(157,150,255,.09)}
+.agree i{
+  flex:0 0 auto;width:24px;height:24px;border-radius:8px;border:2px solid #4a4a4f;
+  display:flex;align-items:center;justify-content:center;font-style:normal;
+  font-size:14px;font-weight:900;color:#fff;
+}
+.agree.on i{background:var(--pur);border-color:var(--pur)}
+.agree span{font-size:14px;font-weight:600;line-height:1.3}
+.foot{font-size:12px;color:var(--tx3);text-align:center;margin:12px 0 0;line-height:1.5}
+
+/* ── экран «ты в потоке» ── */
+.done{position:absolute;inset:0;background:var(--bg);z-index:40;display:none;flex-direction:column;
+  align-items:center;justify-content:center;padding:34px 26px;text-align:center;gap:0}
+.done.on{display:flex}
+.done-ring{
+  width:78px;height:78px;border-radius:50%;background:var(--grad);box-shadow:var(--glow);
+  display:flex;align-items:center;justify-content:center;font-size:34px;color:#fff;margin-bottom:22px;
+}
+.done h3{font-size:24px;font-weight:800;letter-spacing:-.03em;margin:0 0 10px}
+.done p{font-size:15px;color:var(--tx2);margin:0 0 22px;line-height:1.55}
+.no{
+  background:var(--surf);border:1px solid var(--hair);border-radius:18px;
+  padding:18px 22px;margin-bottom:22px;width:100%;
+}
+.no-l{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--tx3);font-weight:700}
+.no-v{font-size:38px;font-weight:900;letter-spacing:-.04em;color:var(--acc);line-height:1.1;margin-top:6px;font-variant-numeric:tabular-nums}
+.no-s{font-size:13px;color:var(--tx2);margin-top:8px}
+.done .btn{width:100%}
+.done-x{position:absolute;top:16px;right:18px;background:none;border:0;color:var(--tx3);font-size:22px;cursor:pointer}
+
+.hint{max-width:390px;margin:0 auto;padding:14px 6px 0;font-size:12.5px;color:#5f5f66;text-align:center;line-height:1.55}
+</style>
+</head>
+<body>
+
+<div class="outer">
+<div class="phone">
+
+<div class="view" id="view">
+
+  <!-- ═══ ГЕРОЙ ═══ -->
+  <div class="hero">
+    <canvas id="cv"></canvas>
+    <div class="hero-in">
+      <div class="tag">Поток 1 · старт 10 сентября</div>
+      <h1 class="big">30<br>ДНЕЙ<small>Челлендж FitPro Motion</small></h1>
+      <p class="hero-p">Двадцать минут в день перед камерой телефона. <b>Без зала, без гантелей, без абонемента.</b> Камера считает каждое движение сама.</p>
+      <div class="hero-cta">
+        <button class="btn" onclick="toEnd()">Участвовать — 2 990 ₽</button>
+        <button class="btn btn-line" onclick="toRules()">Сначала правила</button>
+      </div>
+      <p class="hero-note">Разовый вход в поток. Не подписка.</p>
+    </div>
+  </div>
+
+  <!-- ═══ ЗАЧЕМ ═══ -->
+  <section>
+    <p class="kicker">Зачем это тебе</p>
+    <h2>Дело не только<br>в <em>весах</em></h2>
+    <p>Вес — то, что видно первым. Но за тридцать дней движения меняется куда больше, и обычно люди замечают это раньше, чем цифру на весах.</p>
+    <ul class="pain">
+      <li><i class="i-cor">↑</i><span><b>Энергия.</b> Просыпаться перестаёт быть подвигом, к вечеру ещё что-то остаётся.</span></li>
+      <li><i class="i-cor">↑</i><span><b>Спина и колени.</b> Тело, которое двигается каждый день, перестаёт ныть от сидячей работы.</span></li>
+      <li><i class="i-cor">↑</i><span><b>Сон и голова.</b> Засыпаешь быстрее, а нервы держат то, что раньше выбивало.</span></li>
+      <li><i class="i-cor">↑</i><span><b>Уверенность.</b> Тридцать дней, которые ты не бросил, меняют отношение к себе сильнее любого зеркала.</span></li>
+    </ul>
+    <p class="punch">И да — <em>вес тоже уходит.</em> Но только если тренировку не съедать вечером. Поэтому здесь считается и движение, и еда.</p>
+  </section>
+
+  <div class="sep"></div>
+
+  <!-- ═══ КАК ═══ -->
+  <section>
+    <p class="kicker">Как это работает</p>
+    <h2>Три вещи<br>каждый день</h2>
+
+    <div class="step">
+      <div class="step-n">01 — ПОСТАВЬ</div>
+      <h3>Телефон на пол, ты — в двух метрах</h3>
+      <p>Камера видит тебя целиком и подсвечивает силуэт, когда встал правильно. Больше настраивать нечего.</p>
+      <div class="shot"><div class="shot-cap">Экран калибровки: силуэт загорелся — можно начинать</div></div>
+    </div>
+
+    <div class="step">
+      <div class="step-n">02 — ОТРАБОТАЙ</div>
+      <h3>20 минут: силовая и бой</h3>
+      <p>Семь кругов. В каждом полминуты силового движения и пара минут боя — к тебе летят мишени, ты выбиваешь их руками и ногами. Счёт идёт сразу, на экране.</p>
+      <div class="shot"><div class="shot-cap">Бой: мишень в воздухе, счёт и таймер круга</div></div>
+    </div>
+
+    <div class="step">
+      <div class="step-n">03 — ЗАПИШИ</div>
+      <h3>Что съел за день</h3>
+      <p>Поиск по базе, штрих-код с упаковки или руками. Норму приложение считает по твоим данным — попадать в неё и есть задача.</p>
+      <div class="shot"><div class="shot-cap">Дневник питания: норма, съедено, остаток по КБЖУ</div></div>
+    </div>
+  </section>
+
+  <div class="sep"></div>
+
+  <!-- ═══ ВМЕСТЕ ═══ -->
+  <section>
+    <p class="kicker">И главное</p>
+    <h2>Ты идёшь<br>не <em>один</em></h2>
+    <p>Поток стартует у всех в один день, и тридцать дней у всех одни и те же — день в день. Видно, где ты среди остальных, и это держит лучше любой мотивации.</p>
+    <div class="shot" style="aspect-ratio:9/15"><div class="shot-cap">Таблица потока: место, номер участника, очки и питание</div></div>
+  </section>
+
+  <div class="sep"></div>
+
+  <!-- ═══ ПРИЗЫ ═══ -->
+  <section>
+    <p class="kicker">Призы</p>
+    <h2>Призовой фонд —<br>это <em>две части</em></h2>
+
+    <div class="prize">
+      <div class="fund-lbl">Часть первая · гарантирована</div>
+      <div class="fund">59 970 ₽</div>
+      <div class="fund-l">Призами. Они уже есть и не зависят от того, сколько человек придёт в поток.</div>
+      <div class="places">
+        <div class="pl">
+          <div class="pl-n"><i>1</i>место</div>
+          <div class="pl-d"><b>VIP-пакет: месяц тренировок со мной по видеосвязи.</b> Персональная программа тренировок и питания, составленная под тебя. <span class="pl-v">30 000 ₽</span></div>
+        </div>
+        <div class="pl">
+          <div class="pl-n"><i>2</i>место</div>
+          <div class="pl-d">2 месяца тарифа <b>ПРЕМИУМ</b>: персональная программа, разбор питания, ежедневная проверка отчётов. <span class="pl-v">19 980 ₽</span></div>
+        </div>
+        <div class="pl">
+          <div class="pl-n"><i>3</i>место</div>
+          <div class="pl-d">Месяц тарифа <b>ПРЕМИУМ</b>. <span class="pl-v">9 990 ₽</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="prize" style="margin-top:12px">
+      <div class="fund-lbl">Часть вторая · деньгами</div>
+      <div class="fund">+ половина<br>каждого билета</div>
+      <div class="fund-l">Живые деньги, которые делятся между теми же тремя. Чем больше народу в потоке — тем больше эта часть.</div>
+      <div class="split">
+        <div><b>50%</b><span>1 место</span></div>
+        <div><b>30%</b><span>2 место</span></div>
+        <div><b>20%</b><span>3 место</span></div>
+      </div>
+    </div>
+
+    <p style="margin-top:16px">Место считается по двум показателям сразу — как ты двигаешься и как ты ешь. Одним питанием челлендж не выиграть, и одной игрой тоже.</p>
+  </section>
+
+  <div class="sep"></div>
+
+  <!-- ═══ ЧИСЛА ═══ -->
+  <section>
+    <p class="kicker">Коротко</p>
+    <div class="nums">
+      <div class="num"><div class="num-v">30</div><div class="num-l">дней, одинаковых у всех</div></div>
+      <div class="num"><div class="num-v">~20 мин</div><div class="num-l">на один день</div></div>
+      <div class="num"><div class="num-v">3</div><div class="num-l">захода в день, в зачёт лучший</div></div>
+      <div class="num"><div class="num-v">0 ₽</div><div class="num-l">на зал и снаряды</div></div>
+    </div>
+  </section>
+
+  <div class="sep"></div>
+
+  <!-- ═══ ЧТО ВХОДИТ ═══ -->
+  <section>
+    <p class="kicker">Что входит в билет</p>
+    <h2>Что ты<br>получаешь</h2>
+    <ul class="inc">
+      <li><i>✓</i><span>Все <b>30 дней программы</b> — с первого до последнего</span></li>
+      <li><i>✓</i><span><b>Свою норму питания</b>, посчитанную по твоим данным</span></li>
+      <li><i>✓</i><span><b>Место в таблице потока</b> и своё положение каждый день</span></li>
+      <li><i>✓</i><span><b>Право на призы</b> — фонд делится между тремя лучшими</span></li>
+    </ul>
+    <div class="early">
+      <div class="early-t">И всё приложение — уже сейчас</div>
+      <p class="early-p">Челлендж откроется в день старта. Но <b>тренировки, программы и дневник питания доступны сразу после оплаты</b> — можно втягиваться, не дожидаясь первого дня.</p>
+    </div>
+  </section>
+
+  <div class="sep"></div>
+
+  <!-- ═══ ПОСЛЕ ОПЛАТЫ ═══ -->
+  <section>
+    <p class="kicker">Что будет после оплаты</p>
+    <h2>Дальше всё<br>по шагам</h2>
+    <div class="flow">
+      <div class="fl"><div class="fl-dot">1</div><div>
+        <div class="fl-t">Оплата</div>
+        <div class="fl-d">Открывается защищённая страница оплаты. Карта, СБП — как обычно. После оплаты возвращаешься в приложение сам.</div></div></div>
+      <div class="fl"><div class="fl-dot">2</div><div>
+        <div class="fl-t">Ты в потоке, у тебя есть номер</div>
+        <div class="fl-d">Появляется твой номер участника — под ним ты будешь в таблице. Ничего подтверждать и никому писать не надо.</div></div></div>
+      <div class="fl"><div class="fl-dot">3</div><div>
+        <div class="fl-t">Заполняешь данные о себе</div>
+        <div class="fl-d">Рост, вес, цель, активность. Приложение считает твою норму питания — до старта её ещё можно менять.</div></div></div>
+      <div class="fl"><div class="fl-dot">4</div><div>
+        <div class="fl-t">Ждёшь старта — но не сидишь без дела</div>
+        <div class="fl-d">Дни челленджа до старта закрыты у всех одинаково: в комнате тикает обратный отсчёт. Зато <b style="color:#fff;font-weight:600">всё остальное приложение уже твоё</b> — тренировки, программы, дневник питания. Втягивайся, к первому дню будешь готов.</div></div></div>
+      <div class="fl"><div class="fl-dot">5</div><div>
+        <div class="fl-t">День старта — открывается первый день</div>
+        <div class="fl-d">Дальше по календарю: каждый день свой, тридцать дней подряд.</div></div></div>
+    </div>
+  </section>
+
+  <div class="sep"></div>
+
+  <!-- ═══ ПРАВИЛА ═══ -->
+  <section id="rules">
+    <p class="kicker">Правила · читать до конца</p>
+    <h2>Как всё<br>считается</h2>
+
+    <div class="rule">
+      <h3>Что сделать до старта</h3>
+      <p>Заполни данные о себе: пол, возраст, рост, вес, цель, активность. По ним приложение посчитает дневную норму — калории, белки, жиры, углеводы.</p>
+      <p><b>Норма замораживается в день старта.</b> Менять её посреди потока нельзя, иначе можно было бы вечером подогнать норму под съеденное. Один пересчёт — на 15-й день, по новому весу.</p>
+    </div>
+
+    <div class="rule">
+      <h3>Как проходит день</h3>
+      <p>Семь кругов, на тяжёлых днях восемь. Круг — полминуты силового движения и полторы-две минуты боя, между ними короткий отдых.</p>
+      <p>Можно выйти на середине и вернуться позже — день соберётся из нескольких заходов. Но <b>день засчитан, только когда сделаны все круги.</b></p>
+    </div>
+
+    <div class="rule">
+      <h3>Три уровня</h3>
+      <p>Уровень выбираешь сам, каждый день заново. Движения везде одни и те же — разница в темпе и в том, насколько точно надо попасть.</p>
+      <div class="tiers">
+        <div class="tier"><div class="tier-n">НОВИЧОК</div>
+          <div class="tier-r"><span>Мишень</span><b>крупная</b></div>
+          <div class="tier-r"><span>Висит</span><b>долго</b></div>
+          <div class="tier-r"><span>Цена мишени</span><b>100 очков</b></div></div>
+        <div class="tier"><div class="tier-n">ОПЫТНЫЙ</div>
+          <div class="tier-r"><span>Мишень</span><b>средняя</b></div>
+          <div class="tier-r"><span>Висит</span><b>меньше</b></div>
+          <div class="tier-r"><span>Цена мишени</span><b>150 очков</b></div></div>
+        <div class="tier"><div class="tier-n">ПРОФИ</div>
+          <div class="tier-r"><span>Мишень</span><b>мелкая</b></div>
+          <div class="tier-r"><span>Висит</span><b>мало</b></div>
+          <div class="tier-r"><span>Цена мишени</span><b>200 очков</b></div></div>
+      </div>
+    </div>
+
+    <div class="rule">
+      <h3>Очки и заходы</h3>
+      <p><b>Каждая выбитая мишень — очки уровня.</b> Никаких множителей: сколько выбил, столько и заработал. Промах очков не отнимает.</p>
+      <div class="quote">Три захода в день. Все три — на любые уровни, как решишь. В зачёт идёт один, лучший.</div>
+      <p>Три захода на новичке — или один на профи и два на опытном: твой выбор. На профи мишень дороже, но темп жёстче, и слабый заход там может проиграть сильному на новичке. <b>Уровень — это ставка.</b></p>
+    </div>
+
+    <div class="rule">
+      <h3>Как считается питание</h3>
+      <p>Смотрим, насколько ты промахнулся мимо своей нормы по каждому из четырёх показателей:</p>
+      <ul class="ul">
+        <li>промах <b>до 10%</b> — это <b>100 баллов</b>, твой коридор;</li>
+        <li>дальше падает: 20% мимо — 80 баллов, 30% — 60, 60% и хуже — ноль.</li>
+      </ul>
+      <p>Оценка дня — среднее по четырём. Чтобы день считался, записи должны быть <b>минимум в трёх приёмах пищи</b>: одна строчка «торт, 2400 ккал» в норму не попадает и не должна.</p>
+      <p>Итог за поток — средний процент за все 30 дней. День без записей — ноль.</p>
+    </div>
+
+    <div class="rule">
+      <h3>Поток идёт по календарю</h3>
+      <div class="quote">В первый день потока играется первый день. Во второй — второй. Пропустил — за этот день ноль, и вернуться нельзя.</div>
+      <p>То же и с питанием: дневник закрывается вместе с днём. Это не наказание, это и есть челлендж.</p>
+    </div>
+
+    <div class="rule">
+      <h3>Как определяется победитель</h3>
+      <p>Сначала считаются две таблицы. В одной все выстроены по <b>очкам движения</b>, в другой — по <b>проценту питания</b>. У тебя получается два места: например, третье в движении и первое в питании.</p>
+      <div class="quote">Эти два места складываются. Чем меньше вышло — тем выше ты в итоговой таблице.</div>
+      <p>Первое место в обеих таблицах дало бы 1 + 1 = 2, лучше не бывает. Посмотри, как это работает на двоих:</p>
+
+      <div class="calc">
+        <div class="calc-h"><span>Участник</span><span>Движение</span><span>Питание</span><span>Сумма</span></div>
+        <div class="calc-r win"><span>Аня</span><span>3 место</span><span>1 место</span><b>4</b></div>
+        <div class="calc-r"><span>Игорь</span><span>1 место</span><span>5 место</span><b>6</b></div>
+      </div>
+      <p>Игорь сильнее в игре, но провалил питание — и проиграл Ане, которая вытянула оба. <b>Четыре меньше шести, значит Аня выше.</b></p>
+      <p>Если суммы совпали, выше тот, у кого лучше место в движении: игру камера считает сама, и подделать её нельзя.</p>
+    </div>
+
+    <div class="rule">
+      <h3>Честно — значит честно</h3>
+      <ul class="ul">
+        <li>Играет <b>тот, кто зарегистрирован</b>. Подставить вместо себя другого — вылет из потока.</li>
+        <li>Один аккаунт — один участник.</li>
+        <li><b>Финалисты присылают видео последнего дня.</b> Не совпало с записью игры — приз уходит следующему.</li>
+        <li>Если игра не смогла загрузить твой прогресс, она скажет об этом прямо на экране.</li>
+      </ul>
+      <div class="quote">Дневник питания — на твоей совести.</div>
+      <p>Движение считает камера, обмануть её нельзя. А дневник заполняешь ты сам, и никто не стоит у тебя на кухне. Вписать красивые цифры может каждый — и обмануть этим можно только себя. Ты пришёл за своим весом и своим самочувствием через тридцать дней, а их никаким дневником не подделать.</p>
+    </div>
+  </section>
+
+  <div class="sep"></div>
+
+  <!-- ═══ ВОПРОСЫ ═══ -->
+  <section>
+    <p class="kicker">Частые вопросы</p>
+    <h2>Коротко<br>о главном</h2>
+    <div class="faq" id="faq">
+      <div class="q"><button>Я вообще не спортивный. Потяну?<span>+</span></button><div class="q-a"><p>Для этого есть уровень НОВИЧОК: мишень крупная и висит долго. Первые дни лёгкие, нагрузка растёт постепенно — тридцать дней на то и рассчитаны.</p></div></div>
+      <div class="q"><button>Мне за сорок, спина и колени. Можно?<span>+</span></button><div class="q-a"><p>Движения без прыжков со штангой и без ударной работы на суставы, темп ты выбираешь сам. Но если есть диагноз или боль — сначала спроси своего врача, а не меня.</p></div></div>
+      <div class="q"><button>Нужен зал или инвентарь?<span>+</span></button><div class="q-a"><p>Нет. Телефон, два метра свободного пола и свет спереди. Всё.</p></div></div>
+      <div class="q"><button>А если пропущу день?<span>+</span></button><div class="q-a"><p>За этот день ноль, и вернуться к нему нельзя — поток идёт по календарю у всех одинаково. Один пропуск челлендж не рушит, но каждый следующий стоит места в таблице.</p></div></div>
+      <div class="q"><button>Это подписка? Спишется ещё раз?<span>+</span></button><div class="q-a"><p>Нет. Разовый вход в один поток: заплатил один раз, прошёл тридцать дней. Ничего не продлевается само.</p></div></div>
+      <div class="q"><button>Каким будет призовой фонд?<span>+</span></button><div class="q-a"><p>Две части. Первая — призы на 59 970 ₽, они гарантированы и не зависят от числа участников: VIP-пакет победителю — месяц тренировок со мной по видеосвязи, второму и третьему — месяцы тарифа ПРЕМИУМ. Вторая часть — деньги: половина каждого проданного билета, делится между теми же тремя. Итоговую денежную сумму объявляю в день старта, когда набор закрыт.</p></div></div>
+      <div class="q"><button>А что делать до старта потока?<span>+</span></button><div class="q-a"><p>Челлендж откроется в день старта — до этого его дни закрыты у всех одинаково. Но само приложение тебе уже доступно: тренировки, программы, дневник питания. Заполни данные о себе и втягивайся, к старту будешь готов.</p></div></div>
+      <div class="q"><button>Обязательно вести дневник питания?<span>+</span></button><div class="q-a"><p>Обязательно, если борешься за приз: питание — половина зачёта. Тренироваться можно и без него, но место в таблице будет ниже.</p></div></div>
+    </div>
+  </section>
+
+  <div class="sep"></div>
+
+  <!-- ═══ ФИНАЛ ═══ -->
+  <section class="final" id="end">
+    <p class="kicker">Вход в поток</p>
+    <h2>Тридцать дней<br>начинаются <em>сейчас</em></h2>
+    <div class="pricebox">
+      <div class="pr"><b>2 990 ₽</b><span>разовый вход<br>в поток 1</span></div>
+      <p>Половина всех билетов уходит в призовой фонд потока.</p>
+    </div>
+    <label class="agree" id="ag"><i id="agi"></i><span>Я прочитал правила и согласен</span></label>
+    <button class="btn" id="go" disabled>Участвовать — 2 990 ₽</button>
+    <p class="foot">Старт потока — 10 сентября. Опоздал к старту — ждёшь следующий: все идут день в день.</p>
+  </section>
+
+  <div class="bar" id="bar">
+    <div class="bar-price">2 990 ₽</div>
+    <button class="btn" onclick="toEnd()">Участвовать</button>
+  </div>
+
+</div>
+
+<!-- ═══ ЭКРАН ПОСЛЕ ОПЛАТЫ ═══ -->
+<div class="done" id="done">
+  <button class="done-x" onclick="closeDone()">✕</button>
+  <div class="done-ring">✓</div>
+  <h3>Ты в потоке</h3>
+  <p>Оплата прошла. Дальше — заполнить данные о себе, чтобы приложение посчитало твою норму.</p>
+  <div class="no">
+    <div class="no-l">Твой номер участника</div>
+    <div class="no-v">№ 24</div>
+    <div class="no-s">До старта потока: 17 дней</div>
+  </div>
+  <button class="btn" onclick="closeDone()">Заполнить данные о себе</button>
+</div>
+
+</div>
+</div>
+
+<p class="hint">Тёмные прямоугольники — места под настоящие скриншоты в полный рост телефона.<br>Нажми «Участвовать» внизу — покажу, что человек видит после оплаты.</p>
+
+<script>
+/* фон героя — частицы в акценте приложения */
+(function(){
+  const cv=document.getElementById('cv');if(!cv)return;
+  const c=cv.getContext('2d'),dpr=Math.min(2,devicePixelRatio||1);
+  function sz(){cv.width=cv.clientWidth*dpr;cv.height=cv.clientHeight*dpr}
+  sz();addEventListener('resize',sz);
+  const calm=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const P=Array.from({length:32},()=>({a:Math.random()*6.283,r:Math.random(),s:.0010+Math.random()*.0018,z:.3+Math.random()*.7}));
+  (function f(){
+    const w=cv.width,h=cv.height,cx=w*.70,cy=h*.28,b=Math.min(w,h);
+    c.clearRect(0,0,w,h);
+    const g=c.createRadialGradient(cx,cy,0,cx,cy,b*1.15);
+    g.addColorStop(0,'rgba(124,122,240,.5)');g.addColorStop(.55,'rgba(124,122,240,.10)');g.addColorStop(1,'rgba(11,11,13,0)');
+    c.fillStyle=g;c.fillRect(0,0,w,h);
+    for(const p of P){
+      if(!calm){p.r-=p.s;if(p.r<.05){p.r=1.1;p.a=Math.random()*6.283}}
+      const x=cx+Math.cos(p.a)*p.r*b*.85,y=cy+Math.sin(p.a)*p.r*b*.62;
+      const rad=(1.15-p.r)*7.5*p.z*dpr+1.2*dpr;
+      const al=Math.max(0,Math.min(.55,(1-p.r)*.65))*p.z;
+      c.beginPath();c.arc(x,y,rad,0,6.283);
+      c.fillStyle='rgba(157,150,255,'+al.toFixed(3)+')';c.fill();
+    }
+    if(!calm)requestAnimationFrame(f);
+  })();
+})();
+
+/* заглушки скриншотов */
+document.querySelectorAll('.shot').forEach(el=>{
+  const cv=document.createElement('canvas');el.prepend(cv);
+  requestAnimationFrame(()=>{
+    const dpr=Math.min(2,devicePixelRatio||1);
+    cv.width=el.clientWidth*dpr;cv.height=el.clientHeight*dpr;
+    const c=cv.getContext('2d'),w=cv.width,h=cv.height;
+    const g=c.createLinearGradient(0,0,0,h);
+    g.addColorStop(0,'#1c1c1e');g.addColorStop(1,'#101012');
+    c.fillStyle=g;c.fillRect(0,0,w,h);
+    c.strokeStyle='rgba(157,150,255,.07)';c.lineWidth=dpr;
+    for(let i=1;i<12;i++){c.beginPath();c.moveTo(0,h*i/12);c.lineTo(w,h*i/12);c.stroke()}
+    c.textAlign='center';
+    c.fillStyle='rgba(235,235,245,.5)';
+    c.font='700 '+(12*dpr)+'px "Golos Text",sans-serif';
+    c.fillText('СКРИНШОТ ЭКРАНА',w/2,h*.47);
+    c.font='400 '+(11*dpr)+'px "Golos Text",sans-serif';
+    c.fillStyle='rgba(235,235,245,.32)';
+    c.fillText('в полный рост, как на телефоне',w/2,h*.47+18*dpr);
+  });
+});
+
+document.getElementById('faq').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  b.parentElement.classList.toggle('open');
+});
+
+let ok=false;
+const ag=document.getElementById('ag'),agi=document.getElementById('agi'),go=document.getElementById('go');
+ag.addEventListener('click',()=>{ok=!ok;ag.classList.toggle('on',ok);agi.textContent=ok?'✓':'';go.disabled=!ok});
+go.addEventListener('click',()=>{
+  go.textContent='Открываю оплату…';
+  setTimeout(()=>{go.textContent='Участвовать — 2 990 ₽';document.getElementById('done').classList.add('on')},900);
+});
+function closeDone(){document.getElementById('done').classList.remove('on')}
+
+const view=document.getElementById('view'),bar=document.getElementById('bar'),end=document.getElementById('end');
+view.addEventListener('scroll',()=>{
+  const past=view.scrollTop>420;
+  const atEnd=view.scrollTop+view.clientHeight>end.offsetTop+120;
+  bar.classList.toggle('on',past&&!atEnd);
+});
+function toEnd(){document.getElementById('end').scrollIntoView({behavior:'smooth'})}
+function toRules(){document.getElementById('rules').scrollIntoView({behavior:'smooth'})}
+</script>
+</body>
+</html>

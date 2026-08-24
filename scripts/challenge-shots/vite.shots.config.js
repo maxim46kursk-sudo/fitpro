@@ -17,7 +17,7 @@ export default async (env) => {
     root: here('.'),
     base: './',
     build: {
-      outDir: here('../../tools/.cache/rules-harness'),
+      outDir: here('../../tools/.cache/challenge-harness'),
       emptyOutDir: true,
       rollupOptions: { input: here('./harness.html') },
     },

@@ -1,238 +1,50 @@
-import { useState } from 'react'
-import { DAYS, FREE_DAYS } from '../game/challenge.js'
+import { useEffect, useRef, useState } from 'react'
 
 /**
- * ЧЕЛЛЕНДЖ: ЧТО ЭТО И КАК В НЕГО ПОПАСТЬ.
+ * ЧЕЛЛЕНДЖ — ОДНА ДЛИННАЯ СТРАНИЦА, по которой человек решает, платить ли.
  *
- * Один экран на два разных разговора, и это намеренно. Пока человек не в
- * потоке, разговор один — что это за тридцать дней, сколько стоит место и как
- * считается призовой фонд. Как только он в потоке, разговор становится
- * другим — какой у него номер, когда старт, какой сегодня день, — а прежний
- * теряет смысл целиком. Два экрана здесь означали бы две двери к одному и тому
- * же, и человек, оплативший билет, продолжал бы натыкаться на предложение
- * купить.
+ * Раньше здесь было два разных места: короткая карточка с ценой и отдельная
+ * карусель правил из двенадцати экранов. Карусель убрана намеренно — она
+ * заставляла листать двенадцать раз до кнопки и прятала главное в середине
+ * пути. Теперь всё одним свитком и в том порядке, в каком человек об этом
+ * спрашивает: что это → зачем мне → как устроен день → я не один → что
+ * получу → сколько стоит → а если... → согласен, плачу.
  *
- * ЭКРАН НИЧЕГО НЕ ЗНАЕТ ПРО СЕТЬ. Участие приезжает пропсом (src/challengeSeason.js),
- * покупка уходит колбэком. Причина не в чистоте, а в проверяемости: «что видит
- * не участник», «что видит участник» и «что видит гость» — это три вопроса к
- * разметке, и отвечать на них должно без поднятого supabase.
+ * ПРАВИЛА — РАЗДЕЛ ЭТОЙ ЖЕ СТРАНИЦЫ, а согласие берётся галочкой внизу: чтобы
+ * до неё дойти, правила надо прокрутить, и «дочитал» здесь означает ровно это.
+ * Порядок «сначала согласие в базу, потом оплата» не менялся
+ * (sql/2026-08-24_challenge_rules.sql).
  *
- * ГОСТЬ ВИДИТ ВСЁ, КРОМЕ КНОПКИ ОПЛАТЫ. Цена и правило фонда от него не
- * прячутся — это ровно тот довод, ради которого он сюда и заглянул, и тем же
- * правилом живёт экран тарифов (PlansView в App.jsx). Меняется одна кнопка:
- * купить билет он всё равно не может (платёж привязывается к аккаунту), и форма
- * оплаты была бы обещанием, которое некому исполнить. Его первый шаг —
- * бесплатный аккаунт, об этом кнопка и говорит.
+ * НИЧЕГО ПРО ДЕНЬГИ И ДАТЫ НЕ ЗАШИТО В РАЗМЕТКУ. Цена, доля фонда, делёж между
+ * тройкой и дата старта приходят из строки сезона; состав гарантированных
+ * призов лежит одной таблицей ниже (PRIZES) и правится одной строкой.
+ *
+ * Порядок блоков, тексты и размеры — с согласованного макета
+ * docs/challenge-landing-maket.html.
  */
 
 /**
- * @param {{season: object, entry: object|null}|null} [props.state] участие:
- *   null — живого потока нет вовсе (или прочитать не удалось).
- * @param {boolean} [props.guest] гость без аккаунта.
- * @param {number} [props.day] текущий день челленджа у этого человека.
- * @param {() => Promise<{ok?: true, already?: true, error?: string}>} [props.onBuy]
- * @param {() => void} [props.onCreateAccount] гость нажал «Создать аккаунт».
- * @param {() => void} [props.onRefresh] перечитать участие (после «уже участник»).
- * @param {(opts: {gate: boolean}) => void} [props.onRules] открыть правила.
- *   gate — первое чтение, с галочкой и кнопкой вступления в конце.
- * @param {boolean} [props.loading] участие ещё читается с сервера.
+ * ГАРАНТИРОВАННЫЕ ПРИЗЫ — В ОДНОМ МЕСТЕ. Они объявлены заранее и не зависят от
+ * числа участников, поэтому живут константой, а не текстом в разметке: сумма
+ * фонда считается отсюда же и не разъедется с составом.
  */
-export default function ChallengeScreen({
-  state = null,
-  guest = false,
-  day = 1,
-  days = DAYS,
-  onBuy = null,
-  onCreateAccount = null,
-  onRefresh = null,
-  onRules = null,
-  loading = false,
-  /** Объявленная цена билета — пока сезона нет, показывать «0 ₽» нельзя. */
-  fallbackPrice = 0,
-  onExit = null,
-}) {
-  const [busy, setBusy] = useState(false)
-  const [note, setNote] = useState('')
+export const PRIZES = [
+  {
+    place: 1,
+    value: 30000,
+    title: 'VIP-пакет: месяц тренировок со мной по видеосвязи.',
+    text: 'Персональная программа тренировок и питания, составленная под тебя.',
+  },
+  {
+    place: 2,
+    value: 19980,
+    title: '2 месяца тарифа ПРЕМИУМ:',
+    text: 'персональная программа, разбор питания, ежедневная проверка отчётов.',
+  },
+  { place: 3, value: 9990, title: 'Месяц тарифа ПРЕМИУМ.', text: '' },
+]
 
-  const season = state?.season || null
-  const entry = state?.entry || null
-  /**
-   * ПРАВИЛА ПЕРЕД ПОКУПКОЙ — ОБЯЗАТЕЛЬНО, И ЭТО НЕ ФОРМАЛЬНОСТЬ. Спор о призах
-   * упирается в «я не знал правил», а там и вылет за подставного человека, и
-   * ноль за пропущенный день, и требование прислать видео последнего дня.
-   * Поэтому не прочитавшему кнопка ведёт не в оплату, а в правила: заплатить,
-   * не увидев их, отсюда нельзя.
-   */
-  const accepted = !!state?.rulesAcceptedAt
-  /**
-   * Цена — из сезона; до открытия набора её подставляет вызывающий (index.jsx),
-   * чтобы экран остался чистым и не тянул за собой ни сеть, ни её константы.
-   */
-  const price = season?.price_rub ?? fallbackPrice
-
-  const buy = async () => {
-    if (busy || !onBuy) return
-    setBusy(true)
-    setNote('')
-    const result = await onBuy()
-    setBusy(false)
-    if (result?.already) {
-      // Сервер знает про участие больше, чем экран: он смотрит в базу в момент
-      // нажатия. Значит правы не мы — перечитываем и показываем номер.
-      setNote('Ты уже участник этого потока')
-      onRefresh?.()
-      return
-    }
-    if (result?.error) setNote(result.error)
-  }
-
-  return (
-    <div className="mt-screen mt-screen--challenge" data-testid="challenge-screen">
-      <div className="mt-rest__veil" aria-hidden="true" />
-
-      <h1 className="mt-title">{entry ? 'Ты в потоке' : 'Челлендж 30 дней'}</h1>
-
-      {/* Пока участие читается, молчим: показать «набор закрыт» человеку,
-          который час назад купил билет, хуже, чем показать ожидание. */}
-      {loading && (
-        <div className="mt-ch__closed" data-testid="challenge-loading">
-          Смотрю, что с потоком…
-        </div>
-      )}
-
-      {/* ── УЧАСТНИК: номер, имя, старт, день ─────────────────────────────── */}
-      {!loading && entry && (
-        <div className="mt-ch__card" data-testid="challenge-member">
-          <div className="mt-ch__no" data-testid="challenge-number">
-            №{entry.participant_no}
-          </div>
-          <div className="mt-ch__name" data-testid="challenge-name">
-            {entry.display_name}
-          </div>
-          <div className="mt-ch__season">{season?.title}</div>
-
-          {/**
-           * ДАТА СТАРТА ОБЪЯВЛЯЕТСЯ ПОЗЖЕ НАБОРА, и пустое поле здесь — не
-           * недоделка, а состояние потока. Молчать о ней нельзя: человек
-           * заплатил и первым делом спрашивает «когда начинаем».
-           */}
-          <div className="mt-ch__start" data-testid="challenge-start">
-            {season?.starts_on ? `Старт ${formatDate(season.starts_on)}` : 'Дата старта будет объявлена'}
-          </div>
-
-          <div className="mt-ch__day" data-testid="challenge-day">
-            День {Math.min(days, Math.max(1, day))} из {days}
-          </div>
-        </div>
-      )}
-
-      {/* ── НЕ УЧАСТНИК: что это, почём и что в фонде ─────────────────────── */}
-      {!loading && !entry && (
-        <div className="mt-ch__about" data-testid="challenge-about">
-          <ul className="mt-ch__list">
-            <li>{days} дней подряд: каждый день своя тренировка, план ведёт сам</li>
-            <li>Поток стартует у всех в один день — идём вместе, а не кто когда</li>
-            <li>До трёх попыток на уровень в день, в зачёт идёт лучшая</li>
-            <li>Первые {FREE_DAYS} дней открыты всем и без билета</li>
-          </ul>
-
-          {season && (
-            <>
-              <div className="mt-ch__price" data-testid="challenge-price">
-                {season.price_rub} ₽
-                <span> — место в потоке «{season.title}»</span>
-              </div>
-              <div className="mt-ch__prize" data-testid="challenge-prize">
-                В призовой фонд идёт {season.prize_pct}% сборов — он делится между тремя лучшими
-                {Array.isArray(season.prize_split) && season.prize_split.length > 0
-                  ? ` (${season.prize_split.join(' / ')}%)`
-                  : ''}
-                .
-              </div>
-            </>
-          )}
-
-          {/**
-           * ЖИВОГО ПОТОКА НЕТ — говорим прямо. Кнопка «купить» в этот момент
-           * вела бы к оплате места, которого ещё не существует.
-           */}
-          {!season && !guest && (
-            <div className="mt-ch__closed" data-testid="challenge-closed">
-              Набор в поток пока закрыт. Открытие объявим — первые {FREE_DAYS} дней доступны и
-              сейчас.
-            </div>
-          )}
-
-          {/**
-            * КНОПКА ВСТУПЛЕНИЯ СТОИТ В ДВУХ МЕСТАХ — здесь и в конце правил, и
-            * ведёт она в одну и ту же покупку. Человек решает платить в разные
-            * моменты: один дочитав правила до конца, другой сразу, увидев цену
-            * и призовой фонд. Одна дверь на двоих означала бы, что второй уйдёт
-            * искать её и не найдёт.
-            *
-            * Не прочитавшего правила кнопка ведёт СНАЧАЛА в правила: заплатить,
-            * не увидев их, отсюда нельзя — спор о призах упирается в «я не
-            * знал», и ответ на это должен появиться до денег.
-            */}
-          {guest ? (
-            <>
-              <div className="mt-ch__closed" data-testid="challenge-guest">
-                Участие идёт в зачёт только с аккаунтом: номер участника, результаты и призы
-                привязаны к человеку, а не к телефону. Аккаунт бесплатный.
-              </div>
-              <button
-                type="button"
-                className="mt-button"
-                data-testid="challenge-signup"
-                onClick={() => onCreateAccount?.()}
-              >
-                Создать аккаунт
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              className="mt-button"
-              data-testid={accepted ? 'challenge-buy' : 'challenge-join'}
-              disabled={busy || !season}
-              onClick={() => (accepted ? buy() : onRules?.({ gate: true }))}
-            >
-              {!season
-                ? 'Набор пока закрыт'
-                : busy
-                  ? 'Открываю оплату…'
-                  : `Участвовать — ${price} ₽`}
-            </button>
-          )}
-        </div>
-      )}
-
-      {note && (
-        <div className="mt-ch__note" data-testid="challenge-note">
-          {note}
-        </div>
-      )}
-
-      {/* ПЕРЕЧИТАТЬ ПРАВИЛА можно всегда и свободно: участник приходит сюда за
-          конкретным ответом («что там про пропущенный день?»), и требовать от
-          него снова листать двенадцать экранов было бы издевательством. */}
-      {onRules && (
-        <button
-          type="button"
-          className="mt-levels__room"
-          data-testid="challenge-rules"
-          onClick={() => onRules({ gate: false })}
-        >
-          Правила челленджа
-        </button>
-      )}
-
-      <button className="mt-corner mt-corner--left" onClick={onExit} aria-label="Назад">
-        ✕
-      </button>
-    </div>
-  )
-}
+const PRIZES_TOTAL = PRIZES.reduce((sum, p) => sum + p.value, 0)
 
 const MONTHS = [
   'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
@@ -240,13 +52,707 @@ const MONTHS = [
 ]
 
 /**
- * Дата вида «1 сентября». Руками, а не через toLocaleDateString: раздел живёт
- * в том числе внутри Telegram на телефонах, где набор локалей урезан, и там
- * человек увидел бы «9/1/2026».
+ * Дата вида «10 сентября» — руками, а не через toLocaleDateString: раздел
+ * открывают в том числе внутри Telegram на телефонах с урезанным набором
+ * локалей, и там человек увидел бы «9/10/2026».
  */
 function formatDate(value) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''))
-  if (!m) return String(value || '')
+  if (!m) return null
   const month = MONTHS[Number(m[2]) - 1]
-  return month ? `${Number(m[3])} ${month}` : String(value)
+  return month ? `${Number(m[3])} ${month}` : null
 }
+
+/** Сколько дней осталось до старта. null — даты нет, 0 — старт сегодня. */
+function daysUntil(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''))
+  if (!m) return null
+  const start = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  return Math.round((start - today) / 86400000)
+}
+
+/** «17 дней» / «1 день» / «2 дня» — счёт идёт людям, а не машине. */
+function pluralDays(n) {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return `${n} день`
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${n} дня`
+  return `${n} дней`
+}
+
+/** Неразрывный пробел в разрядах: «2 990 ₽» не должно ломаться пополам. */
+const NBSP = String.fromCharCode(160)
+const money = (n) =>
+  `${Math.round(Number(n) || 0).toLocaleString('ru-RU').replace(/\s/g, NBSP)}${NBSP}₽`
+
+/**
+ * @param {{season: object, entry: object|null, rulesAcceptedAt: string|null}|null} [props.state]
+ * @param {boolean} [props.guest] гость без аккаунта: цену видит, оплату — нет.
+ * @param {() => Promise<{ok?: true, already?: true, error?: string}>} [props.onJoin]
+ *   согласие в базу и оплата — одной дорогой, порядок задаёт вызывающий.
+ * @param {() => void} [props.onCreateAccount] гость нажал «Создать аккаунт».
+ * @param {() => void} [props.onRefresh] перечитать участие.
+ * @param {boolean} [props.loading] участие ещё читается с сервера.
+ * @param {number} [props.fallbackPrice] объявленная цена, пока сезона нет.
+ */
+export default function ChallengeScreen({
+  state = null,
+  guest = false,
+  onJoin = null,
+  onCreateAccount = null,
+  onRefresh = null,
+  onExit = null,
+  loading = false,
+  fallbackPrice = 0,
+}) {
+  const season = state?.season || null
+  const entry = state?.entry || null
+
+  const price = season?.price_rub ?? fallbackPrice
+  const prizePct = season?.prize_pct ?? 50
+  const split = Array.isArray(season?.prize_split) && season.prize_split.length
+    ? season.prize_split
+    : [50, 30, 20]
+  const startDate = formatDate(season?.starts_on)
+  const left = daysUntil(season?.starts_on)
+
+  const [agreed, setAgreed] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState('')
+  const [openQ, setOpenQ] = useState(null)
+  const [barOn, setBarOn] = useState(false)
+
+  const viewRef = useRef(null)
+  const endRef = useRef(null)
+  const rulesRef = useRef(null)
+
+  /**
+   * ЛИПКАЯ КНОПКА ПОЯВЛЯЕТСЯ ПОСЛЕ ПЕРВОГО ЭКРАНА И ПРЯЧЕТСЯ В КОНЦЕ. На герое
+   * она не нужна — там своя, крупная; в конце страницы она перекрывала бы ту,
+   * ради которой человек и докрутил.
+   */
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return undefined
+    const onScroll = () => {
+      const past = view.scrollTop > 420
+      const end = endRef.current
+      const atEnd = end ? view.scrollTop + view.clientHeight > end.offsetTop + 120 : false
+      setBarOn(past && !atEnd)
+    }
+    view.addEventListener('scroll', onScroll, { passive: true })
+    onScroll()
+    return () => view.removeEventListener('scroll', onScroll)
+  }, [entry, loading, guest])
+
+  const scrollTo = (ref) => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+
+  const join = async () => {
+    if (busy || !agreed || !onJoin) return
+    setBusy(true)
+    setNote('')
+    const result = await onJoin()
+    setBusy(false)
+    if (result?.already) {
+      // Сервер смотрит в базу в момент нажатия и знает про участие больше:
+      // значит правы не мы — перечитываем и показываем комнату.
+      setNote('Ты уже участник этого потока')
+      onRefresh?.()
+      return
+    }
+    if (result?.error) setNote(result.error)
+  }
+
+  // Пока участие читается — молчим: показать «набор закрыт» тому, кто час назад
+  // купил билет, хуже, чем показать ожидание.
+  if (loading) {
+    return (
+      <div className="mt-screen mt-ch" data-testid="challenge-screen">
+        <div className="mt-ch__loading" data-testid="challenge-loading">Смотрю, что с потоком…</div>
+        <button className="mt-corner mt-corner--left" onClick={onExit} aria-label="Назад">✕</button>
+      </div>
+    )
+  }
+
+  // ── УЧАСТНИК: комната потока вместо лендинга ────────────────────────────────
+  if (entry) {
+    return (
+      <div className="mt-screen mt-ch mt-ch--room" data-testid="challenge-screen">
+        <div className="mt-ch__done" data-testid="challenge-member">
+          <div className="mt-ch__ring" aria-hidden="true">✓</div>
+          <h3>Ты в потоке</h3>
+          <p>Оплата прошла. Дальше — заполнить данные о себе, чтобы приложение посчитало твою норму.</p>
+
+          <div className="mt-ch__no">
+            <div className="mt-ch__noLabel">Твой номер участника</div>
+            <div className="mt-ch__noValue" data-testid="challenge-number">№ {entry.participant_no}</div>
+            <div className="mt-ch__noName" data-testid="challenge-name">{entry.display_name}</div>
+            <div className="mt-ch__noSub" data-testid="challenge-start">
+              {left == null
+                ? 'Дата старта будет объявлена'
+                : left > 0
+                  ? `До старта потока: ${pluralDays(left)}`
+                  : left === 0
+                    ? 'Старт сегодня'
+                    : `Поток идёт с ${startDate}`}
+            </div>
+          </div>
+
+          {/**
+           * ГЛАВНОЕ, ЧТО ЧЕЛОВЕК СПРАШИВАЕТ ПОСЛЕ ОПЛАТЫ: «я заплатил, а где
+           * тренировки?». Отвечаем прямо и сразу — иначе ответ придёт вопросом
+           * в личку тренеру, и не один раз.
+           */}
+          <div className="mt-ch__early" data-testid="challenge-early">
+            <div className="mt-ch__earlyTitle">Что доступно прямо сейчас</div>
+            <p className="mt-ch__earlyP">
+              Дни челленджа откроются в день старта — они закрыты у всех одинаково. А
+              <b> тренировки, программы и дневник питания доступны уже сейчас</b>: заполни
+              данные о себе и втягивайся.
+            </p>
+          </div>
+
+          <button type="button" className="mt-ch__btn" data-testid="challenge-room-exit" onClick={onExit}>
+            Понятно
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const priceLabel = money(price)
+
+  return (
+    <div className="mt-screen mt-ch" data-testid="challenge-screen">
+      <div className="mt-ch__view" ref={viewRef}>
+
+        {/* ═══ ГЕРОЙ ═══ */}
+        <div className="mt-ch__hero">
+          <div className="mt-ch__heroGlow" aria-hidden="true" />
+          <div className="mt-ch__heroIn">
+            <div className="mt-ch__tag" data-testid="challenge-tag">
+              {season?.title || 'Поток 1'}{startDate ? ` · старт ${startDate}` : ' · дата будет объявлена'}
+            </div>
+            <h1 className="mt-ch__big">
+              30<br />ДНЕЙ
+              <small>Челлендж FitPro Motion</small>
+            </h1>
+            <p className="mt-ch__heroP">
+              Двадцать минут в день перед камерой телефона. <b>Без зала, без гантелей, без
+              абонемента.</b> Камера считает каждое движение сама.
+            </p>
+            <div className="mt-ch__heroCta">
+              {guest ? (
+                <button type="button" className="mt-ch__btn" data-testid="challenge-signup" onClick={() => onCreateAccount?.()}>
+                  Создать аккаунт
+                </button>
+              ) : (
+                <button type="button" className="mt-ch__btn" data-testid="challenge-hero-join" onClick={() => scrollTo(endRef)}>
+                  Участвовать — {priceLabel}
+                </button>
+              )}
+              <button type="button" className="mt-ch__btn mt-ch__btn--line" data-testid="challenge-to-rules" onClick={() => scrollTo(rulesRef)}>
+                Сначала правила
+              </button>
+            </div>
+            <p className="mt-ch__heroNote">Разовый вход в поток. Не подписка.</p>
+          </div>
+        </div>
+
+        {/* ═══ ЗАЧЕМ ═══ */}
+        <section>
+          <p className="mt-ch__kicker">Зачем это тебе</p>
+          <h2 className="mt-ch__h2">Дело не только<br />в <em>весах</em></h2>
+          <p>
+            Вес — то, что видно первым. Но за тридцать дней движения меняется куда больше, и
+            обычно люди замечают это раньше, чем цифру на весах.
+          </p>
+          <ul className="mt-ch__pain">
+            {[
+              ['Энергия.', 'Просыпаться перестаёт быть подвигом, к вечеру ещё что-то остаётся.'],
+              ['Спина и колени.', 'Тело, которое двигается каждый день, перестаёт ныть от сидячей работы.'],
+              ['Сон и голова.', 'Засыпаешь быстрее, а нервы держат то, что раньше выбивало.'],
+              ['Уверенность.', 'Тридцать дней, которые ты не бросил, меняют отношение к себе сильнее любого зеркала.'],
+            ].map(([head, tail]) => (
+              <li key={head}>
+                <i className="mt-ch__iUp" aria-hidden="true">↑</i>
+                <span><b>{head}</b> {tail}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-ch__punch">
+            И да — <em>вес тоже уходит.</em> Но только если тренировку не съедать вечером.
+            Поэтому здесь считается и движение, и еда.
+          </p>
+        </section>
+
+        <div className="mt-ch__sep" />
+
+        {/* ═══ КАК ═══ */}
+        <section>
+          <p className="mt-ch__kicker">Как это работает</p>
+          <h2 className="mt-ch__h2">Три вещи<br />каждый день</h2>
+
+          <Step
+            n="01 — ПОСТАВЬ"
+            title="Телефон на пол, ты — в двух метрах"
+            text="Камера видит тебя целиком и подсвечивает силуэт, когда встал правильно. Больше настраивать нечего."
+            image="/challenge/shot-calibration.webp"
+            alt="Экран калибровки: силуэт человека загорелся зелёным"
+            caption="Экран калибровки: силуэт загорелся — можно начинать"
+          />
+          <Step
+            n="02 — ОТРАБОТАЙ"
+            title="20 минут: силовая и бой"
+            text="Семь кругов. В каждом полминуты силового движения и пара минут боя — к тебе летят мишени, ты выбиваешь их руками и ногами. Счёт идёт сразу, на экране."
+            image="/challenge/shot-fight.webp"
+            alt="Экран боя: мишень в воздухе, счёт и таймер круга"
+            caption="Бой: мишень в воздухе, счёт и таймер круга"
+          />
+          <Step
+            n="03 — ЗАПИШИ"
+            title="Что съел за день"
+            text="Поиск по базе, штрих-код с упаковки или руками. Норму приложение считает по твоим данным — попадать в неё и есть задача."
+            image="/challenge/shot-diary.webp"
+            alt="Дневник питания: дневная норма, съедено и остаток по КБЖУ"
+            caption="Дневник питания: норма, съедено, остаток по КБЖУ"
+          />
+        </section>
+
+        <div className="mt-ch__sep" />
+
+        {/* ═══ ВМЕСТЕ ═══ */}
+        <section>
+          <p className="mt-ch__kicker">И главное</p>
+          <h2 className="mt-ch__h2">Ты идёшь<br />не <em>один</em></h2>
+          <p>
+            Поток стартует у всех в один день, и тридцать дней у всех одни и те же — день в
+            день. Видно, где ты среди остальных, и это держит лучше любой мотивации.
+          </p>
+          <Shot
+            image="/challenge/shot-table.webp"
+            alt="Таблица потока: место, номер участника, очки движения и процент питания"
+            caption="Таблица потока: место, номер участника, очки и питание"
+          />
+        </section>
+
+        <div className="mt-ch__sep" />
+
+        {/* ═══ ПРИЗЫ ═══ */}
+        <section>
+          <p className="mt-ch__kicker">Призы</p>
+          <h2 className="mt-ch__h2">Призовой фонд —<br />это <em>две части</em></h2>
+
+          <div className="mt-ch__prize">
+            <div className="mt-ch__fundLbl">Часть первая · гарантирована</div>
+            <div className="mt-ch__fund" data-testid="challenge-prizes-total">{money(PRIZES_TOTAL)}</div>
+            <div className="mt-ch__fundL">
+              Призами. Они уже есть и не зависят от того, сколько человек придёт в поток.
+            </div>
+            <div className="mt-ch__places">
+              {PRIZES.map((p) => (
+                <div className="mt-ch__pl" key={p.place}>
+                  <div className="mt-ch__plN"><i>{p.place}</i>место</div>
+                  <div className="mt-ch__plD">
+                    <b>{p.title}</b>{p.text ? ` ${p.text}` : ''}
+                    {' '}<span className="mt-ch__plV">{money(p.value)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-ch__prize mt-ch__prize--second">
+            <div className="mt-ch__fundLbl">Часть вторая · деньгами</div>
+            <div className="mt-ch__fund" data-testid="challenge-prize-pct">+ {prizePct}% каждого билета</div>
+            <div className="mt-ch__fundL">
+              Живые деньги, которые делятся между теми же тремя. Чем больше народу в потоке —
+              тем больше эта часть.
+            </div>
+            <div className="mt-ch__split" data-testid="challenge-split">
+              {split.slice(0, 3).map((pct, i) => (
+                <div key={i}><b>{pct}%</b><span>{i + 1} место</span></div>
+              ))}
+            </div>
+          </div>
+
+          <p className="mt-ch__after">
+            Место считается по двум показателям сразу — как ты двигаешься и как ты ешь. Одним
+            питанием челлендж не выиграть, и одной игрой тоже.
+          </p>
+        </section>
+
+        <div className="mt-ch__sep" />
+
+        {/* ═══ ЧИСЛА ═══ */}
+        <section>
+          <p className="mt-ch__kicker">Коротко</p>
+          <div className="mt-ch__nums">
+            {[
+              ['30', 'дней, одинаковых у всех'],
+              ['~20 мин', 'на один день'],
+              ['3', 'захода в день, в зачёт лучший'],
+              ['0 ₽', 'на зал и снаряды'],
+            ].map(([v, l]) => (
+              <div className="mt-ch__num" key={l}>
+                <div className="mt-ch__numV">{v}</div>
+                <div className="mt-ch__numL">{l}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <div className="mt-ch__sep" />
+
+        {/* ═══ ЧТО ВХОДИТ ═══ */}
+        <section>
+          <p className="mt-ch__kicker">Что входит в билет</p>
+          <h2 className="mt-ch__h2">Что ты<br />получаешь</h2>
+          <ul className="mt-ch__inc">
+            {[
+              ['Все 30 дней программы', ' — с первого до последнего'],
+              ['Свою норму питания', ', посчитанную по твоим данным'],
+              ['Место в таблице потока', ' и своё положение каждый день'],
+              ['Право на призы', ' — фонд делится между тремя лучшими'],
+            ].map(([head, tail]) => (
+              <li key={head}>
+                <i aria-hidden="true">✓</i>
+                <span><b>{head}</b>{tail}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-ch__early">
+            <div className="mt-ch__earlyTitle">И всё приложение — уже сейчас</div>
+            <p className="mt-ch__earlyP">
+              Челлендж откроется в день старта. Но <b>тренировки, программы и дневник питания
+              доступны сразу после оплаты</b> — можно втягиваться, не дожидаясь первого дня.
+            </p>
+          </div>
+        </section>
+
+        <div className="mt-ch__sep" />
+
+        {/* ═══ ПОСЛЕ ОПЛАТЫ ═══ */}
+        <section>
+          <p className="mt-ch__kicker">Что будет после оплаты</p>
+          <h2 className="mt-ch__h2">Дальше всё<br />по шагам</h2>
+          <div className="mt-ch__flow">
+            {[
+              ['Оплата', 'Открывается защищённая страница оплаты. Карта, СБП — как обычно. После оплаты возвращаешься в приложение сам.'],
+              ['Ты в потоке, у тебя есть номер', 'Появляется твой номер участника — под ним ты будешь в таблице. Ничего подтверждать и никому писать не надо.'],
+              ['Заполняешь данные о себе', 'Рост, вес, цель, активность. Приложение считает твою норму питания — до старта её ещё можно менять.'],
+              ['Ждёшь старта — но не сидишь без дела', 'Дни челленджа до старта закрыты у всех одинаково: в комнате тикает обратный отсчёт. Зато всё остальное приложение уже твоё — тренировки, программы, дневник питания.'],
+              ['День старта — открывается первый день', 'Дальше по календарю: каждый день свой, тридцать дней подряд.'],
+            ].map(([title, text], i) => (
+              <div className="mt-ch__fl" key={title}>
+                <div className="mt-ch__flDot">{i + 1}</div>
+                <div className="mt-ch__flBody">
+                  <div className="mt-ch__flT">{title}</div>
+                  <div className="mt-ch__flD">{text}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <div className="mt-ch__sep" />
+
+        {/* ═══ ПРАВИЛА ═══ */}
+        <section ref={rulesRef} data-testid="challenge-rules">
+          <p className="mt-ch__kicker">Правила · читать до конца</p>
+          <h2 className="mt-ch__h2">Как всё<br />считается</h2>
+
+          <div className="mt-ch__rule">
+            <h3 className="mt-ch__h3">Что сделать до старта</h3>
+            <p>
+              Заполни данные о себе: пол, возраст, рост, вес, цель, активность. По ним
+              приложение посчитает дневную норму — калории, белки, жиры, углеводы.
+            </p>
+            <p>
+              <b>Норма замораживается в день старта.</b> Менять её посреди потока нельзя, иначе
+              можно было бы вечером подогнать норму под съеденное. Один пересчёт — на 15-й
+              день, по новому весу.
+            </p>
+          </div>
+
+          <div className="mt-ch__rule">
+            <h3 className="mt-ch__h3">Как проходит день</h3>
+            <p>
+              Семь кругов, на тяжёлых днях восемь. Круг — полминуты силового движения и
+              полторы-две минуты боя, между ними короткий отдых.
+            </p>
+            <p>
+              Можно выйти на середине и вернуться позже — день соберётся из нескольких заходов.
+              Но <b>день засчитан, только когда сделаны все круги.</b>
+            </p>
+          </div>
+
+          <div className="mt-ch__rule">
+            <h3 className="mt-ch__h3">Три уровня</h3>
+            <p>
+              Уровень выбираешь сам, каждый день заново. Движения везде одни и те же — разница
+              в темпе и в том, насколько точно надо попасть.
+            </p>
+            <div className="mt-ch__tiers">
+              {[
+                ['НОВИЧОК', 'крупная', 'долго', '100 очков'],
+                ['ОПЫТНЫЙ', 'средняя', 'меньше', '150 очков'],
+                ['ПРОФИ', 'мелкая', 'мало', '200 очков'],
+              ].map(([name, size, hangs, cost]) => (
+                <div className="mt-ch__tier" key={name}>
+                  <div className="mt-ch__tierN">{name}</div>
+                  <div className="mt-ch__tierR"><span>Мишень</span><b>{size}</b></div>
+                  <div className="mt-ch__tierR"><span>Висит</span><b>{hangs}</b></div>
+                  <div className="mt-ch__tierR"><span>Цена мишени</span><b>{cost}</b></div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-ch__rule">
+            <h3 className="mt-ch__h3">Очки и заходы</h3>
+            <p>
+              <b>Каждая выбитая мишень — очки уровня.</b> Никаких множителей: сколько выбил,
+              столько и заработал. Промах очков не отнимает.
+            </p>
+            <div className="mt-ch__quote">
+              Три захода в день. Все три — на любые уровни, как решишь. В зачёт идёт один,
+              лучший.
+            </div>
+            <p>
+              Три захода на новичке — или один на профи и два на опытном: твой выбор. На профи
+              мишень дороже, но темп жёстче, и слабый заход там может проиграть сильному на
+              новичке. <b>Уровень — это ставка.</b>
+            </p>
+          </div>
+
+          <div className="mt-ch__rule">
+            <h3 className="mt-ch__h3">Как считается питание</h3>
+            <p>
+              Смотрим, насколько ты промахнулся мимо своей нормы по каждому из четырёх
+              показателей:
+            </p>
+            <ul className="mt-ch__ul">
+              <li>промах <b>до 10%</b> — это <b>100 баллов</b>, твой коридор;</li>
+              <li>дальше падает: 20% мимо — 80 баллов, 30% — 60, 60% и хуже — ноль.</li>
+            </ul>
+            <p>
+              Оценка дня — среднее по четырём. Чтобы день считался, записи должны быть{' '}
+              <b>минимум в трёх приёмах пищи</b>: одна строчка «торт, 2400 ккал» в норму не
+              попадает и не должна.
+            </p>
+            <p>Итог за поток — средний процент за все 30 дней. День без записей — ноль.</p>
+          </div>
+
+          <div className="mt-ch__rule">
+            <h3 className="mt-ch__h3">Поток идёт по календарю</h3>
+            <div className="mt-ch__quote">
+              В первый день потока играется первый день. Во второй — второй. Пропустил — за
+              этот день ноль, и вернуться нельзя.
+            </div>
+            <p>
+              То же и с питанием: дневник закрывается вместе с днём. Это не наказание, это и
+              есть челлендж.
+            </p>
+          </div>
+
+          <div className="mt-ch__rule">
+            <h3 className="mt-ch__h3">Как определяется победитель</h3>
+            <p>
+              Сначала считаются две таблицы. В одной все выстроены по <b>очкам движения</b>, в
+              другой — по <b>проценту питания</b>. У тебя получается два места: например,
+              третье в движении и первое в питании.
+            </p>
+            <div className="mt-ch__quote">
+              Эти два места складываются. Чем меньше вышло — тем выше ты в итоговой таблице.
+            </div>
+            <p>
+              Первое место в обеих таблицах дало бы 1 + 1 = 2, лучше не бывает. Посмотри, как
+              это работает на двоих:
+            </p>
+            <div className="mt-ch__calc">
+              <div className="mt-ch__calcH">
+                <span>Участник</span><span>Движение</span><span>Питание</span><b>Сумма</b>
+              </div>
+              <div className="mt-ch__calcR mt-ch__calcR--win">
+                <span>Аня</span><span>3 место</span><span>1 место</span><b>4</b>
+              </div>
+              <div className="mt-ch__calcR">
+                <span>Игорь</span><span>1 место</span><span>5 место</span><b>6</b>
+              </div>
+            </div>
+            <p>
+              Игорь сильнее в игре, но провалил питание — и проиграл Ане, которая вытянула
+              оба. <b>Четыре меньше шести, значит Аня выше.</b>
+            </p>
+            <p>
+              Если суммы совпали, выше тот, у кого лучше место в движении: игру камера считает
+              сама, и подделать её нельзя.
+            </p>
+          </div>
+
+          <div className="mt-ch__rule">
+            <h3 className="mt-ch__h3">Честно — значит честно</h3>
+            <ul className="mt-ch__ul">
+              <li>Играет <b>тот, кто зарегистрирован</b>. Подставить вместо себя другого — вылет из потока.</li>
+              <li>Один аккаунт — один участник.</li>
+              <li><b>Финалисты присылают видео последнего дня.</b> Не совпало с записью игры — приз уходит следующему.</li>
+              <li>Если игра не смогла загрузить твой прогресс, она скажет об этом прямо на экране.</li>
+            </ul>
+            <div className="mt-ch__quote">Дневник питания — на твоей совести.</div>
+            <p>
+              Движение считает камера, обмануть её нельзя. А дневник заполняешь ты сам, и никто
+              не стоит у тебя на кухне. Вписать красивые цифры может каждый — и обмануть этим
+              можно только себя. Ты пришёл за своим весом и своим самочувствием через тридцать
+              дней, а их никаким дневником не подделать.
+            </p>
+          </div>
+        </section>
+
+        <div className="mt-ch__sep" />
+
+        {/* ═══ ВОПРОСЫ ═══ */}
+        <section>
+          <p className="mt-ch__kicker">Частые вопросы</p>
+          <h2 className="mt-ch__h2">Коротко<br />о главном</h2>
+          <div className="mt-ch__faq" data-testid="challenge-faq">
+            {faqList(prizePct, PRIZES_TOTAL).map(([q, a], i) => (
+              <div className={`mt-ch__q ${openQ === i ? 'is-open' : ''}`} key={q}>
+                <button type="button" onClick={() => setOpenQ(openQ === i ? null : i)}>
+                  {q}<span aria-hidden="true">+</span>
+                </button>
+                <div className="mt-ch__qa"><p>{a}</p></div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <div className="mt-ch__sep" />
+
+        {/* ═══ ФИНАЛ ═══ */}
+        <section className="mt-ch__final" ref={endRef}>
+          <p className="mt-ch__kicker">Вход в поток</p>
+          <h2 className="mt-ch__h2">Тридцать дней<br />начинаются <em>сейчас</em></h2>
+
+          <div className="mt-ch__pricebox">
+            <div className="mt-ch__pr">
+              <b data-testid="challenge-price">{priceLabel}</b>
+              <span>разовый вход<br />{season?.title ? `в ${season.title.toLowerCase()}` : 'в поток'}</span>
+            </div>
+            <p>{prizePct}% всех билетов уходит в призовой фонд потока.</p>
+          </div>
+
+          {guest ? (
+            <>
+              <p className="mt-ch__guestNote" data-testid="challenge-guest">
+                Место в потоке привязывается к аккаунту: номер участника, результаты и призы
+                держатся на человеке, а не на телефоне. Аккаунт бесплатный.
+              </p>
+              <button type="button" className="mt-ch__btn" data-testid="challenge-signup-end" onClick={() => onCreateAccount?.()}>
+                Создать аккаунт
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Галочка и есть «дочитал»: чтобы до неё добраться, правила надо прокрутить. */}
+              <label className={`mt-ch__agree ${agreed ? 'is-on' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={agreed}
+                  onChange={(e) => setAgreed(e.target.checked)}
+                  data-testid="challenge-agree"
+                />
+                <i aria-hidden="true">{agreed ? '✓' : ''}</i>
+                <span>Я прочитал правила и согласен</span>
+              </label>
+
+              <button
+                type="button"
+                className="mt-ch__btn"
+                data-testid="challenge-join"
+                disabled={!agreed || busy || !season}
+                onClick={join}
+              >
+                {!season ? 'Набор пока закрыт' : busy ? 'Открываю оплату…' : `Участвовать — ${priceLabel}`}
+              </button>
+            </>
+          )}
+
+          {note && <p className="mt-ch__note" data-testid="challenge-note">{note}</p>}
+
+          <p className="mt-ch__foot">
+            {startDate
+              ? `Старт потока — ${startDate}. Опоздал к старту — ждёшь следующий: все идут день в день.`
+              : 'Дата старта будет объявлена. Все идут день в день: опоздал к старту — ждёшь следующий.'}
+          </p>
+        </section>
+      </div>
+
+      {/* ЛИПКАЯ ПОЛОСА: появляется после первого экрана, прячется в конце. */}
+      {!guest && (
+        <div className={`mt-ch__bar ${barOn ? 'is-on' : ''}`} data-testid="challenge-bar">
+          <div className="mt-ch__barPrice">{priceLabel}</div>
+          <button type="button" className="mt-ch__btn" data-testid="challenge-bar-join" onClick={() => scrollTo(endRef)}>
+            Участвовать
+          </button>
+        </div>
+      )}
+
+      <button className="mt-corner mt-corner--left" onClick={onExit} aria-label="Назад">✕</button>
+    </div>
+  )
+}
+
+/** Шаг «как это работает»: номер, заголовок, текст и снимок экрана. */
+function Step({ n, title, text, image, alt, caption }) {
+  return (
+    <div className="mt-ch__step">
+      <div className="mt-ch__stepN">{n}</div>
+      <h3 className="mt-ch__h3">{title}</h3>
+      <p>{text}</p>
+      <Shot image={image} alt={alt} caption={caption} />
+    </div>
+  )
+}
+
+/**
+ * Снимок экрана в полный рост телефона (9:17). Файла может не быть — тогда
+ * остаётся тёмная плашка с подписью, и страница не разъезжается.
+ */
+function Shot({ image, alt, caption }) {
+  return (
+    <div className="mt-ch__shot">
+      <img
+        src={image}
+        alt={alt}
+        loading="lazy"
+        decoding="async"
+        data-testid="challenge-shot"
+        onError={(e) => { e.currentTarget.style.visibility = 'hidden' }}
+      />
+      <div className="mt-ch__shotCap">{caption}</div>
+    </div>
+  )
+}
+
+/** Вопросы. Числа подставляются из сезона и призов — чтобы не разъехаться. */
+const faqList = (prizePct, prizesTotal) => [
+  ['Я вообще не спортивный. Потяну?',
+    'Для этого есть уровень НОВИЧОК: мишень крупная и висит долго. Первые дни лёгкие, нагрузка растёт постепенно — тридцать дней на то и рассчитаны.'],
+  ['Мне за сорок, спина и колени. Можно?',
+    'Движения без прыжков со штангой и без ударной работы на суставы, темп ты выбираешь сам. Но если есть диагноз или боль — сначала спроси своего врача, а не меня.'],
+  ['Нужен зал или инвентарь?',
+    'Нет. Телефон, два метра свободного пола и свет спереди. Всё.'],
+  ['А если пропущу день?',
+    'За этот день ноль, и вернуться к нему нельзя — поток идёт по календарю у всех одинаково. Один пропуск челлендж не рушит, но каждый следующий стоит места в таблице.'],
+  ['Это подписка? Спишется ещё раз?',
+    'Нет. Разовый вход в один поток: заплатил один раз, прошёл тридцать дней. Ничего не продлевается само.'],
+  ['Каким будет призовой фонд?',
+    `Две части. Первая — призы на ${money(prizesTotal)}, они гарантированы и не зависят от числа участников: VIP-пакет победителю — месяц тренировок со мной по видеосвязи, второму и третьему — месяцы тарифа ПРЕМИУМ. Вторая часть — деньги: ${prizePct}% каждого проданного билета, делится между теми же тремя. Итоговую денежную сумму объявляю в день старта, когда набор закрыт.`],
+  ['А что делать до старта потока?',
+    'Челлендж откроется в день старта — до этого его дни закрыты у всех одинаково. Но само приложение тебе уже доступно: тренировки, программы, дневник питания. Заполни данные о себе и втягивайся, к старту будешь готов.'],
+  ['Обязательно вести дневник питания?',
+    'Обязательно, если борешься за приз: питание — половина зачёта. Тренироваться можно и без него, но место в таблице будет ниже.'],
+]

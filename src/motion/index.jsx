@@ -14,7 +14,6 @@ import { DEFAULT_TIER } from './game/levels.js'
 import { needsPersonalSetup } from './game/personal.js'
 import { DAYS, currentDay, forcedDay } from './game/challenge.js'
 import ChallengeScreen from './screens/ChallengeScreen.jsx'
-import RulesScreen from './screens/RulesScreen.jsx'
 import { CHALLENGE_PRICE, acceptRules, buyTicket, loadChallengeState } from '../challengeSeason.js'
 import { useCamera } from './pose/useCamera.js'
 import { usePoseLandmarker } from './pose/usePoseLandmarker.js'
@@ -355,37 +354,12 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
    * пустить туда всех, у кого сеть медленнее экрана; обратный порядок (сперва
    * пять дней, потом открылось) человек видит как «загрузилось», а не как отказ.
    */
-  /**
-   * ПРАВИЛА В ДВУХ РЕЖИМАХ. gate — первое чтение: галочка и кнопка вступления
-   * появляются на двенадцатом экране и только дочитавшему. Без gate правила
-   * открываются свободно и с любого места — их перечитывают за конкретным
-   * ответом, а не ради согласия.
-   */
-  const [rulesGate, setRulesGate] = useState(false)
-
   const [membership, setMembership] = useState(undefined)
   useEffect(() => {
     let alive = true
     loadChallengeState({ guest }).then((value) => {
       if (!alive) return
       setMembership(value)
-      /**
-       * ПЕРВЫЙ РАЗ — ЧЕРЕЗ ПРАВИЛА. Человек, пришедший с главной по карточке
-       * челленджа и ещё не читавший правил, попадает на них, а не на цену:
-       * спор о призах упирается в «я не знал», и ответ на это должен появиться
-       * до денег, а не после. Уже согласившийся идёт сразу к потоку.
-       *
-       * ЖИВОГО ПОТОКА ДЛЯ ЭТОГО НЕ ТРЕБУЕТСЯ, и это была ошибка, стоившая
-       * пропавших ворот на проде: сезон лежал черновиком, `value` приходил
-       * пустым — и правила всякий раз открывались в режиме свободного чтения,
-       * то есть без галочки и кнопки вступления, сколько ни листай. Правила —
-       * витрина, её читают ДО открытия набора; ворота зависят от того, читал ли
-       * человек, а не от того, продаётся ли билет прямо сейчас.
-       */
-      if (startScreen === 'challenge' && !guest && !value?.rulesAcceptedAt) {
-        setRulesGate(true)
-        setScreen('rules')
-      }
     })
     return () => { alive = false }
   }, [guest, startScreen])
@@ -472,10 +446,6 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
     challengeBack.current = from
     setScreen('challenge')
   }
-  const openRules = ({ gate = false } = {}) => {
-    setRulesGate(gate)
-    setScreen('rules')
-  }
   const [needsTap, setNeedsTap] = useState(false)
 
   /**
@@ -519,7 +489,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
    * съёмку в ответ на такой вопрос значит спросить не то и не вовремя.
    * Уйдёт с экрана в игру — камера поднимется как обычно.
    */
-  const camera = useCamera({ enabled: !paused && screen !== 'challenge' && screen !== 'rules' })
+  const camera = useCamera({ enabled: !paused && screen !== 'challenge' })
   const pose = usePoseLandmarker({
     videoRef,
     // Инференс нужен на всех экранах: с экрана результата подход
@@ -735,8 +705,6 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
    * дождаться восьми мегабайт модели значит не ответить.
    */
   const inChallenge = screen === 'challenge' && !calibrating && !blockMovement
-  /** Правила читают без камеры — по той же причине, что и всё остальное текстовое. */
-  const inRules = screen === 'rules' && !calibrating && !blockMovement
 
   return (
     <div className="mt-root">
@@ -747,7 +715,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
         showSkeleton={!blockingError}
       />
 
-      {blockingError && !inRoom && !inChallenge && !inRules && (
+      {blockingError && !inRoom && !inChallenge && (
         <ErrorOverlay
           code={blockingError}
           detail={poseError ? pose.errorDetail : null}
@@ -762,7 +730,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
         />
       )}
 
-      {!blockingError && booting && !inRoom && !inChallenge && !inRules && (
+      {!blockingError && booting && !inRoom && !inChallenge && (
         <BootOverlay
           cameraReady={camera.status === 'ready'}
           modelReady={pose.status === 'ready'}
@@ -782,15 +750,17 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
         />
       )}
 
-      {inRules && (
-        <RulesScreen
-          gate={rulesGate}
-          price={membership?.season?.price_rub ?? CHALLENGE_PRICE}
+      {inChallenge && (
+        <ChallengeScreen
+          state={membership}
+          loading={membership === undefined}
+          fallbackPrice={CHALLENGE_PRICE}
+          guest={guest}
           /**
-           * ВСТУПЛЕНИЕ ОДНОЙ КНОПКОЙ: сперва фиксируем согласие В БАЗЕ, и только
-           * если оно записалось — открываем оплату. Обратный порядок оставил бы
-           * оплаченный билет без ответа на «я не знал правил», то есть ровно без
-           * того, ради чего этот экран и сделан.
+           * ВСТУПЛЕНИЕ ОДНОЙ ДОРОГОЙ: сперва фиксируем согласие В БАЗЕ, и
+           * только если оно записалось — открываем оплату. Обратный порядок
+           * оставил бы оплаченный билет без ответа на «я не знал правил», то
+           * есть ровно без того, ради чего согласие и берётся.
            */
           onJoin={async () => {
             // Набор ещё не открыт — говорим прямо и денег не трогаем: платёж,
@@ -799,31 +769,13 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
             if (!membership?.season?.id) {
               return { error: 'Набор в поток пока закрыт — откроем и объявим' }
             }
-            const consent = await acceptRules(membership?.season?.id)
+            const consent = await acceptRules(membership.season.id)
             if (consent?.error) return consent
             const result = await buyTicket()
             const fresh = await loadChallengeState({ guest, force: true })
             setMembership(fresh)
-            // Оплата ушла в соседнюю вкладку — здесь человеку больше нечего
-            // читать: возвращаем его к потоку. Осталась ошибка — остаёмся на
-            // месте и показываем её там, где он нажимал.
-            if (!result?.error) setScreen('challenge')
             return result
           }}
-          onExit={() => setScreen('challenge')}
-        />
-      )}
-
-      {inChallenge && (
-        <ChallengeScreen
-          state={membership}
-          loading={membership === undefined}
-          fallbackPrice={CHALLENGE_PRICE}
-          onRules={openRules}
-          guest={guest}
-          day={day}
-          days={DAYS}
-          onBuy={buyTicket}
           onRefresh={refreshMembership}
           /**
            * ГОСТЮ — ТО ЖЕ ПРЕДЛОЖЕНИЕ АККАУНТА, ЧТО И ВЕЗДЕ. Раздел своей формы
@@ -1043,7 +995,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
       {/* Тумблер звука на правилах не нужен и мешает: он живёт в том же нижнем
           углу, что и главная кнопка, и накрывает её собой. Читают правила без
           звука — прятать его тут ничего не стоит. */}
-      {!inRules && <AudioToggle />}
+      {!inChallenge && <AudioToggle />}
       <DebugPanel onSelectCamera={camera.selectDevice} />
     </div>
   )

@@ -2895,506 +2895,1074 @@
   cursor: pointer;
 }
 
-/* --- челлендж: что это и как попасть --- */
-
-/*
- * Тот же плотный фон, что у комнаты, и по той же причине: экран читают, а не
- * смотрят на себя в нём. Под живым кадром цена и номер участника сливались бы с
- * движущимся фоном ровно так же, как в комнате сливался счёт.
- */
-.mt-screen--challenge {
-  justify-content: flex-start;
-  gap: 14px;
-  padding: 46px 16px 24px;
-  overflow-y: auto;
-  pointer-events: auto;
-  background: rgb(7, 11, 20);
-  color: rgb(238, 245, 255);
-}
-
-.mt-screen--challenge .mt-rest__veil {
-  display: none;
-}
-
-.mt-screen--challenge .mt-title {
-  text-shadow: none;
-}
-
-.mt-ch__card,
-.mt-ch__about {
-  width: 100%;
-  max-width: 340px;
-  padding: 18px 16px;
-  border: 1px solid rgba(120, 230, 190, 0.4);
-  border-radius: 18px;
-  background: rgba(14, 32, 30, 0.66);
-  text-align: center;
-}
-
-.mt-ch__about {
-  border-color: rgba(159, 208, 255, 0.32);
-  background: rgba(16, 22, 36, 0.9);
-  text-align: left;
-}
-
-/* Номер участника — крупнее всего: это то, чем человек называет себя в потоке. */
-.mt-ch__no {
-  font-size: clamp(34px, 12vw, 54px);
-  font-weight: 900;
-  line-height: 1;
-  color: rgb(120, 230, 190);
-  font-variant-numeric: tabular-nums;
-}
-
-.mt-ch__name {
-  margin-top: 6px;
-  font-size: 17px;
-  font-weight: 800;
-}
-
-.mt-ch__season {
-  margin-top: 2px;
-  font-size: 12px;
-  color: rgba(220, 232, 255, 0.6);
-}
-
-.mt-ch__start {
-  margin-top: 12px;
-  font-size: 15px;
-  font-weight: 700;
-  color: rgb(159, 240, 255);
-}
-
-.mt-ch__day {
-  margin-top: 4px;
-  font-size: 13px;
-  color: rgba(220, 232, 255, 0.7);
-}
-
-.mt-ch__list {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 13px;
-  line-height: 1.55;
-  color: rgba(230, 240, 255, 0.86);
-}
-
-.mt-ch__list li + li {
-  margin-top: 6px;
-}
-
-.mt-ch__price {
-  margin-top: 14px;
-  font-size: 24px;
-  font-weight: 900;
-  color: rgb(120, 230, 190);
-}
-
-.mt-ch__price span {
-  display: block;
-  margin-top: 2px;
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(220, 232, 255, 0.65);
-}
-
-.mt-ch__prize,
-.mt-ch__closed {
-  margin-top: 10px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: rgba(220, 232, 255, 0.7);
-}
-
-.mt-ch__note {
-  max-width: 340px;
-  font-size: 13px;
-  text-align: center;
-  color: rgb(159, 240, 255);
-}
-
-/* --- правила челленджа: двенадцать экранов вбок --- */
-
-/*
- * ЭТО ВИТРИНА. По этому экрану человек решает, платить ли 2990, — отсюда и
- * раскладка: картинка сверху, крупный заголовок, спокойный текст ограниченной
- * ширины и закреплённая внизу панель с точками и главной кнопкой.
+/* ═══ ЧЕЛЛЕНДЖ: одна длинная страница ═══════════════════════════════════════
  *
- * Про safe-area отдельно. Базовый .mt-screen раздаёт её паддингом, но здесь
- * паддинг снят (картинка обязана идти во всю ширину и до самого верха),
- * поэтому чёлку и системную полосу учитывают САМИ части: шапка сверху, панель
- * снизу. Без этого кнопка «Далее» уезжает под полосу жестов на айфоне.
+ * Раскладка, размеры и цвета — с согласованного макета
+ * docs/challenge-landing-maket.html; палитра та же, что у всего приложения
+ * (src/theme.js). Шрифт НЕ подключается отдельным файлом: макет рисовался в
+ * Golos Text, но тянуть веб-шрифт с чужого домена в раздел, который открывают с
+ * телефона в метро и из России, — плохой обмен ради начертания. Берём тот же
+ * системный стек, что и остальное приложение.
  */
-/*
- * ГЛОБАЛЬНОГО box-sizing В МОДУЛЕ НЕТ, и это стоило поехавшей вёрстки: экран
- * шириной 390 с паддингом 20 давал полосу в 430 — текст и кнопка уезжали за
- * правый край, а на снимке это выглядело обрезанным шрифтом. Соседние экраны
- * держатся на margin и потому не заметили; здесь ширина считается по границе.
- */
-.mt-screen--rules,
-.mt-screen--rules * {
+
+.mt-ch,
+.mt-ch * {
   box-sizing: border-box;
 }
 
-.mt-screen--rules {
+.mt-ch {
   justify-content: flex-start;
-  gap: 0;
   padding: 0;
   overflow: hidden;
   pointer-events: auto;
-  background: rgb(7, 11, 20);
-  color: rgb(238, 245, 255);
+  background: #0b0b0d;
+  color: #fff;
+  font-size: 15.5px;
+  line-height: 1.6;
 }
 
-.mt-screen--rules .mt-rest__veil {
+.mt-ch .mt-rest__veil {
   display: none;
 }
 
-/* ── картинка сверху ──────────────────────────────────────────────────────── */
-
-.mt-rules__hero {
-  position: relative;
-  flex: none;
-  width: 100%;
-  height: 40vh;
-  min-height: 150px;
-  max-height: 360px;
-  background: #05070c;
-  border-radius: 0 0 22px 22px;
-  overflow: hidden;
-  /*
-   * БЕЗ АНИМАЦИИ ВЫСОТЫ, и это не вкусовщина. Пока картинка плавно росла с 22%
-   * до 40%, замер «влезает ли текст» попадал на промежуточную высоту: экран в
-   * этот миг казался просторнее, чем станет, — и текст оставался обрезанным без
-   * градиента. Проверка на двух размерах ловила это на трёх экранах из
-   * двенадцати.
-   */
-}
-
-/*
- * ТЕКСТ НЕ ВЛЕЗ — КАРТИНКА УСТУПАЕТ ЕМУ МЕСТО. Первая из двух ступеней против
- * молча обрезанного текста (вторая — градиент внизу, см. .mt-rules__fade):
- * чаще всего этого хватает, чтобы экран поместился целиком, и никакого
- * обрыва вовсе не случилось.
- */
-.mt-screen--rules.is-compact .mt-rules__hero {
-  height: 22vh;
-  min-height: 96px;
-  max-height: 200px;
-}
-
-/*
- * cover, а НЕ contain, и это стало возможным только вместе с пересъёмкой.
- * Раньше сюда клали вертикальные снимки телефона целиком: contain оставлял
- * чёрные поля во всю ширину блока, а cover срезал бы у них половину смысла.
- * Теперь картинки кадрируются при съёмке под пропорцию этого блока и по
- * главному месту кадра (scripts/rules-shots.mjs), поэтому они заполняют его
- * целиком и терять им нечего.
- */
-.mt-rules__image {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
-}
-
-/* «3 / 12» — мелко и в углу картинки: это ориентир, а не заголовок. */
-.mt-rules__badge {
-  position: absolute;
-  top: calc(10px + env(safe-area-inset-top, 0px));
-  right: 12px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: rgba(5, 7, 12, 0.72);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: rgba(230, 240, 255, 0.75);
-  font-variant-numeric: tabular-nums;
-}
-
-/* ── текст ────────────────────────────────────────────────────────────────── */
-
-/* Тот же счётчик, но без картинки под ним: строкой над заголовком. */
-.mt-rules__badge--flat {
-  position: static;
-  align-self: flex-end;
-  margin: calc(12px + env(safe-area-inset-top, 0px)) 16px 0;
-  background: transparent;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-/* Обёртка нужна градиенту: он ложится поверх нижнего края текста. */
-.mt-rules__reading {
-  position: relative;
+/* Прокручивается вся страница целиком — один свиток сверху донизу. */
+.mt-ch__view {
   flex: 1 1 auto;
+  width: 100%;
   min-height: 0;
-  width: 100%;
-}
-
-.mt-rules__scroll {
-  height: 100%;
-  width: 100%;
-  padding: 20px 20px 8px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
 }
 
-/*
- * ПРИЗНАК ПРОДОЛЖЕНИЯ. Текст, срезанный ровно по краю, читается как «здесь
- * всё» — на этом человек и не нашёл галочку согласия на двенадцатом экране.
- * Полоска мягко гасит последнюю строку и исчезает, когда дочитано до низа.
- */
-.mt-rules__fade {
+.mt-ch__view > section {
+  padding: 36px 22px;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.mt-ch__sep {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.09);
+  margin: 0 22px;
+}
+
+.mt-ch p {
+  margin: 0 0 13px;
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: rgba(235, 235, 245, 0.62);
+}
+
+.mt-ch p b {
+  color: #fff;
+  font-weight: 600;
+}
+
+.mt-ch p:last-child {
+  margin-bottom: 0;
+}
+
+.mt-ch__kicker {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(235, 235, 245, 0.34);
+  margin: 0 0 12px;
+}
+
+.mt-ch__h2 {
+  font-weight: 800;
+  font-size: 27px;
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+  margin: 0 0 14px;
+  color: #fff;
+  text-shadow: none;
+}
+
+.mt-ch__h2 em {
+  font-style: normal;
+  color: #9d96ff;
+}
+
+.mt-ch__h3 {
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: -0.025em;
+  margin: 0 0 9px;
+  line-height: 1.25;
+  color: #fff;
+}
+
+/* ── кнопки ────────────────────────────────────────────────────────────────── */
+
+.mt-ch__btn {
+  display: block;
+  width: 100%;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  border: 0;
+  border-radius: 14px;
+  padding: 16px 18px;
+  cursor: pointer;
+  background: linear-gradient(180deg, #9d96ff, #7c7af0);
+  color: #fff;
+  box-shadow: 0 10px 26px rgba(124, 122, 240, 0.4);
+}
+
+.mt-ch__btn:active {
+  transform: scale(0.985);
+}
+
+.mt-ch__btn:disabled {
+  background: #2c2c2e;
+  color: rgba(235, 235, 245, 0.34);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.mt-ch__btn--line {
+  background: #1c1c1e;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: none;
+}
+
+/* ── герой ─────────────────────────────────────────────────────────────────── */
+
+.mt-ch__hero {
+  position: relative;
+  padding: 0 0 30px;
+  overflow: hidden;
+}
+
+/* Свечение вместо анимации частиц из макета: тот же акцент, но без холста,
+   который крутил бы кадры под текстом всё время чтения. */
+.mt-ch__heroGlow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 90% at 70% 22%, rgba(124, 122, 240, 0.5), rgba(124, 122, 240, 0.1) 55%, rgba(11, 11, 13, 0) 100%);
+}
+
+.mt-ch__heroIn {
+  position: relative;
+  padding: calc(54px + env(safe-area-inset-top, 0px)) 22px 0;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.mt-ch__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #9d96ff;
+  border: 1px solid rgba(157, 150, 255, 0.32);
+  border-radius: 99px;
+  padding: 6px 12px;
+  background: rgba(157, 150, 255, 0.09);
+}
+
+.mt-ch__big {
+  font-weight: 900;
+  font-size: 58px;
+  line-height: 0.88;
+  letter-spacing: -0.05em;
+  margin: 20px 0 0;
+  color: #fff;
+}
+
+.mt-ch__big small {
+  display: block;
+  font-size: 22px;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+  color: #9d96ff;
+  margin-top: 10px;
+}
+
+.mt-ch__heroP {
+  margin: 18px 0 0;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.mt-ch__heroCta {
+  margin-top: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.mt-ch__heroNote {
+  font-size: 12px;
+  color: rgba(235, 235, 245, 0.34);
+  text-align: center;
+  margin: 3px 0 0;
+}
+
+/* ── зачем: список и удар ──────────────────────────────────────────────────── */
+
+.mt-ch__pain {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+}
+
+.mt-ch__pain li,
+.mt-ch__inc li {
+  /*
+   * flex-start и min-width: 0 у текста — не украшение. В макете жирное начало
+   * строки вставало ОТДЕЛЬНОЙ КОЛОНКОЙ рядом с остальным текстом: flex делил
+   * строку по инлайновым кускам. Текст обязан быть одним потоком внутри span.
+   */
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  font-size: 15px;
+  line-height: 1.45;
+  color: rgba(235, 235, 245, 0.62);
+}
+
+.mt-ch__pain li {
+  background: #1c1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 14px 15px;
+}
+
+.mt-ch__pain li > span,
+.mt-ch__inc li > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mt-ch__pain b,
+.mt-ch__inc b {
+  color: #fff;
+  font-weight: 600;
+}
+
+.mt-ch__pain i,
+.mt-ch__inc i {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 8px;
+  margin-top: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.mt-ch__iUp {
+  background: rgba(255, 159, 10, 0.15);
+  color: #ff9f0a;
+}
+
+.mt-ch__punch {
+  font-weight: 700;
+  font-size: 19px;
+  line-height: 1.35;
+  letter-spacing: -0.025em;
+  color: #fff !important;
+  margin: 0;
+}
+
+.mt-ch__punch em {
+  font-style: normal;
+  color: #9d96ff;
+}
+
+.mt-ch__after {
+  margin-top: 16px;
+}
+
+/* ── шаги и снимки экранов ─────────────────────────────────────────────────── */
+
+.mt-ch__step {
+  margin: 0 0 32px;
+}
+
+.mt-ch__step:last-child {
+  margin-bottom: 0;
+}
+
+.mt-ch__stepN {
+  font-weight: 800;
+  font-size: 12.5px;
+  letter-spacing: 0.08em;
+  color: #9d96ff;
+  margin-bottom: 8px;
+}
+
+/* Снимок в полный рост телефона: 9:17 — та пропорция, в которой он и снят. */
+.mt-ch__shot {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 9 / 17;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #1c1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  margin: 14px 0 0;
+}
+
+.mt-ch__shot img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+}
+
+.mt-ch__shotCap {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 56px;
-  pointer-events: none;
-  background: linear-gradient(180deg, rgba(7, 11, 20, 0) 0%, rgba(7, 11, 20, 0.86) 62%, rgb(7, 11, 20) 100%);
+  padding: 26px 15px 13px;
+  background: linear-gradient(to top, rgba(5, 5, 6, 0.95), rgba(5, 5, 6, 0));
+  font-size: 12.5px;
+  color: rgba(235, 235, 245, 0.62);
+  line-height: 1.4;
 }
 
-.mt-rules__title,
-.mt-rules__body {
-  /* Строка ограничена по ширине: на планшете текст во всю ширину читается
-     глазами по диагонали, а это правила. */
-  max-width: 440px;
-  margin-left: auto;
-  margin-right: auto;
+/* ── призы ─────────────────────────────────────────────────────────────────── */
+
+.mt-ch__prize {
+  background:
+    radial-gradient(130% 110% at 0% 0%, rgba(157, 150, 255, 0.18), transparent 60%),
+    #1c1c1e;
+  border: 1px solid rgba(157, 150, 255, 0.22);
+  border-radius: 20px;
+  padding: 20px 19px;
 }
 
-.mt-screen--rules .mt-rules__title {
-  margin: 0 0 12px;
-  font-size: clamp(26px, 8vw, 32px);
-  font-weight: 800;
-  line-height: 1.1;
-  letter-spacing: -0.02em;
-  color: #fff;
-  text-shadow: none;
+.mt-ch__prize--second {
+  margin-top: 12px;
 }
 
-.mt-rules__body {
-  font-size: 16.5px;
-  line-height: 1.55;
-  color: rgba(228, 238, 255, 0.74);
-}
-
-.mt-rules__p {
-  margin: 0 0 14px;
-}
-
-.mt-rules__p b,
-.mt-rules__list b {
-  color: #fff;
+.mt-ch__fundLbl {
+  font-size: 10.5px;
   font-weight: 700;
-}
-
-.mt-rules__list {
-  margin: 0 0 14px;
-  padding-left: 20px;
-}
-
-.mt-rules__list li + li {
-  margin-top: 10px;
-}
-
-/*
- * ПРАВИЛО, КОТОРОЕ ПОТОМ ЦИТИРУЮТ В СПОРЕ, — крупнее обычного текста и с
- * акцентной полосой слева: пропущенный день и сумма мест должны читаться как
- * пункт договора, а не как ещё один абзац.
- */
-.mt-rules__quote {
-  margin: 18px 0;
-  padding: 14px 16px;
-  border-left: 3px solid rgb(120, 230, 190);
-  border-radius: 0 14px 14px 0;
-  background: rgba(14, 32, 30, 0.66);
-  font-size: 18px;
-  line-height: 1.45;
-  color: rgb(224, 250, 238);
-}
-
-.mt-rules__quote b {
-  color: #fff;
-  font-weight: 800;
-}
-
-/* ── уровни: три карточки вместо таблицы ──────────────────────────────────── */
-
-.mt-rules__levels {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 4px 0 16px;
-}
-
-.mt-rules__level {
-  padding: 12px 14px;
-  border: 1px solid rgba(159, 208, 255, 0.22);
-  border-radius: 16px;
-  background: rgba(16, 22, 36, 0.9);
-}
-
-.mt-rules__levelName {
-  font-size: 15px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  color: rgb(159, 240, 255);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(235, 235, 245, 0.34);
   margin-bottom: 8px;
 }
 
-.mt-rules__levelName b {
-  color: inherit;
-  font-weight: 800;
+.mt-ch__fund {
+  font-weight: 900;
+  font-size: 38px;
+  letter-spacing: -0.05em;
+  line-height: 1.05;
+  color: #9d96ff;
+  font-variant-numeric: tabular-nums;
 }
 
-.mt-rules__levelRows {
+.mt-ch__fundL {
+  font-size: 13px;
+  color: rgba(235, 235, 245, 0.62);
+  margin-top: 9px;
+  line-height: 1.5;
+}
+
+.mt-ch__places {
+  margin-top: 15px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 9px;
 }
 
-.mt-rules__levelRow {
+.mt-ch__pl {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 13px 14px;
+}
+
+.mt-ch__plN {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 14px;
-  color: rgba(220, 232, 255, 0.6);
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(235, 235, 245, 0.34);
+  margin-bottom: 8px;
 }
 
-.mt-rules__levelRow b {
-  color: #eaf3ff;
+.mt-ch__plN i {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #9d96ff, #7c7af0);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.mt-ch__plD {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: rgba(235, 235, 245, 0.62);
+}
+
+.mt-ch__plD b {
+  color: #fff;
+  font-weight: 600;
+}
+
+.mt-ch__plV {
+  font-size: 12px;
   font-weight: 700;
+  color: #9d96ff;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mt-ch__split {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.mt-ch__split div {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 11px 8px;
+  text-align: center;
+}
+
+.mt-ch__split b {
+  display: block;
+  font-weight: 800;
+  font-size: 17px;
+  letter-spacing: -0.03em;
+}
+
+.mt-ch__split span {
+  display: block;
+  font-size: 10.5px;
+  color: rgba(235, 235, 245, 0.34);
+  margin-top: 4px;
+}
+
+/* ── числа ─────────────────────────────────────────────────────────────────── */
+
+.mt-ch__nums {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.mt-ch__num {
+  background: #1c1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 16px 15px;
+}
+
+.mt-ch__numV {
+  font-weight: 800;
+  font-size: 25px;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.mt-ch__numL {
+  font-size: 12px;
+  line-height: 1.4;
+  color: rgba(235, 235, 245, 0.34);
+  margin-top: 7px;
+}
+
+/* ── что входит ────────────────────────────────────────────────────────────── */
+
+.mt-ch__inc {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mt-ch__inc i {
+  width: 21px;
+  height: 21px;
+  border-radius: 7px;
+  background: rgba(48, 209, 88, 0.16);
+  color: #30d158;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.mt-ch__early {
+  background: #1c1c1e;
+  border: 1px dashed rgba(157, 150, 255, 0.45);
+  border-radius: 16px;
+  padding: 15px 16px;
+  margin-top: 16px;
+}
+
+.mt-ch__earlyTitle {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #9d96ff;
+  margin-bottom: 6px;
+}
+
+.mt-ch__earlyP {
+  font-size: 13.5px !important;
+  line-height: 1.5;
+  margin: 0 !important;
+}
+
+/* ── после оплаты ──────────────────────────────────────────────────────────── */
+
+.mt-ch__flow {
+  display: flex;
+  flex-direction: column;
+}
+
+.mt-ch__fl {
+  display: flex;
+  gap: 14px;
+  position: relative;
+  padding-bottom: 20px;
+}
+
+.mt-ch__fl:last-child {
+  padding-bottom: 0;
+}
+
+.mt-ch__flBody {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mt-ch__flDot {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #2c2c2e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: #9d96ff;
+  z-index: 1;
+}
+
+.mt-ch__fl:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 13.5px;
+  top: 28px;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.mt-ch__flT {
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  line-height: 1.35;
+  margin-bottom: 4px;
+}
+
+.mt-ch__flD {
+  font-size: 13.5px;
+  color: rgba(235, 235, 245, 0.62);
+  line-height: 1.5;
+}
+
+/* ── правила ───────────────────────────────────────────────────────────────── */
+
+.mt-ch__rule {
+  margin: 0 0 26px;
+}
+
+.mt-ch__rule:last-child {
+  margin-bottom: 0;
+}
+
+.mt-ch__quote {
+  border-left: 3px solid #9d96ff;
+  background: rgba(157, 150, 255, 0.08);
+  border-radius: 0 14px 14px 0;
+  padding: 14px 16px;
+  margin: 0 0 13px;
+  font-size: 16px;
+  line-height: 1.45;
+  font-weight: 700;
+  color: #fff;
+}
+
+.mt-ch__ul {
+  list-style: none;
+  margin: 0 0 13px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mt-ch__ul li {
+  position: relative;
+  padding-left: 16px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: rgba(235, 235, 245, 0.62);
+}
+
+.mt-ch__ul li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 9px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #9d96ff;
+}
+
+.mt-ch__ul b {
+  color: #fff;
+  font-weight: 600;
+}
+
+.mt-ch__calc {
+  background: #1c1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  overflow: hidden;
+  margin: 0 0 13px;
+}
+
+.mt-ch__calcH,
+.mt-ch__calcR {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr 1fr 0.55fr;
+  align-items: center;
+  gap: 6px;
+  padding: 11px 13px;
+}
+
+.mt-ch__calcH {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(235, 235, 245, 0.34);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.mt-ch__calcH b {
+  font-weight: 700;
+  text-align: right;
+  font-size: 10.5px;
+}
+
+.mt-ch__calcR {
+  font-size: 13.5px;
+  color: rgba(235, 235, 245, 0.62);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.mt-ch__calcR:last-child {
+  border-bottom: 0;
+}
+
+.mt-ch__calcR span:first-child {
+  color: #fff;
+  font-weight: 600;
+}
+
+.mt-ch__calcR b {
+  text-align: right;
+  font-weight: 800;
+  font-size: 17px;
+  color: rgba(235, 235, 245, 0.34);
+  font-variant-numeric: tabular-nums;
+}
+
+.mt-ch__calcR--win {
+  background: rgba(157, 150, 255, 0.09);
+}
+
+.mt-ch__calcR--win b {
+  color: #9d96ff;
+}
+
+.mt-ch__tiers {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 0 0 13px;
+}
+
+.mt-ch__tier {
+  background: #1c1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 15px;
+  padding: 14px 15px;
+}
+
+.mt-ch__tierN {
+  font-weight: 800;
+  font-size: 13.5px;
+  letter-spacing: 0.04em;
+  color: #9d96ff;
+  margin-bottom: 8px;
+}
+
+.mt-ch__tierR {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13.5px;
+  line-height: 1.95;
+  color: rgba(235, 235, 245, 0.34);
+}
+
+.mt-ch__tierR b {
+  color: #fff;
+  font-weight: 600;
   text-align: right;
 }
 
-/* ── закреплённая панель ──────────────────────────────────────────────────── */
+/* ── вопросы ───────────────────────────────────────────────────────────────── */
 
-.mt-rules__bar {
-  flex: none;
+.mt-ch__faq {
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.mt-ch__q {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.mt-ch__q button {
   width: 100%;
-  padding: 10px 16px calc(12px + env(safe-area-inset-bottom, 0px));
-  background: linear-gradient(180deg, rgba(7, 11, 20, 0) 0%, rgba(7, 11, 20, 0.92) 22%, rgb(7, 11, 20) 100%);
-}
-
-.mt-rules__dots {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  margin-bottom: 12px;
-}
-
-.mt-rules__dot {
-  width: 7px;
-  height: 7px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: rgba(220, 232, 255, 0.26);
+  background: none;
+  border: 0;
+  padding: 16px 0;
+  text-align: left;
   cursor: pointer;
-  transition: transform 0.15s ease, background 0.15s ease;
+  font-size: 15.5px;
+  font-weight: 600;
+  color: #fff;
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  line-height: 1.35;
 }
 
-.mt-rules__dot.is-on {
-  background: rgb(120, 230, 190);
-  transform: scale(1.45);
+.mt-ch__q button span {
+  flex: 0 0 auto;
+  color: #9d96ff;
+  font-size: 19px;
+  transition: transform 0.22s;
+  line-height: 1;
+}
+
+.mt-ch__q.is-open button span {
+  transform: rotate(45deg);
+}
+
+.mt-ch__qa {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.28s ease;
+}
+
+.mt-ch__q.is-open .mt-ch__qa {
+  max-height: 460px;
+}
+
+.mt-ch__qa p {
+  font-size: 14.5px;
+  padding-bottom: 16px;
+  margin: 0;
+}
+
+/* ── финал ─────────────────────────────────────────────────────────────────── */
+
+.mt-ch__final {
+  padding-bottom: calc(26px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+.mt-ch__pricebox {
+  background: #1c1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 20px 19px;
+  margin-bottom: 16px;
+}
+
+.mt-ch__pr {
+  display: flex;
+  align-items: baseline;
+  gap: 11px;
+}
+
+.mt-ch__pr b {
+  font-weight: 900;
+  font-size: 38px;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.mt-ch__pr span {
+  font-size: 13px;
+  color: rgba(235, 235, 245, 0.34);
+  line-height: 1.35;
+}
+
+.mt-ch__pricebox p {
+  margin: 13px 0 0;
+  font-size: 13.5px;
 }
 
 /*
- * СОГЛАСИЕ — строкой во всю ширину и высотой под палец (48 пикселей это
- * минимум, ниже промахиваются). Целится вся строка, а не сам квадратик:
- * попасть в чекбокс 22×22 на телефоне в движении почти невозможно.
+ * Согласие — строка во всю ширину и высотой под палец: попасть в квадратик
+ * 24×24 на телефоне почти невозможно, целиться надо в строку.
  */
-.mt-rules__agree {
+.mt-ch__agree {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 52px;
-  margin-bottom: 10px;
-  padding: 0 14px;
-  border: 1px solid rgba(120, 230, 190, 0.35);
-  border-radius: 14px;
-  background: rgba(14, 32, 30, 0.5);
-  font-size: 15.5px;
-  font-weight: 700;
-  line-height: 1.3;
-  color: #eaf3ff;
+  min-height: 56px;
+  background: #1c1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 10px 16px;
   cursor: pointer;
+  user-select: none;
+  margin-bottom: 11px;
+  position: relative;
 }
 
-.mt-rules__agree input {
+.mt-ch__agree.is-on {
+  border-color: rgba(157, 150, 255, 0.5);
+  background: rgba(157, 150, 255, 0.09);
+}
+
+/* Настоящий чекбокс остаётся в разметке ради доступности и тестов, а видит
+   человек нарисованный квадрат. */
+.mt-ch__agree input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.mt-ch__agree i {
+  flex: 0 0 auto;
   width: 24px;
   height: 24px;
-  flex: none;
-  accent-color: rgb(61, 220, 151);
-}
-
-.mt-rules__actions {
+  border-radius: 8px;
+  border: 2px solid #4a4a4f;
   display: flex;
-  align-items: stretch;
-  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  font-style: normal;
+  font-size: 14px;
+  font-weight: 900;
+  color: #fff;
 }
 
-.mt-rules__back {
-  flex: none;
-  width: 52px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 14px;
-  background: rgba(16, 22, 36, 0.9);
-  color: #e8ecf3;
-  font-size: 24px;
-  line-height: 1;
-  cursor: pointer;
+.mt-ch__agree.is-on i {
+  background: #7c7af0;
+  border-color: #7c7af0;
 }
 
-/* Главная кнопка — широкая: это единственное действие экрана. */
-.mt-rules__main {
-  flex: 1 1 auto;
-  min-height: 52px;
-  padding: 14px 18px;
-  border: none;
-  border-radius: 14px;
-  background: #3ddc97;
-  color: #06210f;
-  font-size: 17px;
-  font-weight: 800;
-  cursor: pointer;
-  transition: opacity 0.15s ease, transform 0.1s ease;
+.mt-ch__agree span {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
 }
 
-.mt-rules__main:active {
-  transform: scale(0.99);
+.mt-ch__guestNote {
+  font-size: 13.5px !important;
+  margin-bottom: 12px !important;
 }
 
-.mt-rules__main:disabled {
-  background: #2a2f3a;
-  color: #6b7484;
-  cursor: not-allowed;
-}
-
-.mt-rules__main--quiet {
-  background: rgba(16, 22, 36, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  color: #e8ecf3;
-}
-
-.mt-rules__note {
-  margin-bottom: 10px;
-  font-size: 13.5px;
-  line-height: 1.4;
+.mt-ch__note {
+  margin-top: 12px !important;
+  font-size: 13.5px !important;
   text-align: center;
-  color: rgb(159, 240, 255);
+  color: #9fd0ff !important;
 }
 
-/* Крестик поверх картинки — с оглядкой на чёлку. */
-.mt-screen--rules .mt-corner--left {
-  top: calc(10px + env(safe-area-inset-top, 0px));
+.mt-ch__foot {
+  font-size: 12px !important;
+  color: rgba(235, 235, 245, 0.34) !important;
+  text-align: center;
+  margin: 12px 0 0 !important;
+  line-height: 1.5;
+}
+
+/* ── липкая полоса ─────────────────────────────────────────────────────────── */
+
+.mt-ch__bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  padding: 14px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(to top, #0b0b0d 60%, rgba(11, 11, 13, 0));
+  transform: translateY(130%);
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+.mt-ch__bar.is-on {
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.mt-ch__barPrice {
+  font-weight: 800;
+  font-size: 17px;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.mt-ch__bar .mt-ch__btn {
+  flex: 1;
+}
+
+/* ── комната участника ─────────────────────────────────────────────────────── */
+
+.mt-ch--room {
+  overflow-y: auto;
+}
+
+.mt-ch__done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 100%;
+  width: 100%;
+  max-width: 460px;
+  margin: 0 auto;
+  padding: calc(34px + env(safe-area-inset-top, 0px)) 26px calc(34px + env(safe-area-inset-bottom, 0px));
+}
+
+.mt-ch__ring {
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #9d96ff, #7c7af0);
+  box-shadow: 0 10px 26px rgba(124, 122, 240, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  color: #fff;
+  margin-bottom: 22px;
+}
+
+.mt-ch__done h3 {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin: 0 0 10px;
+  color: #fff;
+}
+
+.mt-ch__done p {
+  font-size: 15px;
+  margin: 0 0 22px;
+  line-height: 1.55;
+}
+
+.mt-ch__no {
+  background: #1c1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  padding: 18px 22px;
+  margin-bottom: 16px;
+  width: 100%;
+}
+
+.mt-ch__noLabel {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(235, 235, 245, 0.34);
+  font-weight: 700;
+}
+
+.mt-ch__noValue {
+  font-size: 38px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  color: #9d96ff;
+  line-height: 1.1;
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mt-ch__noName {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  margin-top: 2px;
+}
+
+.mt-ch__noSub {
+  font-size: 13px;
+  color: rgba(235, 235, 245, 0.62);
+  margin-top: 8px;
+}
+
+.mt-ch--room .mt-ch__early {
+  text-align: left;
+  margin: 0 0 18px;
+  width: 100%;
+}
+
+.mt-ch__loading {
+  margin: auto;
+  font-size: 14px;
+  color: rgba(235, 235, 245, 0.62);
 }

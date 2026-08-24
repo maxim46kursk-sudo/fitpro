@@ -52,13 +52,14 @@ const SEASON = { id: 1, title: 'Поток 1', starts_on: null, price_rub: 2990,
  * он приходит оттуда же, а не из хранилища.
  */
 let accepted = null
+let entry = null
 
 let season = SEASON
 
 vi.mock('../challengeSeason.js', () => ({
   CHALLENGE_PRICE: 2990,
   loadChallengeState: vi.fn(async ({ guest } = {}) =>
-    guest ? null : (season ? { season, entry: null, rulesAcceptedAt: accepted } : null),
+    guest ? null : (season ? { season, entry, rulesAcceptedAt: accepted } : null),
   ),
   buyTicket: vi.fn(async () => ({ ok: true })),
   acceptRules: vi.fn(async () => ({ ok: true })),
@@ -66,6 +67,7 @@ vi.mock('../challengeSeason.js', () => ({
 
 beforeEach(() => {
   accepted = null
+  entry = null
   season = SEASON
   globalThis.localStorage?.clear()
   // jsdom не знает matchMedia, а без него падает блокировка ландшафта
@@ -90,7 +92,7 @@ describe('вход в раздел сразу на экране челлендж
     render(<MotionApp startScreen="challenge" />)
 
     await waitFor(() => expect(screen.getByTestId('challenge-screen')).toBeTruthy())
-    expect(screen.getByTestId('challenge-price').textContent).toContain('2990')
+    expect(screen.getByTestId('challenge-price').textContent).toContain('990')
     expect(cameraEnabled).toBe(false)
     // ни калибровки, ни выбора уровня по дороге
     expect(screen.queryByTestId('level-pro')).toBeNull()
@@ -117,80 +119,55 @@ describe('вход в раздел сразу на экране челлендж
   })
 })
 
-describe('дорога: правила первый раз, потом сразу поток', () => {
-  it('не читал правил — с главной попадает на них, с воротами', async () => {
+describe('дорога: карточка на главной ведёт на страницу челленджа', () => {
+  it('не читал правил — открывается витрина, правила её раздел', async () => {
     accepted = null
     render(<MotionApp startScreen="challenge" />)
 
-    await waitFor(() => expect(screen.getByTestId('rules-screen')).toBeTruthy())
-    expect(screen.queryByTestId('challenge-screen')).toBeNull()
-    // ворота на месте: на первом экране их ещё нет, на последнем появятся
-    expect(screen.queryByTestId('rules-join')).toBeNull()
-    expect(screen.getByTestId('rules-count').textContent).toContain('/ 12')
-    // и камера ради чтения правил не включается
+    await waitFor(() => expect(screen.getByTestId('challenge-screen')).toBeTruthy())
+    // правила больше не отдельная карусель — они на этой же странице
+    expect(screen.getByTestId('challenge-rules')).toBeTruthy()
+    expect(screen.getByTestId('challenge-join')).toBeTruthy()
     expect(cameraEnabled).toBe(false)
   })
 
-  it('уже согласился — правил больше не показывают, сразу поток', async () => {
-    accepted = '2026-08-24T10:00:00Z'
-    render(<MotionApp startScreen="challenge" />)
-
-    await waitFor(() => expect(screen.getByTestId('challenge-screen')).toBeTruthy())
-    expect(screen.queryByTestId('rules-screen')).toBeNull()
-    // и покупка ему открыта напрямую, без повторного чтения
-    expect(screen.getByTestId('challenge-buy')).toBeTruthy()
-  })
-
-  it('не согласившийся не может купить билет мимо правил', async () => {
-    accepted = null
-    render(<MotionApp startScreen="challenge" />)
-    await waitFor(() => expect(screen.getByTestId('rules-screen')).toBeTruthy())
-
-    // вышел из правил, не дочитав, — на экране потока вместо «Купить билет»
-    // стоит дорога обратно в правила
-    screen.getByLabelText('Закрыть правила').click()
-    await waitFor(() => expect(screen.getByTestId('challenge-screen')).toBeTruthy())
-    expect(screen.queryByTestId('challenge-buy')).toBeNull()
-    expect(screen.getByTestId('challenge-join')).toBeTruthy()
-  })
-
-  it('правила можно перечитать свободно, без галочки', async () => {
-    accepted = '2026-08-24T10:00:00Z'
-    render(<MotionApp startScreen="challenge" />)
-    await waitFor(() => expect(screen.getByTestId('challenge-screen')).toBeTruthy())
-
-    screen.getByTestId('challenge-rules').click()
-    await waitFor(() => expect(screen.getByTestId('rules-screen')).toBeTruthy())
-    // долистать до конца — ворот всё равно нет
-    for (let i = 1; i < 12; i += 1) act(() => screen.getByTestId('rules-next').click())
-    expect(screen.queryByTestId('rules-gate')).toBeNull()
-  })
-
-  it('живого потока ещё нет — правила всё равно открываются С ВОРОТАМИ', async () => {
+  it('живого потока ещё нет — витрина всё равно открывается', async () => {
     /**
-     * ИМЕННО ЭТО И СЛОМАЛОСЬ НА ПРОДЕ. Сезон лежал черновиком, участие
-     * приходило пустым — и правила открывались в режиме свободного чтения: ни
-     * галочки, ни кнопки, сколько ни листай. Правила читают ДО открытия
-     * набора, и ворота зависят от того, читал ли человек, а не от того,
-     * продаётся ли билет прямо сейчас.
+     * ПРОД СЕЙЧАС ИМЕННО ТАКОЙ: сезон лежит черновиком. Страницу читают ДО
+     * открытия набора — она и есть витрина, — поэтому пустое участие не должно
+     * оставлять человека ни с чем.
      */
     season = null
     accepted = null
     render(<MotionApp startScreen="challenge" />)
 
-    await waitFor(() => expect(screen.getByTestId('rules-screen')).toBeTruthy())
-    for (let i = 1; i < 12; i += 1) act(() => screen.getByTestId('rules-next').click())
-    await waitFor(() => expect(screen.getByTestId('rules-gate')).toBeTruthy())
-    // и цена на кнопке объявленная, а не ноль
-    expect(screen.getByTestId('rules-join').textContent).toContain('2990')
+    await waitFor(() => expect(screen.getByTestId('challenge-screen')).toBeTruthy())
+    expect(screen.getByTestId('challenge-price').textContent).toContain('990')
+    expect(screen.getByTestId('challenge-join').disabled).toBe(true)
   })
 
-  it('гостю правила показываются свободно — это витрина', async () => {
-    render(<MotionApp startScreen="challenge" guest onGuestValue={() => {}} />)
+  it('участник попадает сразу в комнату, минуя лендинг', async () => {
+    season = { ...SEASON, starts_on: '2026-09-10' }
+    accepted = '2026-08-24T10:00:00Z'
+    entry = { id: 1, participant_no: 24, display_name: 'Пётр', paid_at: 'x' }
+    render(<MotionApp startScreen="challenge" />)
+
+    await waitFor(() => expect(screen.getByTestId('challenge-member')).toBeTruthy())
+    expect(screen.getByTestId('challenge-number').textContent).toContain('24')
+    // ни цены, ни кнопки покупки участнику не показывают
+    expect(screen.queryByTestId('challenge-join')).toBeNull()
+    expect(screen.queryByTestId('challenge-price')).toBeNull()
+  })
+
+  it('гостю — предложение аккаунта, цена при этом видна', async () => {
+    const onGuestValue = vi.fn()
+    render(<MotionApp startScreen="challenge" guest onGuestValue={onGuestValue} />)
 
     await waitFor(() => expect(screen.getByTestId('challenge-screen')).toBeTruthy())
-    screen.getByTestId('challenge-rules').click()
-    await waitFor(() => expect(screen.getByTestId('rules-screen')).toBeTruthy())
-    expect(screen.queryByTestId('rules-join')).toBeNull()
+    expect(screen.getByTestId('challenge-price').textContent).toContain('990')
+    expect(screen.queryByTestId('challenge-join')).toBeNull()
+
+    screen.getByTestId('challenge-signup').click()
+    expect(onGuestValue).toHaveBeenCalledWith('challenge', 0)
   })
 })
