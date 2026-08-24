@@ -3016,10 +3016,26 @@
 /* --- правила челленджа: двенадцать экранов вбок --- */
 
 /*
- * Плотный фон, как у комнаты и экрана челленджа: правила читают, а не смотрят
- * на себя. Читают при этом ДОЛГО — отсюда прокрутка внутри страницы и запас
- * снизу под точки и кнопку вступления.
+ * ЭТО ВИТРИНА. По этому экрану человек решает, платить ли 2990, — отсюда и
+ * раскладка: картинка сверху, крупный заголовок, спокойный текст ограниченной
+ * ширины и закреплённая внизу панель с точками и главной кнопкой.
+ *
+ * Про safe-area отдельно. Базовый .mt-screen раздаёт её паддингом, но здесь
+ * паддинг снят (картинка обязана идти во всю ширину и до самого верха),
+ * поэтому чёлку и системную полосу учитывают САМИ части: шапка сверху, панель
+ * снизу. Без этого кнопка «Далее» уезжает под полосу жестов на айфоне.
  */
+/*
+ * ГЛОБАЛЬНОГО box-sizing В МОДУЛЕ НЕТ, и это стоило поехавшей вёрстки: экран
+ * шириной 390 с паддингом 20 давал полосу в 430 — текст и кнопка уезжали за
+ * правый край, а на снимке это выглядело обрезанным шрифтом. Соседние экраны
+ * держатся на margin и потому не заметили; здесь ширина считается по границе.
+ */
+.mt-screen--rules,
+.mt-screen--rules * {
+  box-sizing: border-box;
+}
+
 .mt-screen--rules {
   justify-content: flex-start;
   gap: 0;
@@ -3034,171 +3050,189 @@
   display: none;
 }
 
-.mt-rules__head {
+/* ── картинка сверху ──────────────────────────────────────────────────────── */
+
+.mt-rules__hero {
+  position: relative;
   flex: none;
   width: 100%;
-  padding: 42px 16px 6px;
-  text-align: center;
+  height: 40vh;
+  min-height: 150px;
+  max-height: 360px;
+  background: #05070c;
+  border-radius: 0 0 22px 22px;
+  overflow: hidden;
 }
 
-.mt-rules__count {
+.mt-rules__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* contain: снимки экранов вертикальные, обрезка срезала бы у них ровно то,
+     ради чего они сняты — счёт, норму, номер участника */
+  object-fit: contain;
+  object-position: center top;
+}
+
+/* «3 / 12» — мелко и в углу картинки: это ориентир, а не заголовок. */
+.mt-rules__badge {
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  right: 12px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(5, 7, 12, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(220, 232, 255, 0.45);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(230, 240, 255, 0.75);
+  font-variant-numeric: tabular-nums;
 }
 
-.mt-screen--rules .mt-rules__title {
-  margin: 4px 0 0;
-  font-size: clamp(19px, 6vw, 24px);
-  text-shadow: none;
+/* ── текст ────────────────────────────────────────────────────────────────── */
+
+/* Тот же счётчик, но без картинки под ним: строкой над заголовком. */
+.mt-rules__badge--flat {
+  position: static;
+  align-self: flex-end;
+  margin: calc(12px + env(safe-area-inset-top, 0px)) 16px 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
-/* Листается вбок, а прокручивается внутри одной страницы: длинные экраны
-   (места, честность) на телефоне в один экран не помещаются. */
-.mt-rules__page {
+.mt-rules__scroll {
   flex: 1 1 auto;
   width: 100%;
-  max-width: 420px;
-  padding: 10px 18px 4px;
+  padding: 20px 20px 8px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
 
-/*
- * contain, а не cover: снимки экранов приложения вертикальные, и обрезка по
- * центру срезала бы у них ровно то, ради чего они сняты, — счёт, норму, номер
- * участника. Пусть лучше остаются поля по бокам.
- */
-.mt-rules__image {
-  display: block;
-  width: 100%;
-  max-height: 38vh;
-  margin: 0 auto 12px;
-  border-radius: 14px;
-  object-fit: contain;
-  background: rgba(255, 255, 255, 0.04);
+.mt-rules__title,
+.mt-rules__body {
+  /* Строка ограничена по ширине: на планшете текст во всю ширину читается
+     глазами по диагонали, а это правила. */
+  max-width: 440px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.mt-screen--rules .mt-rules__title {
+  margin: 0 0 12px;
+  font-size: clamp(26px, 8vw, 32px);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: #fff;
+  text-shadow: none;
 }
 
 .mt-rules__body {
-  font-size: 14px;
-  line-height: 1.6;
-  color: rgba(230, 240, 255, 0.88);
+  font-size: 16.5px;
+  line-height: 1.55;
+  color: rgba(228, 238, 255, 0.74);
 }
 
 .mt-rules__p {
-  margin: 0 0 10px;
+  margin: 0 0 14px;
+}
+
+.mt-rules__p b,
+.mt-rules__list b {
+  color: #fff;
+  font-weight: 700;
 }
 
 .mt-rules__list {
-  margin: 0 0 10px;
+  margin: 0 0 14px;
   padding-left: 20px;
 }
 
 .mt-rules__list li + li {
-  margin-top: 6px;
+  margin-top: 10px;
 }
 
-/* То, что тренер выделил цитатой, — главные правила потока: пропущенный день и
-   сумма мест. Их и в споре цитируют, поэтому они видны отдельно от текста. */
+/*
+ * ПРАВИЛО, КОТОРОЕ ПОТОМ ЦИТИРУЮТ В СПОРЕ, — крупнее обычного текста и с
+ * акцентной полосой слева: пропущенный день и сумма мест должны читаться как
+ * пункт договора, а не как ещё один абзац.
+ */
 .mt-rules__quote {
-  margin: 12px 0;
-  padding: 12px 14px;
+  margin: 18px 0;
+  padding: 14px 16px;
   border-left: 3px solid rgb(120, 230, 190);
-  border-radius: 0 12px 12px 0;
-  background: rgba(14, 32, 30, 0.7);
-  font-size: 14px;
-  line-height: 1.5;
-  color: rgb(214, 245, 232);
+  border-radius: 0 14px 14px 0;
+  background: rgba(14, 32, 30, 0.66);
+  font-size: 18px;
+  line-height: 1.45;
+  color: rgb(224, 250, 238);
 }
 
-/* Таблица уровней шире телефона — прокручивается сама, а не растягивает экран. */
-.mt-rules__tableWrap {
-  margin: 0 0 12px;
-  overflow-x: auto;
+.mt-rules__quote b {
+  color: #fff;
+  font-weight: 800;
 }
 
-.mt-rules__table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
+/* ── уровни: три карточки вместо таблицы ──────────────────────────────────── */
 
-.mt-rules__table th,
-.mt-rules__table td {
-  padding: 7px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  text-align: left;
-  white-space: nowrap;
-}
-
-.mt-rules__table th {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: rgba(220, 232, 255, 0.5);
-}
-
-/* Согласие и вступление — только на последнем экране (см. RulesScreen). */
-.mt-rules__gate {
-  flex: none;
-  width: 100%;
-  max-width: 420px;
-  padding: 10px 18px 0;
-}
-
-.mt-rules__agree {
+.mt-rules__levels {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0 16px;
+}
+
+.mt-rules__level {
+  padding: 12px 14px;
+  border: 1px solid rgba(159, 208, 255, 0.22);
+  border-radius: 16px;
+  background: rgba(16, 22, 36, 0.9);
+}
+
+.mt-rules__levelName {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: rgb(159, 240, 255);
+  margin-bottom: 8px;
+}
+
+.mt-rules__levelName b {
+  color: inherit;
+  font-weight: 800;
+}
+
+.mt-rules__levelRows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mt-rules__levelRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   gap: 10px;
   font-size: 14px;
+  color: rgba(220, 232, 255, 0.6);
+}
+
+.mt-rules__levelRow b {
+  color: #eaf3ff;
   font-weight: 700;
-  color: rgb(238, 245, 255);
-  cursor: pointer;
+  text-align: right;
 }
 
-.mt-rules__agree input {
-  width: 22px;
-  height: 22px;
+/* ── закреплённая панель ──────────────────────────────────────────────────── */
+
+.mt-rules__bar {
   flex: none;
-  accent-color: rgb(61, 220, 151);
-}
-
-.mt-rules__note {
-  margin-top: 8px;
-  font-size: 13px;
-  text-align: center;
-  color: rgb(159, 240, 255);
-}
-
-/* Точки отвечают на «сколько ещё осталось» — без этого длинное чтение бросают
-   на середине. Стрелки нужны на компьютере и одной рукой в метро. */
-.mt-rules__nav {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
   width: 100%;
   padding: 10px 16px calc(12px + env(safe-area-inset-bottom, 0px));
-}
-
-.mt-rules__arrow {
-  width: 40px;
-  height: 40px;
-  flex: none;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 50%;
-  background: rgba(16, 22, 36, 0.9);
-  color: #e8ecf3;
-  font-size: 22px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.mt-rules__arrow:disabled {
-  opacity: 0.3;
-  cursor: default;
+  background: linear-gradient(180deg, rgba(7, 11, 20, 0) 0%, rgba(7, 11, 20, 0.92) 22%, rgb(7, 11, 20) 100%);
 }
 
 .mt-rules__dots {
@@ -3207,19 +3241,112 @@
   align-items: center;
   justify-content: center;
   gap: 7px;
+  margin-bottom: 12px;
 }
 
 .mt-rules__dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: rgba(220, 232, 255, 0.28);
+  background: rgba(220, 232, 255, 0.26);
   cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
 }
 
 .mt-rules__dot.is-on {
   background: rgb(120, 230, 190);
-  transform: scale(1.3);
+  transform: scale(1.45);
+}
+
+/*
+ * СОГЛАСИЕ — строкой во всю ширину и высотой под палец (48 пикселей это
+ * минимум, ниже промахиваются). Целится вся строка, а не сам квадратик:
+ * попасть в чекбокс 22×22 на телефоне в движении почти невозможно.
+ */
+.mt-rules__agree {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  margin-bottom: 10px;
+  padding: 0 14px;
+  border: 1px solid rgba(120, 230, 190, 0.35);
+  border-radius: 14px;
+  background: rgba(14, 32, 30, 0.5);
+  font-size: 15.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #eaf3ff;
+  cursor: pointer;
+}
+
+.mt-rules__agree input {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  accent-color: rgb(61, 220, 151);
+}
+
+.mt-rules__actions {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.mt-rules__back {
+  flex: none;
+  width: 52px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  background: rgba(16, 22, 36, 0.9);
+  color: #e8ecf3;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* Главная кнопка — широкая: это единственное действие экрана. */
+.mt-rules__main {
+  flex: 1 1 auto;
+  min-height: 52px;
+  padding: 14px 18px;
+  border: none;
+  border-radius: 14px;
+  background: #3ddc97;
+  color: #06210f;
+  font-size: 17px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+
+.mt-rules__main:active {
+  transform: scale(0.99);
+}
+
+.mt-rules__main:disabled {
+  background: #2a2f3a;
+  color: #6b7484;
+  cursor: not-allowed;
+}
+
+.mt-rules__main--quiet {
+  background: rgba(16, 22, 36, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #e8ecf3;
+}
+
+.mt-rules__note {
+  margin-bottom: 10px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  text-align: center;
+  color: rgb(159, 240, 255);
+}
+
+/* Крестик поверх картинки — с оглядкой на чёлку. */
+.mt-screen--rules .mt-corner--left {
+  top: calc(10px + env(safe-area-inset-top, 0px));
 }

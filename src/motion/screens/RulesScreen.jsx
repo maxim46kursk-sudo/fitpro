@@ -11,20 +11,25 @@ import { RULES } from './rulesContent.js'
  * знал» после этого стоит дорого обеим сторонам. Двенадцать отдельных экранов
  * заставляют пройти правила целиком: каждый следующий требует движения пальцем.
  *
- * ОТСЮДА ГЛАВНОЕ ПРАВИЛО ЭКРАНА: галочки и кнопки вступления НЕ СУЩЕСТВУЕТ,
- * пока человек не дошёл до двенадцатого. Не «спрятана» и не «погашена» —
- * её нет в разметке. Погашенная кнопка на первом экране означала бы «жми сюда,
- * когда надоест читать», то есть ровно то, чего мы пытаемся избежать.
+ * ЭТО ВИТРИНА, А НЕ СПРАВКА. По этому экрану человек решает, платить ли 2990,
+ * поэтому раскладка ровно такая: картинка сверху во всю ширину, крупный
+ * заголовок, спокойный текст ограниченной ширины — и ЗАКРЕПЛЁННАЯ нижняя
+ * панель, в которой всегда видно, где ты и куда дальше.
  *
- * ПОВТОРНО ПРАВИЛА ОТКРЫВАЮТСЯ СВОБОДНО и без всего этого: человек, уже
- * согласившийся, приходит сюда за конкретным ответом («а что там про пропущенный
- * день?») и требовать от него снова листать двенадцать экранов было бы
- * издевательством. Режим задаётся снаружи, пропсом `gate`.
+ * ПАНЕЛЬ ЗАКРЕПЛЕНА НЕ РАДИ КРАСОТЫ. Кнопка, живущая в потоке текста, уезжает
+ * за нижний край на длинных экранах — и человек, дочитавший правила, не находит
+ * ни галочки, ни кнопки вступления. Здесь она приклеена к низу экрана и знает
+ * про safe-area айфона, иначе уедет под системную полосу.
  *
- * ЖЕСТЫ. Свайп и стрелки, и оба обязательны: свайпом листают на телефоне, а
- * стрелки нужны и на компьютере, и тому, кто читает одной рукой в метро. Точки
- * снизу — не украшение: они отвечают на вопрос «сколько ещё осталось», без
- * которого длинное чтение бросают на середине.
+ * ВОРОТА. Галочки и кнопки вступления НЕ СУЩЕСТВУЕТ, пока человек не дошёл до
+ * последнего экрана. Не «спрятана» и не «погашена» — её нет в разметке:
+ * погашенная кнопка на первом экране означала бы «жми сюда, когда надоест
+ * читать», то есть ровно то, чего мы пытаемся избежать.
+ *
+ * ПОВТОРНО правила открываются свободно и без всего этого: человек, уже
+ * согласившийся, приходит сюда за конкретным ответом («а что там про
+ * пропущенный день?»), и требовать от него снова листать двенадцать экранов
+ * было бы издевательством. Режим задаётся снаружи, пропсом `gate`.
  */
 
 /**
@@ -33,7 +38,7 @@ import { RULES } from './rulesContent.js'
  *   галочка и кнопка вступления. Повторное чтение — false.
  * @param {number} [props.price] цена билета для кнопки, из сезона.
  * @param {() => Promise<{ok?: true, error?: string}>|void} [props.onJoin]
- *   человек согласился и жмёт «Вступить»: зафиксировать согласие и открыть оплату.
+ *   человек согласился и жмёт «Участвовать»: зафиксировать согласие и открыть оплату.
  * @param {() => void} [props.onExit] закрыть правила.
  */
 export default function RulesScreen({
@@ -58,9 +63,12 @@ export default function RulesScreen({
   const last = pages.length - 1
   if (index >= last) reachedEnd.current = true
 
+  /** Текст прокручивается внутри экрана — новый экран начинается сверху. */
+  const scrollRef = useRef(null)
   const go = (next) => {
     if (next < 0 || next > last) return
     setIndex(next)
+    if (scrollRef.current) scrollRef.current.scrollTop = 0
   }
 
   // Стрелки клавиатуры — тем, кто читает с компьютера.
@@ -115,17 +123,14 @@ export default function RulesScreen({
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-      <div className="mt-rules__head">
-        <div className="mt-rules__count" data-testid="rules-count">
-          {index + 1} из {pages.length}
-        </div>
-        <h1 className="mt-title mt-rules__title" data-testid="rules-title">
-          {page.title}
-        </h1>
-      </div>
-
-      <div className="mt-rules__page" data-testid={`rules-page-${index + 1}`}>
-        {page.image && (
+      {/* КАРТИНКА СВЕРХУ во всю ширину. contain на тёмной подложке: снимки
+          экранов приложения вертикальные, и обрезка срезала бы у них ровно то,
+          ради чего они сняты — счёт, норму, номер участника. */}
+      {/* Экран без картинки (двенадцатый — про совесть) не держит пустую чёрную
+          полосу в сорок процентов высоты: место отдаётся тексту, а счётчик
+          переезжает строкой над заголовком. */}
+      {page.image ? (
+        <div className="mt-rules__hero">
           <img
             className="mt-rules__image"
             src={page.image}
@@ -137,8 +142,18 @@ export default function RulesScreen({
                оставлять посреди правил битую иконку. */
             onError={(e) => { e.currentTarget.style.display = 'none' }}
           />
-        )}
+          <div className="mt-rules__badge" data-testid="rules-count">
+            {index + 1} / {pages.length}
+          </div>
+        </div>
+      ) : (
+        <div className="mt-rules__badge mt-rules__badge--flat" data-testid="rules-count">
+          {index + 1} / {pages.length}
+        </div>
+      )}
 
+      <div className="mt-rules__scroll" ref={scrollRef} data-testid={`rules-page-${index + 1}`}>
+        <h1 className="mt-rules__title" data-testid="rules-title">{page.title}</h1>
         <div className="mt-rules__body">
           {page.body?.map((block, i) => (
             <Block key={i} block={block} />
@@ -146,53 +161,10 @@ export default function RulesScreen({
         </div>
       </div>
 
-      {/**
-       * СОГЛАСИЕ. Появляется только здесь и только дочитавшему: см. шапку файла.
-       * Кнопка без галочки не работает — и она именно НЕАКТИВНА, а не спрятана:
-       * человек должен видеть, что осталось сделать один шаг.
-       */}
-      {showGate && (
-        <div className="mt-rules__gate" data-testid="rules-gate">
-          <label className="mt-rules__agree">
-            <input
-              type="checkbox"
-              checked={agreed}
-              onChange={(e) => setAgreed(e.target.checked)}
-              data-testid="rules-agree"
-            />
-            <span>Я прочитал правила и согласен</span>
-          </label>
-
-          <button
-            type="button"
-            className="mt-button"
-            data-testid="rules-join"
-            disabled={!agreed || busy}
-            onClick={join}
-          >
-            {busy ? 'Открываю оплату…' : `Вступить в челлендж — ${price} ₽`}
-          </button>
-
-          {note && (
-            <div className="mt-rules__note" data-testid="rules-note">
-              {note}
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="mt-rules__nav">
-        <button
-          type="button"
-          className="mt-rules__arrow"
-          data-testid="rules-prev"
-          disabled={index === 0}
-          onClick={() => go(index - 1)}
-          aria-label="Предыдущий экран"
-        >
-          ‹
-        </button>
-
+      {/* ЗАКРЕПЛЁННАЯ ПАНЕЛЬ: где я и куда дальше. На последнем экране первого
+          чтения место «Далее» занимает согласие — главное действие обязано быть
+          под большим пальцем, а не в конце прокрутки. */}
+      <div className="mt-rules__bar">
         <div className="mt-rules__dots" data-testid="rules-dots">
           {pages.map((p, i) => (
             <button
@@ -207,16 +179,70 @@ export default function RulesScreen({
           ))}
         </div>
 
-        <button
-          type="button"
-          className="mt-rules__arrow"
-          data-testid="rules-next"
-          disabled={index === last}
-          onClick={() => go(index + 1)}
-          aria-label="Следующий экран"
-        >
-          ›
-        </button>
+        {showGate && (
+          <div className="mt-rules__gate" data-testid="rules-gate">
+            {/* Строка целиком — цель касания: палец, а не мышь. */}
+            <label className="mt-rules__agree">
+              <input
+                type="checkbox"
+                checked={agreed}
+                onChange={(e) => setAgreed(e.target.checked)}
+                data-testid="rules-agree"
+              />
+              <span>Я прочитал правила и согласен</span>
+            </label>
+          </div>
+        )}
+
+        {note && (
+          <div className="mt-rules__note" data-testid="rules-note">
+            {note}
+          </div>
+        )}
+
+        <div className="mt-rules__actions">
+          {index > 0 && (
+            <button
+              type="button"
+              className="mt-rules__back"
+              data-testid="rules-prev"
+              onClick={() => go(index - 1)}
+              aria-label="Предыдущий экран"
+            >
+              ‹
+            </button>
+          )}
+
+          {showGate ? (
+            <button
+              type="button"
+              className="mt-rules__main"
+              data-testid="rules-join"
+              disabled={!agreed || busy}
+              onClick={join}
+            >
+              {busy ? 'Открываю оплату…' : `Участвовать — ${price} ₽`}
+            </button>
+          ) : index < last ? (
+            <button
+              type="button"
+              className="mt-rules__main"
+              data-testid="rules-next"
+              onClick={() => go(index + 1)}
+            >
+              Далее
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="mt-rules__main mt-rules__main--quiet"
+              data-testid="rules-done"
+              onClick={() => onExit?.()}
+            >
+              Закрыть
+            </button>
+          )}
+        </div>
       </div>
 
       <button className="mt-corner mt-corner--left" onClick={onExit} aria-label="Закрыть правила">
@@ -226,7 +252,7 @@ export default function RulesScreen({
   )
 }
 
-/** Абзац, перечисление, выделенное правило или таблица уровней. */
+/** Абзац, перечисление, выделенное правило или уровни карточками. */
 function Block({ block }) {
   if (typeof block === 'string') return <p className="mt-rules__p">{bold(block)}</p>
 
@@ -248,19 +274,32 @@ function Block({ block }) {
     )
   }
 
+  /**
+   * УРОВНИ — КАРТОЧКАМИ, А НЕ ТАБЛИЦЕЙ. Четыре колонки на экране шириной в
+   * ладонь превращаются либо в мелкий шрифт, либо в горизонтальную прокрутку, и
+   * человек не сравнивает уровни, а разбирает вёрстку. Карточка отвечает на
+   * вопрос сразу: как называется, чем отличается, сколько стоит мишень.
+   */
   if (block?.table) {
+    const [, ...cols] = block.table.head
     return (
-      <div className="mt-rules__tableWrap">
-        <table className="mt-rules__table">
-          <thead>
-            <tr>{block.table.head.map((h) => <th key={h}>{bold(h)}</th>)}</tr>
-          </thead>
-          <tbody>
-            {block.table.rows.map((row, i) => (
-              <tr key={i}>{row.map((cell, j) => <td key={j}>{bold(cell)}</td>)}</tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="mt-rules__levels" data-testid="rules-levels">
+        {block.table.rows.map((row, i) => {
+          const [name, ...values] = row
+          return (
+            <div className="mt-rules__level" key={i}>
+              <div className="mt-rules__levelName">{bold(name)}</div>
+              <div className="mt-rules__levelRows">
+                {cols.map((col, j) => (
+                  <div className="mt-rules__levelRow" key={col}>
+                    <span>{col}</span>
+                    <b>{bold(values[j])}</b>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })}
       </div>
     )
   }
@@ -272,6 +311,9 @@ function Block({ block }) {
  * **Жирный** — единственная разметка, которую понимает текст правил. Полного
  * markdown тут не нужно: тренер выделяет ровно те строки, которые в споре
  * потом и цитируют, и парсер ради одной пары звёздочек был бы дороже задачи.
+ *
+ * Сырых звёздочек на экране быть не должно ни при каких данных: split съедает
+ * их все, даже если пара не закрыта.
  */
 function bold(text) {
   const parts = String(text ?? '').split('**')

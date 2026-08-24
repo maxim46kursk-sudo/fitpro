@@ -63,17 +63,30 @@ describe('не участник: чем дело кончится и почём'
     })
   })
 
-  it('не читал правил — вместо покупки дорога в правила', () => {
+  it('не читал правил — «Участвовать» ведёт сперва в правила', () => {
     /**
-     * Заплатить, не увидев правил, отсюда нельзя: спор о призах упирается в
-     * «я не знал», и ответ на это должен появиться до денег, а не после.
+     * Кнопка вступления стоит и здесь, и в конце правил, и ведёт в одну и ту же
+     * покупку. Но заплатить, не увидев правил, нельзя: спор о призах упирается
+     * в «я не знал», и ответ на это должен появиться до денег, а не после.
      */
     const onRules = vi.fn()
     render(<ChallengeScreen state={{ season: SEASON, entry: null, rulesAcceptedAt: null }} onRules={onRules} />)
 
+    const join = screen.getByTestId('challenge-join')
+    expect(join.textContent).toContain('Участвовать')
+    expect(join.textContent).toContain('2990')
     expect(screen.queryByTestId('challenge-buy')).toBeNull()
-    act(() => screen.getByTestId('challenge-read-rules').click())
+    act(() => join.click())
     expect(onRules).toHaveBeenCalledWith({ gate: true })
+  })
+
+  it('живого потока нет — кнопка честно молчит про покупку', () => {
+    const onRules = vi.fn()
+    render(<ChallengeScreen state={null} fallbackPrice={2990} onRules={onRules} />)
+
+    const join = screen.getByTestId('challenge-join')
+    expect(join.disabled).toBe(true)
+    expect(join.textContent).toContain('Набор пока закрыт')
   })
 
   it('перечитать правила можно всегда и свободно', () => {

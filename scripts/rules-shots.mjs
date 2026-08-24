@@ -274,7 +274,21 @@ async function mockBackend(page, { season = true, consent = true } = {}) {
   await page.route('**/api/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }))
 }
 
-// ------------------------------------------------------------------ съёмка ---
+// ---------------------------------------------------------------- предпросмотр ---
+
+/**
+ * `--preview` — не съёмка картинок ДЛЯ правил, а съёмка САМИХ правил: как экран
+ * выглядит человеку и нет ли на нём сырой разметки.
+ *
+ * Зачем отдельным ходом. Правила — витрина, по которой решают, платить ли 2990,
+ * и её вид проверяют глазами. Но глаз пропускает то, что скрипт видит сразу:
+ * звёздочку жирного, решётку заголовка, дефис списка, приехавшие в текст как
+ * есть. Поэтому скрипт проходит ВСЕ двенадцать экранов и падает, если нашёл, —
+ * а заодно откладывает четыре снимка для человека.
+ */
+const PREVIEW_OUT = here('../qa-screens/rules-preview')
+
+// -------------------------------------------------------------------- съёмка ---
 
 const browser = await chromium.launch({
   headless: !HEADED,
@@ -333,7 +347,78 @@ async function shoot(page, id, opts = {}) {
   say(`  снято ${id} (${Math.round(buf.length / 1024)} КБ png)`)
 }
 
-const want = (id) => !ONLY.length || ONLY.includes(id)
+const want = (id) => !ONLY.length || ONLY.includes(id) 
+
+if (has('--preview')) {
+  const page = await newPage()
+  await mockBackend(page, { consent: false })
+  await page.goto(`${BASE}/harness.html`, { waitUntil: 'domcontentloaded' })
+  await warmUp(page)
+  await page.evaluate(() => window.__shots.mount({ startScreen: 'challenge' }))
+  await page.waitForSelector('[data-testid="rules-screen"]', { timeout: 60000 })
+
+  mkdirSync(PREVIEW_OUT, { recursive: true })
+  const total = await page.evaluate(() => document.querySelectorAll('[data-testid^="rules-dot-"]').length)
+  say(`правила открыты: ${total} экранов`)
+
+  /** Что снимаем человеку: первый, уровни карточками, цитата-правило, конец. */
+  const KEEP = {
+    1: '01-первый-экран.png',
+    5: '02-уровни-карточками.png',
+    9: '03-цитата-правило.png',
+  }
+  const dirty = []
+
+  for (let i = 1; i <= total; i += 1) {
+    await page.locator(`[data-testid="rules-dot-${i}"]`).click()
+    await wait(350)
+    const seen = await page.evaluate(() => {
+      const root = document.querySelector('[data-testid="rules-screen"]')
+      return { text: root ? root.innerText : '', title: document.querySelector('[data-testid="rules-title"]')?.textContent }
+    })
+    // сырая разметка: звёздочки жирного, решётки заголовков, дефисы списков
+    const marks = []
+    if (seen.text.includes('**')) marks.push('**')
+    if (seen.text.includes('#')) marks.push('#')
+    if (/(?:^|\s)[-*]\s/.test(seen.text)) marks.push('дефис списка')
+    if (marks.length) dirty.push(`экран ${i} («${seen.title}»): ${marks.join(', ')}`)
+    else say(`  экран ${i}: «${seen.title}» — разметка чистая`)
+
+    if (KEEP[i]) {
+      await page.screenshot({ path: `${PREVIEW_OUT}/${KEEP[i]}` })
+      say(`  снимок: qa-screens/rules-preview/${KEEP[i]}`)
+    }
+  }
+
+  // последний экран — с галочкой и включённой кнопкой: именно так его увидит
+  // человек в момент решения
+  await page.locator(`[data-testid="rules-dot-${total}"]`).click()
+  await page.waitForSelector('[data-testid="rules-gate"]', { timeout: 10000 })
+  await page.locator('[data-testid="rules-agree"]').click()
+  await wait(300)
+  const joinText = await page.locator('[data-testid="rules-join"]').textContent()
+  const joinOff = await page.locator('[data-testid="rules-join"]').isDisabled()
+  await page.screenshot({ path: `${PREVIEW_OUT}/04-согласие-и-кнопка.png` })
+  say(`  снимок: qa-screens/rules-preview/04-согласие-и-кнопка.png`)
+  say(`  кнопка вступления: «${joinText}», после галочки ${joinOff ? 'ВСЁ ЕЩЁ НЕ РАБОТАЕТ' : 'активна'}`)
+
+  await page.context().close()
+  await browser.close()
+  server.close()
+
+  if (dirty.length) {
+    console.error('СЫРАЯ РАЗМЕТКА НА ЭКРАНЕ:')
+    for (const d of dirty) console.error('  ' + d)
+    process.exit(1)
+  }
+  if (joinOff) {
+    console.error('Кнопка вступления не включилась после галочки')
+    process.exit(1)
+  }
+  say('')
+  say('все двенадцать экранов чистые, ворота работают')
+  process.exit(0)
+}
 
 /**
  * «НАСТРОЙКА ПОД СЕБЯ» ПРОПУСКАЕТСЯ, как её пропускает большинство людей (по

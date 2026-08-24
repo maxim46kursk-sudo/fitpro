@@ -47,6 +47,8 @@ export default function ChallengeScreen({
   onRefresh = null,
   onRules = null,
   loading = false,
+  /** Объявленная цена билета — пока сезона нет, показывать «0 ₽» нельзя. */
+  fallbackPrice = 0,
   onExit = null,
 }) {
   const [busy, setBusy] = useState(false)
@@ -62,6 +64,11 @@ export default function ChallengeScreen({
    * не увидев их, отсюда нельзя.
    */
   const accepted = !!state?.rulesAcceptedAt
+  /**
+   * Цена — из сезона; до открытия набора её подставляет вызывающий (index.jsx),
+   * чтобы экран остался чистым и не тянул за собой ни сеть, ни её константы.
+   */
+  const price = season?.price_rub ?? fallbackPrice
 
   const buy = async () => {
     if (busy || !onBuy) return
@@ -156,6 +163,17 @@ export default function ChallengeScreen({
             </div>
           )}
 
+          {/**
+            * КНОПКА ВСТУПЛЕНИЯ СТОИТ В ДВУХ МЕСТАХ — здесь и в конце правил, и
+            * ведёт она в одну и ту же покупку. Человек решает платить в разные
+            * моменты: один дочитав правила до конца, другой сразу, увидев цену
+            * и призовой фонд. Одна дверь на двоих означала бы, что второй уйдёт
+            * искать её и не найдёт.
+            *
+            * Не прочитавшего правила кнопка ведёт СНАЧАЛА в правила: заплатить,
+            * не увидев их, отсюда нельзя — спор о призах упирается в «я не
+            * знал», и ответ на это должен появиться до денег.
+            */}
           {guest ? (
             <>
               <div className="mt-ch__closed" data-testid="challenge-guest">
@@ -172,26 +190,19 @@ export default function ChallengeScreen({
               </button>
             </>
           ) : (
-            season && (accepted ? (
-              <button
-                type="button"
-                className="mt-button"
-                data-testid="challenge-buy"
-                disabled={busy}
-                onClick={buy}
-              >
-                {busy ? 'Открываю оплату…' : 'Купить билет'}
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="mt-button"
-                data-testid="challenge-read-rules"
-                onClick={() => onRules?.({ gate: true })}
-              >
-                Правила и вступление
-              </button>
-            ))
+            <button
+              type="button"
+              className="mt-button"
+              data-testid={accepted ? 'challenge-buy' : 'challenge-join'}
+              disabled={busy || !season}
+              onClick={() => (accepted ? buy() : onRules?.({ gate: true }))}
+            >
+              {!season
+                ? 'Набор пока закрыт'
+                : busy
+                  ? 'Открываю оплату…'
+                  : `Участвовать — ${price} ₽`}
+            </button>
           )}
         </div>
       )}

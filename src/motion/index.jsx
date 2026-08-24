@@ -15,7 +15,7 @@ import { needsPersonalSetup } from './game/personal.js'
 import { DAYS, currentDay, forcedDay } from './game/challenge.js'
 import ChallengeScreen from './screens/ChallengeScreen.jsx'
 import RulesScreen from './screens/RulesScreen.jsx'
-import { acceptRules, buyTicket, loadChallengeState } from '../challengeSeason.js'
+import { CHALLENGE_PRICE, acceptRules, buyTicket, loadChallengeState } from '../challengeSeason.js'
 import { useCamera } from './pose/useCamera.js'
 import { usePoseLandmarker } from './pose/usePoseLandmarker.js'
 import { useLandscapeBlock } from './device/useOrientation.js'
@@ -374,8 +374,15 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
        * челленджа и ещё не читавший правил, попадает на них, а не на цену:
        * спор о призах упирается в «я не знал», и ответ на это должен появиться
        * до денег, а не после. Уже согласившийся идёт сразу к потоку.
+       *
+       * ЖИВОГО ПОТОКА ДЛЯ ЭТОГО НЕ ТРЕБУЕТСЯ, и это была ошибка, стоившая
+       * пропавших ворот на проде: сезон лежал черновиком, `value` приходил
+       * пустым — и правила всякий раз открывались в режиме свободного чтения,
+       * то есть без галочки и кнопки вступления, сколько ни листай. Правила —
+       * витрина, её читают ДО открытия набора; ворота зависят от того, читал ли
+       * человек, а не от того, продаётся ли билет прямо сейчас.
        */
-      if (startScreen === 'challenge' && !guest && value && !value.rulesAcceptedAt) {
+      if (startScreen === 'challenge' && !guest && !value?.rulesAcceptedAt) {
         setRulesGate(true)
         setScreen('rules')
       }
@@ -778,7 +785,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
       {inRules && (
         <RulesScreen
           gate={rulesGate}
-          price={membership?.season?.price_rub ?? 0}
+          price={membership?.season?.price_rub ?? CHALLENGE_PRICE}
           /**
            * ВСТУПЛЕНИЕ ОДНОЙ КНОПКОЙ: сперва фиксируем согласие В БАЗЕ, и только
            * если оно записалось — открываем оплату. Обратный порядок оставил бы
@@ -786,6 +793,12 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
            * того, ради чего этот экран и сделан.
            */
           onJoin={async () => {
+            // Набор ещё не открыт — говорим прямо и денег не трогаем: платёж,
+            // которому не нашлось потока, вебхук примет и поднимет тревогу, но
+            // человеку от этого не легче.
+            if (!membership?.season?.id) {
+              return { error: 'Набор в поток пока закрыт — откроем и объявим' }
+            }
             const consent = await acceptRules(membership?.season?.id)
             if (consent?.error) return consent
             const result = await buyTicket()
@@ -805,6 +818,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
         <ChallengeScreen
           state={membership}
           loading={membership === undefined}
+          fallbackPrice={CHALLENGE_PRICE}
           onRules={openRules}
           guest={guest}
           day={day}
@@ -1026,7 +1040,10 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
         </div>
       )}
 
-      <AudioToggle />
+      {/* Тумблер звука на правилах не нужен и мешает: он живёт в том же нижнем
+          углу, что и главная кнопка, и накрывает её собой. Читают правила без
+          звука — прятать его тут ничего не стоит. */}
+      {!inRules && <AudioToggle />}
       <DebugPanel onSelectCamera={camera.selectDevice} />
     </div>
   )

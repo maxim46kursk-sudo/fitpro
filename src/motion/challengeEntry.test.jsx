@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import MotionApp from './index.jsx'
 
 /**
@@ -53,9 +53,12 @@ const SEASON = { id: 1, title: 'Поток 1', starts_on: null, price_rub: 2990,
  */
 let accepted = null
 
+let season = SEASON
+
 vi.mock('../challengeSeason.js', () => ({
+  CHALLENGE_PRICE: 2990,
   loadChallengeState: vi.fn(async ({ guest } = {}) =>
-    guest ? null : { season: SEASON, entry: null, rulesAcceptedAt: accepted },
+    guest ? null : (season ? { season, entry: null, rulesAcceptedAt: accepted } : null),
   ),
   buyTicket: vi.fn(async () => ({ ok: true })),
   acceptRules: vi.fn(async () => ({ ok: true })),
@@ -63,6 +66,7 @@ vi.mock('../challengeSeason.js', () => ({
 
 beforeEach(() => {
   accepted = null
+  season = SEASON
   globalThis.localStorage?.clear()
   // jsdom не знает matchMedia, а без него падает блокировка ландшафта
   vi.stubGlobal('matchMedia', () => ({
@@ -122,7 +126,7 @@ describe('дорога: правила первый раз, потом сраз�
     expect(screen.queryByTestId('challenge-screen')).toBeNull()
     // ворота на месте: на первом экране их ещё нет, на последнем появятся
     expect(screen.queryByTestId('rules-join')).toBeNull()
-    expect(screen.getByTestId('rules-count').textContent).toContain('из 12')
+    expect(screen.getByTestId('rules-count').textContent).toContain('/ 12')
     // и камера ради чтения правил не включается
     expect(cameraEnabled).toBe(false)
   })
@@ -147,7 +151,7 @@ describe('дорога: правила первый раз, потом сраз�
     screen.getByLabelText('Закрыть правила').click()
     await waitFor(() => expect(screen.getByTestId('challenge-screen')).toBeTruthy())
     expect(screen.queryByTestId('challenge-buy')).toBeNull()
-    expect(screen.getByTestId('challenge-read-rules')).toBeTruthy()
+    expect(screen.getByTestId('challenge-join')).toBeTruthy()
   })
 
   it('правила можно перечитать свободно, без галочки', async () => {
@@ -158,8 +162,27 @@ describe('дорога: правила первый раз, потом сраз�
     screen.getByTestId('challenge-rules').click()
     await waitFor(() => expect(screen.getByTestId('rules-screen')).toBeTruthy())
     // долистать до конца — ворот всё равно нет
-    for (let i = 1; i < 12; i += 1) screen.getByTestId('rules-next').click()
+    for (let i = 1; i < 12; i += 1) act(() => screen.getByTestId('rules-next').click())
     expect(screen.queryByTestId('rules-gate')).toBeNull()
+  })
+
+  it('живого потока ещё нет — правила всё равно открываются С ВОРОТАМИ', async () => {
+    /**
+     * ИМЕННО ЭТО И СЛОМАЛОСЬ НА ПРОДЕ. Сезон лежал черновиком, участие
+     * приходило пустым — и правила открывались в режиме свободного чтения: ни
+     * галочки, ни кнопки, сколько ни листай. Правила читают ДО открытия
+     * набора, и ворота зависят от того, читал ли человек, а не от того,
+     * продаётся ли билет прямо сейчас.
+     */
+    season = null
+    accepted = null
+    render(<MotionApp startScreen="challenge" />)
+
+    await waitFor(() => expect(screen.getByTestId('rules-screen')).toBeTruthy())
+    for (let i = 1; i < 12; i += 1) act(() => screen.getByTestId('rules-next').click())
+    await waitFor(() => expect(screen.getByTestId('rules-gate')).toBeTruthy())
+    // и цена на кнопке объявленная, а не ноль
+    expect(screen.getByTestId('rules-join').textContent).toContain('2990')
   })
 
   it('гостю правила показываются свободно — это витрина', async () => {

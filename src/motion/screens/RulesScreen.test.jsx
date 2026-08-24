@@ -114,12 +114,24 @@ describe('повторное чтение: свободно и без ворот
 
   it('открывается с любого места и листается в обе стороны', () => {
     render(<RulesScreen screens={PAGES} />)
-    expect(screen.getByTestId('rules-prev').disabled).toBe(true)
+    // на первом экране «назад» некуда — кнопки нет вовсе, она не занимает
+    // место под большим пальцем зря
+    expect(screen.queryByTestId('rules-prev')).toBeNull()
 
     act(() => screen.getByTestId('rules-dot-2').click())
     expect(screen.getByTestId('rules-page-2')).toBeTruthy()
     act(() => screen.getByTestId('rules-prev').click())
     expect(screen.getByTestId('rules-page-1')).toBeTruthy()
+  })
+
+  it('на последнем экране без ворот — кнопка «Закрыть», а не «Далее»', () => {
+    const onExit = vi.fn()
+    render(<RulesScreen screens={PAGES} onExit={onExit} />)
+    toLast()
+
+    expect(screen.queryByTestId('rules-next')).toBeNull()
+    act(() => screen.getByTestId('rules-done').click())
+    expect(onExit).toHaveBeenCalled()
   })
 })
 
@@ -144,6 +156,19 @@ describe('листание', () => {
     fireEvent.touchStart(root, { changedTouches: [{ clientX: 200, clientY: 400 }] })
     fireEvent.touchEnd(root, { changedTouches: [{ clientX: 170, clientY: 100 }] })
     expect(screen.getByTestId('rules-page-1')).toBeTruthy()
+  })
+
+  it('уровни показаны карточками, а не таблицей — экран шириной в ладонь', () => {
+    // четыре колонки на телефоне превращаются либо в мелкий шрифт, либо в
+    // горизонтальную прокрутку, и человек разбирает вёрстку вместо уровней
+    render(<RulesScreen screens={RULES} />)
+    act(() => screen.getByTestId('rules-dot-5').click())
+
+    const levels = screen.getByTestId('rules-levels')
+    expect(levels.children.length).toBe(3)
+    expect(document.querySelector('table')).toBeNull()
+    expect(levels.textContent).toContain('НОВИЧОК')
+    expect(levels.textContent).toContain('200 очков')
   })
 
   it('точек столько же, сколько экранов, и активная отмечена', () => {
@@ -184,6 +209,31 @@ describe('текст правил', () => {
     const img = screen.getByTestId('rules-image')
     expect(img.getAttribute('loading')).toBe('lazy')
     expect(img.getAttribute('alt')).toBe('первая картинка')
+  })
+
+  it('НИ ОДНОГО СЫРОГО СИМВОЛА РАЗМЕТКИ ни на одном из двенадцати экранов', () => {
+    /**
+     * Человек читает правила, а не исходник: звёздочки, решётки и дефисы
+     * списков на экране — это признак того, что разметку забыли разобрать, и
+     * витрина, по которой решают платить 2990, сразу выглядит недоделанной.
+     * Проверяются ВСЕ экраны, а не первый: сломаться может любой абзац.
+     */
+    for (let i = 0; i < RULES.length; i += 1) {
+      cleanup()
+      render(<RulesScreen screens={RULES} />)
+      act(() => screen.getByTestId(`rules-dot-${i + 1}`).click())
+      const text = screen.getByTestId('rules-screen').textContent
+      expect(text.includes('**'), `экран ${i + 1}: звёздочки в тексте`).toBe(false)
+      expect(text.includes('#'), `экран ${i + 1}: решётка в тексте`).toBe(false)
+      expect(/(?:^|\s)[-*]\s/.test(text), `экран ${i + 1}: дефис списка в тексте`).toBe(false)
+    }
+  })
+
+  it('жирный действительно жирный, а не звёздочки', () => {
+    render(<RulesScreen screens={RULES} />)
+    const strong = screen.getByTestId('rules-screen').querySelectorAll('b')
+    expect(strong.length > 0).toBe(true)
+    expect([...strong].some((b) => b.textContent.includes('30 дней'))).toBe(true)
   })
 
   it('главные правила потока видны как есть', () => {
