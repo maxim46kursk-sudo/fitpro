@@ -60,13 +60,14 @@ describe('итог раунда: попытка уходит в зачёт дн�
     expect(dayTotal()).toBe(5000)
   })
 
-  it('сумма дня складывается по трём уровням', () => {
+  it('зачёт дня — лучший заход, а не сумма по уровням', () => {
     submitAttempt('experienced', 2000)
     submitAttempt('pro', 3000)
     show(gameStats({ score: 1000 }))
 
-    expect(screen.getByTestId('day-score').textContent).toContain('6000')
-    expect(dayTotal()).toBe(6000)
+    // три захода дня: 2000, 3000 и этот на 1000 — в зачёт идёт лучший
+    expect(screen.getByTestId('day-score').textContent).toContain('3000')
+    expect(dayTotal()).toBe(3000)
   })
 
   it('попытка записывается ровно один раз, а не на каждую перерисовку', () => {

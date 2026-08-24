@@ -13,11 +13,12 @@ import {
   nextAttempt,
   resetDay,
   submitAttempt,
+  dayAttemptsUsed,
 } from './day.js'
 
 /**
- * Учёт попыток по правилам челленджа: три попытки на уровень за ДЕНЬ ЧЕЛЛЕНДЖА,
- * в зачёт лучшая, итог дня — сумма лучших, итог челленджа — сумма дней.
+ * Учёт заходов по правилам челленджа: ТРИ ЗАХОДА НА ДЕНЬ (не на уровень), в
+ * зачёт дня идёт лучший из них, итог челленджа — сумма итогов дней.
  *
  * Дни здесь называются номерами, а не датами, и это главная перемена: тридцать
  * дней челленджа — это тридцать тренировок, а не тридцать позиций календаря.
@@ -30,26 +31,28 @@ beforeEach(() => {
   localStorage.clear()
 })
 
-describe('три попытки на уровень за день челленджа', () => {
+describe('три захода на ДЕНЬ, а не на уровень', () => {
   it('пока не играл — все три на месте', () => {
     expect(MAX_ATTEMPTS).toBe(3)
-    expect(attemptsLeft('novice', D1)).toBe(3)
+    expect(attemptsLeft(D1)).toBe(3)
+    expect(dayAttemptsUsed(D1)).toBe(0)
     expect(attemptsUsed('novice', D1)).toBe(0)
     expect(nextAttempt('novice', D1)).toBe(1)
   })
 
-  it('каждая попытка уменьшает остаток', () => {
+  it('каждый заход уменьшает остаток дня, на каком бы уровне он ни был', () => {
     submitAttempt('novice', { score: 1000 }, D1)
-    expect(attemptsLeft('novice', D1)).toBe(2)
-    expect(nextAttempt('novice', D1)).toBe(2)
+    expect(attemptsLeft(D1)).toBe(2)
 
-    submitAttempt('novice', { score: 1200 }, D1)
-    submitAttempt('novice', { score: 1100 }, D1)
-    expect(attemptsLeft('novice', D1)).toBe(0)
-    expect(nextAttempt('novice', D1)).toBe(4)
+    submitAttempt('experienced', { score: 1200 }, D1)
+    expect(attemptsLeft(D1)).toBe(1)
+
+    submitAttempt('pro', { score: 1100 }, D1)
+    expect(attemptsLeft(D1)).toBe(0)
+    expect(dayAttemptsUsed(D1)).toBe(3)
   })
 
-  it('четвёртая попытка не записывается и зачёт не трогает', () => {
+  it('четвёртый заход не записывается и зачёт не трогает', () => {
     submitAttempt('novice', { score: 1000 }, D1)
     submitAttempt('novice', { score: 1200 }, D1)
     submitAttempt('novice', { score: 900 }, D1)
@@ -65,14 +68,24 @@ describe('три попытки на уровень за день челленд
     expect(attemptsUsed('novice', D1)).toBe(3)
   })
 
-  it('попытки уровней не мешают друг другу', () => {
+  it('ТРИ ЗАХОДА НА НОВИЧКЕ ЗАКРЫВАЮТ И ПРОФИ', () => {
+    /**
+     * Главная проверка нового правила. При счёте по уровням человек играл бы
+     * девять заходов в день, и выбор уровня не стоил бы ничего.
+     */
     submitAttempt('novice', { score: 500 }, D1)
     submitAttempt('novice', { score: 600 }, D1)
     submitAttempt('novice', { score: 700 }, D1)
 
-    expect(attemptsLeft('novice', D1)).toBe(0)
-    expect(attemptsLeft('experienced', D1)).toBe(3)
-    expect(attemptsLeft('pro', D1)).toBe(3)
+    expect(attemptsLeft(D1)).toBe(0)
+    const summary = daySummary(D1)
+    expect(summary.locked).toBe(true)
+    expect(summary.tiers.every((t) => t.locked)).toBe(true)
+
+    // и четвёртый заход на другом уровне в зачёт не идёт
+    const onPro = submitAttempt('pro', { score: 9999 }, D1)
+    expect(onPro.recorded).toBe(false)
+    expect(dayTotal(D1)).toBe(700)
   })
 })
 
@@ -156,15 +169,26 @@ describe('попытка — статистика захода, а не голо
   })
 })
 
-describe('итог дня — сумма лучших по трём уровням', () => {
-  it('складываются именно лучшие, а не все подряд', () => {
-    submitAttempt('novice', { score: 1000 }, D1)
-    submitAttempt('novice', { score: 1400 }, D1) // в зачёт 1400
-    submitAttempt('experienced', { score: 2000 }, D1) // в зачёт 2000
+describe('итог дня — лучший заход, а не сумма по уровням', () => {
+  it('в зачёт идёт один заход — самый сильный за день', () => {
+    /**
+     * При сумме по уровням выгодно всегда брать три разных уровня, и решение
+     * пропадает. Лучший заход делает уровень ставкой: слабый заход на профи
+     * проигрывает сильному на новичке.
+     */
+    submitAttempt('novice', { score: 1400 }, D1)
+    submitAttempt('experienced', { score: 2000 }, D1)
     submitAttempt('pro', { score: 3300 }, D1)
-    submitAttempt('pro', { score: 2100 }, D1) // в зачёт остаётся 3300
 
-    expect(dayTotal(D1)).toBe(1400 + 2000 + 3300)
+    expect(dayTotal(D1)).toBe(3300)
+  })
+
+  it('три захода на одном уровне — тоже лучший, а не сумма', () => {
+    submitAttempt('novice', { score: 1000 }, D1)
+    submitAttempt('novice', { score: 1400 }, D1)
+    submitAttempt('novice', { score: 900 }, D1)
+
+    expect(dayTotal(D1)).toBe(1400)
   })
 
   it('несыгранный уровень даёт ноль, а не ломает сумму', () => {
@@ -173,10 +197,9 @@ describe('итог дня — сумма лучших по трём уровня
     expect(bestFor('pro', D1)).toBe(0)
   })
 
-  it('сводка дня показывает попытки, лучший балл и замок', () => {
+  it('сводка дня: заходы считаются на день, лучший балл — на уровень', () => {
     submitAttempt('novice', { score: 800 }, D1)
     submitAttempt('novice', { score: 900 }, D1)
-    submitAttempt('novice', { score: 850 }, D1)
     submitAttempt('pro', { score: 2500 }, D1)
 
     const summary = daySummary(D1)
@@ -184,12 +207,21 @@ describe('итог дня — сумма лучших по трём уровня
     const pro = summary.tiers.find((t) => t.id === 'pro')
     const experienced = summary.tiers.find((t) => t.id === 'experienced')
 
-    expect(novice).toMatchObject({ used: 3, left: 0, best: 900, locked: true })
-    expect(pro).toMatchObject({ used: 1, left: 2, best: 2500, locked: false })
-    expect(experienced).toMatchObject({ used: 0, left: 3, best: 0, locked: false })
-    expect(summary.total).toBe(900 + 2500)
+    // остаток и замок — общие на день
+    expect(summary).toMatchObject({ used: 3, left: 0, locked: true, total: 2500 })
+    expect(novice).toMatchObject({ used: 2, best: 900, locked: true })
+    expect(pro).toMatchObject({ used: 1, best: 2500, locked: true })
+    expect(experienced).toMatchObject({ used: 0, best: 0, locked: true })
     // форма та же, что ест экран выбора уровня: tiers[] и total
     expect(summary.tiers).toHaveLength(3)
+  })
+
+  it('заходы кончились не все — уровни ещё открыты', () => {
+    submitAttempt('novice', { score: 800 }, D1)
+
+    const summary = daySummary(D1)
+    expect(summary).toMatchObject({ used: 1, left: 2, locked: false })
+    expect(summary.tiers.some((t) => t.locked)).toBe(false)
   })
 })
 
@@ -198,9 +230,9 @@ describe('дни челленджа хранятся все', () => {
     submitAttempt('novice', { score: 1000 }, D1)
     submitAttempt('novice', { score: 1100 }, D1)
     submitAttempt('novice', { score: 1050 }, D1)
-    expect(attemptsLeft('novice', D1)).toBe(0)
+    expect(attemptsLeft(D1)).toBe(0)
 
-    expect(attemptsLeft('novice', D2)).toBe(3)
+    expect(attemptsLeft(D2)).toBe(3)
     expect(dayTotal(D2)).toBe(0)
     // и первый день никуда не делся — именно этого не умела запись по дате
     expect(dayTotal(D1)).toBe(1100)
@@ -216,17 +248,18 @@ describe('дни челленджа хранятся все', () => {
     expect(bestFor('pro', D2)).toBe(0)
     // прошлый день цел целиком, вместе с уровнем, который во втором не играли
     expect(bestFor('pro', D1)).toBe(5000)
-    expect(dayTotal(D1)).toBe(6000)
+    // итог дня — лучший заход дня, а не сумма уровней
+    expect(dayTotal(D1)).toBe(5000)
   })
 
   it('итог челленджа — сумма итогов всех дней', () => {
     submitAttempt('novice', { score: 1000 }, 1)
-    submitAttempt('pro', { score: 2000 }, 1) // день 1: 3000
+    submitAttempt('pro', { score: 2000 }, 1) // день 1: лучший заход 2000
     submitAttempt('pro', { score: 4000 }, 7)
-    submitAttempt('pro', { score: 1000 }, 7) // день 7: лучшая 4000
+    submitAttempt('pro', { score: 1000 }, 7) // день 7: лучший 4000
     submitAttempt('experienced', { score: 500 }, 30) // день 30: 500
 
-    expect(challengeTotal()).toBe(3000 + 4000 + 500)
+    expect(challengeTotal()).toBe(2000 + 4000 + 500)
   })
 
   it('без единой попытки итог челленджа — ноль, а не поломка', () => {
@@ -241,8 +274,68 @@ describe('дни челленджа хранятся все', () => {
      * дарил другому.
      */
     submitAttempt('pro', { score: 1200 }, 5)
-    expect(attemptsLeft('pro', 5)).toBe(2)
+    expect(attemptsLeft(5)).toBe(2)
     expect(bestFor('pro', 5)).toBe(1200)
+  })
+})
+
+describe('старые записи и слияние с другого устройства', () => {
+  it('девять заходов старого правила экран не ломают', () => {
+    /**
+     * До этой правки заходов было три НА КАЖДЫЙ уровень, то есть девять за
+     * день. Такие записи лежат у людей на устройствах и приедут с сервера —
+     * день просто закрыт, а не «минус шесть заходов».
+     */
+    for (const tier of ['novice', 'experienced', 'pro']) {
+      for (let i = 0; i < 3; i += 1) submitAttempt(tier, { score: 100 + i }, D1)
+    }
+    // записались первые три, дальше лимит дня — но даже если бы легли все
+    // девять (слияние), счёт не должен уходить в минус
+    localStorage.setItem(
+      'fitpro-motion.challenge.attempts.v1',
+      JSON.stringify({
+        days: {
+          1: {
+            novice: [{ score: 100 }, { score: 200 }, { score: 300 }],
+            experienced: [{ score: 400 }, { score: 500 }, { score: 600 }],
+            pro: [{ score: 700 }, { score: 800 }, { score: 900 }],
+          },
+        },
+        started: {},
+        pending: null,
+        resume: null,
+      }),
+    )
+
+    expect(dayAttemptsUsed(D1)).toBe(9)
+    expect(attemptsLeft(D1)).toBe(0)
+
+    const summary = daySummary(D1)
+    expect(summary.left).toBe(0)
+    expect(summary.locked).toBe(true)
+    // итог дня — лучший заход из всех девяти, а не их сумма
+    expect(summary.total).toBe(900)
+    expect(dayTotal(D1)).toBe(900)
+  })
+
+  it('слияние с другого устройства считается по дню, а не по уровню', () => {
+    // на этом устройстве играли новичка, на том — профи; после слияния день
+    // закрыт, а в зачёт идёт лучший заход из обоих
+    localStorage.setItem(
+      'fitpro-motion.challenge.attempts.v1',
+      JSON.stringify({
+        days: { 1: { novice: [{ score: 1000 }, { score: 1100 }], pro: [{ score: 2400 }] } },
+        started: {},
+        pending: null,
+        resume: null,
+      }),
+    )
+
+    expect(dayAttemptsUsed(D1)).toBe(3)
+    expect(attemptsLeft(D1)).toBe(0)
+    expect(dayTotal(D1)).toBe(2400)
+    // и четвёртый заход после слияния уже не записывается
+    expect(submitAttempt('experienced', { score: 9999 }, D1).recorded).toBe(false)
   })
 })
 

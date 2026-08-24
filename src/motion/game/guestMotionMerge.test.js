@@ -60,8 +60,8 @@ describe('слияние попыток гостя с прогрессом ак�
     expect(day.attemptsUsed('novice', 1)).toBe(1)
     expect(day.attemptsUsed('pro', 1)).toBe(1)
     expect(day.bestFor('pro', 1)).toBe(5100)
-    // итог дня — сумма лучших по уровням, как у всех
-    expect(day.dayTotal(1)).toBe(3200 + 5100)
+    // итог дня — лучший заход, как у всех
+    expect(day.dayTotal(1)).toBe(5100)
 
     const проPro = day.attemptsFor(1).tiers.pro[0]
     expect(проPro).toMatchObject({ score: 5100, reps: 30, hits: 55, spawned: 70, reactMs: 690 })

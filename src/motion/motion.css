@@ -1861,6 +1861,19 @@
  * ошибка и не потеря, а приглашение вернуться.
  */
 /* За сколько заходов собран день — рядом с отметкой о сдаче. */
+/* Остаток заходов — один на экран: заходов три на день, а не на уровень. */
+.mt-levels__runsLeft {
+  margin: -2px auto 10px;
+  padding: 5px 14px;
+  border: 1px solid rgba(159, 208, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(12, 20, 34, 0.6);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: rgba(220, 232, 255, 0.8);
+  text-align: center;
+}
+
 .mt-levels__runs {
   margin: -4px auto 10px;
   font-size: 11px;
@@ -3048,9 +3061,45 @@
   background: radial-gradient(120% 90% at 70% 22%, rgba(124, 122, 240, 0.5), rgba(124, 122, 240, 0.1) 55%, rgba(11, 11, 13, 0) 100%);
 }
 
+/*
+ * ЗАКРЕПЛЁННАЯ ШАПКА. Крестик выхода живёт над длинной страницей, и раньше он
+ * просто висел поверх текста: на призах и вопросах строки уезжали прямо под
+ * него и читались наполовину. Полоса гасит уходящий текст — и заодно даёт
+ * крестику фон на любом экране, светлом он или тёмном.
+ */
+.mt-ch__top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(74px + env(safe-area-inset-top, 0px));
+  z-index: 40;
+  pointer-events: none;
+  /*
+   * Плотная часть закрывает ровно ту полосу, где живёт крестик: текст, уезжая
+   * под него, должен ИСЧЕЗАТЬ, а не проглядывать половиной буквы. Ниже —
+   * растушёвка, чтобы полоса не читалась как обрезанный край.
+   */
+  background: linear-gradient(
+    to bottom,
+    rgb(11, 11, 13) 0%,
+    rgb(11, 11, 13) 62%,
+    rgba(11, 11, 13, 0) 100%
+  );
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  /* Размытие — только там, где полоса плотная: снизу оно резало бы кадр. */
+  mask-image: linear-gradient(to bottom, #000 62%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent 100%);
+}
+
+.mt-ch__close {
+  z-index: 46;
+}
+
 .mt-ch__heroIn {
   position: relative;
-  padding: calc(54px + env(safe-area-inset-top, 0px)) 22px 0;
+  padding: calc(72px + env(safe-area-inset-top, 0px)) 22px 0;
   max-width: 520px;
   margin: 0 auto;
 }
@@ -3070,10 +3119,16 @@
   background: rgba(157, 150, 255, 0.09);
 }
 
+/*
+ * Межстрочный ровно такой, чтобы краткая над «Й» не задевала строку сверху.
+ * В макете стояло 0.88 — на кириллице это ровно тот случай, когда диакритика
+ * второй строки садится на первую: краткая над «Й» упиралась в «30». 1.14 —
+ * первое значение, при котором она перестаёт задевать, и ни пикселем больше.
+ */
 .mt-ch__big {
   font-weight: 900;
   font-size: 58px;
-  line-height: 0.88;
+  line-height: 1.14;
   letter-spacing: -0.05em;
   margin: 20px 0 0;
   color: #fff;

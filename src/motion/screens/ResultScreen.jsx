@@ -112,7 +112,7 @@ export default function ResultScreen({ stats, onRestart, onExit, subscribe, gues
             {day && (
               <div className="mt-result__grid" data-testid="day-score">
                 <Metric value={day.best} label={`лучший на «${tierName}»`} />
-                <Metric value={day.dayTotal} label="сумма дня" />
+                <Metric value={day.dayTotal} label="зачёт дня" />
               </div>
             )}
             {day && !day.recorded && (

@@ -209,6 +209,19 @@ export default function LevelSelectScreen({
         </div>
       )}
 
+      {/**
+        * ОСТАТОК ЗАХОДОВ — ОДНОЙ СТРОКОЙ НА ЭКРАН. Заходов три на весь день, а
+        * не на каждый уровень, поэтому «попытка 2 из 3» на карточке врала бы
+        * трижды: она обещала бы отдельный запас каждому уровню.
+        */}
+      {view.playable && challengeMember && (
+        <div className="mt-levels__runsLeft" data-testid="runs-left">
+          {view.left > 0
+            ? `Осталось заходов: ${view.left} из ${MAX_ATTEMPTS}`
+            : 'Заходы на сегодня кончились'}
+        </div>
+      )}
+
       {view.playable && (
       <div className="mt-levels">
         {day.tiers.map((tier) => (
@@ -223,12 +236,12 @@ export default function LevelSelectScreen({
             <div className="mt-level__price">{tier.obstaclePoints} очков за препятствие</div>
 
             <div className="mt-level__row">
-              {/* Счётчик попыток — только тому, у кого они считаются. Остальным
-                  он обещал бы ограничение там, где его нет, и заодно называл бы
-                  зачётом игру, которая в зачёт не идёт. */}
-              {challengeMember && (
+              {/* Сколько заходов человек сделал именно тут — подсказка к
+                  выбору, а не ограничение: ограничение общее и стоит строкой
+                  выше. Ноль заходов не поминаем вовсе, это шум. */}
+              {challengeMember && tier.used > 0 && (
                 <span className="mt-level__attempts">
-                  {tier.locked ? 'попытки кончились' : `попытка ${tier.used + 1} из ${MAX_ATTEMPTS}`}
+                  {tier.used === 1 ? 'заход сделан' : `заходов: ${tier.used}`}
                 </span>
               )}
               <span className="mt-level__best">
@@ -241,7 +254,7 @@ export default function LevelSelectScreen({
       )}
 
       <div className="mt-levels__total" data-testid="day-total">
-        Сегодня: <b>{day.total}</b> очков
+        Лучший заход: <b>{day.total}</b> очков
       </div>
       <div className="mt-levels__challenge" data-testid="challenge-total">
         За челлендж: <b>{view.total}</b> очков
@@ -256,8 +269,8 @@ export default function LevelSelectScreen({
       )}
       {challengeMember && (
         <div className="mt-levels__note">
-          До {MAX_ATTEMPTS} попыток на уровень, в зачёт — лучшая. Итог дня — сумма по уровням.
-          Перешёл к следующему дню — прошлый закрыт.
+          {MAX_ATTEMPTS} захода на весь день — на любые уровни, как решишь. В зачёт дня идёт
+          один, лучший. Перешёл к следующему дню — прошлый закрыт.
         </div>
       )}
 
@@ -290,10 +303,13 @@ function readView(number, member = false) {
    * среднюю реакцию на границе и другую в комнате, и не поверил бы обеим.
    */
   const room = readRoom(number || 1)
+  const summary = daySummary(number || 1)
   return {
     number,
-    day: daySummary(number || 1),
+    day: summary,
     total: challengeTotal(),
+    /** Сколько заходов осталось на день — общий счёт, не по уровням. */
+    left: summary.left,
     dayDone: number > 0 && isDayDone(number),
     /** За сколько заходов собран день. Ноль — ещё не сдан. */
     runs: number > 0 ? dayRuns(number) : 0,

@@ -149,8 +149,14 @@ describe('гость: аккаунт вместо оплаты', () => {
 
 describe('участник: комната потока вместо витрины', () => {
   it('номер, имя и обратный отсчёт до старта', () => {
-    // дата в будущем: отсчёт считается от неё, а не от зашитого числа
-    const soon = new Date(Date.now() + 17 * 86400000).toISOString().slice(0, 10)
+    /**
+     * Дата в будущем считается ПО МЕСТНОМУ времени: `toISOString()` уводит в
+     * UTC, и вечером у московского пользователя тест получал бы «16 дней»
+     * там, где приложение показывает семнадцать.
+     */
+    const d = new Date()
+    d.setDate(d.getDate() + 17)
+    const soon = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     render(<ChallengeScreen state={{ season: { ...SEASON, starts_on: soon }, entry: ENTRY }} />)
 
     expect(screen.getByTestId('challenge-number').textContent).toContain('24')

@@ -208,12 +208,13 @@ describe('суммы и правила на экране', () => {
     expect(onRoom).toHaveBeenCalled()
   })
 
-  it('правила названы полностью — их читают перед первой попыткой', () => {
+  it('правила названы полностью — их читают перед первым заходом', () => {
     render(<LevelSelectScreen challengeDay={1} challengeMember />)
     const note = document.querySelector('.mt-levels__note').textContent
 
-    expect(note).toContain('До 3 попыток на уровень, в зачёт — лучшая')
-    expect(note).toContain('Итог дня — сумма по уровням')
+    // ровно то же правило, что написано человеку на странице челленджа
+    expect(note).toContain('3 захода на весь день')
+    expect(note).toContain('В зачёт дня идёт один, лучший')
     // главное про необратимость — человек должен прочесть это ДО нажатия
     expect(note).toContain('Перешёл к следующему дню — прошлый закрыт')
   })
@@ -232,20 +233,31 @@ describe('суммы и правила на экране', () => {
  * записи (`submitAttempt`) — в том числе когда сыгранное гостем переезжает в
  * новый аккаунт. Меняется только то, что человеку показывают.
  */
-describe('счётчик попыток виден участнику челленджа, и только ему', () => {
-  it('участнику — попытки и правило трёх на месте', () => {
+describe('остаток заходов виден участнику челленджа, и только ему', () => {
+  it('участнику — остаток заходов одной строкой и правило внизу', () => {
     render(<LevelSelectScreen challengeDay={1} challengeMember />)
 
-    expect(document.querySelector('.mt-level__attempts').textContent).toContain('попытка 1 из 3')
+    // одна строка на экран, а не счётчик на каждой карточке: заходов три на
+    // весь день, и обещать каждому уровню свой запас нельзя
+    expect(screen.getByTestId('runs-left').textContent).toContain('Осталось заходов: 3 из 3')
+    expect(document.querySelector('.mt-level__attempts')).toBeNull()
     expect(document.querySelector('.mt-levels__note')).toBeTruthy()
   })
 
-  it('вне челленджа — ни счётчика, ни правила, ни слова «попытки»', () => {
+  it('заход на одном уровне тратит общий остаток', () => {
+    submitAttempt('novice', { score: 500 }, 1)
+    render(<LevelSelectScreen challengeDay={1} challengeMember />)
+
+    expect(screen.getByTestId('runs-left').textContent).toContain('Осталось заходов: 2 из 3')
+  })
+
+  it('вне челленджа — ни остатка, ни правила, ни слова «заход»', () => {
     render(<LevelSelectScreen challengeDay={1} challengeMember={false} />)
 
+    expect(screen.queryByTestId('runs-left')).toBeNull()
     expect(document.querySelector('.mt-level__attempts')).toBeNull()
     expect(document.querySelector('.mt-levels__note')).toBeNull()
-    expect(document.body.textContent).not.toContain('попыт')
+    expect(document.body.textContent).not.toContain('Осталось заходов')
   })
 
   it('лучший результат вне челленджа показывается по-прежнему', () => {
@@ -256,13 +268,29 @@ describe('счётчик попыток виден участнику челле
     expect(pro.querySelector('.mt-level__best').textContent).toContain('лучший 700')
   })
 
-  it('участнику три сыгранные попытки гасят уровень', () => {
-    for (let i = 0; i < 3; i += 1) submitAttempt('pro', { score: 100 + i }, 1)
+  it('ТРИ ЗАХОДА НА НОВИЧКЕ ГАСЯТ ВСЕ УРОВНИ, включая профи', () => {
+    /**
+     * Главное в новом правиле: заходов три на день, а не на уровень. Раньше
+     * человек играл девять заходов в день и выбор уровня ничего не стоил.
+     */
+    for (let i = 0; i < 3; i += 1) submitAttempt('novice', { score: 100 + i }, 1)
     render(<LevelSelectScreen challengeDay={1} challengeMember />)
 
-    const pro = screen.getByTestId('level-pro')
-    expect(pro.disabled).toBe(true)
-    expect(pro.querySelector('.mt-level__attempts').textContent).toContain('попытки кончились')
+    expect(screen.getByTestId('level-novice').disabled).toBe(true)
+    expect(screen.getByTestId('level-experienced').disabled).toBe(true)
+    expect(screen.getByTestId('level-pro').disabled).toBe(true)
+    expect(screen.getByTestId('runs-left').textContent).toContain('кончились')
+  })
+
+  it('итог дня — лучший заход, а не сумма по уровням', () => {
+    submitAttempt('novice', { score: 900 }, 1)
+    submitAttempt('pro', { score: 2500 }, 1)
+    render(<LevelSelectScreen challengeDay={1} challengeMember />)
+
+    const total = screen.getByTestId('day-total').textContent
+    expect(total).toContain('Лучший заход')
+    expect(total).toContain('2500')
+    expect(total).not.toContain('3400')
   })
 
   /** Главное в этом наборе: играть дальше вне зачёта никто не мешает. */
@@ -283,7 +311,7 @@ describe('счётчик попыток виден участнику челле
      * с обычным человеком, а не открывать ему тридцать дней.
      */
     render(<LevelSelectScreen challengeDay={1} />)
-    expect(document.querySelector('.mt-level__attempts')).toBeNull()
+    expect(screen.queryByTestId('runs-left')).toBeNull()
 
     cleanup()
     render(<LevelSelectScreen challengeDay={6} />)

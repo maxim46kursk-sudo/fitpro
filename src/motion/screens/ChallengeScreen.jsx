@@ -690,6 +690,14 @@ export default function ChallengeScreen({
         </section>
       </div>
 
+      {/**
+       * ЗАКРЕПЛЁННАЯ ШАПКА С КРЕСТИКОМ. Раньше он висел просто поверх страницы
+       * и наезжал на текст при прокрутке — на призах и вопросах читать мешало
+       * именно это. Теперь под ним полоса, которая гасит уезжающий текст:
+       * читаемость дороже пары пикселей воздуха.
+       */}
+      <div className="mt-ch__top" aria-hidden="true" />
+
       {/* ЛИПКАЯ ПОЛОСА: появляется после первого экрана, прячется в конце. */}
       {!guest && (
         <div className={`mt-ch__bar ${barOn ? 'is-on' : ''}`} data-testid="challenge-bar">
@@ -700,7 +708,7 @@ export default function ChallengeScreen({
         </div>
       )}
 
-      <button className="mt-corner mt-corner--left" onClick={onExit} aria-label="Назад">✕</button>
+      <button className="mt-corner mt-corner--left mt-ch__close" onClick={onExit} aria-label="Назад">✕</button>
     </div>
   )
 }

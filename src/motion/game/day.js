@@ -1,11 +1,16 @@
 /**
  * Попытки, зачёт и сид трассы — всё по ДНЮ ЧЕЛЛЕНДЖА.
  *
- * Правила владельца. На каждом уровне не больше ТРЁХ попыток за день челленджа.
- * В зачёт уровня идёт ЛУЧШАЯ попытка, а не последняя и не сумма: следующая
- * попытка — это шанс, а не штраф, и человек не должен бояться, что испортит уже
- * набранное. Итог дня — сумма лучших по трём уровням, поэтому играть все три
- * выгоднее, чем долбить один. Итог челленджа — сумма итогов всех дней.
+ * Правила владельца. ТРИ ЗАХОДА НА ДЕНЬ — не на уровень, а на весь день: все
+ * три можно потратить на любые уровни, как решишь. В зачёт дня идёт ОДИН,
+ * ЛУЧШИЙ заход; следующий заход — это шанс, а не штраф, и человек не должен
+ * бояться, что испортит уже набранное. Итог челленджа — сумма итогов всех дней.
+ *
+ * ПОЧЕМУ ЛУЧШИЙ ЗАХОД, А НЕ СУММА ПО УРОВНЯМ. При сумме выгодно всегда брать
+ * три РАЗНЫХ уровня — и выбор уровня пропадает как решение: оптимальная игра
+ * одна и та же у всех. С лучшим заходом уровень становится ставкой: на профи
+ * мишень дороже, но темп жёстче, и слабый заход там проигрывает сильному на
+ * новичке. Ровно это и написано человеку в правилах на странице челленджа.
  *
  * ПОЧЕМУ ДЕНЬ ЧЕЛЛЕНДЖА, А НЕ КАЛЕНДАРНАЯ ДАТА. Раньше попытки сбрасывал
  * календарь: наступила полночь — новый лист. Для челленджа это неверно в обе
@@ -35,7 +40,10 @@ import { KEYS, readJson, remove, writeJson } from '../storage.js'
 import { TIERS, tierById } from './levels.js'
 import { currentDay } from './challenge.js'
 
-/** Столько попыток на уровень за день челленджа. */
+/**
+ * Столько заходов даётся НА ВЕСЬ ДЕНЬ челленджа, а не на каждый уровень.
+ * Потрачены — день закрыт целиком, ни один уровень больше не играется.
+ */
 export const MAX_ATTEMPTS = 3
 
 /**
@@ -135,12 +143,32 @@ export function attemptsUsed(id, day = currentDay()) {
   return attemptsOf(readAll(), day, id).length
 }
 
-/** Сколько попыток на уровне осталось в этот день. */
-export function attemptsLeft(id, day = currentDay()) {
-  return Math.max(0, MAX_ATTEMPTS - attemptsUsed(id, day))
+/** Все заходы дня, по всем уровням разом: счёт идёт на день. */
+function dayAttempts(store, day) {
+  return TIERS.reduce((rows, tier) => rows.concat(attemptsOf(store, day, tier.id)), [])
 }
 
-/** Номер попытки, которая начнётся сейчас, считая с единицы. */
+/** Сколько заходов уже сыграно за день — на всех уровнях вместе. */
+export function dayAttemptsUsed(day = currentDay()) {
+  return dayAttempts(readAll(), day).length
+}
+
+/**
+ * Сколько заходов осталось в этот день. Не на уровень — на день.
+ *
+ * Ниже нуля не уходит намеренно: заходов в хранилище может оказаться больше
+ * трёх (слияние с другого устройства — там играли свои, см. sync.js), и
+ * «осталось −2» на экране читалось бы как поломка, а не как «на сегодня всё».
+ */
+export function attemptsLeft(day = currentDay()) {
+  return Math.max(0, MAX_ATTEMPTS - dayAttemptsUsed(day))
+}
+
+/**
+ * Номер попытки НА УРОВНЕ, которая начнётся сейчас. Считается по-прежнему по
+ * уровню и только ради трассы: сид мишеней обязан меняться от захода к заходу,
+ * а правило трёх заходов к трассе отношения не имеет.
+ */
 export function nextAttempt(id, day = currentDay()) {
   return attemptsUsed(id, day) + 1
 }
@@ -183,10 +211,16 @@ export function bestFor(id, day = currentDay()) {
   return bestOf(attemptsOf(readAll(), day, id))
 }
 
-/** Итог дня: сумма лучших по трём уровням. */
+/**
+ * ИТОГ ДНЯ — ЛУЧШИЙ ЗАХОД ДНЯ, по всем уровням разом.
+ *
+ * Была сумма лучших по трём уровням, и это делало выбор уровня бессмысленным:
+ * три разных уровня всегда давали больше, чем три захода на одном, — то есть
+ * оптимальная игра была одна и та же у всех и не требовала решения. Лучший
+ * заход возвращает уровню смысл ставки.
+ */
 export function dayTotal(day = currentDay()) {
-  const store = readAll()
-  return TIERS.reduce((sum, tier) => sum + bestOf(attemptsOf(store, day, tier.id)), 0)
+  return bestOf(dayAttempts(readAll(), day))
 }
 
 /**
@@ -218,18 +252,28 @@ export function attemptsFor(day = currentDay()) {
 /** Полная картина дня — её показывает экран выбора уровня. */
 export function daySummary(day = currentDay()) {
   const store = readAll()
+  const all = dayAttempts(store, day)
+  /** Заходы кончились — гаснут ВСЕ уровни разом: счёт идёт на день. */
+  const locked = all.length >= MAX_ATTEMPTS
   const tiers = TIERS.map((tier) => {
     const list = attemptsOf(store, day, tier.id)
     return {
       ...tier,
       used: list.length,
-      left: Math.max(0, MAX_ATTEMPTS - list.length),
       best: bestOf(list),
-      /** Уровень с исчерпанными попытками в этот день больше не играется. */
-      locked: list.length >= MAX_ATTEMPTS,
+      locked,
     }
   })
-  return { day: Number(dayKey(day)), tiers, total: tiers.reduce((sum, t) => sum + t.best, 0) }
+  return {
+    day: Number(dayKey(day)),
+    tiers,
+    /** Заходов сыграно и осталось — на день, а не на уровень. */
+    used: all.length,
+    left: Math.max(0, MAX_ATTEMPTS - all.length),
+    locked,
+    /** Итог дня — лучший заход, а не сумма по уровням. */
+    total: bestOf(all),
+  }
 }
 
 /**
@@ -248,15 +292,18 @@ export function submitAttempt(id, stats, day = currentDay()) {
   const tier = tierById(id)
   const store = readAll()
   const list = attemptsOf(store, day, tier.id)
+  const all = dayAttempts(store, day)
   const attempt = normalizeAttempt(stats)
 
-  if (list.length >= MAX_ATTEMPTS) {
+  // Лимит считается ПО ДНЮ: три захода потрачены — не важно, на каком уровне
+  // был четвёртый, в зачёт он не идёт.
+  if (all.length >= MAX_ATTEMPTS) {
     return {
       recorded: false,
-      attempt: list.length,
+      attempt: all.length,
       attemptsLeft: 0,
       score: attempt.score,
-      best: bestOf(list),
+      best: bestOf(all),
       isBest: false,
       day: Number(dayKey(day)),
       dayTotal: dayTotal(day),
@@ -264,7 +311,9 @@ export function submitAttempt(id, stats, day = currentDay()) {
     }
   }
 
-  const previousBest = bestOf(list)
+  // Рекорд дня — по всем заходам дня, а не по этому уровню: итог дня теперь
+  // лучший заход, и «улучшил» означает «поднял планку дня».
+  const previousBest = bestOf(all)
   const next = [...list, attempt]
   const key = dayKey(day)
   store.days[key] = { ...(store.days[key] ?? {}), [tier.id]: next }
@@ -272,10 +321,11 @@ export function submitAttempt(id, stats, day = currentDay()) {
 
   return {
     recorded: true,
-    attempt: next.length,
-    attemptsLeft: Math.max(0, MAX_ATTEMPTS - next.length),
+    /** Который это заход ДНЯ, считая с единицы: столько их и осталось до трёх. */
+    attempt: all.length + 1,
+    attemptsLeft: Math.max(0, MAX_ATTEMPTS - (all.length + 1)),
     score: attempt.score,
-    best: bestOf(next),
+    best: Math.max(previousBest, attempt.score),
     // строго больше: повтор того же балла рекордом дня не является
     isBest: attempt.score > previousBest,
     day: Number(key),
