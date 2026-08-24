@@ -10,8 +10,10 @@ import {
   hydrate,
   mergeAttempts,
   newerOf,
+  onSyncHealth,
   push,
   resetSync,
+  syncHealth,
 } from './sync.js'
 
 /**
@@ -351,5 +353,94 @@ describe('пустое устройство не считается свежим
     await hydrate('человек-А')
 
     expect(readJson(KEYS.challenge).day).toBe(20)
+  })
+})
+
+/**
+ * ЧЕЛОВЕК ОБЯЗАН ЗНАТЬ, ЧТО ИГРА СЧИТАЕТ НЕ ПО СВОИМ ДАННЫМ.
+ *
+ * Раздел переживает и неудачную загрузку, и неудачную отправку — но пережить
+ * молча он их не имеет права: у челленджа на кону призы, и человек, набравший
+ * очки по кэшу устройства, узнал бы о расхождении только в споре о деньгах.
+ */
+describe('здоровье обмена видно снаружи', () => {
+  it('сервер не ответил — состояние «не загружено», и оно рассылается', async () => {
+    const видели = []
+    const отписка = onSyncHealth((h) => видели.push({ ...h }))
+    configureSync({ load: async () => null, saveProgress: async () => {}, saveAttempts: async () => {} })
+
+    expect(syncHealth().loaded).toBe(true)
+    const итог = await hydrate('u1')
+
+    expect(итог.ok).toBe(false)
+    expect(syncHealth().loaded).toBe(false)
+    expect(видели.at(-1).loaded).toBe(false)
+    отписка()
+  })
+
+  it('удачный повтор возвращает всё на место', async () => {
+    let отвечать = false
+    configureSync({
+      load: async () => (отвечать ? { progress: { day: 3, done: [], attempts: { days: {} } } } : null),
+      saveProgress: async () => {},
+      saveAttempts: async () => {},
+    })
+
+    await hydrate('u1')
+    expect(syncHealth().loaded).toBe(false)
+
+    отвечать = true
+    await hydrate('u1')
+    expect(syncHealth().loaded).toBe(true)
+  })
+
+  it('результат не уехал после всех повторов — отметка есть', async () => {
+    vi.useFakeTimers()
+    // рекорд — это уже «есть что отправлять»: пустой кэш наверх не едет вовсе
+    writeRaw(KEYS.best, '700')
+    configureSync({
+      load: async () => null,
+      saveProgress: async () => { throw new Error('сети нет') },
+      saveAttempts: async () => {},
+    })
+
+    const дело = push()
+    await vi.advanceTimersByTimeAsync(60000)
+    await дело
+
+    expect(syncHealth().pushFailed).toBe(true)
+    vi.useRealTimers()
+  })
+
+  it('и снимается, как только результат доехал сам', async () => {
+    vi.useFakeTimers()
+    writeRaw(KEYS.best, '700')
+    let сеть = false
+    configureSync({
+      load: async () => null,
+      saveProgress: async () => { if (!сеть) throw new Error('сети нет') },
+      saveAttempts: async () => {},
+    })
+
+    const первая = push()
+    await vi.advanceTimersByTimeAsync(60000)
+    await первая
+    expect(syncHealth().pushFailed).toBe(true)
+
+    // связь вернулась — следующая же отправка увозит то, что лежало в кэше
+    сеть = true
+    const вторая = push()
+    await vi.advanceTimersByTimeAsync(1000)
+    await вторая
+
+    expect(syncHealth().pushFailed).toBe(false)
+    vi.useRealTimers()
+  })
+
+  it('без хранилища полосе взяться неоткуда', async () => {
+    configureSync(null)
+    const итог = await hydrate('u1')
+    expect(итог.ok).toBe(true)
+    expect(syncHealth().loaded).toBe(true)
   })
 })

@@ -176,3 +176,29 @@ describe('динамика и календарь', () => {
     expect(screen.getByTestId('room-where').textContent).toBe('День 5 из 30 · сдано 4')
   })
 })
+
+/**
+ * НЕОТПРАВЛЕННЫЙ РЕЗУЛЬТАТ. Комната — то место, куда человек приходит смотреть
+ * свой счёт и где он уверен, что судья видит то же самое. Пока результат не
+ * уехал, это неправда, и молчать об этом нельзя.
+ */
+describe('результат не уехал наверх', () => {
+  it('комната говорит об этом прямо и обещает отправить сама', () => {
+    render(<RoomScreen day={3} pushFailed />)
+
+    const отметка = screen.getByTestId('room-unsent').textContent
+    expect(отметка).toContain('не отправлен')
+    expect(отметка).toContain('когда появится связь')
+  })
+
+  it('всё уехало — отметки нет', () => {
+    render(<RoomScreen day={3} />)
+    expect(screen.queryByTestId('room-unsent')).toBeNull()
+  })
+
+  it('у гостя отправлять нечего — и обещать нечего', () => {
+    // гостю отправлять некуда: аккаунта нет, результат и так живёт на телефоне
+    render(<RoomScreen day={1} guest pushFailed />)
+    expect(screen.queryByTestId('room-unsent')).toBeNull()
+  })
+})

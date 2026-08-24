@@ -36,6 +36,56 @@ const RETRY_MS = [1000, 5000, 30000]
  */
 const STAMP = 'updatedAt'
 
+/**
+ * ЗДОРОВЬЕ ОБМЕНА — ОТДЕЛЬНО ОТ ДАННЫХ, И ЭТО ГЛАВНОЕ ЗДЕСЬ.
+ *
+ * Раздел переживает и неудачную загрузку, и неудачную отправку: кэш не пустой,
+ * играть по нему можно, и молча падать в белый экран было бы хуже. Но у
+ * челленджа на кону призы, и человек обязан ЗНАТЬ, что игра считает не по тем
+ * данным, которые лежат на сервере: двадцать минут работы, которые потом не
+ * сойдутся с общей таблицей, — это спор о деньгах, а не мелкое неудобство.
+ *
+ * Поэтому состояние обмена живёт здесь и рассылается наружу:
+ *   `loaded` — прогресс с сервера прочитан. false — играем по последнему
+ *     сохранённому на этом устройстве;
+ *   `pushFailed` — результат не уехал наверх, все повторы кончились. Он не
+ *     потерян (лежит в кэше и поедет со следующей записью), но пока его на
+ *     сервере нет.
+ */
+const health = { loaded: true, pushFailed: false }
+const healthWatchers = new Set()
+
+/** Текущее состояние обмена. Копией: снаружи его менять некому. */
+export const syncHealth = () => ({ ...health })
+
+/** Подписаться на изменения состояния обмена. Возвращает отписку. */
+export function onSyncHealth(fn) {
+  healthWatchers.add(fn)
+  return () => healthWatchers.delete(fn)
+}
+
+function setHealth(patch) {
+  let changed = false
+  for (const [key, value] of Object.entries(patch)) {
+    if (health[key] !== value) {
+      health[key] = value
+      changed = true
+    }
+  }
+  if (!changed) return
+  const snapshot = syncHealth()
+  // слушатель не имеет права уронить обмен: он всего лишь рисует полосу
+  for (const fn of healthWatchers) {
+    try { fn(snapshot) } catch { /* экран переживёт */ }
+  }
+}
+
+/**
+ * Загрузка не удалась ВНЕ hydrate — например, выбросом по дороге. Помечаем то
+ * же самое состояние: человеку всё равно, на каком шаге оборвалось.
+ */
+export const noteLoadFailed = () => setHealth({ loaded: false })
+
 let backend = null
 let unwatch = null
 let pushTimer = null
@@ -221,7 +271,12 @@ export async function hydrate(userId) {
   }
   if (userId) writeRaw(KEYS.owner, userId)
 
-  if (!backend) return { ok: true, why: 'без сервера' }
+  // без хранилища сверять не с чем: раздел работает как офлайн-игра, и
+  // пугать человека полосой не за что
+  if (!backend) {
+    setHealth({ loaded: true, pushFailed: false })
+    return { ok: true, why: 'без сервера' }
+  }
 
   let remote
   try {
@@ -240,6 +295,7 @@ export async function hydrate(userId) {
    */
   if (!remote) {
     logEvent('sync.load-failed', {})
+    setHealth({ loaded: false })
     return { ok: false, why: 'сервер не ответил' }
   }
 
@@ -254,6 +310,7 @@ export async function hydrate(userId) {
      * потому, что складывать было некуда.
      */
     logEvent('sync.migrate-up', { days: local.challenge?.done?.length || 0 })
+    setHealth({ loaded: true })
     await push({ force: true })
     return { ok: true, why: 'локальный прогресс поднят наверх' }
   }
@@ -274,6 +331,7 @@ export async function hydrate(userId) {
   }
 
   logEvent('sync.ready', { remote: !!remoteHas, local: localHas })
+  setHealth({ loaded: true })
   return { ok: true, why: 'прогресс загружен' }
 }
 
@@ -356,10 +414,14 @@ export async function push({ force = false } = {}) {
         if (rows.length) await api.saveAttempts(rows)
         if (!пусто) await api.saveProgress(payload)
         for (const r of rows) knownAttempts.add(`${r.day}:${r.tier}:${r.attempt_no}`)
+        // доехало — снимаем отметку «не отправлено», в том числе поставленную
+        // прошлым заходом: она про сейчас, а не про историю
+        setHealth({ pushFailed: false })
         return
       } catch (error) {
         if (attempt === RETRY_MS.length) {
           logEvent('sync.push-failed', { reason: String(error?.message || error).slice(0, 120) })
+          setHealth({ pushFailed: true })
           return
         }
         await new Promise((r) => setTimeout(r, RETRY_MS[attempt]))
@@ -375,4 +437,10 @@ export function resetSync() {
   if (pushTimer) clearTimeout(pushTimer)
   pushTimer = null
   knownAttempts.clear()
+  /**
+   * Состояние обмена сбрасывается тоже: оно про ТЕКУЩИЙ заход в раздел.
+   * Оставь мы «не отправлено» с прошлого раза — человек увидел бы отметку о
+   * беде, которой уже нет, и перестал бы верить ей вовсе.
+   */
+  setHealth({ loaded: true, pushFailed: false })
 }

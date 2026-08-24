@@ -52,6 +52,12 @@ vi.mock('./sync.js', () => ({
   startSync: () => {},
   stopSync: () => Promise.resolve(),
   resetSync: () => {},
+  // здоровье обмена: раздел спрашивает его, чтобы честно сказать человеку,
+  // что играет он по кэшу устройства
+  syncHealth: () => ({ loaded: true, pushFailed: false }),
+  onSyncHealth: () => () => {},
+  noteLoadFailed: () => {},
+  push: () => Promise.resolve(),
 }))
 
 const logged = []

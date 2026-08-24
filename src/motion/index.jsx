@@ -8,6 +8,7 @@ import SessionScreen from './screens/SessionScreen.jsx'
 import { isStrength } from './game/strength.js'
 import LevelSelectScreen from './screens/LevelSelectScreen.jsx'
 import RoomScreen from './screens/RoomScreen.jsx'
+import SyncBanner from './components/SyncBanner.jsx'
 import PersonalSetupScreen from './screens/PersonalSetupScreen.jsx'
 import ResultScreen from './screens/ResultScreen.jsx'
 import { DEFAULT_TIER } from './game/levels.js'
@@ -39,7 +40,7 @@ import { recordFrame } from './debug/recorder.js'
 import { isCalibrating, subscribeCalibration } from './debug/calibrationMode.js'
 import { openMotion } from './lifecycle.js'
 import { configureLogShipper } from './debug/logShipper.js'
-import { configureSync, hydrate, resetSync, startSync, stopSync } from './sync.js'
+import { configureSync, hydrate, noteLoadFailed, onSyncHealth, push, resetSync, startSync, stopSync, syncHealth } from './sync.js'
 import { useMemoryStorage } from './storage.js'
 import { attemptsFor, challengeTotal, submitAttempt } from './game/day.js'
 import { progress } from './game/challenge.js'
@@ -131,6 +132,7 @@ export default function MotionApp({ onExit, day, tier, paused = false, log = nul
    */
   const [ready, setReady] = useState(!sync)
 
+
   useEffect(() => {
     if (!sync) return undefined
     let alive = true
@@ -164,8 +166,10 @@ export default function MotionApp({ onExit, day, tier, paused = false, log = nul
 
     hydrate(sync.userId)
       .catch((error) => {
-        // загрузка не удалась — играем по локальному кэшу, а не запираем человека
+        // загрузка не удалась — играем по локальному кэшу, а не запираем человека,
+        // но человек об этом узнаёт: полоса висит, пока не починится
         logEvent('sync.hydrate-failed', { reason: String(error?.message || error).slice(0, 200) })
+        noteLoadFailed()
       })
       .then(() => {
         if (!alive) return
@@ -353,6 +357,36 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
     if (guest) return 1
     return dayOverride ?? forcedDay() ?? currentDay()
   })
+
+  /**
+   * ЗДОРОВЬЕ ОБМЕНА — то, что человек обязан видеть.
+   *
+   * `loaded: false` — прогресс с сервера не прочитан, играем по кэшу устройства.
+   * `pushFailed` — результат не уехал наверх после всех повторов. Оба состояния
+   * приходят из sync.js подпиской: отправка живёт дольше любого экрана и
+   * ломается уже после того, как человек ушёл с результата.
+   */
+  const [health, setHealth] = useState(syncHealth)
+  const [retrying, setRetrying] = useState(false)
+  useEffect(() => onSyncHealth(setHealth), [])
+
+  /**
+   * ПОПРОБОВАТЬ СНОВА — единственное действие, доступное человеку самому.
+   * Читаем прогресс заново и тем же движением отдаём то, что не уехало: обе
+   * беды лечатся одной вернувшейся связью.
+   */
+  const retrySync = useCallback(async () => {
+    if (!sync) return
+    setRetrying(true)
+    try {
+      await hydrate(sync.userId)
+    } catch (error) {
+      logEvent('sync.hydrate-failed', { reason: String(error?.message || error).slice(0, 200) })
+      noteLoadFailed()
+    }
+    setRetrying(false)
+    push()
+  }, [sync])
 
   /**
    * УЧАСТИЕ В ЖИВОМ ПОТОКЕ — один запрос на вход в раздел (src/challengeSeason.js).
@@ -766,6 +800,17 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
    * «что это и почём», и заставлять его ради ответа дать доступ к камере и
    * дождаться восьми мегабайт модели значит не ответить.
    */
+  /**
+   * ЗАХОД В ЗАЧЁТ ЗАКРЫТ, ПОКА ПРОГРЕСС НЕ ПРОЧИТАН — но только участнику
+   * сезона. Двадцать минут работы, которые потом не сойдутся с общей таблицей,
+   * хуже честного отказа на входе: у него на кону деньги. Тренироваться при
+   * этом можно — заход просто не записывается никуда.
+   *
+   * Одиночки это не касается: их прогресс и так живёт на устройстве, и
+   * запрещать им играть по собственному кэшу не за что.
+   */
+  const challengeBlocked = member && !health.loaded
+
   const inChallenge = screen === 'challenge' && !calibrating && !blockMovement
   /** Таблица потока — такой же текстовый экран без камеры, как и челлендж. */
   const inStandings = screen === 'standings' && !calibrating && !blockMovement
@@ -809,6 +854,8 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
           key={`room-${runId}`}
           day={day}
           guest={guest}
+          /** Результат не уехал наверх — комната обязана об этом сказать. */
+          pushFailed={health.pushFailed}
           onResume={startSession}
           onExit={() => setScreen(roomBack.current)}
         />
@@ -928,6 +975,8 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
           challengeDays={DAYS}
           /** Дата старта потока: с ней день идёт по календарю, без неё — по кнопке. */
           challengeStart={member ? membership?.season?.starts_on ?? null : null}
+          /** Прогресс не прочитан — заход участника в зачёт не идёт (см. выше). */
+          syncBroken={challengeBlocked}
           /**
            * УЧАСТНИК ЧЕЛЛЕНДЖА — тот, чьи заходы вообще идут в зачёт. Граница
            * проходит по аккаунту: у вошедшего человека попытка записывается,
@@ -984,6 +1033,8 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
             tier={tier}
             day={day}
             guest={guest}
+            /** Не прочитанный прогресс — тренировка без записи, а не заход. */
+            scored={!challengeBlocked}
             onGuestValue={offerGuestValue}
             onGuestOffer={onGuestOffer}
             onGuestProgress={reportGuestProgress}
@@ -1086,6 +1137,15 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
           углу, что и главная кнопка, и накрывает её собой. Читают правила без
           звука — прятать его тут ничего не стоит. */}
       {!inChallenge && !inStandings && <AudioToggle />}
+
+      {/**
+        * ПОЛОСА ЧЕСТНОСТИ. Висит поверх любого экрана раздела и не уходит,
+        * пока прогресс не прочитается: человек играет по кэшу устройства, и
+        * знать об этом он должен всё время, а не одну секунду всплывашки.
+        */}
+      {sync && !health.loaded && (
+        <SyncBanner kind="load" busy={retrying} onRetry={retrySync} />
+      )}
       <DebugPanel onSelectCamera={camera.selectDevice} />
     </div>
   )

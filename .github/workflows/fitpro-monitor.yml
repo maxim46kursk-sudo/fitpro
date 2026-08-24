@@ -85,6 +85,12 @@ jobs:
           model=$(h '.["час"].motion_log.["по_типам"].["model.error"]')
           assets=$(h '.["час"].motion_log.["по_типам"].["assets.fallback"]')
           events=$(h '.["час"].motion_log.["событий"]')
+          # обмен прогрессом: не прочитали с сервера / не отправили наверх.
+          # Для участника сезона это не мелочь: он играет по последнему кэшу
+          # устройства, и его очки могут не сойтись с общей таблицей потока.
+          syncload=$(h '.["час"].motion_log.["по_типам"].["sync.load-failed"]')
+          synchydr=$(h '.["час"].motion_log.["по_типам"].["sync.hydrate-failed"]')
+          syncpush=$(h '.["час"].motion_log.["по_типам"].["sync.push-failed"]')
           tries=$(h '.["сутки"].motion_attempts.["попыток"]')
           people=$(h '.["сутки"].motion_attempts.["уникальных_людей"]')
 
@@ -93,6 +99,8 @@ jobs:
           (( reports > 0 )) && problems+=$'\n'"— жалобы user.report за час: $reports"
           (( model   >= 5 )) && problems+=$'\n'"— model.error за час: $model"
           (( assets  >= 5 )) && problems+=$'\n'"— assets.fallback за час: $assets"
+          (( syncload + synchydr > 0 )) && problems+=$'\n'"— прогресс не загрузился за час: $((syncload + synchydr)). Люди играют по кэшу устройства, у участников сезона результат может не попасть в зачёт."
+          (( syncpush > 0 )) && problems+=$'\n'"— результат не уехал наверх за час: $syncpush. Не потерян (лежит на устройстве), но на сервере его пока нет."
 
           if [[ -z $problems ]]; then
             echo "Бета в порядке: событий за час $events; за сутки попыток $tries, людей $people"

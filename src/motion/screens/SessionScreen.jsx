@@ -43,7 +43,14 @@ import { useWakeLock } from '../device/useWakeLock.js'
  *   Задан — продолжаем ТУ ЖЕ попытку с накопленным счётом; не задан — новый
  *   заход с новой попыткой.
  */
-export default function SessionScreen({ subscribe, videoRef = null, tier, day = 1, onExit, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, resume = null, onRestartCamera = null }) {
+/**
+ * @param {boolean} [props.scored] идёт ли заход в зачёт. false — СВОБОДНАЯ
+ *   ТРЕНИРОВКА: тело работает так же, но не записывается ничего — ни попытка,
+ *   ни черновик, ни снимок, ни сданный день. Так бывает ровно в одном случае:
+ *   прогресс участника не прочитался с сервера, и записать заход означало бы
+ *   разойтись с общей таблицей, по которой считаются призы (см. index.jsx).
+ */
+export default function SessionScreen({ subscribe, videoRef = null, tier, day = 1, onExit, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, resume = null, onRestartCamera = null, scored = true }) {
   /**
    * ЭКРАН НЕ ГАСНЕТ ВСЮ СЕССИЮ, а не только в бою.
    *
@@ -142,9 +149,13 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
        * результат, а вторую половину как ещё один.
        */
       attemptNo.current = Math.max(1, Number(resume.attempt) || 1)
-    } else {
+    } else if (scored) {
       closePending()
       attemptNo.current = startAttempt(level.id, plan.current.plan.day)
+    } else {
+      // тренировка без зачёта не трогает хранилище вовсе: ни счётчик заходов,
+      // ни чужой черновик — её как будто не было
+      attemptNo.current = 1
     }
   }
 
@@ -165,6 +176,9 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
    * Черновик же переписывается сколько угодно раз и ничего не расходует.
    */
   const holdNow = () => {
+    // без зачёта нечего и держать: записывать эту сессию мы не будем ни при
+    // каком исходе, а снимок предложил бы человеку продолжить то, чего нет
+    if (!scored) return
     holdAttempt(level.id, attemptStatsOf(totals.current, new Date().toISOString()), plan.current.plan.day)
     // и позиция — тем же движением: черновик отвечает «что записать, если не
     // вернётся», снимок — «куда вернуть, если вернётся»
@@ -205,7 +219,7 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
      * гость не увидел бы даже собственного результата за только что сыгранный
      * заход.
      */
-    const marked = complete && !guest ? completeDay(plan.current.plan.day, new Date(), runs.current) : null
+    const marked = complete && !guest && scored ? completeDay(plan.current.plan.day, new Date(), runs.current) : null
     /**
      * ЗАХОД ЗАКОНЧЕН — ПРОДОЛЖАТЬ НЕЧЕГО. Снимок снимается при любом исходе, а
      * не только при полном прохождении: после выхода кнопкой человек получает
@@ -215,14 +229,16 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
      * Единственный путь, где снимок ОСТАЁТСЯ, — уход со страницы: там
      * `closeAttempt` не зовётся вовсе, работает только `holdNow`.
      */
-    dropSession()
-    attemptRef.current = closePending()
+    if (scored) dropSession()
+    attemptRef.current = scored ? closePending() : null
     // попытка закрыта — отдаём набранное наружу: у гостя оно нигде не
     // сохранено, и буфер переезда собирается именно из этого
     if (guest) onGuestProgress?.()
     logEvent('session.end', {
       tier: level.id,
       day: plan.current.plan.day,
+      // без зачёта — свободная тренировка: в базе от неё не останется ничего
+      scored,
       // чем закончился заход и был ли он пройден целиком
       why,
       complete,
@@ -555,6 +571,7 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
            * результат никуда не идёт, пока нет аккаунта.
            */
           attempt: guest ? null : attemptRef.current,
+          scored,
         }}
         onExit={exitSession}
         onRestart={restart}

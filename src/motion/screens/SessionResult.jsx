@@ -23,6 +23,12 @@ export default function SessionResult({ result, onExit, onRestart }) {
     days = 30,
     /** Ответ зачёта дня (day.js). Нет — сессия сыграна вне челленджа. */
     attempt = null,
+    /**
+     * Заход шёл БЕЗ ЗАЧЁТА — прогресс не прочитался с сервера, и записывать
+     * его было нельзя. Человек должен увидеть это на итоговом листе, а не
+     * обнаружить пропажу очков назавтра в таблице.
+     */
+    scored = true,
   } = result ?? {}
   const reps = strength.reduce((sum, row) => sum + row.reps, 0)
   const clears = fights.reduce((sum, row) => sum + row.cleared, 0)
@@ -34,6 +40,11 @@ export default function SessionResult({ result, onExit, onRestart }) {
 
       <div className="mt-final__head">
         <div className="mt-final__title">ТРЕНИРОВКА ОКОНЧЕНА</div>
+        {!scored && (
+          <div className="mt-final__unscored" data-testid="result-unscored">
+            Без зачёта: прогресс не загрузился, этот заход никуда не записан
+          </div>
+        )}
         <div className="mt-final__level">
           {level?.name ?? ''}
           {day > 0 ? ` · день ${day} из ${days}` : ''}

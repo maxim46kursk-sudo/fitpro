@@ -804,6 +804,29 @@ describe('заход закрывается попыткой при любом �
     return r
   }
 
+  /**
+   * СВОБОДНАЯ ТРЕНИРОВКА. Прогресс участника не прочитался с сервера — записать
+   * заход значило бы разойтись с общей таблицей, по которой считаются призы.
+   * Тело при этом работает как всегда: отказ касается зачёта, а не тренировки.
+   */
+  it('без зачёта сессия не трогает хранилище вовсе', () => {
+    const onExit = vi.fn()
+    render(<SessionScreen subscribe={noopSubscribe} tier="pro" scored={false} onExit={onExit} />)
+
+    // ни номера захода, ни закрытия чужого черновика: этой сессии как будто нет
+    expect(startAttempt).not.toHaveBeenCalled()
+    expect(closePending).not.toHaveBeenCalled()
+
+    act(() => { screen.getByTestId('session-menu-button').click() })
+    act(() => { screen.getByTestId('menu-exit').click() })
+    act(() => { screen.getByTestId('exit-save').click() })
+
+    expect(holdAttempt).not.toHaveBeenCalled()
+    expect(closePending).not.toHaveBeenCalled()
+    expect(completeDay).not.toHaveBeenCalled()
+    expect(onExit).toHaveBeenCalled()
+  })
+
   it('номер захода берётся на СТАРТЕ сессии и уезжает в бой', () => {
     /**
      * Прежде номер считался из записанных попыток, а записывались они только

@@ -4227,3 +4227,93 @@
   text-align: right;
   color: #78e6be;
 }
+
+/* ── честность прогресса: полоса и отметки ────────────────────────────────── */
+
+/*
+ * ПОЛОСА ВНИЗУ, А НЕ ВВЕРХУ. Вверху слева живёт ✕ (.mt-corner--left), и
+ * перекрыть выход ради сообщения о сбое — худшее, что можно сделать с человеком,
+ * который и так упёрся в сбой.
+ */
+.mt-sync {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: rgba(58, 30, 12, 0.92);
+  border-top: 1px solid rgba(255, 176, 92, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #ffd9b0;
+  font-size: 12.5px;
+  line-height: 1.35;
+  pointer-events: auto;
+}
+
+.mt-sync__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mt-sync__text b {
+  color: #ffb95c;
+}
+
+.mt-sync__btn {
+  flex: none;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 176, 92, 0.5);
+  background: rgba(255, 176, 92, 0.14);
+  color: #ffd9b0;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.mt-sync__btn:disabled {
+  opacity: 0.55;
+}
+
+/* Отказ в зачёте — на экране выбора уровня, до тренировки, а не после. */
+.mt-levels__unscored {
+  max-width: 340px;
+  margin: 0 auto 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 176, 92, 0.4);
+  border-radius: 12px;
+  background: rgba(58, 30, 12, 0.5);
+  color: #ffd9b0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.mt-level__free {
+  font-size: 11px;
+  font-weight: 600;
+  color: #ffb95c;
+}
+
+/* Комната: счёт есть, а на сервере его пока нет. */
+.mt-room__unsent {
+  margin-top: 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: rgba(58, 30, 12, 0.6);
+  border: 1px solid rgba(255, 176, 92, 0.35);
+  color: #ffd9b0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+/* Итоговый лист свободной тренировки. */
+.mt-final__unscored {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #ffb95c;
+}

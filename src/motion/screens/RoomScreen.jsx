@@ -31,7 +31,12 @@ import ResumeChoice from '../components/ResumeChoice.jsx'
  *   продолжить незавершённую сессию. Комната сама сессий не запускает — она
  *   отдаёт решение наверх, тому же, кто запускает их с выбора уровня.
  */
-export default function RoomScreen({ day = 0, onExit, guest = false, onResume = null }) {
+/**
+ * @param {boolean} [props.pushFailed] результат не уехал наверх после всех
+ *   повторов. Комната — то место, куда человек приходит смотреть свой счёт, и
+ *   именно здесь он должен узнать, что на сервере этого счёта пока нет.
+ */
+export default function RoomScreen({ day = 0, onExit, guest = false, onResume = null, pushFailed = false }) {
   /**
    * Снимок на монтирование: пока человек стоит в комнате, играть он не может,
    * а значит и меняться числам не с чего.
@@ -56,6 +61,17 @@ export default function RoomScreen({ day = 0, onExit, guest = false, onResume = 
         <div className="mt-room__where" data-testid="room-where">
           День {room.day} из {room.days} · сдано {room.doneCount}
         </div>
+        {/**
+          * РЕЗУЛЬТАТ НЕ УЕХАЛ — и молчать об этом нельзя: человек смотрит на
+          * свой счёт и считает, что судья видит то же самое. Не видит. Потерян
+          * результат при этом не будет — он лежит на устройстве и уедет сам,
+          * как только появится связь, — но знать разницу человек обязан.
+          */}
+        {pushFailed && !guest && (
+          <div className="mt-room__unsent" data-testid="room-unsent">
+            Результат не отправлен — отправим сам, когда появится связь
+          </div>
+        )}
       </div>
 
       <div className="mt-room__tiles">

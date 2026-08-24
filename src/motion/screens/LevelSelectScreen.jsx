@@ -81,6 +81,12 @@ export default function LevelSelectScreen({
    * вперёд по кнопке после сданного дня.
    */
   challengeStart = null,
+  /**
+   * ПРОГРЕСС НЕ ПРОЧИТАН С СЕРВЕРА. Заход участника в зачёт при этом не идёт:
+   * его очки могут не сойтись с общей таблицей, а на ней призы. Тренироваться
+   * можно — но человек обязан знать, что этот заход никуда не записывается.
+   */
+  syncBroken = false,
 }) {
   /**
    * Снимок берётся при монтировании и пересчитывается ТОЛЬКО по переходу дня:
@@ -259,11 +265,25 @@ export default function LevelSelectScreen({
       )}
 
       {/**
+        * ЗАХОД НЕ В ЗАЧЁТ — САМЫМ ВЕРХОМ, ДО ВЫБОРА УРОВНЯ.
+        *
+        * Сказать это после тренировки было бы издевательством: двадцать минут
+        * работы, которые не засчитались, человек не простит. Поэтому отказ
+        * стоит на входе, а не в отчёте.
+        */}
+      {syncBroken && view.playable && (
+        <div className="mt-levels__unscored" data-testid="unscored-note">
+          Прогресс не загрузился — <b>заход в зачёт сейчас невозможен</b>. Потренироваться
+          можно, но этот заход никуда не запишется и в таблицу потока не попадёт.
+        </div>
+      )}
+
+      {/**
         * ОСТАТОК ЗАХОДОВ — ОДНОЙ СТРОКОЙ НА ЭКРАН. Заходов три на весь день, а
         * не на каждый уровень, поэтому «попытка 2 из 3» на карточке врала бы
         * трижды: она обещала бы отдельный запас каждому уровню.
         */}
-      {view.playable && challengeMember && (
+      {view.playable && challengeMember && !syncBroken && (
         <div className="mt-levels__runsLeft" data-testid="runs-left">
           {view.left > 0
             ? `Осталось заходов: ${view.left} из ${MAX_ATTEMPTS}`
@@ -276,12 +296,15 @@ export default function LevelSelectScreen({
         {day.tiers.map((tier) => (
           <button
             key={tier.id}
-            className={`mt-level ${challengeMember && tier.locked ? 'is-locked' : ''}`}
+            className={`mt-level ${challengeMember && !syncBroken && tier.locked ? 'is-locked' : ''}`}
             data-testid={`level-${tier.id}`}
-            disabled={challengeMember && tier.locked}
+            disabled={challengeMember && !syncBroken && tier.locked}
             onClick={() => onPick?.(tier.id)}
           >
-            <div className="mt-level__name">{tier.name}</div>
+            <div className="mt-level__name">
+              {tier.name}
+              {syncBroken && <span className="mt-level__free"> · без зачёта</span>}
+            </div>
             <div className="mt-level__price">{tier.obstaclePoints} очков за препятствие</div>
 
             <div className="mt-level__row">
