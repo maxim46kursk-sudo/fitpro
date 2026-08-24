@@ -1,18 +1,21 @@
 // Выход наружу — api/_egress.js.
 //
-// Что здесь защищается. С нашего сервера api.telegram.org и api.anthropic.com
-// недостижимы, и вызовы к ним идут через мост. Помощник решает это ОДИН раз за
-// все семь точек вызова, и у него ровно два способа сломаться — оба тихие:
+// Что здесь защищается. С нашего сервера недостижим api.anthropic.com, и
+// вызовы к нему идут через мост. Помощник решает это ОДИН раз за все семь точек
+// вызова, и у него ровно два способа сломаться — оба тихие:
 //
 //   1) НЕ ПЕРЕПИСАТЬ, когда мост настроен. Тогда на своём сервере молча
 //      отвалятся ИИ-ассистент, вход через Telegram, напоминания, тревоги и
 //      выгрузка данных — ровно то, ради чего мост и заводился.
-//   2) ПЕРЕПИСАТЬ, когда моста нет. Это страшнее: на Vercel переменных нет, и
-//      боевое приложение обязано вести себя байт в байт как раньше. Лишний
-//      заголовок или подменённый адрес там означают поломку БОЯ во время
-//      переезда — то есть худшее, что может случиться с этой затеей.
+//   2) ПЕРЕПИСАТЬ ЛИШНЕЕ. Во-первых, когда моста нет вовсе: на Vercel
+//      переменных нет, и боевое приложение обязано вести себя байт в байт как
+//      раньше — лишний заголовок или подменённый адрес там означают поломку БОЯ
+//      во время переезда. Во-вторых, Telegram: он с сервера доступен напрямую,
+//      и пускать его через мост значит добавить точку отказа там, где её нет —
+//      ляжет мост, и вместе с ИИ отвалятся тревоги, напоминания и вход.
 //
-// Поэтому проверяется симметрично: с окружением и без него.
+// Поэтому проверяется симметрично: с окружением и без него, и отдельно — что
+// Telegram не переписывается НИКОГДА.
 
 import { strict as assert } from 'node:assert'
 
@@ -77,12 +80,12 @@ await test('egressFetch зовёт fetch по исходному адресу и
 // ── С МОСТОМ: адреса переписаны, ключ добавлен ──────────────────────────────
 console.log('\n с EGRESS_URL/EGRESS_KEY — поведение своего сервера')
 
-await test('Telegram уходит на /tg/, хвост пути сохраняется целиком', () => {
+await test('Telegram НЕ переписывается даже при настроенном мосте', () => {
   окружение(МОСТ)
-  assert.equal(
-    egressUrl('https://api.telegram.org/bot123:ABC/sendMessage'),
-    'https://fitpro-egress.example.workers.dev/tg/bot123:ABC/sendMessage',
-  )
+  // Он с сервера доступен напрямую. Мост для него — лишняя точка отказа:
+  // ляжет мост, и молча отвалятся тревоги, напоминания и вход через Telegram.
+  const адрес = 'https://api.telegram.org/bot123:ABC/sendMessage'
+  assert.equal(egressUrl(адрес), адрес)
 })
 
 await test('Anthropic уходит на /ai/', () => {
@@ -100,17 +103,33 @@ await test('к заголовкам добавляется ключ моста, 
   assert.equal(стало['Content-Type'], 'application/json')
 })
 
-await test('egressFetch переписывает адрес и подставляет ключ', async () => {
+await test('egressFetch переписывает Anthropic и подставляет ключ', async () => {
   окружение(МОСТ)
   const звонки = []
   const настоящий = globalThis.fetch
   globalThis.fetch = (u, o) => { звонки.push({ u, o }); return Promise.resolve({ ok: true }) }
   try {
-    await egressFetch('https://api.telegram.org/bot9:X/sendDocument', { method: 'POST', body: 'form' })
-    assert.equal(звонки[0].u, 'https://fitpro-egress.example.workers.dev/tg/bot9:X/sendDocument')
+    await egressFetch('https://api.anthropic.com/v1/messages', { method: 'POST', body: '{"m":1}' })
+    assert.equal(звонки[0].u, 'https://fitpro-egress.example.workers.dev/ai/v1/messages')
     assert.equal(звонки[0].o.headers[RELAY_HEADER], 'test-relay-key')
-    assert.equal(звонки[0].o.body, 'form', 'тело трогать нельзя — им едет multipart выгрузки')
+    assert.equal(звонки[0].o.body, '{"m":1}', 'тело трогать нельзя')
     assert.equal(звонки[0].o.method, 'POST')
+  } finally { globalThis.fetch = настоящий }
+})
+
+await test('egressFetch шлёт Telegram напрямую и без ключа моста', async () => {
+  окружение(МОСТ)
+  const звонки = []
+  const настоящий = globalThis.fetch
+  globalThis.fetch = (u, o) => { звонки.push({ u, o }); return Promise.resolve({ ok: true }) }
+  try {
+    // sendDocument — выгрузка данных человека, она едет multipart'ом; здесь
+    // важно и то, что адрес не подменён, и то, что опции ушли нетронутыми.
+    const опции = { method: 'POST', body: 'form' }
+    await egressFetch('https://api.telegram.org/bot9:X/sendDocument', опции)
+    assert.equal(звонки[0].u, 'https://api.telegram.org/bot9:X/sendDocument')
+    assert.equal(звонки[0].o, опции, 'опции должны уйти тем же объектом')
+    assert.equal(звонки[0].o.headers?.[RELAY_HEADER], undefined)
   } finally { globalThis.fetch = настоящий }
 })
 
@@ -129,7 +148,7 @@ await test('чужой хост не переписывается и ключ е
 
 await test('половина настройки — то же, что её отсутствие', () => {
   окружение({ EGRESS_URL: МОСТ.EGRESS_URL, EGRESS_KEY: undefined })
-  const адрес = 'https://api.telegram.org/bot1:2/getMe'
+  const адрес = 'https://api.anthropic.com/v1/messages'
   assert.equal(egressUrl(адрес), адрес, 'адрес без ключа дал бы молчаливый 404 от моста')
   окружение({ EGRESS_URL: undefined, EGRESS_KEY: МОСТ.EGRESS_KEY })
   assert.equal(egressUrl(адрес), адрес)
@@ -138,8 +157,8 @@ await test('половина настройки — то же, что её от�
 await test('лишний слэш в конце EGRESS_URL не даёт двойного слэша', () => {
   окружение({ ...МОСТ, EGRESS_URL: МОСТ.EGRESS_URL + '/' })
   assert.equal(
-    egressUrl('https://api.telegram.org/bot1:2/getMe'),
-    'https://fitpro-egress.example.workers.dev/tg/bot1:2/getMe',
+    egressUrl('https://api.anthropic.com/v1/messages'),
+    'https://fitpro-egress.example.workers.dev/ai/v1/messages',
   )
 })
 
