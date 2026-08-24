@@ -3,17 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import LevelSelectScreen from './LevelSelectScreen.jsx'
 import {
-  CONTACT_URL,
   DAYS,
   FREE_DAYS,
-  UNLOCK_CODE,
   advanceDay,
   completeDay,
   currentDay,
   isUnlocked,
   resetProgress,
-  unlock,
 } from '../game/challenge.js'
+import { KEYS, writeRaw } from '../storage.js'
 import { submitAttempt } from '../game/day.js'
 
 /**
@@ -140,27 +138,36 @@ describe('пять бесплатных дней', () => {
     expect(screen.getByTestId('open-room')).toBeTruthy()
   })
 
-  it('кнопки «написать тренеру» нет, пока нет ссылки', () => {
-    // мёртвая кнопка, ведущая никуда, хуже её отсутствия
-    expect(CONTACT_URL).toBe('')
-    render(<LevelSelectScreen challengeDay={6} />)
-    expect(screen.queryByTestId('wall-contact')).toBeNull()
+  it('на границе стоит дверь в челлендж, а не «написать тренеру»', () => {
+    // раньше здесь была ссылка наружу — то есть предложение выйти из
+    // приложения и ждать ответа; теперь на том же месте экран про поток
+    const onChallenge = vi.fn()
+    render(<LevelSelectScreen challengeDay={6} onChallenge={onChallenge} />)
+
+    act(() => screen.getByTestId('wall-challenge').click())
+    expect(onChallenge).toHaveBeenCalled()
   })
 
-  it('с кодом активации шестой день играется', () => {
-    expect(unlock(UNLOCK_CODE)).toBe(true)
-    render(<LevelSelectScreen challengeDay={6} />)
+  it('участник потока играет шестой день', () => {
+    render(<LevelSelectScreen challengeDay={6} challengeMember />)
 
     expect(screen.getByTestId('level-pro')).toBeTruthy()
     expect(screen.queryByTestId('free-wall')).toBeNull()
   })
 
-  it('чужой код не открывает ничего', () => {
-    expect(unlock('нет')).toBe(false)
-    expect(unlock('')).toBe(false)
+  it('не участник упирается в границу пятого дня', () => {
     expect(isUnlocked()).toBe(false)
-    render(<LevelSelectScreen challengeDay={6} />)
+    render(<LevelSelectScreen challengeDay={6} challengeMember={false} />)
     expect(screen.getByTestId('free-wall')).toBeTruthy()
+  })
+
+  it('старый ключ доступа продолжает открывать шестой день', () => {
+    // доступ, выданный кодом до продажи билетов, у человека не отбирают
+    writeRaw(KEYS.challengeUnlocked, '1')
+    render(<LevelSelectScreen challengeDay={6} challengeMember={false} />)
+
+    expect(screen.getByTestId('level-pro')).toBeTruthy()
+    expect(screen.queryByTestId('free-wall')).toBeNull()
   })
 
   it('переход на шестой день не заблокирован — иначе был бы тупик', () => {
@@ -202,7 +209,7 @@ describe('суммы и правила на экране', () => {
   })
 
   it('правила названы полностью — их читают перед первой попыткой', () => {
-    render(<LevelSelectScreen challengeDay={1} />)
+    render(<LevelSelectScreen challengeDay={1} challengeMember />)
     const note = document.querySelector('.mt-levels__note').textContent
 
     expect(note).toContain('До 3 попыток на уровень, в зачёт — лучшая')
@@ -269,8 +276,17 @@ describe('счётчик попыток виден участнику челле
     expect(onPick).toHaveBeenCalledWith('pro')
   })
 
-  it('по умолчанию экран считает человека участником — прежнее поведение', () => {
+  it('по умолчанию человек НЕ участник — умолчание не раздаёт платный поток', () => {
+    /**
+     * Участие теперь означает оплаченное место. Экран, отрисованный без этого
+     * пропса (ответ сервера ещё не доехал, вызов забыли), обязан вести себя как
+     * с обычным человеком, а не открывать ему тридцать дней.
+     */
     render(<LevelSelectScreen challengeDay={1} />)
-    expect(document.querySelector('.mt-level__attempts')).toBeTruthy()
+    expect(document.querySelector('.mt-level__attempts')).toBeNull()
+
+    cleanup()
+    render(<LevelSelectScreen challengeDay={6} />)
+    expect(screen.getByTestId('free-wall')).toBeTruthy()
   })
 })

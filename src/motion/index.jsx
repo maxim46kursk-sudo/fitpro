@@ -12,7 +12,10 @@ import PersonalSetupScreen from './screens/PersonalSetupScreen.jsx'
 import ResultScreen from './screens/ResultScreen.jsx'
 import { DEFAULT_TIER } from './game/levels.js'
 import { needsPersonalSetup } from './game/personal.js'
-import { DAYS, currentDay, forcedDay, unlockFromUrl } from './game/challenge.js'
+import { DAYS, currentDay, forcedDay } from './game/challenge.js'
+import ChallengeScreen from './screens/ChallengeScreen.jsx'
+import RulesScreen from './screens/RulesScreen.jsx'
+import { acceptRules, buyTicket, loadChallengeState } from '../challengeSeason.js'
 import { useCamera } from './pose/useCamera.js'
 import { usePoseLandmarker } from './pose/usePoseLandmarker.js'
 import { useLandscapeBlock } from './device/useOrientation.js'
@@ -75,8 +78,13 @@ import './motion.css'
  *   только если у аккаунта своего прогресса Motion ещё нет.
  * @param {() => void} [props.onGuestMotionApplied] применили — хозяин может
  *   убрать их из буфера.
+ * @param {'challenge'|null} [props.startScreen] С КАКОГО ЭКРАНА ОТКРЫТЬ РАЗДЕЛ.
+ *   Карточка челленджа на главной ведёт человека не «в Motion вообще», а к
+ *   вполне определённому разговору — про поток, билет и номер участника. Всё
+ *   остальное (камера, калибровка, уровни) на этом пути не нужно и не должно
+ *   стоять между ним и ответом.
  */
-export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null } = {}) {
+export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null } = {}) {
   /**
    * ГОСТЬ ПИШЕТ В ПАМЯТЬ, А НЕ НА УСТРОЙСТВО — и решается это здесь, раньше
    * всего остального.
@@ -242,6 +250,7 @@ export default function MotionApp({ onExit, day, tier, paused = false, log = nul
         onGuestProgress={onGuestProgress}
         guestMotion={guestMotion}
         onGuestMotionApplied={onGuestMotionApplied}
+        startScreen={startScreen}
       />
     </ErrorBoundary>
   )
@@ -303,10 +312,10 @@ function readBlockMode() {
   }
 }
 
-function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null }) {
-  // calibration | setup | levels | room | workout | result
+function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null }) {
+  // calibration | setup | levels | room | challenge | workout | result
   // выбор уровня и настройка под себя — только в игре
-  const [screen, setScreen] = useState('calibration')
+  const [screen, setScreen] = useState(startScreen === 'challenge' ? 'challenge' : 'calibration')
   const [gameMode] = useState(readGameMode)
   /** Силовой блок из адреса: он открывается сразу, минуя всё остальное. */
   const [blockMovement] = useState(readBlockMode)
@@ -323,13 +332,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
    * пересчитывать его на каждом ререндере значило бы менять тренировку под
    * ногами у человека, который её уже начал.
    */
-  /**
-   * Код активации из адреса разбирается ДО первого дня: человек переходит по
-   * ссылке от тренера, и челлендж обязан открыться в тот же заход, а не со
-   * следующего запуска.
-   */
   const [day, setDay] = useState(() => {
-    unlockFromUrl()
     /**
      * У ГОСТЯ ВСЕГДА ПЕРВЫЙ ДЕНЬ. Челлендж — это тридцать дней подряд с
      * призами на кону, и продвижение по нему требует аккаунта: без него
@@ -340,6 +343,52 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
     if (guest) return 1
     return dayOverride ?? forcedDay() ?? currentDay()
   })
+
+  /**
+   * УЧАСТИЕ В ЖИВОМ ПОТОКЕ — один запрос на вход в раздел (src/challengeSeason.js).
+   *
+   * От него зависит ровно две вещи: открыты ли дни после пятого и видит ли
+   * человек правила зачёта. Обе — вопросы к серверу, а не к устройству, поэтому
+   * ответ приезжает сюда, а игра остаётся чистой и получает его параметром.
+   *
+   * ПОКА ОТВЕТА НЕТ — НЕ УЧАСТНИК. Пустить в челлендж «пока грузится» значит
+   * пустить туда всех, у кого сеть медленнее экрана; обратный порядок (сперва
+   * пять дней, потом открылось) человек видит как «загрузилось», а не как отказ.
+   */
+  /**
+   * ПРАВИЛА В ДВУХ РЕЖИМАХ. gate — первое чтение: галочка и кнопка вступления
+   * появляются на двенадцатом экране и только дочитавшему. Без gate правила
+   * открываются свободно и с любого места — их перечитывают за конкретным
+   * ответом, а не ради согласия.
+   */
+  const [rulesGate, setRulesGate] = useState(false)
+
+  const [membership, setMembership] = useState(undefined)
+  useEffect(() => {
+    let alive = true
+    loadChallengeState({ guest }).then((value) => {
+      if (!alive) return
+      setMembership(value)
+      /**
+       * ПЕРВЫЙ РАЗ — ЧЕРЕЗ ПРАВИЛА. Человек, пришедший с главной по карточке
+       * челленджа и ещё не читавший правил, попадает на них, а не на цену:
+       * спор о призах упирается в «я не знал», и ответ на это должен появиться
+       * до денег, а не после. Уже согласившийся идёт сразу к потоку.
+       */
+      if (startScreen === 'challenge' && !guest && value && !value.rulesAcceptedAt) {
+        setRulesGate(true)
+        setScreen('rules')
+      }
+    })
+    return () => { alive = false }
+  }, [guest, startScreen])
+  const member = !!membership?.entry
+
+  /** Перечитать участие после покупки: до неё не участник, после — участник. */
+  const refreshMembership = useCallback(() => {
+    loadChallengeState({ guest, force: true }).then(setMembership)
+  }, [guest])
+
   const [stats, setStats] = useState(null)
   /**
    * Снимок незавершённой сессии, с которым стартует следующая. Живёт в
@@ -405,6 +454,21 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
     roomBack.current = from
     setScreen('room')
   }
+  /**
+   * То же и для экрана челленджа. Открыть его можно с двух сторон: с границы
+   * бесплатных дней и снаружи, прямо с главной (startScreen). Во втором случае
+   * возвращаться внутри раздела некуда — человек шёл не в игру, — и крестик
+   * закрывает раздел целиком.
+   */
+  const challengeBack = useRef(startScreen === 'challenge' ? null : 'levels')
+  const openChallenge = (from) => {
+    challengeBack.current = from
+    setScreen('challenge')
+  }
+  const openRules = ({ gate = false } = {}) => {
+    setRulesGate(gate)
+    setScreen('rules')
+  }
   const [needsTap, setNeedsTap] = useState(false)
 
   /**
@@ -442,7 +506,13 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
    * камеру было размонтирование. Внутри FitPro у камеры есть второй хозяин —
    * сканер штрихкода, — и без паузы одновременное открытие даёт CAMERA_FAILED.
    */
-  const camera = useCamera({ enabled: !paused })
+  /**
+   * КАМЕРА НЕ ВКЛЮЧАЕТСЯ РАДИ ЭКРАНА ЧЕЛЛЕНДЖА. С главной на него приходят
+   * узнать, что за поток и почём место; спросить у человека разрешение на
+   * съёмку в ответ на такой вопрос значит спросить не то и не вовремя.
+   * Уйдёт с экрана в игру — камера поднимется как обычно.
+   */
+  const camera = useCamera({ enabled: !paused && screen !== 'challenge' && screen !== 'rules' })
   const pose = usePoseLandmarker({
     videoRef,
     // Инференс нужен на всех экранах: с экрана результата подход
@@ -650,6 +720,16 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
    * камеры всё-таки нельзя.
    */
   const inRoom = screen === 'room' && !calibrating && !blockMovement
+  /**
+   * ЭКРАН ЧЕЛЛЕНДЖА ОТКРЫВАЕТСЯ БЕЗ КАМЕРЫ — по той же причине, что и
+   * комната: он читает сезон и рассказывает про поток, а кадры ему не нужны
+   * вовсе. Человек, пришедший с главной по карточке челленджа, спрашивает
+   * «что это и почём», и заставлять его ради ответа дать доступ к камере и
+   * дождаться восьми мегабайт модели значит не ответить.
+   */
+  const inChallenge = screen === 'challenge' && !calibrating && !blockMovement
+  /** Правила читают без камеры — по той же причине, что и всё остальное текстовое. */
+  const inRules = screen === 'rules' && !calibrating && !blockMovement
 
   return (
     <div className="mt-root">
@@ -660,7 +740,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
         showSkeleton={!blockingError}
       />
 
-      {blockingError && !inRoom && (
+      {blockingError && !inRoom && !inChallenge && !inRules && (
         <ErrorOverlay
           code={blockingError}
           detail={poseError ? pose.errorDetail : null}
@@ -675,7 +755,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
         />
       )}
 
-      {!blockingError && booting && !inRoom && (
+      {!blockingError && booting && !inRoom && !inChallenge && !inRules && (
         <BootOverlay
           cameraReady={camera.status === 'ready'}
           modelReady={pose.status === 'ready'}
@@ -692,6 +772,52 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
           guest={guest}
           onResume={startSession}
           onExit={() => setScreen(roomBack.current)}
+        />
+      )}
+
+      {inRules && (
+        <RulesScreen
+          gate={rulesGate}
+          price={membership?.season?.price_rub ?? 0}
+          /**
+           * ВСТУПЛЕНИЕ ОДНОЙ КНОПКОЙ: сперва фиксируем согласие В БАЗЕ, и только
+           * если оно записалось — открываем оплату. Обратный порядок оставил бы
+           * оплаченный билет без ответа на «я не знал правил», то есть ровно без
+           * того, ради чего этот экран и сделан.
+           */
+          onJoin={async () => {
+            const consent = await acceptRules(membership?.season?.id)
+            if (consent?.error) return consent
+            const result = await buyTicket()
+            const fresh = await loadChallengeState({ guest, force: true })
+            setMembership(fresh)
+            // Оплата ушла в соседнюю вкладку — здесь человеку больше нечего
+            // читать: возвращаем его к потоку. Осталась ошибка — остаёмся на
+            // месте и показываем её там, где он нажимал.
+            if (!result?.error) setScreen('challenge')
+            return result
+          }}
+          onExit={() => setScreen('challenge')}
+        />
+      )}
+
+      {inChallenge && (
+        <ChallengeScreen
+          state={membership}
+          loading={membership === undefined}
+          onRules={openRules}
+          guest={guest}
+          day={day}
+          days={DAYS}
+          onBuy={buyTicket}
+          onRefresh={refreshMembership}
+          /**
+           * ГОСТЮ — ТО ЖЕ ПРЕДЛОЖЕНИЕ АККАУНТА, ЧТО И ВЕЗДЕ. Раздел своей формы
+           * регистрации не рисует и рисовать не должен: аккаунт заводит хозяин,
+           * и предложение у него одно на всё приложение.
+           */
+          onCreateAccount={() => onGuestValue?.('challenge', 0)}
+          onExit={() => (challengeBack.current ? setScreen(challengeBack.current) : onExit?.())}
         />
       )}
 
@@ -764,7 +890,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
            * применяется при записи (`submitAttempt`), в том числе когда
            * сыгранное переезжает в новый аккаунт.
            */
-          challengeMember={!guest}
+          challengeMember={member}
           // человек перешёл к следующему дню — сессия обязана собраться по
           // нему, иначе переход был бы обманом
           onAdvance={(next) => setDay(next)}
@@ -774,6 +900,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
             setScreen('setup')
           }}
           onRoom={() => openRoom('levels')}
+          onChallenge={() => openChallenge('levels')}
           onExit={() => setScreen('calibration')}
         />
       )}

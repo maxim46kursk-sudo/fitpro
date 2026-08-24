@@ -23,6 +23,9 @@ import { VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, ef
 import { clampNum } from './nutrition.js'
 import FoodDiary from './FoodDiary.jsx'
 import HubCard from './HubCard.jsx'
+// Участие в потоке челленджа: прочитанное живёт в памяти модуля, и выход из
+// аккаунта обязан его забыть (см. performLogout).
+import { resetChallengeState } from './challengeSeason.js'
 import { bump } from './funnel.js'
 import { collectGuestData, resetGuestStore, setGuestCustom, setGuestMotion, setGuestWorkouts } from './guestStore.js'
 import { saveGuestPending } from './guestPending.js'
@@ -143,7 +146,7 @@ function motionSyncFor(userId) {
  * @param {object|null} [props.guestMotion] попытки из буфера переезда
  * @param {() => void} [props.onGuestMotionApplied]
  */
-function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null }) {
+function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null }) {
   /**
    * Адаптер собирается ОДИН раз на человека. Новый объект на каждый рендер
    * означал бы новую загрузку прогресса на каждый рендер — то есть заставку,
@@ -201,6 +204,7 @@ function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onG
           onGuestProgress={onGuestProgress}
           guestMotion={guestMotion}
           onGuestMotionApplied={onGuestMotionApplied}
+          startScreen={startScreen}
         />
       </Suspense>
     </div>,
@@ -2212,7 +2216,7 @@ const makeDefaultFolderSlots=(folders=FOLDERS,programsMap=PROGRAMS_MAP)=>{
 // приходит отдельно, в accessLevel.
 // accessLevel — уровень пакета: тренировки 4–12 в шаблонах требуют БАЗУ (1),
 // в СТАРТ (0) открыты только первые FREE_SLOTS.
-function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, hasTrainer, coachSubExpired = false, accessLevel = 0, openPlans, exerciseVideos = {}, userRole = 'client', setExerciseVideos, onOpenConstructor, onOpenMotion, guest = false }) {
+function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, hasTrainer, coachSubExpired = false, accessLevel = 0, openPlans, exerciseVideos = {}, userRole = 'client', setExerciseVideos, onOpenConstructor, onOpenMotion, onOpenChallenge, guest = false }) {
   const { exercises: catalogExercises } = useContext(CatalogContext)
   // Шаблоны программ — из базы (program_templates) с запасным вариантом из кода.
   // folderKeys — КЛЮЧИ (profiles.program, префиксы workouts держатся за них),
@@ -4626,6 +4630,22 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           </span>
         }
         onClick={onOpenMotion} />
+
+      {/* ── Челлендж 30 дней: отдельной карточкой, сразу под Motion ──
+          ПОЧЕМУ ОТДЕЛЬНАЯ КАРТОЧКА, А НЕ СТРОЧКА ВНУТРИ MOTION. Челлендж — это
+          не режим тренировки, а участие с датой старта, номером и призовым
+          фондом; человек про него либо знает и ищет свой номер, либо не знает
+          вовсе. Спрятанный за камерой и калибровкой, он не находился ни теми,
+          ни другими: до границы пятого дня доходят единицы.
+
+          Карточка открывает раздел СРАЗУ на экране челленджа — без камеры и без
+          загрузки модели (см. startScreen в src/motion/index.jsx). */}
+      <HubCard
+        testId="program-folder-challenge"
+        icon="trophy"
+        title="Челлендж 30 дней"
+        subtitle="Поток с общим стартом и призовым фондом"
+        onClick={onOpenChallenge} />
 
       {/* ── Уровень 0: список папок ── */}
       {templateFolders.map(t=>{
@@ -7333,6 +7353,17 @@ const OFFER_TEXTS = {
     title: (score) => `Счёт ${score}. Сохранить и участвовать в челлендже?`,
     text: 'Для участия нужен бесплатный аккаунт — результат зачтётся, а прогресс будет виден с любого устройства',
     no: 'Пропустить',
+  },
+  /**
+   * ЧЕЛЛЕНДЖ ГОСТЮ. Здесь человек ничего ещё не набрал — он только нажал на
+   * карточку, — поэтому счёт в заголовке не поминается вовсе. Про деньги тут
+   * тоже ни слова: следующий шаг у него бесплатный, а разговор о билете имеет
+   * смысл только с тем, у кого есть аккаунт, к которому этот билет привяжется.
+   */
+  challenge: {
+    title: 'Участвовать в челлендже?',
+    text: 'Место в потоке привязывается к аккаунту — он бесплатный. Первые дни челленджа открыты и без него',
+    no: 'Не сейчас',
   },
 }
 
@@ -11148,6 +11179,13 @@ export default function App() {
    * иначе камера не погаснет (см. комментарий у MotionOverlay).
    */
   const [motionOpen,setMotionOpen]=useState(false)
+  /**
+   * С КАКОГО ЭКРАНА ОТКРЫТЬ MOTION. Обычная карточка ведёт в раздел как раньше
+   * (null — камера, калибровка, уровни), карточка челленджа — сразу к разговору
+   * про поток. Хранится у хозяина, а не внутри раздела: раздел монтируется
+   * заново на каждое открытие и знать, откуда в него вошли, не может.
+   */
+  const [motionStart,setMotionStart]=useState(null)
 
   /**
    * ИСТОРИЮ БРАУЗЕРА ВЕДЁТ ХОЗЯИН, А НЕ РАЗДЕЛ.
@@ -11163,9 +11201,10 @@ export default function App() {
    */
   const motionPushedRef=useRef(false)
 
-  const openMotion=()=>{
+  const openMotion=(startScreen=null)=>{
     if(motionOpen)return
     if(guestMode)bump('try_motion')
+    setMotionStart(startScreen)
     try{
       window.history.pushState({fitproMotion:1},'',window.location.href)
       motionPushedRef.current=true
@@ -11175,6 +11214,20 @@ export default function App() {
       motionPushedRef.current=false
     }
     setMotionOpen(true)
+  }
+
+  /**
+   * ДВЕРЬ В ЧЕЛЛЕНДЖ С ГЛАВНОЙ.
+   *
+   * ГОСТЮ — ПРЕДЛОЖЕНИЕ АККАУНТА, А НЕ ФОРМА ОПЛАТЫ. Место в потоке
+   * привязывается к человеку: номер участника, результаты и приз держатся на
+   * аккаунте, а не на телефоне. Показать гостю кнопку «Купить билет» значило бы
+   * взять деньги за то, что не к кому привязать, — поэтому первый его шаг
+   * бесплатный и тот же, что во всех остальных дверях приложения.
+   */
+  const openChallenge=()=>{
+    if(guestMode){handleGuestValue('challenge',0);return}
+    openMotion('challenge')
   }
 
   const closeMotion=()=>{
@@ -11416,6 +11469,10 @@ export default function App() {
     // память гостя не под властью clearFitproData: она в модуле, а не в
     // хранилище, и пережила бы выход вместе с чужой едой и тренировками
     resetGuestStore()
+    // ...и по той же причине — прочитанное участие в потоке: оно лежит в
+    // памяти модуля, и следующий вошедший на этом же табе увидел бы чужой
+    // номер участника (или чужой открытый челлендж)
+    resetChallengeState()
     // Явный выход — состояние достоверно известно, экран "нет связи" тут
     // показывать нельзя: он перекрыл бы LandingPage, если баннер висел до этого.
     setAuthError(false)
@@ -11847,7 +11904,7 @@ export default function App() {
   const renderMain=()=>(
     <>
       <div data-testid="screen-workouts" style={{ display: nav==='workouts' ? 'block' : 'none' }}>
-        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} hasTrainer={hasCoach} coachSubExpired={coachSubExpired} accessLevel={access.level} openPlans={openPlans} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} onOpenConstructor={openConstructor} onOpenMotion={openMotion} guest={guestMode} />
+        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} hasTrainer={hasCoach} coachSubExpired={coachSubExpired} accessLevel={access.level} openPlans={openPlans} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} onOpenConstructor={openConstructor} onOpenMotion={()=>openMotion()} onOpenChallenge={openChallenge} guest={guestMode} />
       </div>
       {nav!=='workouts'&&renderOther()}
     </>
@@ -12135,6 +12192,7 @@ export default function App() {
       {motionOpen&&(
         <MotionOverlay
           onExit={closeMotion}
+          startScreen={motionStart}
           userId={user?.id}
           guest={guestMode}
           onGuestValue={handleGuestValue}

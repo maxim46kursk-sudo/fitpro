@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import {
   DAYS,
   DELOAD,
   INTENSITY,
   ORDER,
   FREE_DAYS,
-  UNLOCK_CODE,
   advanceDay,
   allDays,
   completeDay,
@@ -18,12 +17,11 @@ import {
   isDayDone,
   isUnlocked,
   movementsOf,
-  unlock,
-  unlockFromUrl,
   progress,
   resetProgress,
 } from './challenge.js'
 import { STRENGTH_TYPES } from './strength.js'
+import { KEYS, writeRaw } from '../storage.js'
 
 /**
  * ПЛАН ТРИДЦАТИ ДНЕЙ. Главное здесь — не формулы, а СВЕРКА С УТВЕРЖДЁННОЙ
@@ -306,42 +304,39 @@ describe('прогресс участника', () => {
     expect(dayPlayable(30)).toBe(false)
   })
 
-  it('код открывает челлендж целиком и навсегда', () => {
+  it('участник живого потока играет все тридцать дней', () => {
+    /**
+     * Это и есть новая дверь: место в потоке покупается билетом, и участие
+     * приходит В ПАРАМЕТРЕ — challenge.js в сеть не ходит и про сезоны ничего
+     * не знает (кто участник, знает src/challengeSeason.js).
+     */
+    expect(dayPlayable(6, true)).toBe(true)
+    expect(dayPlayable(30, true)).toBe(true)
+    // и это не портит счёт дней тому, кто не участник
+    expect(dayPlayable(6, false)).toBe(false)
+  })
+
+  it('не участник — ровно пять дней, чем бы ни было участие', () => {
+    // случайная правда вместо булева не должна открывать челлендж
+    for (const notMember of [false, undefined, null, 0, '', 'yes', 1, {}]) {
+      expect(dayPlayable(6, notMember)).toBe(false)
+    }
+  })
+
+  it('старый ключ доступа продолжает работать', () => {
+    /**
+     * Кода `?start=` больше нет, выдать этот флаг больше нечем — но у тех, кому
+     * доступ открыли раньше, он остался в хранилище. Забрать его нельзя:
+     * человек получил доступ честно, а объяснить ему пропажу нечем.
+     */
     expect(isUnlocked()).toBe(false)
-    expect(unlock(UNLOCK_CODE)).toBe(true)
+    expect(dayPlayable(6)).toBe(false)
+
+    writeRaw(KEYS.challengeUnlocked, '1')
 
     expect(isUnlocked()).toBe(true)
     expect(dayPlayable(6)).toBe(true)
     expect(dayPlayable(30)).toBe(true)
-  })
-
-  it('код принимается в любом регистре и с пробелами — его вводят с телефона', () => {
-    expect(unlock(` ${UNLOCK_CODE.toUpperCase()} `)).toBe(true)
-    expect(isUnlocked()).toBe(true)
-  })
-
-  it('чужой код не открывает ничего', () => {
-    for (const wrong of ['', ' ', 'start', UNLOCK_CODE + 'x', null, undefined, 1]) {
-      expect(unlock(wrong)).toBe(false)
-    }
-    expect(isUnlocked()).toBe(false)
-    expect(dayPlayable(6)).toBe(false)
-  })
-
-  it('код из адреса открывает челлендж в тот же заход', () => {
-    // человек переходит по ссылке от тренера один раз и дальше открывает игру
-    // как обычно
-    vi.stubGlobal('location', { search: `?start=${UNLOCK_CODE}`, hash: '' })
-    expect(unlockFromUrl()).toBe(true)
-    expect(isUnlocked()).toBe(true)
-    vi.unstubAllGlobals()
-  })
-
-  it('без ключа в адресе ничего не открывается', () => {
-    vi.stubGlobal('location', { search: '?day=6', hash: '' })
-    expect(unlockFromUrl()).toBe(false)
-    expect(isUnlocked()).toBe(false)
-    vi.unstubAllGlobals()
   })
 
   it('переход на шестой день не заблокирован: блокируется тренировка', () => {

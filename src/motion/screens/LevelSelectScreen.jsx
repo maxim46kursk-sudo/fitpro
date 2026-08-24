@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { MAX_ATTEMPTS, challengeTotal, daySummary, sessionResume } from '../game/day.js'
 import ResumeChoice from '../components/ResumeChoice.jsx'
 import {
-  CONTACT_URL,
   DAYS,
   FREE_DAYS,
   advanceDay,
@@ -38,24 +37,31 @@ export default function LevelSelectScreen({
   onSetup,
   /** Личный кабинет: счёт челленджа, показатели, история дней. */
   onRoom,
+  /** Экран челленджа: что это, почём место, номер участника. */
+  onChallenge = null,
   /** Переход состоялся — новый номер дня. Приложение обязано узнать: сессию
    *  собирает оно, и стартуй она по вчерашнему дню, переход был бы обманом. */
   onAdvance,
   challengeDay = 0,
   challengeDays = DAYS,
   /**
-   * Идут ли заходы этого человека в зачёт челленджа. Нет — счётчик попыток и
-   * правило трёх с экрана убираются, а уровни не гаснут: см. пояснение на
+   * УЧАСТНИК ЖИВОГО ПОТОКА. Отвечает сразу за две вещи: открыты ли дни после
+   * пятого и видны ли правила зачёта (счётчик попыток, правило трёх). Не
+   * участник — уровни не гаснут и счётчик не показывается: см. пояснение на
    * месте вызова (index.jsx). Сам зачёт при этом не меняется ни на строку.
+   *
+   * УМОЛЧАНИЕ — НЕ УЧАСТНИК, и это важнее удобства. Участие теперь означает
+   * оплаченное место в потоке; экран, отрисованный без этого пропса, откроет
+   * тридцать дней всякому, до кого ответ сервера не доехал.
    */
-  challengeMember = true,
+  challengeMember = false,
 }) {
   /**
    * Снимок берётся при монтировании и пересчитывается ТОЛЬКО по переходу дня:
    * пока человек стоит на экране, попытки измениться не могут, а вот переход
    * меняет разом всё — день, попытки, обе суммы.
    */
-  const [view, setView] = useState(() => readView(challengeDay))
+  const [view, setView] = useState(() => readView(challengeDay, challengeMember))
   /**
    * НЕЗАВЕРШЁННАЯ СЕССИЯ этого дня. Снимок берётся при монтировании: пока
    * человек стоит на экране, начаться она не может, а вернуться он сюда может
@@ -68,7 +74,7 @@ export default function LevelSelectScreen({
     const moved = advanceDay()
     if (!moved.advanced) return
     const next = Math.min(challengeDays, moved.day)
-    setView(readView(next))
+    setView(readView(next, challengeMember))
     onAdvance?.(next)
   }
 
@@ -143,7 +149,7 @@ export default function LevelSelectScreen({
           onContinue={(r) => onPick?.(r.tier, { resume: r })}
           onRestart={() => {
             setResume(null)
-            setView(readView(challengeDay))
+            setView(readView(challengeDay, challengeMember))
           }}
         />
       )}
@@ -186,18 +192,19 @@ export default function LevelSelectScreen({
             Продолжи — впереди ещё {challengeDays - FREE_DAYS} дней челленджа
           </div>
 
-          {/* Пустая ссылка кнопки не даёт: мёртвая «написать тренеру», ведущая
-              никуда, хуже её отсутствия */}
-          {CONTACT_URL && (
-            <a
+          {/* ДВЕРЬ В ЧЕЛЛЕНДЖ ровно там, где человек упёрся в границу. Раньше
+              здесь стояла ссылка «написать тренеру» — то есть предложение выйти
+              из приложения и ждать ответа. Теперь на том же месте экран, где
+              видно, что за поток, почём место и что в призовом фонде. */}
+          {onChallenge && (
+            <button
+              type="button"
               className="mt-wall__contact"
-              data-testid="wall-contact"
-              href={CONTACT_URL}
-              target="_blank"
-              rel="noopener noreferrer"
+              data-testid="wall-challenge"
+              onClick={onChallenge}
             >
-              Написать тренеру
-            </a>
+              Что за челлендж
+            </button>
           )}
         </div>
       )}
@@ -276,7 +283,7 @@ export default function LevelSelectScreen({
  * попытки, сумма дня и сумма челленджа. Собирай их по отдельности — и экран
  * успел бы показать новый день со вчерашними попытками.
  */
-function readView(number) {
+function readView(number, member = false) {
   /**
    * Цифры для плашки считает комната — той же функцией, что и на своём экране.
    * Второй расчёт тех же чисел разошёлся бы с первым: человек увидел бы одну
@@ -292,7 +299,7 @@ function readView(number) {
     runs: number > 0 ? dayRuns(number) : 0,
     challengeDone: isChallengeDone(),
     /** Можно ли сегодня тренироваться, или день за границей бесплатных пяти. */
-    playable: number <= 0 || dayPlayable(number),
+    playable: number <= 0 || dayPlayable(number, member),
     best: room.best,
     reactMs: room.reactMs,
   }
