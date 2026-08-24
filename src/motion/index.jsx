@@ -14,6 +14,7 @@ import { DEFAULT_TIER } from './game/levels.js'
 import { needsPersonalSetup } from './game/personal.js'
 import { DAYS, currentDay, forcedDay } from './game/challenge.js'
 import ChallengeScreen from './screens/ChallengeScreen.jsx'
+import StandingsScreen from './screens/StandingsScreen.jsx'
 import {
   CHALLENGE_PRICE,
   acceptRules,
@@ -22,6 +23,7 @@ import {
   hasNorm,
   loadChallengeState,
   loadNutritionFacts,
+  loadStandings,
 } from '../challengeSeason.js'
 import { useCamera } from './pose/useCamera.js'
 import { usePoseLandmarker } from './pose/usePoseLandmarker.js'
@@ -394,6 +396,23 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
     return () => { alive = false }
   }, [membership?.season?.id, membership?.entry])
 
+  /**
+   * ТАБЛИЦА ПОТОКА. Читается по требованию, а не вместе с разделом: строк в ней
+   * участники × тридцать дней, и тащить их каждому, кто просто зашёл в
+   * челлендж, незачем.
+   */
+  const [standingsRows, setStandingsRows] = useState(null)
+  const [standingsBusy, setStandingsBusy] = useState(false)
+  const openStandings = async () => {
+    setScreen('standings')
+    const seasonId = membership?.season?.id
+    if (!seasonId || standingsRows) return
+    setStandingsBusy(true)
+    const rows = await loadStandings(seasonId)
+    setStandingsRows(rows)
+    setStandingsBusy(false)
+  }
+
   /** Перечитать участие после покупки: до неё не участник, после — участник. */
   const refreshMembership = useCallback(() => {
     loadChallengeState({ guest, force: true }).then(setMembership)
@@ -518,7 +537,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
    * съёмку в ответ на такой вопрос значит спросить не то и не вовремя.
    * Уйдёт с экрана в игру — камера поднимется как обычно.
    */
-  const camera = useCamera({ enabled: !paused && screen !== 'challenge' })
+  const camera = useCamera({ enabled: !paused && screen !== 'challenge' && screen !== 'standings' })
   const pose = usePoseLandmarker({
     videoRef,
     // Инференс нужен на всех экранах: с экрана результата подход
@@ -734,6 +753,8 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
    * дождаться восьми мегабайт модели значит не ответить.
    */
   const inChallenge = screen === 'challenge' && !calibrating && !blockMovement
+  /** Таблица потока — такой же текстовый экран без камеры, как и челлендж. */
+  const inStandings = screen === 'standings' && !calibrating && !blockMovement
 
   return (
     <div className="mt-root">
@@ -744,7 +765,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
         showSkeleton={!blockingError}
       />
 
-      {blockingError && !inRoom && !inChallenge && (
+      {blockingError && !inRoom && !inChallenge && !inStandings && (
         <ErrorOverlay
           code={blockingError}
           detail={poseError ? pose.errorDetail : null}
@@ -759,7 +780,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
         />
       )}
 
-      {!blockingError && booting && !inRoom && !inChallenge && (
+      {!blockingError && booting && !inRoom && !inChallenge && !inStandings && (
         <BootOverlay
           cameraReady={camera.status === 'ready'}
           modelReady={pose.status === 'ready'}
@@ -779,6 +800,16 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
         />
       )}
 
+      {inStandings && (
+        <StandingsScreen
+          rows={standingsRows}
+          loading={standingsBusy}
+          startsOn={membership?.season?.starts_on}
+          title={membership?.season?.title ? `${membership.season.title} — таблица` : 'Таблица потока'}
+          onExit={() => setScreen('challenge')}
+        />
+      )}
+
       {inChallenge && (
         <ChallengeScreen
           state={membership}
@@ -793,6 +824,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
            * туда, где норма уже считается.
            */
           onFillNorm={() => onFillNorm?.()}
+          onStandings={openStandings}
           /**
            * ВСТУПЛЕНИЕ ОДНОЙ ДОРОГОЙ: сперва фиксируем согласие В БАЗЕ, и
            * только если оно записалось — открываем оплату. Обратный порядок
@@ -1032,7 +1064,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
       {/* Тумблер звука на правилах не нужен и мешает: он живёт в том же нижнем
           углу, что и главная кнопка, и накрывает её собой. Читают правила без
           звука — прятать его тут ничего не стоит. */}
-      {!inChallenge && <AudioToggle />}
+      {!inChallenge && !inStandings && <AudioToggle />}
       <DebugPanel onSelectCamera={camera.selectDevice} />
     </div>
   )

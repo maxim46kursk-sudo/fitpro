@@ -4065,3 +4065,165 @@
   font-size: 14px;
   color: rgba(235, 235, 245, 0.62);
 }
+
+/* ── таблица потока ────────────────────────────────────────────────────────── */
+
+.mt-st,
+.mt-st * {
+  box-sizing: border-box;
+}
+
+.mt-st {
+  justify-content: flex-start;
+  padding: 0;
+  overflow: hidden;
+  pointer-events: auto;
+  background: #0b0b0d;
+  color: #fff;
+}
+
+.mt-st .mt-rest__veil {
+  display: none;
+}
+
+.mt-st__head {
+  flex: none;
+  width: 100%;
+  padding: calc(52px + env(safe-area-inset-top, 0px)) 16px 10px;
+  text-align: center;
+}
+
+.mt-st__title {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.mt-st__sub {
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: rgba(235, 235, 245, 0.34);
+}
+
+.mt-st__empty {
+  margin: 20px 22px;
+  padding: 18px 18px;
+  border: 1px dashed rgba(157, 150, 255, 0.4);
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: rgba(235, 235, 245, 0.62);
+  text-align: center;
+}
+
+/* Пять колонок одной сеткой: шапка и строки обязаны совпадать по столбцам, а
+   двух разных сеток для этого не надо. */
+.mt-st__cols,
+.mt-st__row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 68px 46px 38px;
+  gap: 8px;
+  align-items: center;
+}
+
+.mt-st__cols {
+  flex: none;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 0 16px 8px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(235, 235, 245, 0.34);
+}
+
+.mt-st__cols span:nth-child(3),
+.mt-st__cols span:nth-child(4),
+.mt-st__cols span:nth-child(5) {
+  text-align: right;
+}
+
+.mt-st__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 0 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mt-st__row {
+  padding: 11px 12px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: #1c1c1e;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Своя строка — сразу видно, где ты. */
+.mt-st__row.is-me {
+  background: rgba(124, 122, 240, 0.14);
+  border-color: rgba(157, 150, 255, 0.45);
+}
+
+/*
+ * ПРИЛИПШАЯ КОПИЯ СВОЕЙ СТРОКИ. В таблице на сорок человек своё место ищут
+ * первым: уехала за экран — показываем её у края, с той стороны, куда уехала.
+ */
+.mt-st__row.is-pinned {
+  flex: none;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto 8px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
+}
+
+.mt-st__place {
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.mt-st__row:nth-child(-n + 3) .mt-st__place {
+  color: #ffd166;
+}
+
+.mt-st__who {
+  min-width: 0;
+}
+
+.mt-st__name {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mt-st__row.is-me .mt-st__name {
+  color: #9d96ff;
+}
+
+.mt-st__no {
+  margin-top: 1px;
+  font-size: 11px;
+  color: rgba(235, 235, 245, 0.34);
+}
+
+.mt-st__v {
+  font-size: 13.5px;
+  text-align: right;
+  color: rgba(235, 235, 245, 0.62);
+}
+
+.mt-st__sum {
+  font-size: 16px;
+  font-weight: 800;
+  text-align: right;
+  color: #78e6be;
+}

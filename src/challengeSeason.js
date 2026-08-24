@@ -181,6 +181,27 @@ export async function loadNutritionFacts(seasonId) {
 }
 
 /**
+ * ТАБЛИЦА ПОТОКА — сырьё по всем участникам (challenge_standings).
+ *
+ * Мест и процентов тут нет: считает их src/challengeStandings.js. Читать может
+ * только участник этого потока — посторонний получает отказ, и это правильно:
+ * пустая таблица читалась бы как «в потоке никого».
+ *
+ * @returns {Promise<object[]>} пустой массив, если спросить не удалось
+ */
+export async function loadStandings(seasonId) {
+  if (!seasonId) return []
+  try {
+    const { data, error } = await supabase.rpc('challenge_standings', { p_season_id: seasonId })
+    if (error) throw error
+    return Array.isArray(data) ? data : []
+  } catch (e) {
+    console.warn('challenge: не удалось прочитать таблицу потока', e?.message || e)
+    return []
+  }
+}
+
+/**
  * ЗАМОРОЗИТЬ НОРМУ. Зовётся при открытии челленджа участником и ничего не
  * решает сама: какой сегодня день потока и пора ли снимать второй слепок,
  * считает база (sql/2026-08-25_challenge_nutrition.sql). Идемпотентна — уже

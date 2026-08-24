@@ -10,12 +10,11 @@
  *     npm run shots:challenge -- --only fight
  *     npm run shots:challenge -- --preview        # снять и проверить саму страницу
  *
- * ЧТО ЗДЕСЬ НАСТОЯЩЕЕ. Три снимка из четырёх — живые экраны приложения: тот же
- * код, та же сборка, тот же MediaPipe. Подменена ровно камера — записью живых
- * движений (tools/motion-persona/camera.js), как в прогоне персонажа. Четвёртый
- * (таблица участников) экраном ещё не стал: его макет лежит в
- * scripts/challenge-shots/mockups и собран в палитре приложения — когда экран
- * будут делать, макет и станет его основой.
+ * ЧТО ЗДЕСЬ НАСТОЯЩЕЕ. Все четыре снимка — живые экраны приложения: тот же код,
+ * та же сборка, тот же MediaPipe. Подменена ровно камера — записью живых
+ * движений (tools/motion-persona/camera.js), как в прогоне персонажа, и сеть.
+ * Таблица участников снимается так же: настоящий StandingsScreen на подставленном
+ * сырье, а не нарисованный рядом макет.
  *
  * НИ ПРОДА, НИ АККАУНТОВ. Всё поднимается местным сервером на 4195, а данные для
  * экранов FitPro (профиль, норма, дневник) подставляются перехватом сети прямо в
@@ -40,7 +39,6 @@ const ROOT = here('../')
 const APP_DIST = here('../dist')
 const HARNESS_DIST = here('../tools/.cache/challenge-harness')
 const ASSETS = here('../tools/.cache/motion-assets')
-const MOCKUPS = here('./challenge-shots/mockups')
 const OUT = here('../public/challenge')
 
 const PORT = 4195
@@ -108,7 +106,6 @@ const TYPES = {
 const WASM_DIR = `${ROOT}node_modules/@mediapipe/tasks-vision/wasm`
 
 function resolve(url) {
-  if (url.startsWith('/mock/')) return `${MOCKUPS}/${url.slice('/mock/'.length)}`
   // Картинки правил — прямо из public, а не из собранного dist: проверка в
   // конце обязана смотреть на только что снятые файлы, а не на те, что попали
   // в сборку до съёмки.
@@ -218,6 +215,49 @@ const SEASON = {
   challenge_rules_consent: [{ accepted_at: '2026-08-20T09:00:00Z' }],
 }
 
+/**
+ * СЫРЬЁ ТАБЛИЦЫ ПОТОКА — то, что отдаёт challenge_standings: участник × день.
+ * Расклад тот же, что нарисован человеку в правилах: Аня третья в движении и
+ * первая в питании обгоняет Игоря, первого в игре и пятого в еде.
+ */
+const STANDINGS = (() => {
+  const NORM = { norm_kcal: 2000, norm_p: 120, norm_f: 65, norm_c: 220 }
+  const people = [
+    { no: 7, name: 'Ирина К.', me: true, score: 4280, eat: 0.98, done: 30 },
+    { no: 3, name: 'Максим Д.', score: 4710, eat: 0.82, done: 30 },
+    { no: 18, name: 'Алексей П.', score: 3990, eat: 0.93, done: 29 },
+    { no: 25, name: 'Ольга С.', score: 3270, eat: 0.95, done: 30 },
+    { no: 11, name: 'Дмитрий В.', score: 3500, eat: 0.78, done: 27 },
+    { no: 31, name: 'Наталья Ж.', score: 2950, eat: 0.9, done: 26 },
+    { no: 5, name: 'Сергей Т.', score: 3170, eat: 0.7, done: 24 },
+    { no: 22, name: 'Павел Н.', score: 2600, eat: 0.66, done: 21 },
+  ]
+  const rows = []
+  for (const person of people) {
+    for (let day = 1; day <= 30; day += 1) {
+      // поток пройден целиком: на картинке показываем итог, а не середину, где
+      // средний процент питания заведомо ниже — делится он на все тридцать дней
+      const played = true
+      const eat = person.eat
+      rows.push({
+        participant_no: person.no,
+        display_name: person.name,
+        is_me: !!person.me,
+        days_done: person.done,
+        day,
+        best_score: played ? person.score : 0,
+        kcal: 2000 * eat,
+        p: 120 * eat,
+        f: 65 * eat,
+        c: 220 * eat,
+        meals: played ? 4 : 0,
+        ...NORM,
+      })
+    }
+  }
+  return rows
+})()
+
 const TABLE_DATA = {
   profiles: [PROFILE],
   food_goals: [GOALS],
@@ -245,7 +285,7 @@ const SESSION = {
   },
 }
 
-async function mockBackend(page, { season = true, consent = true } = {}) {
+async function mockBackend(page, { season = true, consent = true, seasonStart = null } = {}) {
   await page.route('**/auth/v1/**', (route) => {
     const url = route.request().url()
     const body = /\/user/.test(url) ? SESSION.user : SESSION
@@ -255,6 +295,14 @@ async function mockBackend(page, { season = true, consent = true } = {}) {
   await page.route('**/rest/v1/**', (route) => {
     const req = route.request()
     const table = (new URL(req.url()).pathname.split('/rest/v1/')[1] || '').split('?')[0]
+    // Таблица потока приходит функцией, а не таблицей: отвечаем тем же сырьём,
+    // что отдала бы база живому участнику.
+    if (table === 'rpc/challenge_standings') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(STANDINGS) })
+    }
+    if (table.startsWith('rpc/')) {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    }
     // Участие в потоке подставляется НЕ ВСЕГДА: пятый экран правил показывает
     // выбор уровня обычному человеку (три карточки), шестой — участнику, у
     // которого считаются попытки. Это два разных экрана, и разводит их ровно
@@ -265,6 +313,9 @@ async function mockBackend(page, { season = true, consent = true } = {}) {
       // «карточка на главной → правила», и так же выглядит первый заход.
       if (!season) rows = []
       else if (!consent) rows = [{ ...SEASON, challenge_entries: [], challenge_rules_consent: [] }]
+      // Снимку таблицы нужен поток, который УЖЕ ИДЁТ: до старта таблица
+      // честно пуста, и снимать в ней нечего.
+      if (seasonStart && rows.length) rows = [{ ...rows[0], starts_on: seasonStart }]
     }
     // maybeSingle()/single() просят объект, а не массив — supabase-js говорит об
     // этом заголовком Accept, и ответ обязан быть в той же форме
@@ -332,9 +383,9 @@ async function warmUp(page) {
  * Экран Motion: поднять страницу съёмки, засеять данные, смонтировать раздел.
  * seed и props — то, чем один снимок отличается от другого.
  */
-async function motionPage({ seed = null, props = {}, query = '', season = true, screen = null } = {}) {
+async function motionPage({ seed = null, props = {}, query = '', season = true, screen = null, seasonStart = null } = {}) {
   const page = await newPage({ screen })
-  await mockBackend(page, { season })
+  await mockBackend(page, { season, seasonStart })
   await page.goto(`${BASE}/harness.html${query}`, { waitUntil: 'domcontentloaded' })
   await warmUp(page)
   if (seed) await page.evaluate((s) => window.__shots.seed(s), seed)
@@ -592,10 +643,18 @@ if (want('diary')) {
 
 // ── ТАБЛИЦА УЧАСТНИКОВ: экрана ещё нет, снимаем макет ────────────────────────
 if (want('table')) {
-  say('table — макет таблицы участников')
-  const page = await newPage()
-  await page.goto(`${BASE}/mock/table.html`, { waitUntil: 'load' })
-  await wait(300)
+  /**
+   * НАСТОЯЩИЙ ЭКРАН, А НЕ МАКЕТ. Таблица потока теперь есть в приложении
+   * (StandingsScreen), и картинка на странице обязана показывать её, а не
+   * нарисованную рядом похожую. Данные подставлены перехватом — как и всюду в
+   * этом скрипте, живого потока для снимка мы не заводим.
+   */
+  say('table — таблица потока, настоящий экран')
+  const page = await motionPage({ seasonStart: '2026-07-27', props: { startScreen: 'challenge' } })
+  await page.waitForSelector('[data-testid="challenge-screen"]', { timeout: 60000 })
+  await page.locator('[data-testid="challenge-standings"]').click()
+  await page.waitForSelector('[data-testid="standings-list"]', { timeout: 30000 })
+  await wait(600)
   await shoot(page, 'table')
   await page.context().close()
 }
@@ -610,7 +669,8 @@ if (want('table')) {
  */
 async function toWebp(buf) {
   const page = await newPage({ mobile: false })
-  await page.goto(`${BASE}/mock/table.html`, { waitUntil: 'domcontentloaded' })
+  // Странице нужен лишь холст: пустая вкладка сгодится, лишнего не грузим.
+  await page.goto('about:blank')
   const dataUrl = await page.evaluate(
     async ([b64, width, maxBytes]) => {
       const img = new Image()

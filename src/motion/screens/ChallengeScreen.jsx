@@ -102,6 +102,7 @@ const money = (n) =>
  * @param {() => void} [props.onFillNorm] увести на экран нормы в дневнике.
  * @param {object[]} [props.nutrition] сырьё по питанию за поток: тридцать строк
  *   из challenge_nutrition_facts. Проценты по ним считает challengeNutrition.js.
+ * @param {() => void} [props.onStandings] открыть таблицу потока.
  */
 export default function ChallengeScreen({
   state = null,
@@ -115,6 +116,7 @@ export default function ChallengeScreen({
   hasNorm = true,
   onFillNorm = null,
   nutrition = null,
+  onStandings = null,
 }) {
   const season = state?.season || null
   const entry = state?.entry || null
@@ -224,6 +226,19 @@ export default function ChallengeScreen({
           </div>
 
           <Nutrition rows={nutrition} startsOn={season?.starts_on} hasNorm={hasNorm} onFillNorm={onFillNorm} />
+
+          {/* Таблица потока — рядом со своим номером: «где я среди остальных»
+              спрашивают сразу после «какой у меня номер». */}
+          {onStandings && (
+            <button
+              type="button"
+              className="mt-ch__btn mt-ch__btn--line"
+              data-testid="challenge-standings"
+              onClick={onStandings}
+            >
+              Таблица потока
+            </button>
+          )}
 
           <button type="button" className="mt-ch__btn" data-testid="challenge-room-exit" onClick={onExit}>
             Понятно
