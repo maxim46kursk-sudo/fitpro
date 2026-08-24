@@ -67,6 +67,32 @@ export default async function handler(req, res) {
   // Платёж, которому не нашлось сезона, вебхук запишет в журнал и поднимет
   // тревогу — деньги не потеряются.
   if (isChallenge) {
+    /**
+     * БЕЗ НОРМЫ БИЛЕТ НЕ ПРОДАЁТСЯ.
+     *
+     * Питание — половина зачёта: место в челлендже складывается из места в
+     * движении и места в питании. Человек без дневной нормы играет заведомо
+     * половину, и продать ему билет — значит взять деньги за проигранный
+     * челлендж. Норма при этом делом одной минуты: рост, вес, цель — и
+     * приложение считает её само.
+     *
+     * Проверка стоит НА СЕРВЕРЕ, а не только на экране: кнопку можно обойти
+     * прямым запросом, а деньги списываются по-настоящему.
+     */
+    const { data: goals, error: goalsErr } = await supabaseAdmin
+      .from('food_goals').select('kcal, p, c, f').eq('user_id', userId).maybeSingle()
+    if (goalsErr) {
+      console.error(`create-payment: ошибка чтения нормы ${userId}:`, goalsErr)
+      return res.status(500).json({ error: 'Не удалось проверить норму питания' })
+    }
+    if (!goals || !(Number(goals.kcal) > 0)) {
+      console.warn(`create-payment: ${userId} без нормы питания — билет не выписываем`)
+      return res.status(409).json({
+        error: 'Сначала заполни данные о себе — по ним считается дневная норма. Питание в челлендже половина зачёта, без нормы участвовать не в чем',
+        reason: 'no_goals',
+      })
+    }
+
     const { data: openSeasons, error: seasonErr } = await supabaseAdmin
       .from('challenge_seasons').select('id').eq('status', 'open')
     if (seasonErr) {

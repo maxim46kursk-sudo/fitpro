@@ -63,6 +63,9 @@ vi.mock('../challengeSeason.js', () => ({
   ),
   buyTicket: vi.fn(async () => ({ ok: true })),
   acceptRules: vi.fn(async () => ({ ok: true })),
+  hasNorm: vi.fn(() => true),
+  freezeNorm: vi.fn(async () => 'already'),
+  loadNutritionFacts: vi.fn(async () => []),
 }))
 
 beforeEach(() => {

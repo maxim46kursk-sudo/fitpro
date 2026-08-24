@@ -14,7 +14,15 @@ import { DEFAULT_TIER } from './game/levels.js'
 import { needsPersonalSetup } from './game/personal.js'
 import { DAYS, currentDay, forcedDay } from './game/challenge.js'
 import ChallengeScreen from './screens/ChallengeScreen.jsx'
-import { CHALLENGE_PRICE, acceptRules, buyTicket, loadChallengeState } from '../challengeSeason.js'
+import {
+  CHALLENGE_PRICE,
+  acceptRules,
+  buyTicket,
+  freezeNorm,
+  hasNorm,
+  loadChallengeState,
+  loadNutritionFacts,
+} from '../challengeSeason.js'
 import { useCamera } from './pose/useCamera.js'
 import { usePoseLandmarker } from './pose/usePoseLandmarker.js'
 import { useLandscapeBlock } from './device/useOrientation.js'
@@ -83,7 +91,7 @@ import './motion.css'
  *   остальное (камера, калибровка, уровни) на этом пути не нужно и не должно
  *   стоять между ним и ответом.
  */
-export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null } = {}) {
+export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null } = {}) {
   /**
    * ГОСТЬ ПИШЕТ В ПАМЯТЬ, А НЕ НА УСТРОЙСТВО — и решается это здесь, раньше
    * всего остального.
@@ -250,6 +258,7 @@ export default function MotionApp({ onExit, day, tier, paused = false, log = nul
         guestMotion={guestMotion}
         onGuestMotionApplied={onGuestMotionApplied}
         startScreen={startScreen}
+        onFillNorm={onFillNorm}
       />
     </ErrorBoundary>
   )
@@ -311,7 +320,7 @@ function readBlockMode() {
   }
 }
 
-function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null }) {
+function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null }) {
   // calibration | setup | levels | room | challenge | workout | result
   // выбор уровня и настройка под себя — только в игре
   const [screen, setScreen] = useState(startScreen === 'challenge' ? 'challenge' : 'calibration')
@@ -364,6 +373,26 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
     return () => { alive = false }
   }, [guest, startScreen])
   const member = !!membership?.entry
+
+  /**
+   * ПИТАНИЕ УЧАСТНИКА. Сырьё за поток приезжает отдельным запросом и только
+   * участнику: не участнику показывать нечего, а лишний запрос на каждый заход
+   * в раздел он бы всё равно сделал.
+   *
+   * Тем же заходом просим базу заморозить норму: пора ли снимать второй слепок,
+   * решает она сама по дате старта (sql/2026-08-25_challenge_nutrition.sql), —
+   * приложение только даёт ей повод посмотреть.
+   */
+  const [nutrition, setNutrition] = useState(null)
+  useEffect(() => {
+    const seasonId = membership?.season?.id
+    if (!seasonId || !membership?.entry) return undefined
+    let alive = true
+    freezeNorm(seasonId)
+      .then(() => loadNutritionFacts(seasonId))
+      .then((rows) => { if (alive) setNutrition(rows) })
+    return () => { alive = false }
+  }, [membership?.season?.id, membership?.entry])
 
   /** Перечитать участие после покупки: до неё не участник, после — участник. */
   const refreshMembership = useCallback(() => {
@@ -756,6 +785,14 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
           loading={membership === undefined}
           fallbackPrice={CHALLENGE_PRICE}
           guest={guest}
+          hasNorm={hasNorm(membership)}
+          nutrition={nutrition}
+          /**
+           * НОРМУ ЗАПОЛНЯЮТ НЕ ЗДЕСЬ. Дневник питания живёт в хозяине, и раздел
+           * своей формы для него не рисует — он лишь просит увести человека
+           * туда, где норма уже считается.
+           */
+          onFillNorm={() => onFillNorm?.()}
           /**
            * ВСТУПЛЕНИЕ ОДНОЙ ДОРОГОЙ: сперва фиксируем согласие В БАЗЕ, и
            * только если оно записалось — открываем оплату. Обратный порядок

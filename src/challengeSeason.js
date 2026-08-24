@@ -53,6 +53,24 @@ let state
 /** Запрос в полёте: два экрана, открытые подряд, не должны спрашивать дважды. */
 let pending = null
 
+/**
+ * ДНЕВНАЯ НОРМА ЧЕЛОВЕКА — вторым запросом, параллельно сезону.
+ *
+ * Вложением её не взять: food_goals с сезонами не связана и связываться не
+ * должна — норма живёт у человека, а не у потока. Зато запрос уходит вместе с
+ * первым и ничего не задерживает, а знать её экрану необходимо: без нормы
+ * билет не продаётся (api/create-payment.js), и говорить об этом надо ДО
+ * нажатия, а не отказом после.
+ */
+async function readGoals() {
+  const { data, error } = await supabase
+    .from('food_goals')
+    .select('kcal, p, c, f')
+    .maybeSingle()
+  if (error) throw error
+  return data || null
+}
+
 async function readState() {
   const { data, error } = await supabase
     .from('challenge_seasons')
@@ -67,6 +85,7 @@ async function readState() {
 
   const rows = Array.isArray(data) ? data : []
   if (!rows.length) return null
+  const goals = await readGoals()
 
   /**
    * Сезон, в котором человек уже состоит, важнее просто открытого: пока идёт
@@ -86,6 +105,12 @@ async function readState() {
      * момент зачисления; здесь берём ту, что старше и первичнее.
      */
     rulesAcceptedAt: consent?.[0]?.accepted_at || entries?.[0]?.rules_accepted_at || null,
+    /**
+     * Норма питания человека на сейчас. Нужна ровно для одного вопроса: можно
+     * ли ему вообще продавать билет. Зачёт считается не по ней, а по слепку,
+     * снятому при вступлении (challenge_entries.norm1/norm2).
+     */
+    goals,
   }
 }
 
@@ -128,6 +153,50 @@ export const isChallengeMember = (value = challengeState()) => !!value?.entry
 
 /** Читал ли человек правила этого потока и согласился ли с ними. */
 export const hasAcceptedRules = (value = challengeState()) => !!value?.rulesAcceptedAt
+
+/**
+ * Есть ли у человека дневная норма. Ноль калорий — это «нормы нет»: строка в
+ * food_goals заводится и пустой, и считать по ней нечего.
+ */
+export const hasNorm = (value = challengeState()) => Number(value?.goals?.kcal) > 0
+
+/**
+ * СЫРЬЁ ПО ПИТАНИЮ ЗА ПОТОК. Тридцать строк: съеденное за день, число разных
+ * приёмов пищи и норма, по которой день судится. Процентов тут нет и не будет —
+ * их считает src/challengeNutrition.js, один судья на приложение, тесты и
+ * будущий рейтинг.
+ *
+ * @returns {Promise<object[]>} пустой массив, если спросить не удалось
+ */
+export async function loadNutritionFacts(seasonId) {
+  if (!seasonId) return []
+  try {
+    const { data, error } = await supabase.rpc('challenge_nutrition_facts', { p_season_id: seasonId })
+    if (error) throw error
+    return Array.isArray(data) ? data : []
+  } catch (e) {
+    console.warn('challenge: не удалось прочитать питание', e?.message || e)
+    return []
+  }
+}
+
+/**
+ * ЗАМОРОЗИТЬ НОРМУ. Зовётся при открытии челленджа участником и ничего не
+ * решает сама: какой сегодня день потока и пора ли снимать второй слепок,
+ * считает база (sql/2026-08-25_challenge_nutrition.sql). Идемпотентна — уже
+ * снятый слепок не переписывается никогда.
+ */
+export async function freezeNorm(seasonId) {
+  if (!seasonId) return null
+  try {
+    const { data, error } = await supabase.rpc('challenge_freeze_norm', { p_season_id: seasonId })
+    if (error) throw error
+    return data || null
+  } catch (e) {
+    console.warn('challenge: не удалось заморозить норму', e?.message || e)
+    return null
+  }
+}
 
 /**
  * ЗАФИКСИРОВАТЬ СОГЛАСИЕ С ПРАВИЛАМИ — в базе, а не в браузере.

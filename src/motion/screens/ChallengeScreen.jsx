@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { MIN_MEALS, dayScore, streamScore } from '../../challengeNutrition.js'
 
 /**
  * ЧЕЛЛЕНДЖ — ОДНА ДЛИННАЯ СТРАНИЦА, по которой человек решает, платить ли.
@@ -96,6 +97,11 @@ const money = (n) =>
  * @param {() => void} [props.onRefresh] перечитать участие.
  * @param {boolean} [props.loading] участие ещё читается с сервера.
  * @param {number} [props.fallbackPrice] объявленная цена, пока сезона нет.
+ * @param {boolean} [props.hasNorm] есть ли у человека дневная норма питания.
+ *   Нет — билет не продаётся: питание половина зачёта (api/create-payment.js).
+ * @param {() => void} [props.onFillNorm] увести на экран нормы в дневнике.
+ * @param {object[]} [props.nutrition] сырьё по питанию за поток: тридцать строк
+ *   из challenge_nutrition_facts. Проценты по ним считает challengeNutrition.js.
  */
 export default function ChallengeScreen({
   state = null,
@@ -106,6 +112,9 @@ export default function ChallengeScreen({
   onExit = null,
   loading = false,
   fallbackPrice = 0,
+  hasNorm = true,
+  onFillNorm = null,
+  nutrition = null,
 }) {
   const season = state?.season || null
   const entry = state?.entry || null
@@ -213,6 +222,8 @@ export default function ChallengeScreen({
               данные о себе и втягивайся.
             </p>
           </div>
+
+          <Nutrition rows={nutrition} startsOn={season?.starts_on} hasNorm={hasNorm} onFillNorm={onFillNorm} />
 
           <button type="button" className="mt-ch__btn" data-testid="challenge-room-exit" onClick={onExit}>
             Понятно
@@ -656,7 +667,10 @@ export default function ChallengeScreen({
             </>
           ) : (
             <>
-              {/* Галочка и есть «дочитал»: чтобы до неё добраться, правила надо прокрутить. */}
+              {/* Галочка и есть «дочитал»: чтобы до неё добраться, правила надо
+                  прокрутить. Без нормы её не показываем вовсе — соглашаться
+                  пока не с чем, человеку сперва в дневник. */}
+              {hasNorm && (
               <label className={`mt-ch__agree ${agreed ? 'is-on' : ''}`}>
                 <input
                   type="checkbox"
@@ -667,16 +681,41 @@ export default function ChallengeScreen({
                 <i aria-hidden="true">{agreed ? '✓' : ''}</i>
                 <span>Я прочитал правила и согласен</span>
               </label>
+              )}
 
-              <button
-                type="button"
-                className="mt-ch__btn"
-                data-testid="challenge-join"
-                disabled={!agreed || busy || !season}
-                onClick={join}
-              >
-                {!season ? 'Набор пока закрыт' : busy ? 'Открываю оплату…' : `Участвовать — ${priceLabel}`}
-              </button>
+              {/**
+                * БЕЗ НОРМЫ БИЛЕТ НЕ ПРОДАЁТСЯ. Питание — половина зачёта, и
+                * человек без дневной нормы играл бы заведомо половину. Поэтому
+                * не отказ после нажатия, а другая кнопка: она ведёт туда, где
+                * норма считается за минуту. Сервер держит то же правило
+                * (api/create-payment.js) — экран лишь говорит об этом заранее.
+                */}
+              {hasNorm ? (
+                <button
+                  type="button"
+                  className="mt-ch__btn"
+                  data-testid="challenge-join"
+                  disabled={!agreed || busy || !season}
+                  onClick={join}
+                >
+                  {!season ? 'Набор пока закрыт' : busy ? 'Открываю оплату…' : `Участвовать — ${priceLabel}`}
+                </button>
+              ) : (
+                <>
+                  <p className="mt-ch__guestNote" data-testid="challenge-no-norm">
+                    Питание — половина зачёта, и считается оно от твоей дневной нормы. Заполни
+                    данные о себе: пол, возраст, рост, вес, цель — норму приложение посчитает само.
+                  </p>
+                  <button
+                    type="button"
+                    className="mt-ch__btn"
+                    data-testid="challenge-fill-norm"
+                    onClick={() => onFillNorm?.()}
+                  >
+                    Заполнить данные о себе
+                  </button>
+                </>
+              )}
             </>
           )}
 
@@ -703,7 +742,7 @@ export default function ChallengeScreen({
         <div className={`mt-ch__bar ${barOn ? 'is-on' : ''}`} data-testid="challenge-bar">
           <div className="mt-ch__barPrice">{priceLabel}</div>
           <button type="button" className="mt-ch__btn" data-testid="challenge-bar-join" onClick={() => scrollTo(endRef)}>
-            Участвовать
+            {hasNorm ? 'Участвовать' : 'Что нужно'}
           </button>
         </div>
       )}
@@ -711,6 +750,67 @@ export default function ChallengeScreen({
       <button className="mt-corner mt-corner--left mt-ch__close" onClick={onExit} aria-label="Назад">✕</button>
     </div>
   )
+}
+
+/**
+ * ПИТАНИЕ УЧАСТНИКА — три числа и ни одного лишнего.
+ *
+ * Считает их src/challengeNutrition.js по сырью из базы: процент за сегодня,
+ * средний за поток и сколько дней вообще засчитано. Средний по потоку делится
+ * на ВСЕ тридцать дней, а не на заполненные, — иначе три честных дня из
+ * тридцати выглядели бы как отличный результат.
+ */
+function Nutrition({ rows, startsOn, hasNorm, onFillNorm }) {
+  if (!Array.isArray(rows) || !rows.length) return null
+
+  const norms = (row) => ({ kcal: row.norm_kcal, p: row.norm_p, f: row.norm_f, c: row.norm_c })
+  const scores = rows.map((row) => dayScore(row, norms(row), row.meals))
+
+  const today = dayOfStream(startsOn)
+  const todayRow = today && today >= 1 && today <= rows.length ? scores[today - 1] : null
+  const counted = scores.filter((d) => d.counted).length
+  const average = streamScore(scores, rows.length)
+  const pct = (v) => `${Math.round(v)}%`
+
+  return (
+    <div className="mt-ch__nutri" data-testid="challenge-nutrition">
+      <div className="mt-ch__nutriTitle">Питание</div>
+
+      {hasNorm ? (
+        <div className="mt-ch__nutriRows">
+          <div className="mt-ch__nutriRow">
+            <span>Сегодня</span>
+            <b data-testid="nutri-today">
+              {todayRow ? (todayRow.counted ? pct(todayRow.score) : `меньше ${MIN_MEALS} приёмов`) : '—'}
+            </b>
+          </div>
+          <div className="mt-ch__nutriRow">
+            <span>Средний за поток</span>
+            <b data-testid="nutri-average">{pct(average)}</b>
+          </div>
+          <div className="mt-ch__nutriRow">
+            <span>Дней с дневником</span>
+            <b data-testid="nutri-days">{counted} из {rows.length}</b>
+          </div>
+        </div>
+      ) : (
+        <button type="button" className="mt-ch__btn mt-ch__btn--line" data-testid="nutri-fill" onClick={() => onFillNorm?.()}>
+          Заполнить данные о себе
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** Какой сегодня день потока. null — даты старта нет или поток ещё не начался. */
+function dayOfStream(startsOn) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(startsOn || ''))
+  if (!m) return null
+  const start = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const day = Math.round((today - start) / 86400000) + 1
+  return day >= 1 ? day : null
 }
 
 /** Шаг «как это работает»: номер, заголовок, текст и снимок экрана. */

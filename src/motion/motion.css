@@ -4016,6 +4016,50 @@
   width: 100%;
 }
 
+/* ── питание участника в комнате ───────────────────────────────────────────── */
+
+.mt-ch__nutri {
+  width: 100%;
+  margin: 0 0 16px;
+  padding: 16px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background: #1c1c1e;
+  text-align: left;
+}
+
+.mt-ch__nutriTitle {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(235, 235, 245, 0.34);
+  margin-bottom: 10px;
+}
+
+.mt-ch__nutriRows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mt-ch__nutriRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  color: rgba(235, 235, 245, 0.62);
+}
+
+.mt-ch__nutriRow b {
+  font-size: 16px;
+  font-weight: 800;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .mt-ch__loading {
   margin: auto;
   font-size: 14px;

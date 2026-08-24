@@ -123,6 +123,12 @@ function writeCache(guest, readOnly, byDate) {
   try { localStorage.setItem('fitpro_food_diary', JSON.stringify(byDate)) } catch { /* приватный режим */ }
 }
 
+/**
+ * Просьба открыть экран «Норма» — событием окна: см. подписку внутри дневника
+ * и вызов из App.jsx (челлендж уводит сюда того, у кого нормы нет).
+ */
+export const OPEN_GOALS_EVENT = 'fitpro:open-food-goals'
+
 export default function FoodDiary({ userId, readOnly = false, readOnlyName = '', onClose, embedded = false, headerLeft = null, guest = false, onGuestValue = null }) {
 
 
@@ -189,6 +195,26 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
     else onClose?.()
   }
   const openGoals = () => { setGearOpen(false); setGoalsForm(foodGoals); setStack(st => pushScreen(st, { type: GOALS })) }
+
+  /**
+   * ОТКРЫТЬ «НОРМУ» ПО ПРОСЬБЕ СНАРУЖИ.
+   *
+   * Челлендж не продаёт билет без дневной нормы и уводит человека сюда; попади
+   * он на экран дня, шестерёнку в углу он искал бы сам. Просьба приходит
+   * событием окна, а не пропсом: дневник смонтирован всё время (см.
+   * NutritionTab), и флаг пришлось бы гасить обратно, а между этими двумя
+   * местами в App.jsx полторы тысячи строк. Подписка на внешнее событие —
+   * ровно то, для чего эффекты и нужны.
+   */
+  useEffect(() => {
+    const open = () => {
+      setGearOpen(false)
+      setGoalsForm(foodGoals)
+      setStack(st => (currentScreen(st)?.type === GOALS ? st : pushScreen(st, { type: GOALS })))
+    }
+    window.addEventListener(OPEN_GOALS_EVENT, open)
+    return () => window.removeEventListener(OPEN_GOALS_EVENT, open)
+  }, [foodGoals])
   const openSummary = () => {
     setGearOpen(false)
     const [y, m] = foodDate.split('-').map(Number)

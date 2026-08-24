@@ -21,7 +21,7 @@ import { VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, ef
 // clampNum нужен полям профиля (вес/рост). Пределы питания уехали вместе с
 // разделом в src/FoodDiary.jsx.
 import { clampNum } from './nutrition.js'
-import FoodDiary from './FoodDiary.jsx'
+import FoodDiary, { OPEN_GOALS_EVENT } from './FoodDiary.jsx'
 import HubCard from './HubCard.jsx'
 // Участие в потоке челленджа: прочитанное живёт в памяти модуля, и выход из
 // аккаунта обязан его забыть (см. performLogout).
@@ -146,7 +146,7 @@ function motionSyncFor(userId) {
  * @param {object|null} [props.guestMotion] попытки из буфера переезда
  * @param {() => void} [props.onGuestMotionApplied]
  */
-function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null }) {
+function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null }) {
   /**
    * Адаптер собирается ОДИН раз на человека. Новый объект на каждый рендер
    * означал бы новую загрузку прогресса на каждый рендер — то есть заставку,
@@ -205,6 +205,7 @@ function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onG
           guestMotion={guestMotion}
           onGuestMotionApplied={onGuestMotionApplied}
           startScreen={startScreen}
+          onFillNorm={onFillNorm}
         />
       </Suspense>
     </div>,
@@ -11225,6 +11226,21 @@ export default function App() {
    * взять деньги за то, что не к кому привязать, — поэтому первый его шаг
    * бесплатный и тот же, что во всех остальных дверях приложения.
    */
+  /**
+   * УВЕСТИ НА ЭКРАН НОРМЫ. Челлендж не пускает к оплате без дневной нормы —
+   * питание половина зачёта, — но заводить её умеет только дневник. Закрываем
+   * раздел, переключаемся на «Питание» и просим дневник открыть «Норму»: без
+   * последнего человек попал бы на экран дня и искал бы шестерёнку сам.
+   */
+  const openFoodGoals=()=>{
+    closeMotion()
+    handleNav('nutrition')
+    // Дневник уже смонтирован и слушает это событие (см. FoodDiary): просим
+    // его открыть «Норму», а не оставляем человека на экране дня искать
+    // шестерёнку в углу.
+    setTimeout(()=>window.dispatchEvent(new CustomEvent(OPEN_GOALS_EVENT)),0)
+  }
+
   const openChallenge=()=>{
     if(guestMode){handleGuestValue('challenge',0);return}
     openMotion('challenge')
@@ -12193,6 +12209,7 @@ export default function App() {
         <MotionOverlay
           onExit={closeMotion}
           startScreen={motionStart}
+          onFillNorm={openFoodGoals}
           userId={user?.id}
           guest={guestMode}
           onGuestValue={handleGuestValue}

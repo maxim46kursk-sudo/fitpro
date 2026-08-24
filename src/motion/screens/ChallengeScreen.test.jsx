@@ -128,6 +128,114 @@ describe('не участник: цена, правила и вступлени�
   })
 })
 
+describe('без нормы питания билет не продаётся', () => {
+  it('вместо «Участвовать» — «Заполнить данные о себе»', () => {
+    /**
+     * Питание — половина зачёта, и считается оно от дневной нормы. Продать
+     * билет человеку без нормы значит взять деньги за заведомо половину
+     * челленджа. Сервер держит то же правило (api/create-payment.js), экран
+     * лишь говорит об этом заранее, а не отказом после нажатия.
+     */
+    const onFillNorm = vi.fn()
+    render(<ChallengeScreen state={{ season: SEASON, entry: null }} hasNorm={false} onFillNorm={onFillNorm} />)
+
+    expect(screen.queryByTestId('challenge-join')).toBeNull()
+    expect(screen.queryByTestId('challenge-agree')).toBeNull()
+    expect(screen.getByTestId('challenge-no-norm').textContent).toContain('половина зачёта')
+
+    act(() => screen.getByTestId('challenge-fill-norm').click())
+    expect(onFillNorm).toHaveBeenCalled()
+  })
+
+  it('цена при этом видна — человек должен знать, к чему готовиться', () => {
+    render(<ChallengeScreen state={{ season: SEASON, entry: null }} hasNorm={false} />)
+    expect(screen.getByTestId('challenge-price').textContent).toContain('990')
+  })
+})
+
+describe('участник видит своё питание', () => {
+  /** Сырьё, как его отдаёт challenge_nutrition_facts: без процентов. */
+  const facts = (days) => days.map((d, i) => ({
+    day: i + 1,
+    kcal: d.kcal ?? 0,
+    p: d.p ?? 0,
+    f: d.f ?? 0,
+    c: d.c ?? 0,
+    meals: d.meals ?? 0,
+    norm_kcal: 2000,
+    norm_p: 120,
+    norm_f: 65,
+    norm_c: 220,
+  }))
+
+  /** Дата старта такая, что «сегодня» — второй день потока. */
+  const startedYesterday = () => {
+    const d = new Date()
+    d.setDate(d.getDate() - 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+
+  it('процент за сегодня, средний за поток и дни с дневником', () => {
+    const rows = facts([
+      // день 1: точно в норму, четыре приёма
+      { kcal: 2000, p: 120, f: 65, c: 220, meals: 4 },
+      // день 2 (сегодня): тоже в коридоре, три приёма
+      { kcal: 1950, p: 118, f: 63, c: 215, meals: 3 },
+      ...Array.from({ length: 28 }, () => ({})),
+    ])
+    render(
+      <ChallengeScreen
+        state={{ season: { ...SEASON, starts_on: startedYesterday() }, entry: ENTRY }}
+        nutrition={rows}
+      />,
+    )
+
+    expect(screen.getByTestId('nutri-today').textContent).toBe('100%')
+    // два дня из тридцати по сотне — это 7%, а не 100: средний делится на весь
+    // поток, иначе три честных дня выглядели бы отличным результатом
+    expect(screen.getByTestId('nutri-average').textContent).toBe('7%')
+    expect(screen.getByTestId('nutri-days').textContent).toBe('2 из 30')
+  })
+
+  it('меньше трёх приёмов — день не засчитан, и так и написано', () => {
+    const rows = facts([
+      { kcal: 2000, p: 120, f: 65, c: 220, meals: 4 },
+      { kcal: 900, p: 60, f: 30, c: 90, meals: 1 },
+      ...Array.from({ length: 28 }, () => ({})),
+    ])
+    render(
+      <ChallengeScreen
+        state={{ season: { ...SEASON, starts_on: startedYesterday() }, entry: ENTRY }}
+        nutrition={rows}
+      />,
+    )
+
+    expect(screen.getByTestId('nutri-today').textContent).toContain('приёмов')
+    expect(screen.getByTestId('nutri-days').textContent).toBe('1 из 30')
+  })
+
+  it('нормы у участника нет — блок зовёт её завести, а не показывает нули', () => {
+    const onFillNorm = vi.fn()
+    render(
+      <ChallengeScreen
+        state={{ season: SEASON, entry: ENTRY }}
+        nutrition={facts([{}, {}])}
+        hasNorm={false}
+        onFillNorm={onFillNorm}
+      />,
+    )
+
+    expect(screen.queryByTestId('nutri-average')).toBeNull()
+    act(() => screen.getByTestId('nutri-fill').click())
+    expect(onFillNorm).toHaveBeenCalled()
+  })
+
+  it('питание ещё не приехало — блока нет вовсе', () => {
+    render(<ChallengeScreen state={{ season: SEASON, entry: ENTRY }} />)
+    expect(screen.queryByTestId('challenge-nutrition')).toBeNull()
+  })
+})
+
 describe('гость: аккаунт вместо оплаты', () => {
   it('видит цену, но не видит ни галочки, ни кнопки оплаты', () => {
     const onCreateAccount = vi.fn()

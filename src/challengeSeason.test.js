@@ -16,22 +16,32 @@ const USER = '6838d807-fb05-4c7d-af71-a13360373dcd'
 
 /** Что «лежит в базе» и что модуль в неё написал. */
 let rows = []
+let goals = null
 let inserts = []
 let insertError = null
+let rpcCalls = []
 let selectedColumns = ''
 
 vi.mock('./supabase.js', () => ({
   supabase: {
     from: (table) => ({
       select: (cols) => {
-        selectedColumns = cols
-        return { in: () => ({ order: () => Promise.resolve({ data: rows, error: null }) }) }
+        if (table === 'challenge_seasons') selectedColumns = cols
+        return {
+          // сезоны читаются списком, норма — одной строкой
+          in: () => ({ order: () => Promise.resolve({ data: rows, error: null }) }),
+          maybeSingle: () => Promise.resolve({ data: goals, error: null }),
+        }
       },
       insert: (row) => {
         inserts.push({ table, row })
         return Promise.resolve({ error: insertError })
       },
     }),
+    rpc: (name, args) => {
+      rpcCalls.push({ name, args })
+      return Promise.resolve({ data: name === 'challenge_nutrition_facts' ? [] : 'norm2', error: null })
+    },
     auth: {
       getSession: async () => ({ data: { session: { access_token: 't', user: { id: USER } } } }),
     },
@@ -58,7 +68,9 @@ async function freshModule() {
 
 beforeEach(() => {
   rows = [{ ...SEASON }]
+  goals = { kcal: 2000, p: 120, c: 220, f: 65 }
   inserts = []
+  rpcCalls = []
   insertError = null
   localStorage.clear()
 })
@@ -129,6 +141,51 @@ describe('согласие переживает перезагрузку и др
     const { loadChallengeState } = await freshModule()
     expect(await loadChallengeState({ guest: true })).toBe(null)
     expect(inserts.length).toBe(0)
+  })
+})
+
+describe('норма питания', () => {
+  it('норма приезжает вместе с участием — она решает, продавать ли билет', async () => {
+    const { loadChallengeState, hasNorm } = await freshModule()
+    const state = await loadChallengeState({})
+
+    expect(state.goals).toEqual({ kcal: 2000, p: 120, c: 220, f: 65 })
+    expect(hasNorm(state)).toBe(true)
+  })
+
+  it('нормы нет или она нулевая — участвовать не в чем', async () => {
+    goals = null
+    const first = await freshModule()
+    expect(first.hasNorm(await first.loadChallengeState({}))).toBe(false)
+
+    goals = { kcal: 0, p: 0, c: 0, f: 0 }
+    const second = await freshModule()
+    expect(second.hasNorm(await second.loadChallengeState({}))).toBe(false)
+  })
+
+  it('заморозка нормы просит базу, а день не называет', async () => {
+    // какой сегодня день потока и пора ли снимать второй слепок, решает база:
+    // прими она номер дня снаружи, «один честный пересчёт» стал бы пересчётом
+    // по требованию
+    const { freezeNorm } = await freshModule()
+    await freezeNorm(1)
+
+    expect(rpcCalls).toEqual([{ name: 'challenge_freeze_norm', args: { p_season_id: 1 } }])
+  })
+
+  it('сырьё по питанию берётся у базы, а проценты — нет', async () => {
+    const { loadNutritionFacts } = await freshModule()
+    const facts = await loadNutritionFacts(1)
+
+    expect(rpcCalls[0]).toEqual({ name: 'challenge_nutrition_facts', args: { p_season_id: 1 } })
+    expect(Array.isArray(facts)).toBe(true)
+  })
+
+  it('без сезона в базу не ходим вовсе', async () => {
+    const { loadNutritionFacts, freezeNorm } = await freshModule()
+    expect(await loadNutritionFacts(null)).toEqual([])
+    expect(await freezeNorm(null)).toBe(null)
+    expect(rpcCalls).toEqual([])
   })
 })
 
