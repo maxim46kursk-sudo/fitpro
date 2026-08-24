@@ -76,3 +76,7 @@ monitor-key.txt
 # Прогон виртуальным тестировщиком: сборка страницы, модель распознавания,
 # черновики. Модель — 5.7 МБ, качается один раз (см. tools/motion-persona/run.mjs).
 tools/.cache/
+relay-key.txt
+.dev.vars
+.wrangler
+tools/egress-worker/.wrangler

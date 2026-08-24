@@ -11,6 +11,10 @@ import {
   parseModelJson, normalizeLabelProduct, isValidBarcode, isSoftSource,
   cleanSourceLink, sanitizeMacros, hasUsableMacros, fromRow,
 } from './_foodProduct.js'
+// Выход наружу: на своём сервере адреса Telegram и Anthropic переписываются
+// на мост (см. api/_egress.js), на Vercel остаются как есть — там оба API
+// доступны напрямую. Файл с подчёркиванием — не serverless-функция.
+import { egressFetch } from './_egress.js'
 
 // Потолок времени выполнения функции. Без него Vercel рубит ответ по короткому
 // дефолту, и длинные ответы модели просто обрываются на полуслове. 60 секунд —
@@ -354,7 +358,7 @@ async function askModel(body, { label, barcode, userId }) {
   const timeoutId = setTimeout(() => controller.abort(), ANTHROPIC_TIMEOUT_MS)
   let data
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await egressFetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -704,7 +708,7 @@ export default async function handler(req, res) {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), ANTHROPIC_TIMEOUT_MS)
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await egressFetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

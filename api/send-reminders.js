@@ -3,6 +3,10 @@ import { createClient } from '@supabase/supabase-js'
 // Журнал ошибок + мгновенное уведомление тренеру. Файл с подчёркиванием —
 // не serverless-функция.
 import { reportError } from './_logError.js'
+// Выход наружу: на своём сервере адреса Telegram и Anthropic переписываются
+// на мост (см. api/_egress.js), на Vercel остаются как есть — там оба API
+// доступны напрямую. Файл с подчёркиванием — не serverless-функция.
+import { egressFetch } from './_egress.js'
 
 // Отправка напоминаний от бота по расписанию. Дёргается кроном, поэтому
 // защищено секретом (cron знает REMINDERS_CRON_SECRET). Идемпотентность в
@@ -190,7 +194,7 @@ async function alertTrainerAboutErrors(supabaseAdmin, botToken) {
   }
 
   try {
-    const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    const tgRes = await egressFetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -325,7 +329,7 @@ export default async function handler(req, res) {
       }
 
       try {
-        const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        const tgRes = await egressFetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

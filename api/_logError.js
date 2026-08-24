@@ -27,6 +27,10 @@
 // (лимит 12 функций на Hobby выбран целиком), как у _ratelimit.js и соседей.
 
 import { createClient } from '@supabase/supabase-js'
+// Выход наружу: на своём сервере адреса Telegram и Anthropic переписываются
+// на мост (см. api/_egress.js), на Vercel остаются как есть — там оба API
+// доступны напрямую. Файл с подчёркиванием — не serverless-функция.
+import { egressFetch } from './_egress.js'
 
 // Те же пределы, что в src/logError.js: в базе тексты нужны для опознания
 // сбоя, а не целиком.
@@ -111,7 +115,7 @@ async function notifyTrainer(admin, { context, message, insertedId }) {
   // ни пользовательского ввода: текст уходит во внешний сервис, и объём
   // утекающего ограничен тем, без чего нельзя понять, что сломалось.
   const text = `⚠ Ошибка: ${context}${message ? `, ${cut(message, TG_MESSAGE_MAX)}` : ''}`
-  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+  const res = await egressFetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text }),

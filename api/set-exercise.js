@@ -14,6 +14,10 @@ import {
 // Журнал ошибок + мгновенное уведомление тренеру. Файл с подчёркиванием —
 // не serverless-функция.
 import { logServerError, reportError } from './_logError.js'
+// Выход наружу: на своём сервере адреса Telegram и Anthropic переписываются
+// на мост (см. api/_egress.js), на Vercel остаются как есть — там оба API
+// доступны напрямую. Файл с подчёркиванием — не serverless-функция.
+import { egressFetch } from './_egress.js'
 
 // Набор колонок карточки, который отдаём клиенту. source в списке обязателен:
 // от него зависит и решение сервера (идти ли за обновлением в OFF), и пометка
@@ -803,7 +807,7 @@ function тревога(тип, текст) {
     // Промис намеренно не ждём — см. fire-and-forget выше. .catch обязателен:
     // без него отказ сети стал бы необработанным отклонением и убил бы процесс
     // функции вместе с ответом, который она в этот момент отдаёт.
-    fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    egressFetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: тело,

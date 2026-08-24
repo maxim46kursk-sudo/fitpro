@@ -1,6 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
 import { USER_TABLES, TWO_SIDED_TABLES, PROFILE_TABLE, twoSidedFilter } from './_userTables.js'
 import { rateLimit } from './_ratelimit.js'
+// Выход наружу: на своём сервере адреса Telegram и Anthropic переписываются
+// на мост (см. api/_egress.js), на Vercel остаются как есть — там оба API
+// доступны напрямую. Файл с подчёркиванием — не serverless-функция.
+import { egressFetch } from './_egress.js'
 
 // URL несекретен, тот же безопасный fallback, что и в остальных функциях api/.
 // SUPABASE_SERVICE_ROLE_KEY секретен, фолбэка для него нет намеренно — клиент
@@ -134,7 +138,7 @@ export default async function handler(req, res) {
   )
 
   try {
-    const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendDocument`, {
+    const tgRes = await egressFetch(`https://api.telegram.org/bot${botToken}/sendDocument`, {
       method: 'POST',
       body: form,
     })
