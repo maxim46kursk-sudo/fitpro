@@ -1,6 +1,6 @@
 import qs from 'qs'
 import { createClient } from '@supabase/supabase-js'
-import { createSignature, buildPaymentData, STAFF_PLANS } from './_prodamus.js'
+import { createSignature, buildPaymentData, STAFF_PLANS, CHALLENGE_ITEM } from './_prodamus.js'
 import { rateLimit } from './_ratelimit.js'
 
 // Статические ссылки Продамуса не могут нести наш идентификатор пользователя
@@ -51,7 +51,42 @@ export default async function handler(req, res) {
   const userId = authData.user.id
 
   const plan = req.body?.plan
-  if (!PAID_PLANS.has(plan)) return res.status(400).json({ error: 'Неизвестный пакет' })
+  // Билет челленджа — не тариф: уровня доступа он не даёт и в PAID_PLANS его
+  // нет. Покупает кто угодно из вошедших, роль не проверяется.
+  const isChallenge = plan === CHALLENGE_ITEM
+  if (!isChallenge && !PAID_PLANS.has(plan)) return res.status(400).json({ error: 'Неизвестный пакет' })
+
+  // Второй билет в тот же поток — это деньги, за которые человек ничего не
+  // получит: challenge_enroll идемпотентна по user_id и вернёт ему прежний
+  // номер, а оплата останется. Поэтому отказываем ДО выписки ссылки, пока
+  // платить ещё не начали.
+  //
+  // Открытых сезонов нет — ссылку всё равно выписываем: набор объявляется
+  // раньше, чем сезон переводят в 'open', и запирать продажу здесь значило бы
+  // ронять покупку по состоянию, которое меняется одной правкой в базе.
+  // Платёж, которому не нашлось сезона, вебхук запишет в журнал и поднимет
+  // тревогу — деньги не потеряются.
+  if (isChallenge) {
+    const { data: openSeasons, error: seasonErr } = await supabaseAdmin
+      .from('challenge_seasons').select('id').eq('status', 'open')
+    if (seasonErr) {
+      console.error('create-payment: ошибка чтения сезонов челленджа:', seasonErr)
+      return res.status(500).json({ error: 'Не удалось проверить участие' })
+    }
+    const openIds = (openSeasons || []).map(s => s.id)
+    if (openIds.length) {
+      const { data: mine, error: entryErr } = await supabaseAdmin
+        .from('challenge_entries').select('id').eq('user_id', userId).in('season_id', openIds).limit(1)
+      if (entryErr) {
+        console.error(`create-payment: ошибка проверки участия ${userId}:`, entryErr)
+        return res.status(500).json({ error: 'Не удалось проверить участие' })
+      }
+      if (mine?.length) {
+        console.warn(`create-payment: ${userId} уже в открытом потоке, второй билет не выписываем`)
+        return res.status(409).json({ error: 'Вы уже участвуете в этом потоке — второй билет покупать не нужно' })
+      }
+    }
+  }
 
   // Служебный тариф — только тренеру. Роль читаем ИЗ БАЗЫ service_role-ключом,
   // а не из тела и не из метаданных токена: и то и другое клиент подставляет

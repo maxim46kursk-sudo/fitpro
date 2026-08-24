@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 // Журнал ошибок + мгновенное уведомление тренеру. Файл с подчёркиванием —
 // не serverless-функция.
 import { reportError } from './_logError.js'
-import { verifySignature } from './_prodamus.js'
+import { verifySignature, ITEM_PRICE, CHALLENGE_ITEM } from './_prodamus.js'
 
 // Вебхук уведомлений Продамуса. Тело подписано, поэтому НЕ даём Vercel его
 // разобрать — подпись считается по точной сырой форме, любой репарсинг
@@ -14,9 +14,11 @@ export const config = { api: { bodyParser: false } }
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://api.fitproapp.ru'
 
-// Сумма платежа → пакет. Определяем пакет ПО СУММЕ, а не по order_id: order_id
+// Сумма платежа → пакет. Основа опознания — СУММА, а не order_id: order_id
 // приходит из ссылки и пользователь теоретически может его подменить, а сумму
-// подтверждает подписанное уведомление. Ключи — числа рублей.
+// подтверждает подписанное уведомление. Ключи — числа рублей. Ярлык платежа
+// (см. resolveItem ниже) эту таблицу не отменяет: он только выбирает между
+// товарами ОДНОЙ цены, и без совпадения по сумме не значит ничего.
 // БАЗА снята с продажи — суммы её пакета (тест 50 / бой 1000) убраны, начислять
 // по ним больше нечего. Ранее купившим доступ сохраняет их profiles.plan='base'.
 // Только БОЕВЫЕ суммы: тестовые (60/70) убраны — иначе платёж на 70 ₽ мимо
@@ -31,6 +33,46 @@ const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://api.fitproapp.ru'
 // одни сутки; за 60 и 70 давали месяц, и это была совсем другая история.
 const AMOUNT_TO_PLAN = {
   2990: 'profit', 9990: 'premium', 50: 'test50',
+}
+
+// ── ЯРЛЫК ПЛАТЕЖА И ПОЧЕМУ ОДНОЙ СУММЫ БОЛЬШЕ НЕ ХВАТАЕТ ────────────────────
+//
+// Билет челленджа стоит те же 2990, что и ПРОФИТ. По прежнему правилу («сумма
+// решает всё») покупка билета начислила бы человеку тариф ПРОФИТ — не тот
+// товар за те же деньги.
+//
+// Новое правило: если ярлык называет ИЗВЕСТНЫЙ товар И оплаченная сумма равна
+// цене ИМЕННО ЭТОГО товара — начисляем товар из ярлыка; во всех остальных
+// случаях работает прежний путь по сумме.
+//
+// ПОЧЕМУ ЭТО НЕ ОСЛАБЛЕНИЕ. Ярлык приезжает из нашей же ссылки, подписанной
+// нашим ключом, но сам по себе доверия не заслуживает — подпись покрывает всё
+// уведомление целиком, а не происхождение ярлыка. Поэтому ярлык здесь ничего
+// не разрешает, он только ВЫБИРАЕТ между товарами одной цены: сумма осталась
+// сторожем и обязана сойтись. Подменивший ярлык не получит ничего дороже
+// оплаченного — в худшем случае он купит за свои деньги другой товар той же
+// цены. Прежнее правило такого выбора не давало вовсе, поэтому новое строго
+// надёжнее, а не слабее.
+//
+// Ярлык — часть ПОСЛЕ последнего '__' в customer_extra (запасной вариант —
+// order_id, как и с userId).
+const extractItemTag = src => {
+  if (!src) return null
+  const cut = src.lastIndexOf('__')
+  if (cut < 0) return null
+  const tag = src.slice(cut + 2).trim()
+  return tag || null
+}
+
+// Товар платежа: ярлык, подтверждённый суммой, иначе прежний разбор по сумме.
+// Экспортируется ради теста — правило дороже, чем то, что вокруг него.
+export function resolveItem(tag, sumNum) {
+  if (!Number.isFinite(sumNum)) return undefined
+  // Object.hasOwn, а не просто ITEM_PRICE[tag]: ярлык приходит снаружи, и
+  // 'constructor' или 'toString' достали бы из прототипа не цену, а функцию.
+  const taggedPrice = tag && Object.hasOwn(ITEM_PRICE, tag) ? ITEM_PRICE[tag] : undefined
+  if (taggedPrice !== undefined && taggedPrice === sumNum) return tag
+  return AMOUNT_TO_PLAN[sumNum]
 }
 
 // Срок пакета в днях. Правило то же, что на клиенте (src/plans.js,
@@ -155,7 +197,6 @@ export default async function handler(req, res) {
   // userId — часть до последнего '__'. Берём из customer_extra: наш order_id
   // Продамус подменяет своим номером, а customer_extra возвращает эхом. Если
   // customer_extra пуст — запасной разбор order_id (на случай старых ссылок).
-  // Пакет отсюда НЕ берём — только userId; пакет определяется суммой ниже.
   // Пишем в user_id только валидный uuid, иначе NULL (мусор не должен ронять
   // запись в журнал).
   const extractUserId = src => {
@@ -167,23 +208,28 @@ export default async function handler(req, res) {
   const customerExtra = data.customer_extra != null ? String(data.customer_extra) : null
   const userId = extractUserId(customerExtra) || extractUserId(orderId)
 
-  // Пакет по сумме. undefined → сумма незнакомая.
-  const planFromAmount = Number.isFinite(sumNum) ? AMOUNT_TO_PLAN[sumNum] : undefined
+  // Товар платежа: ярлык, подтверждённый суммой, иначе прежний разбор по сумме
+  // (см. resolveItem выше). undefined → опознать нечем.
+  const itemTag = extractItemTag(customerExtra) || extractItemTag(orderId)
+  const item = resolveItem(itemTag, sumNum)
+  const isChallenge = item === CHALLENGE_ITEM
 
-  // Решаем статус для журнала и надо ли начислять. Начисляем только при
-  // успешной оплате, известной сумме и реально существующем пользователе.
+  // Решаем статус для журнала и что делать дальше. Действуем только при
+  // успешной оплате, опознанном товаре и реально существующем пользователе.
   let status
   let accruePlan = null
+  let enrollChallenge = null
   if (paymentStatus !== 'success') {
     status = paymentStatus || 'unknown'
-  } else if (!planFromAmount) {
+  } else if (!item) {
     status = 'unknown_amount'
   } else if (!userId) {
     status = 'user_not_found'
   } else {
-    // Пользователь существует?
+    // Пользователь существует? Имя читаем здесь же: билет челленджа снимает
+    // его в момент покупки (sql/2026-08-24_challenge_entries_fix.sql).
     const { data: prof, error: profErr } = await supabaseAdmin
-      .from('profiles').select('id, plan_until, coach_id').eq('id', userId).maybeSingle()
+      .from('profiles').select('id, name, plan_until, coach_id').eq('id', userId).maybeSingle()
     if (profErr) {
       console.error(`Prodamus webhook: ошибка проверки пользователя ${userId}:`, profErr)
       // Отдаём 200, но НЕ начисляем и в журнал пишем как ошибку — Продамус
@@ -191,9 +237,26 @@ export default async function handler(req, res) {
       status = 'user_check_failed'
     } else if (!prof) {
       status = 'user_not_found'
+    } else if (isChallenge) {
+      // Билет покупается В ОТКРЫТЫЙ СЕЗОН. Их может быть только один осмысленно,
+      // но если их вдруг окажется два, берём самый старый — тот, набор в
+      // который открыли раньше.
+      const { data: seasons, error: seasonErr } = await supabaseAdmin
+        .from('challenge_seasons').select('id').eq('status', 'open').order('id').limit(1)
+      if (seasonErr) {
+        console.error('Prodamus webhook: ошибка чтения сезонов челленджа:', seasonErr)
+        status = 'season_lookup_failed'
+      } else if (!seasons?.length) {
+        // Деньги взяты, а зачислить некуда. Не начисляем ничего, но платёж
+        // обязан попасть в журнал — по нему потом зачисляют руками.
+        status = 'no_open_season'
+      } else {
+        status = 'success'
+        enrollChallenge = { seasonId: seasons[0].id, displayName: prof.name || null }
+      }
     } else {
       status = 'success'
-      accruePlan = { plan: planFromAmount, currentUntil: prof.plan_until, coachId: prof.coach_id }
+      accruePlan = { plan: item, currentUntil: prof.plan_until, coachId: prof.coach_id }
     }
   }
 
@@ -204,7 +267,9 @@ export default async function handler(req, res) {
     provider_order_num: dedupKey,
     order_id: orderId,
     user_id: userId,
-    plan: accruePlan ? accruePlan.plan : (planFromAmount || null),
+    // В журнал пишем опознанный товар — в том числе 'challenge' и в том числе
+    // когда начисления не было: иначе строку потом не с чем сопоставить.
+    plan: item || null,
     amount: Number.isFinite(sumNum) ? sumNum : null,
     status,
     raw: data,
@@ -225,6 +290,47 @@ export default async function handler(req, res) {
     }
     reportError('api:prodamus:payment', ['Prodamus webhook: ошибка записи в журнал платежей:', insErr], { message: insErr?.message, status: 500 })
     return res.status(500).send('Journal error')
+  }
+
+  // ── Билет челленджа: зачисление вместо начисления тарифа.
+  //
+  // Строго ПОСЛЕ записи в журнал: вставка выше — это и есть защита от повтора,
+  // и зачислять раньше неё значило бы зачислять до проверки. Сама
+  // challenge_enroll тоже идемпотентна (по payment_id и по человеку), так что
+  // рубежа здесь два, а не один.
+  //
+  // Тариф при этом НЕ начисляется вовсе: билет — разовый товар, уровень
+  // доступа он не даёт.
+  if (enrollChallenge) {
+    const { data: participantNo, error: enrollErr } = await supabaseAdmin.rpc('challenge_enroll', {
+      p_season_id: enrollChallenge.seasonId,
+      p_user_id: userId,
+      // Тот же ключ, что и у журнала: обычно это order_id Продамуса, а если
+      // его не прислали — order_num. Пустым он тут быть не может, выше стоит
+      // отказ без ключа.
+      p_payment_id: dedupKey,
+      p_display_name: enrollChallenge.displayName,
+    })
+    if (enrollErr) {
+      // Деньги взяты, платёж записан, а в поток человек не попал. Это ровно
+      // тот случай, когда молчать нельзя.
+      reportError('api:prodamus:challenge',
+        [`Prodamus webhook: платёж ${dedupKey} записан, но НЕ удалось зачислить ${userId} в поток ${enrollChallenge.seasonId}:`, enrollErr],
+        { message: `билет оплачен, зачисление НЕ прошло: ${enrollErr?.message}`, status: 500, userId })
+      return res.status(200).send('OK')
+    }
+    console.log(`Prodamus webhook: ${userId} зачислен в поток ${enrollChallenge.seasonId} участником №${participantNo}`)
+    return res.status(200).send('OK')
+  }
+
+  // Билет оплачен, а открытого сезона нет — зачислять некуда. Платёж в журнале
+  // со статусом 'no_open_season', зачисление делается руками по нему, поэтому
+  // про это надо узнать сразу, а не из жалобы участника.
+  if (status === 'no_open_season' || status === 'season_lookup_failed') {
+    reportError('api:prodamus:challenge',
+      [`Prodamus webhook: билет ${dedupKey} оплачен, но зачислить некуда (${status})`],
+      { message: 'билет челленджа оплачен, а открытого сезона нет — зачислить некуда', status: 500, userId })
+    return res.status(200).send('OK')
   }
 
   // Не начисляем — но платёж уже в журнале, отвечаем 200.

@@ -23,6 +23,32 @@ export const PLAN_NAME  = { profit: 'ПРОФИТ', premium: 'ПРЕМИУМ', t
 // им пользуется и create-payment (отказ не-тренеру), и тест.
 export const STAFF_PLANS = new Set(['test50'])
 
+// ── Билет челленджа: ТОВАР, А НЕ ТАРИФ ──────────────────────────────────────
+// Разовая покупка места в потоке (sql/2026-08-24_challenge_seasons.sql). Уровня
+// доступа она НЕ даёт: в PAID_PLANS ручки create-payment билета нет, plan и
+// plan_until вебхук по нему не трогает, оплата превращается в строку
+// challenge_entries — и только.
+//
+// ПОЧЕМУ ОТДЕЛЬНО ОТ PLAN_PRICE, А НЕ ЕЩЁ ОДНИМ КЛЮЧОМ В НЁМ. PLAN_PRICE — это
+// зеркало src/plans.js, и test-plan-test50.mjs сверяет его поимённо: каждый
+// ключ обязан найтись среди тарифов клиента. Билета там нет и быть не должно,
+// поэтому в PLAN_PRICE он сломал бы проверку синхронности, которая стережёт
+// настоящие цены.
+export const CHALLENGE_ITEM  = 'challenge'
+export const CHALLENGE_PRICE = 2990
+export const CHALLENGE_TITLE = 'Челлендж FitPro — Поток'
+
+// Всё продаваемое разом: ключ товара → цена в рублях. Тарифы плюс билет.
+// Этой таблицей вебхук проверяет ярлык платежа: цена товара из ярлыка обязана
+// сойтись с оплаченной суммой (api/prodamus-webhook.js).
+export const ITEM_PRICE = { ...PLAN_PRICE, [CHALLENGE_ITEM]: CHALLENGE_PRICE }
+
+// Название товара для чека Продамуса.
+export function itemTitle(item) {
+  if (item === CHALLENGE_ITEM) return CHALLENGE_TITLE
+  return `Подписка FitPro — ${PLAN_NAME[item]}`
+}
+
 // ── Куда Продамус вернёт человека после оплаты ──────────────────────────────
 // Раньше адрес был один на всех — ссылка на бота. Для того, кто платит из
 // браузера и Telegram не пользуется, это тупик В САМЫЙ НЕУДАЧНЫЙ МОМЕНТ: деньги
@@ -57,14 +83,21 @@ export function returnUrlFor(source, appUrlOverride) {
 // адрес в подпись». Подпись считается по ЭТОМУ объекту, поэтому объект и тест
 // обязаны видеть одно и то же. Если urlSuccess вдруг начнут подставлять после
 // createSignature, Продамус отклонит ссылку — тест ловит это заранее.
+// plan здесь — ключ ТОВАРА: тариф ('profit', 'premium', 'test50') либо билет
+// челленджа ('challenge'). Имя параметра осталось прежним, чтобы не разъехаться
+// с полем plan, которое присылает клиент и которым подписан ярлык платежа.
 export function buildPaymentData({ userId, plan, source }) {
+  const price = Object.hasOwn(ITEM_PRICE, plan) ? ITEM_PRICE[plan] : undefined
+  // Неизвестный товар — это цена undefined в чеке и платёж, который вебхук
+  // потом не опознает. Лучше упасть здесь, чем выписать ссылку в никуда.
+  if (price === undefined) throw new Error(`buildPaymentData: неизвестный товар ${plan}`)
   const tag = `${userId}__${plan}`
   const returnUrl = returnUrlFor(source)
   return {
     do: 'pay',
     order_id: tag,
     customer_extra: tag,
-    products: [{ name: `Подписка FitPro — ${PLAN_NAME[plan]}`, price: String(PLAN_PRICE[plan]), quantity: '1' }],
+    products: [{ name: itemTitle(plan), price: String(price), quantity: '1' }],
     urlSuccess: returnUrl,
     // Кнопка «вернуться в магазин» на форме. Добавлено ДО подписи — иначе
     // поле уехало бы в ссылку неподписанным и Продамус её отклонил.
