@@ -297,10 +297,17 @@ const browser = await chromium.launch({
 
 /** Телефон, но с плотностью 2 — снимок выходит шире 720 и ужимается без потери. */
 const PHONE = { width: 390, height: 780 }
+/**
+ * ТЕЛЕФОН ПОШИРЕ — для экранов, где важное не помещается в полосу нужной
+ * пропорции: три карточки уровней и календарь тридцати дней высокие, и на
+ * узком аппарате их пришлось бы резать. Это тот же настоящий экран, просто
+ * снятый на аппарате побольше (430 — ширина нынешних «максов»).
+ */
+const PHONE_WIDE = { width: 430, height: 920 }
 
-async function newPage({ mobile = true } = {}) {
+async function newPage({ mobile = true, wide = false, screen = null } = {}) {
   const context = await browser.newContext({
-    viewport: mobile ? PHONE : { width: 720, height: 470 },
+    viewport: screen ?? (mobile ? (wide ? PHONE_WIDE : PHONE) : { width: 720, height: 624 }),
     deviceScaleFactor: 2,
     isMobile: mobile,
     hasTouch: mobile,
@@ -326,8 +333,8 @@ async function warmUp(page) {
  * Экран Motion: поднять страницу съёмки, засеять данные, смонтировать раздел.
  * seed и props — то, чем один снимок отличается от другого.
  */
-async function motionPage({ seed = null, props = {}, query = '', season = true } = {}) {
-  const page = await newPage()
+async function motionPage({ seed = null, props = {}, query = '', season = true, wide = false, screen = null } = {}) {
+  const page = await newPage({ wide, screen })
   await mockBackend(page, { season })
   await page.goto(`${BASE}/harness.html${query}`, { waitUntil: 'domcontentloaded' })
   await warmUp(page)
@@ -341,8 +348,71 @@ async function framesFlowing(page, min = 60) {
   await page.waitForFunction((n) => (window.__shots?.frames || 0) > n, min, { timeout: 120000 })
 }
 
-async function shoot(page, id, opts = {}) {
+/**
+ * КАДР ПОД ПРОПОРЦИЮ БЛОКА, А НЕ ТЕЛЕФОН ЦЕЛИКОМ.
+ *
+ * Картинка в правилах — широкий блок сверху экрана. Вертикальный снимок
+ * телефона в нём либо стоит в чёрных полях по бокам, либо режется пополам.
+ * Поэтому кадрируем при съёмке: берём полосу нужной пропорции по ГЛАВНОМУ
+ * месту кадра — силуэт, карточки уровней, счёт, календарь, — и она заполняет
+ * блок целиком.
+ */
+/**
+ * Пропорция — та же, что у блока картинки в правилах: он занимает 40% высоты
+ * экрана во всю ширину, то есть примерно 390 × 338 на обычном телефоне. Снимок
+ * в этой пропорции ложится в блок без полей и без обрезки.
+ */
+const SHOT_RATIO = 390 / 338
+const PHONE_W = 390
+
+/** Полоса нужной пропорции с центром на y (в CSS-пикселях экрана). */
+function band(centerY, { width = PHONE_W, ratio = SHOT_RATIO, screen = null } = {}) {
+  const height = Math.round(width / ratio)
+  const top = Math.max(0, Math.round(centerY - height / 2))
+  const from = screen ?? Math.max(PHONE_W, width)
+  return { x: Math.round((from - width) / 2), y: top, width, height }
+}
+
+/**
+ * ПОЛОСА ПО САМОМУ ПРЕДМЕТУ СНИМКА, а не по угаданной координате. Скрипт
+ * спрашивает у страницы, где лежит то, ради чего снимок делается — силуэт,
+ * карточки уровней, календарь, — и кадрирует по центру этого места. Правка
+ * вёрстки сдвигает элемент, а кадр остаётся на нём.
+ */
+async function bandOf(page, selector, opts = {}) {
+  const box = await page.evaluate((sel) => {
+    const el = document.querySelector(sel)
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    return { top: r.top, height: r.height, screenW: innerWidth, screenH: innerHeight }
+  }, selector)
+  if (!box) {
+    say(`  не нашёл ${selector} — кадрирую по умолчанию`)
+    return band(opts.fallback ?? 350, opts)
+  }
+  const width = opts.width ?? box.screenW
+  const height = Math.round(width / (opts.ratio ?? SHOT_RATIO))
+  let top = Math.round(box.top + box.height / 2 - height / 2)
+  top = Math.max(0, Math.min(top, Math.round(box.screenH - height)))
+  return { x: Math.round((box.screenW - width) / 2), y: top, width, height }
+}
+
+/**
+ * ЧИСТЫЙ КАДР. На экране приложения живут вещи, которых в правилах быть не
+ * должно: крестик выхода, тумблер звука, кнопка комнаты, панель отладки, а на
+ * экранах поверх камеры — ещё и скелет распознавания, просвечивающий сквозь
+ * карточки. Всё это прячется на время съёмки одним стилем и возвращается
+ * сразу после: снимок обязан показывать продукт, а не служебную обвязку.
+ */
+const HIDE_ALWAYS = '.mt-corner, .mt-menu__button, [data-testid="panel-close"], .mt-debug, .mt-debug__fab'
+const HIDE_CAMERA = '.mt-overlay, .mt-video, .mt-silhouette'
+
+async function shoot(page, id, { hideCamera = false, ...opts } = {}) {
+  const css = `${HIDE_ALWAYS}${hideCamera ? `, ${HIDE_CAMERA}` : ''} { display: none !important; }`
+  const handle = await page.addStyleTag({ content: css })
+  await wait(150)
   const buf = await page.screenshot({ type: 'png', ...opts })
+  await handle.evaluate((el) => el.remove())
   shots.set(id, buf)
   say(`  снято ${id} (${Math.round(buf.length / 1024)} КБ png)`)
 }
@@ -350,73 +420,115 @@ async function shoot(page, id, opts = {}) {
 const want = (id) => !ONLY.length || ONLY.includes(id) 
 
 if (has('--preview')) {
-  const page = await newPage()
-  await mockBackend(page, { consent: false })
-  await page.goto(`${BASE}/harness.html`, { waitUntil: 'domcontentloaded' })
-  await warmUp(page)
-  await page.evaluate(() => window.__shots.mount({ startScreen: 'challenge' }))
-  await page.waitForSelector('[data-testid="rules-screen"]', { timeout: 60000 })
-
+  /**
+   * ПРЕДПРОСМОТР И ОБЯЗАТЕЛЬНАЯ ПРОВЕРКА ОБРЫВА.
+   *
+   * Текст, срезанный ровно по нижнему краю, читается как «здесь всё» — ровно на
+   * этом владелец и не нашёл галочку согласия на двенадцатом экране. Поэтому
+   * скрипт проходит все двенадцать экранов НА ДВУХ РАЗМЕРАХ (обычный телефон и
+   * маленький) и падает, если хоть на одном содержимое не поместилось, а
+   * признака продолжения нет.
+   *
+   * Заодно ищет сырую разметку и складывает снимки всех экранов человеку.
+   */
+  const SIZES = [
+    { name: '390x844', width: 390, height: 844 },
+    { name: '360x640', width: 360, height: 640 },
+  ]
   mkdirSync(PREVIEW_OUT, { recursive: true })
-  const total = await page.evaluate(() => document.querySelectorAll('[data-testid^="rules-dot-"]').length)
-  say(`правила открыты: ${total} экранов`)
 
-  /** Что снимаем человеку: первый, уровни карточками, цитата-правило, конец. */
-  const KEEP = {
-    1: '01-первый-экран.png',
-    5: '02-уровни-карточками.png',
-    9: '03-цитата-правило.png',
-  }
-  const dirty = []
+  const problems = []
+  let joinLine = ''
 
-  for (let i = 1; i <= total; i += 1) {
-    await page.locator(`[data-testid="rules-dot-${i}"]`).click()
-    await wait(350)
-    const seen = await page.evaluate(() => {
-      const root = document.querySelector('[data-testid="rules-screen"]')
-      return { text: root ? root.innerText : '', title: document.querySelector('[data-testid="rules-title"]')?.textContent }
+  for (const size of SIZES) {
+    const context = await browser.newContext({
+      viewport: { width: size.width, height: size.height },
+      deviceScaleFactor: 2,
+      isMobile: true,
+      hasTouch: true,
+      locale: 'ru-RU',
     })
-    // сырая разметка: звёздочки жирного, решётки заголовков, дефисы списков
-    const marks = []
-    if (seen.text.includes('**')) marks.push('**')
-    if (seen.text.includes('#')) marks.push('#')
-    if (/(?:^|\s)[-*]\s/.test(seen.text)) marks.push('дефис списка')
-    if (marks.length) dirty.push(`экран ${i} («${seen.title}»): ${marks.join(', ')}`)
-    else say(`  экран ${i}: «${seen.title}» — разметка чистая`)
+    const page = await context.newPage()
+    await mockBackend(page, { consent: false })
+    await page.goto(`${BASE}/harness.html`, { waitUntil: 'domcontentloaded' })
+    await warmUp(page)
+    await page.evaluate(() => window.__shots.mount({ startScreen: 'challenge' }))
+    await page.waitForSelector('[data-testid="rules-screen"]', { timeout: 60000 })
 
-    if (KEEP[i]) {
-      await page.screenshot({ path: `${PREVIEW_OUT}/${KEEP[i]}` })
-      say(`  снимок: qa-screens/rules-preview/${KEEP[i]}`)
+    const total = await page.evaluate(() => document.querySelectorAll('[data-testid^="rules-dot-"]').length)
+    say('')
+    say(`${size.name}: ${total} экранов`)
+
+    for (let i = 1; i <= total; i += 1) {
+      await page.locator(`[data-testid="rules-dot-${i}"]`).click()
+      await wait(420)
+
+      const seen = await page.evaluate(() => {
+        const root = document.querySelector('[data-testid="rules-screen"]')
+        const scroll = root.querySelector('.mt-rules__scroll')
+        const hidden = Math.round(scroll.scrollHeight - scroll.clientHeight)
+        return {
+          title: root.querySelector('[data-testid="rules-title"]')?.textContent || '',
+          text: root.innerText,
+          hidden,
+          compact: root.dataset.compact === '1',
+          fade: !!root.querySelector('[data-testid="rules-more"]'),
+          heroPct: Math.round((root.querySelector('.mt-rules__hero')?.getBoundingClientRect().height || 0) / innerHeight * 100),
+        }
+      })
+
+      // 1. обрыв без признака продолжения
+      if (seen.hidden > 2 && !seen.fade) {
+        problems.push(`${size.name}, экран ${i} («${seen.title}»): текст обрезан на ${seen.hidden}px, а градиента нет`)
+      }
+      // 2. сырая разметка
+      const marks = []
+      if (seen.text.includes('**')) marks.push('**')
+      if (seen.text.includes('#')) marks.push('#')
+      if (/(?:^|\s)[-*]\s/.test(seen.text)) marks.push('дефис списка')
+      if (marks.length) problems.push(`${size.name}, экран ${i}: сырая разметка (${marks.join(', ')})`)
+
+      const state = seen.hidden > 2
+        ? `не влез на ${String(seen.hidden).padStart(3)}px → картинка ${seen.heroPct}% + градиент ${seen.fade ? 'есть' : 'НЕТ'}`
+        : `помещается целиком, картинка ${seen.heroPct}%`
+      say(`  ${String(i).padStart(2)}. ${seen.title.padEnd(32)} ${state}`)
+
+      // Снимки складываем с обычного телефона — на нём смотрят.
+      if (size.width === 390) {
+        const name = `${String(i).padStart(2, '0')}-${seen.title.toLowerCase().replace(/[^a-zа-яё0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 34)}.png`
+        await page.screenshot({ path: `${PREVIEW_OUT}/${name}` })
+      }
     }
+
+    // Последний экран с поставленной галочкой — как его увидит человек в момент
+    // решения. Снимаем только на обычном телефоне.
+    await page.locator(`[data-testid="rules-dot-${total}"]`).click()
+    await page.waitForSelector('[data-testid="rules-gate"]', { timeout: 10000 })
+    await page.locator('[data-testid="rules-agree"]').click()
+    await wait(300)
+    const joinText = await page.locator('[data-testid="rules-join"]').textContent()
+    const joinOff = await page.locator('[data-testid="rules-join"]').isDisabled()
+    if (joinOff) problems.push(`${size.name}: кнопка вступления не включилась после галочки`)
+    if (size.width === 390) {
+      await page.screenshot({ path: `${PREVIEW_OUT}/12-согласие-и-кнопка.png` })
+      joinLine = `кнопка вступления: «${joinText}», после галочки ${joinOff ? 'НЕ РАБОТАЕТ' : 'активна'}`
+    }
+    await context.close()
   }
 
-  // последний экран — с галочкой и включённой кнопкой: именно так его увидит
-  // человек в момент решения
-  await page.locator(`[data-testid="rules-dot-${total}"]`).click()
-  await page.waitForSelector('[data-testid="rules-gate"]', { timeout: 10000 })
-  await page.locator('[data-testid="rules-agree"]').click()
-  await wait(300)
-  const joinText = await page.locator('[data-testid="rules-join"]').textContent()
-  const joinOff = await page.locator('[data-testid="rules-join"]').isDisabled()
-  await page.screenshot({ path: `${PREVIEW_OUT}/04-согласие-и-кнопка.png` })
-  say(`  снимок: qa-screens/rules-preview/04-согласие-и-кнопка.png`)
-  say(`  кнопка вступления: «${joinText}», после галочки ${joinOff ? 'ВСЁ ЕЩЁ НЕ РАБОТАЕТ' : 'активна'}`)
-
-  await page.context().close()
   await browser.close()
   server.close()
 
-  if (dirty.length) {
-    console.error('СЫРАЯ РАЗМЕТКА НА ЭКРАНЕ:')
-    for (const d of dirty) console.error('  ' + d)
-    process.exit(1)
-  }
-  if (joinOff) {
-    console.error('Кнопка вступления не включилась после галочки')
-    process.exit(1)
-  }
   say('')
-  say('все двенадцать экранов чистые, ворота работают')
+  say(joinLine)
+  say(`снимки: qa-screens/rules-preview (${readdirSync(PREVIEW_OUT).length} файлов)`)
+  if (problems.length) {
+    console.error('')
+    console.error('НАЙДЕНО:')
+    for (const p of problems) console.error('  ' + p)
+    process.exit(1)
+  }
+  say('все экраны на обоих размерах: без немого обрыва и без сырой разметки')
   process.exit(0)
 }
 
@@ -441,7 +553,7 @@ async function skipSetup(page) {
  * этого экран и сделан. Поэтому возвращаемся на него с выбора уровня столько
  * раз, сколько нужно, и снимаем, как только зоны силуэта стали зелёными.
  */
-async function catchCalibration(page, shots) {
+async function catchCalibration(page, shotList) {
   for (let attempt = 0; attempt < 6; attempt += 1) {
     const back = page.locator('.mt-screen--levels .mt-corner--left')
     if (await back.count()) await back.first().click().catch(() => {})
@@ -455,28 +567,59 @@ async function catchCalibration(page, shots) {
       .then(() => true)
       .catch(() => false)
     if (!lit) continue
-    for (const [id, opts] of shots) await shoot(page, id, opts)
+    await shootSilhouette(page, shotList)
     return true
   }
   say('  силуэт поймать не удалось — снимаю как есть')
-  for (const [id, opts] of shots) await shoot(page, id, opts)
+  await shootSilhouette(page, shotList)
   return false
+}
+
+/**
+ * Кадр считается ЗДЕСЬ, а не заранее: силуэт живёт только на экране калибровки,
+ * и спросить его коробку можно лишь когда экран открыт.
+ */
+async function shootSilhouette(page, ids) {
+  for (const id of ids) {
+    // 04 — от самого верха: подсказка и голова; 01 — крупный план фигуры
+    const clip = id === '01'
+      ? band(300, { width: 320 })
+      : { x: 0, y: 0, width: PHONE_W, height: Math.round(PHONE_W / SHOT_RATIO) }
+    await shoot(page, id, { clip })
+  }
 }
 
 // ── 01, 04, 05: калибровка и выбор уровня — одной страницей -------------------
 if (want('01') || want('04') || want('05')) {
   say('01/04/05 — калибровка и выбор уровня (грузится движок и модель, это долго)')
-  const page = await motionPage({ season: false })
+  const page = await motionPage({ season: false, wide: true })
   await framesFlowing(page)
   await skipSetup(page)
   await wait(1200)
-  if (want('05')) await shoot(page, '05')
+  // Три карточки уровней — по ним и кадр; скелет камеры из-под них убираем.
+  if (want('05')) await shoot(page, '05', { hideCamera: true, clip: await bandOf(page, '.mt-levels') })
 
+  await page.context().close()
+}
+
+// ── 01 и 04: калибровка — в широком окне ------------------------------------
+if (want('01') || want('04')) {
+  /**
+   * КАДР ОТ ВЕРХА ЭКРАНА. Человек в кадре стоит во весь рост — фигура
+   * вертикальная, и в полосе нужной пропорции она целиком не помещается никак:
+   * шире экрана телефона не снять, а в горизонт приложение осознанно не идёт
+   * («в горизонте не видно тебя целиком»). Из двух половин выбираем верхнюю:
+   * зелёная подсказка «Отлично, стой так» и загоревшийся силуэт — то, по чему
+   * этот экран узнают, а нижняя половина это те же ноги на чёрном фоне.
+   */
+  say('01/04 — калибровка')
+  const page = await motionPage({ season: false })
+  await framesFlowing(page)
+  await skipSetup(page)
   const calibShots = []
-  if (want('04')) calibShots.push(['04', {}])
-  // 01 — тот же экран крупным планом: середина кадра, где силуэт и подсказка
-  if (want('01')) calibShots.push(['01', { clip: { x: 0, y: 128, width: 390, height: 470 } }])
-  if (calibShots.length) await catchCalibration(page, calibShots)
+  if (want('04')) calibShots.push('04')
+  if (want('01')) calibShots.push('01')
+  await catchCalibration(page, calibShots)
   await page.context().close()
 }
 
@@ -495,6 +638,7 @@ if (want('06') || want('09')) {
     })
   }
   const page = await motionPage({
+    wide: true,
     seed: {
       days,
       // две потраченные попытки сегодняшнего дня: на экране это «попытка 3 из 3»
@@ -510,13 +654,14 @@ if (want('06') || want('09')) {
   await framesFlowing(page)
   await skipSetup(page)
   await wait(1200)
-  if (want('06')) await shoot(page, '06')
+  if (want('06')) await shoot(page, '06', { hideCamera: true, clip: await bandOf(page, '.mt-levels') })
 
   if (want('09')) {
     await page.locator('[data-testid="open-room"]').click()
     await page.waitForSelector('[data-testid="room-days"]', { timeout: 30000 })
     await wait(900)
-    await shoot(page, '09')
+    // Календарь тридцати дней — то, ради чего этот снимок; берём полосу по нему
+    await shoot(page, '09', { hideCamera: true, clip: await bandOf(page, '[data-testid="room-days"]') })
   }
   await page.context().close()
 }
@@ -545,10 +690,15 @@ if (want('03')) {
   if (await p2.count()) await p2.first().click().catch(() => {})
   // и ловим кадр, в котором мишень В ВОЗДУХЕ: правила показывают бой, а не
   // паузу между мишенями
+  // Ждём кадр, где мишень висит ВЫСОКО: счёт живёт в шапке, и только такая
+  // мишень попадает с ним в одну полосу. Не дождались — снимаем как есть.
   await page
-    .waitForFunction(() => (window.__shots?.targets || 0) > 0, null, { timeout: 30000, polling: 50 })
-    .catch(() => say('  мишени в кадре не поймал — снимаю как есть'))
-  await shoot(page, '03')
+    .waitForFunction(() => {
+      const y = window.__shots?.topTarget
+      return typeof y === 'number' && y < 0.42
+    }, null, { timeout: 60000, polling: 40 })
+    .catch(() => say('  высокой мишени не дождался — снимаю как есть'))
+  await shoot(page, '03', { clip: { x: 0, y: 0, width: PHONE_W, height: Math.round(PHONE_W / SHOT_RATIO) } })
   await page.context().close()
 }
 
@@ -569,7 +719,8 @@ if (want('02') || want('07')) {
   if (await tab.count()) await tab.first().click()
   await page.waitForSelector('[data-testid="meal-breakfast"]', { timeout: 30000 })
   await wait(1200)
-  if (want('07')) await shoot(page, '07')
+  // Норма и остаток за день — верхняя карточка дневника
+  if (want('07')) await shoot(page, '07', { clip: band(275) })
 
   if (want('02')) {
     // «Мои данные» — тот самый экран, который правила просят заполнить до
@@ -585,7 +736,7 @@ if (want('02') || want('07')) {
     // и узнают.
     await page.mouse.wheel(0, 620)
     await wait(1200)
-    await shoot(page, '02')
+    await shoot(page, '02', { clip: band(350) })
   }
   await page.context().close()
 }
@@ -602,6 +753,7 @@ for (const [id, file] of MOCK_SHOTS) {
   const page = await newPage({ mobile: false })
   await page.goto(`${BASE}/mock/${file}`, { waitUntil: 'load' })
   await wait(300)
+  // Макеты нарисованы сразу в пропорции блока — кадрировать нечего
   await shoot(page, id)
   await page.context().close()
 }

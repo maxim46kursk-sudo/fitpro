@@ -79,6 +79,20 @@ async function boot() {
       return readTargets().targets.length
     },
     /**
+     * Самая ВЫСОКАЯ мишень в кадре (нормированная координата, 0 — верх).
+     * Съёмке нужен кадр, где мишень попала в ту же полосу, что и счёт: иначе на
+     * картинке правил окажется либо счёт без мишени, либо мишень без счёта.
+     */
+    get topTarget() {
+      const list = readTargets().targets
+      let best = null
+      for (const t of list) {
+        const y = t.spot?.y
+        if (typeof y === 'number' && (best === null || y < best)) best = y
+      }
+      return best
+    },
+    /**
      * ЗАСЕВ ПРОЙДЕННЫМИ ДНЯМИ И ПОТРАЧЕННЫМИ ПОПЫТКАМИ — настоящими функциями
      * игры, а не записью в localStorage руками. Формат хранилища знает только
      * game/day.js, и любая рукописная копия его формы разъедется с ней на первой

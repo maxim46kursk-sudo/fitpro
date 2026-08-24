@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { RULES } from './rulesContent.js'
 
 /**
@@ -63,11 +63,66 @@ export default function RulesScreen({
   const last = pages.length - 1
   if (index >= last) reachedEnd.current = true
 
-  /** Текст прокручивается внутри экрана — новый экран начинается сверху. */
+  /**
+   * ТЕКСТ НЕ ИМЕЕТ ПРАВА ОБРЫВАТЬСЯ МОЛЧА.
+   *
+   * Полевая история: правила листали до двенадцатого экрана и не находили ни
+   * галочки, ни кнопки — потому что текст был срезан на полуслове ровно по
+   * нижнему краю, и человек читал это как «здесь всё». Обрыв без признака
+   * продолжения — не мелочь вёрстки, а потерянная покупка.
+   *
+   * Отсюда две ступени, обе видимые:
+   *   1) не влезает — КАРТИНКА УЖИМАЕТСЯ (40% высоты → 22%), и чаще всего
+   *      этого хватает, чтобы экран поместился целиком;
+   *   2) не влезло и так — снизу текста ложится мягкий градиент: он говорит
+   *      «ниже есть ещё» и исчезает, когда человек дочитал до низа.
+   *
+   * Меряем после отрисовки (useLayoutEffect), а не гадаем по числу букв: высота
+   * зависит от экрана, шрифта и переносов, и любая прикидка разъедется на
+   * первом же телефоне другого размера.
+   */
   const scrollRef = useRef(null)
+  const [compact, setCompact] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+
+  const measure = () => {
+    const el = scrollRef.current
+    if (!el) return
+    const rest = el.scrollHeight - el.scrollTop - el.clientHeight
+    setHasMore(rest > 4)
+  }
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return undefined
+    // Первая ступень: не влезает — ужимаем картинку и меряем заново.
+    if (!compact && el.scrollHeight - el.clientHeight > 2) {
+      setCompact(true)
+      return undefined
+    }
+    measure()
+    // И ещё раз следующим кадром: высота картинки и переносы строк успевают
+    // устояться только после отрисовки, а ошибиться тут — значит оставить текст
+    // обрезанным молча.
+    const again = requestAnimationFrame(measure)
+    // Картинка догружается позже текста и меняет высоту блока — меряем и после.
+    const img = el.parentElement?.querySelector('img')
+    img?.addEventListener('load', measure)
+    globalThis.addEventListener?.('resize', measure)
+    return () => {
+      cancelAnimationFrame(again)
+      img?.removeEventListener('load', measure)
+      globalThis.removeEventListener?.('resize', measure)
+    }
+  }, [index, compact])
+
   const go = (next) => {
     if (next < 0 || next > last) return
     setIndex(next)
+    // Новый экран начинается сверху и снова с крупной картинкой: короткому
+    // экрану ужиматься незачем.
+    setCompact(false)
+    setHasMore(false)
     if (scrollRef.current) scrollRef.current.scrollTop = 0
   }
 
@@ -118,8 +173,9 @@ export default function RulesScreen({
 
   return (
     <div
-      className="mt-screen mt-screen--rules"
+      className={`mt-screen mt-screen--rules ${compact ? 'is-compact' : ''}`}
       data-testid="rules-screen"
+      data-compact={compact ? '1' : '0'}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
@@ -152,13 +208,25 @@ export default function RulesScreen({
         </div>
       )}
 
-      <div className="mt-rules__scroll" ref={scrollRef} data-testid={`rules-page-${index + 1}`}>
-        <h1 className="mt-rules__title" data-testid="rules-title">{page.title}</h1>
-        <div className="mt-rules__body">
-          {page.body?.map((block, i) => (
-            <Block key={i} block={block} />
-          ))}
+      <div className="mt-rules__reading">
+        <div
+          className="mt-rules__scroll"
+          ref={scrollRef}
+          onScroll={measure}
+          data-testid={`rules-page-${index + 1}`}
+        >
+          <h1 className="mt-rules__title" data-testid="rules-title">{page.title}</h1>
+          <div className="mt-rules__body">
+            {page.body?.map((block, i) => (
+              <Block key={i} block={block} />
+            ))}
+          </div>
         </div>
+
+        {/* «Ниже есть ещё» — единственная задача этой полоски. */}
+        {hasMore && (
+          <div className="mt-rules__fade" data-testid="rules-more" aria-hidden="true" />
+        )}
       </div>
 
       {/* ЗАКРЕПЛЁННАЯ ПАНЕЛЬ: где я и куда дальше. На последнем экране первого
