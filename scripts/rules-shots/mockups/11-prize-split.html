@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<title>Делёжка призового фонда</title>
+<!--
+  МАКЕТ БУДУЩЕГО ЭКРАНА: призовой фонд потока.
+  Половина собранных билетов идёт в фонд, фонд делится 50/30/20 между тройкой
+  лучших (docs/challenge-rules.md, экран 11; те же числа лежат в
+  challenge_seasons.prize_pct и prize_split — sql/2026-08-24_challenge_seasons.sql).
+  Цифры примера: 42 билета по 2990 ₽ → сбор 125 580 ₽ → фонд 62 790 ₽.
+-->
+<style>
+  :root {
+    --bg:#0b0b0d; --surf:#1c1c1e; --surf2:#2c2c2e; --hair:rgba(255,255,255,.12);
+    --txt:#fff; --txt2:rgba(235,235,245,.62); --txt3:rgba(235,235,245,.30);
+    --good:#78E6BE; --pur:#7C7AF0; --gold:#FFD166; --silver:#C9D4E6; --bronze:#E0955A;
+  }
+  * { box-sizing:border-box; margin:0; }
+  body {
+    width:720px; height:470px; background:var(--bg); color:var(--txt);
+    font:400 15px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .card { width:640px; background:var(--surf); border:1px solid var(--hair); border-radius:22px; padding:24px 28px; }
+  .top { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:6px; }
+  h1 { font-size:19px; font-weight:800; }
+  .tickets { font-size:12px; color:var(--txt3); }
+  .fund { font-size:40px; font-weight:900; color:var(--good); line-height:1.1; }
+  .fundNote { font-size:12px; color:var(--txt2); margin-bottom:18px; }
+  /* Полоса делёжки: ширины — те самые 50/30/20, а не «на глаз». */
+  .split { display:flex; height:16px; border-radius:8px; overflow:hidden; margin-bottom:16px; }
+  .split i { display:block; }
+  .places { display:flex; gap:12px; }
+  .place { flex:1; background:var(--surf2); border-radius:16px; padding:14px 16px; }
+  .pl { font-size:12px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; }
+  .pct { font-size:26px; font-weight:900; margin-top:4px; }
+  .rub { font-size:13px; color:var(--txt2); margin-top:2px; font-variant-numeric:tabular-nums; }
+  .foot { margin-top:18px; padding-top:14px; border-top:1px solid var(--hair); font-size:12px; color:var(--txt3); }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="top">
+      <h1>Призовой фонд потока</h1>
+      <div class="tickets">42 билета × 2 990 ₽ = 125 580 ₽</div>
+    </div>
+    <div class="fund">62 790 ₽</div>
+    <div class="fundNote">половина всех собранных билетов — чем больше народу, тем больше фонд</div>
+
+    <div class="split">
+      <i style="width:50%;background:linear-gradient(90deg,#FFD166,#f0b73f)"></i>
+      <i style="width:30%;background:linear-gradient(90deg,#C9D4E6,#9fb0c8)"></i>
+      <i style="width:20%;background:linear-gradient(90deg,#E0955A,#c67c42)"></i>
+    </div>
+
+    <div class="places">
+      <div class="place"><div class="pl" style="color:var(--gold)">1 место</div><div class="pct" style="color:var(--gold)">50%</div><div class="rub">31 395 ₽ + личная работа с тренером</div></div>
+      <div class="place"><div class="pl" style="color:var(--silver)">2 место</div><div class="pct" style="color:var(--silver)">30%</div><div class="rub">18 837 ₽</div></div>
+      <div class="place"><div class="pl" style="color:var(--bronze)">3 место</div><div class="pct" style="color:var(--bronze)">20%</div><div class="rub">12 558 ₽</div></div>
+    </div>
+
+    <div class="foot">Место считается по сумме двух зачётов — движения и питания.</div>
+  </div>
+</body>
+</html>

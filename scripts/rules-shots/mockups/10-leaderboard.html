@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<title>Таблица рейтинга</title>
+<!--
+  МАКЕТ БУДУЩЕГО ЭКРАНА: рейтинг потока.
+  Место в челлендже — сумма двух мест (движение + питание), у кого сумма меньше,
+  тот выше; при равных суммах выше тот, у кого лучше место в «Движении»
+  (docs/challenge-rules.md, экран 10). Строки ниже — ровно этот пример: у 1-го и
+  2-го сумма одинаковая, и разводит их движение. Палитра — src/theme.js.
+-->
+<style>
+  :root {
+    --bg:#0b0b0d; --surf:#1c1c1e; --surf2:#2c2c2e; --hair:rgba(255,255,255,.12);
+    --txt:#fff; --txt2:rgba(235,235,245,.62); --txt3:rgba(235,235,245,.30);
+    --pur:#7C7AF0; --good:#78E6BE; --gold:#FFD166;
+  }
+  * { box-sizing:border-box; margin:0; }
+  body {
+    width:720px; height:470px; background:var(--bg); color:var(--txt);
+    font:400 15px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .card { width:660px; background:var(--surf); border:1px solid var(--hair); border-radius:22px; padding:22px 24px; }
+  h1 { font-size:19px; font-weight:800; margin-bottom:2px; }
+  .sub { font-size:12px; color:var(--txt3); margin-bottom:16px; }
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  th { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--txt3); font-weight:700; text-align:right; padding:0 6px 8px; }
+  th:nth-child(1), th:nth-child(2), th:nth-child(3) { text-align:left; }
+  td { font-size:14px; padding:9px 6px; border-top:1px solid var(--hair); text-align:right; }
+  td:nth-child(1), td:nth-child(2), td:nth-child(3) { text-align:left; }
+  .place { font-size:17px; font-weight:900; width:34px; }
+  .no { color:var(--txt3); font-size:13px; width:44px; }
+  .name { font-weight:700; }
+  .sum { font-weight:900; color:var(--good); }
+  /* Своя строка подсвечена: «своё место видно всегда» — правило экрана 10. */
+  tr.me td { background:rgba(124,122,240,.14); }
+  tr.me td:first-child { border-radius:10px 0 0 10px; }
+  tr.me td:last-child { border-radius:0 10px 10px 0; }
+  .top td:nth-child(1) { color:var(--gold); }
+  .foot { margin-top:14px; font-size:11.5px; color:var(--txt3); }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Поток 1 — рейтинг</h1>
+    <div class="sub">День 30 из 30 · 42 участника</div>
+    <table>
+      <thead>
+        <tr><th>Место</th><th>№</th><th>Имя</th><th>Движение</th><th>Питание</th><th>Сумма мест</th></tr>
+      </thead>
+      <tbody>
+        <tr class="top"><td class="place">1</td><td class="no">№7</td><td class="name">Ирина К.</td><td>128 400</td><td>92%</td><td class="sum">4</td></tr>
+        <tr class="top"><td class="place">2</td><td class="no">№3</td><td class="name">Максим Д.</td><td>141 250</td><td>78%</td><td class="sum">4</td></tr>
+        <tr class="top"><td class="place">3</td><td class="no">№18</td><td class="name">Алексей П.</td><td>119 700</td><td>88%</td><td class="sum">6</td></tr>
+        <tr class="me"><td class="place">4</td><td class="no">№12</td><td class="name">Ты</td><td>112 300</td><td>84%</td><td class="sum">9</td></tr>
+        <tr><td class="place">5</td><td class="no">№25</td><td class="name">Ольга С.</td><td>98 050</td><td>90%</td><td class="sum">11</td></tr>
+      </tbody>
+    </table>
+    <div class="foot">Место = место в «Движении» + место в «Питании». Суммы равны — выше тот, у кого лучше движение.</div>
+  </div>
+</body>
+</html>

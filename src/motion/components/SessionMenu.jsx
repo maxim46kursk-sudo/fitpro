@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { NOTE_MAX } from '../debug/diagnostics.js'
+import RulesScreen from '../screens/RulesScreen.jsx'
 
 /**
  * МЕНЮ ТРЕНИРОВКИ — постоянная кнопка в углу и действия за ней.
@@ -49,11 +50,20 @@ export default function SessionMenu({ paused, onPause, onResume, onRestart, onEx
   /** 'idle' | 'form' | 'sending' | 'sent' — где человек в жалобе. */
   const [report, setReport] = useState('idle')
   const [note, setNote] = useState('')
+  /**
+   * ПРАВИЛА ОТКРЫВАЮТСЯ ПРЯМО ЗДЕСЬ, поверх меню, а не переключением экрана
+   * раздела. Вопрос «а сколько попыток?» приходит в голову посреди тренировки,
+   * и уводить человека из сессии ради ответа значит убить сессию: она
+   * размонтируется вместе с набранным. Меню и так ставит паузу, когда его
+   * открывают, — правила просто читаются в этой паузе.
+   */
+  const [rules, setRules] = useState(false)
 
   const close = () => {
     setOpen(false)
     setReport('idle')
     setNote('')
+    setRules(false)
   }
   const act = (fn) => () => {
     close()
@@ -79,6 +89,12 @@ export default function SessionMenu({ paused, onPause, onResume, onRestart, onEx
       // жалоба принята, а доедет она сейчас или через минуту, ему всё равно.
     }
     setReport('sent')
+  }
+
+  // Правила — на весь экран и без галочки: согласие даётся один раз до покупки
+  // (см. RulesScreen), а здесь их перечитывают.
+  if (open && rules) {
+    return <RulesScreen onExit={() => setRules(false)} />
   }
 
   /**
@@ -181,6 +197,17 @@ export default function SessionMenu({ paused, onPause, onResume, onRestart, onEx
           data-testid="menu-exit"
         >
           Выйти к выбору уровня
+        </button>
+
+        {/* Правила потока — тихим пунктом: за ними приходят с конкретным
+            вопросом, а не листать двенадцать экранов посреди тренировки. */}
+        <button
+          type="button"
+          className="mt-menu__item mt-menu__item--quiet"
+          onClick={() => setRules(true)}
+          data-testid="menu-rules"
+        >
+          Правила челленджа
         </button>
 
         {/*
