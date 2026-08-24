@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { standings } from '../../challengeStandings.js'
+import { streamPhase } from '../game/challenge.js'
 
 /**
  * ТАБЛИЦА ПОТОКА — где я среди остальных.
@@ -39,6 +40,8 @@ export default function StandingsScreen({
 }) {
   const table = standings(rows || [])
   const started = hasStarted(startsOn)
+  /** Поток кончился — таблица окончательная, и это надо сказать вслух. */
+  const frozen = streamPhase(startsOn) === 'over'
 
   /**
    * ГДЕ СЕЙЧАС СВОЯ СТРОКА — выше экрана, ниже или на нём. Считаем наблюдателем,
@@ -72,7 +75,11 @@ export default function StandingsScreen({
       <div className="mt-st__head">
         <div className="mt-st__title">{title || 'Таблица потока'}</div>
         <div className="mt-st__sub">
-          {started ? `${table.length} ${plural(table.length)}` : 'Поток ещё не начался'}
+          {!started
+            ? 'Поток ещё не начался'
+            : frozen
+              ? `${table.length} ${plural(table.length)} · поток завершён, итог окончательный`
+              : `${table.length} ${plural(table.length)}`}
         </div>
       </div>
 
@@ -178,11 +185,10 @@ function formatDate(value) {
   return d ? `${d.getDate()} ${MONTHS[d.getMonth()]}` : ''
 }
 
-/** Начался ли поток. Даты нет — считаем, что нет: сравнивать нечего. */
-function hasStarted(startsOn) {
-  const start = parseDate(startsOn)
-  if (!start) return false
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  return today >= start
-}
+/**
+ * Начался ли поток. Даты нет — считаем, что нет: сравнивать нечего.
+ *
+ * Черта та же, что и у самих дней потока, — полночь по Москве (game/challenge.js).
+ * Второй способ считать сутки развёл бы таблицу с игрой на несколько часов.
+ */
+const hasStarted = (startsOn) => streamPhase(startsOn) !== 'unknown' && streamPhase(startsOn) !== 'before'

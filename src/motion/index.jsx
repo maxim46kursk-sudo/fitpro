@@ -12,7 +12,7 @@ import PersonalSetupScreen from './screens/PersonalSetupScreen.jsx'
 import ResultScreen from './screens/ResultScreen.jsx'
 import { DEFAULT_TIER } from './game/levels.js'
 import { needsPersonalSetup } from './game/personal.js'
-import { DAYS, currentDay, forcedDay } from './game/challenge.js'
+import { DAYS, currentDay, forcedDay, setStreamStart } from './game/challenge.js'
 import ChallengeScreen from './screens/ChallengeScreen.jsx'
 import StandingsScreen from './screens/StandingsScreen.jsx'
 import {
@@ -371,6 +371,20 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
     loadChallengeState({ guest }).then((value) => {
       if (!alive) return
       setMembership(value)
+      /**
+       * ДЕНЬ УЧАСТНИКА СЧИТАЕТ КАЛЕНДАРЬ, и узнаём мы об этом только здесь:
+       * дата старта живёт в сезоне, а сезон — на сервере. Отдаём её игре
+       * (game/challenge.js) и тут же пересчитываем день, потому что первый
+       * снимок брался до ответа и показывал прогресс одиночки.
+       *
+       * Заданный снаружи день и отладочный `?day=` по-прежнему сильнее: они
+       * показывают то, что попросили. Сыграть чужой день это всё равно не
+       * даёт — играбельность считает dayPlayable, и у участника она сходится
+       * ровно на сегодняшнем дне потока.
+       */
+      const started = value?.entry ? value?.season?.starts_on ?? null : null
+      setStreamStart(started)
+      if (!guest) setDay(dayOverride ?? forcedDay() ?? currentDay())
     })
     return () => { alive = false }
   }, [guest, startScreen])
@@ -912,6 +926,8 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
           key={`levels-${runId}`}
           challengeDay={day}
           challengeDays={DAYS}
+          /** Дата старта потока: с ней день идёт по календарю, без неё — по кнопке. */
+          challengeStart={member ? membership?.season?.starts_on ?? null : null}
           /**
            * УЧАСТНИК ЧЕЛЛЕНДЖА — тот, чьи заходы вообще идут в зачёт. Граница
            * проходит по аккаунту: у вошедшего человека попытка записывается,
@@ -978,7 +994,12 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
               setRunId((n) => n + 1)
               // день мог только что закрыться завершённой сессией — перечитываем
               // прогресс, но заданный снаружи день и отладочный ?day= уважаем:
-              // они показывают то, что попросили, и прогресса не касаются
+              // они показывают то, что попросили, и прогресса не касаются.
+              //
+              // Здесь же ловится полночь: сессия, начатая в 23:50, идёт со
+              // СВОИМ днём до конца — заход принадлежит тому дню, в котором
+              // начался, — а на выходе номер пересчитывается, и участник видит
+              // уже наступивший день потока. Ровно один раз, ровно на границе.
               if (!guest) setDay(dayOverride ?? forcedDay() ?? currentDay())
               setScreen('levels')
             }}

@@ -14,7 +14,12 @@ import {
   resetDay,
   submitAttempt,
   dayAttemptsUsed,
+  holdSession,
+  sessionResume,
 } from './day.js'
+import { moscowDate, resetProgress, setStreamStart } from './challenge.js'
+import { mergeAttempts } from '../sync.js'
+import { KEYS, readJson, writeJson } from '../storage.js'
 
 /**
  * Учёт заходов по правилам челленджа: ТРИ ЗАХОДА НА ДЕНЬ (не на уровень), в
@@ -406,5 +411,86 @@ describe('хранилище не роняет игру', () => {
 
     expect(attemptsLeft('novice', D1)).toBe(3)
     expect(challengeTotal()).toBe(0)
+  })
+})
+
+/**
+ * ЗАХОДЫ ПОДПИСАНЫ ДНЁМ ПОТОКА. У участника день назначает календарь, и всё,
+ * что day.js пишет без явного номера дня, обязано попадать именно в него:
+ * иначе заход, сделанный сегодня, посчитался бы за вчера — то есть в чужой день
+ * общей таблицы.
+ */
+describe('день по умолчанию — день потока', () => {
+  /** Поток, начавшийся четыре московских дня назад: сегодня его пятый день. */
+  const назад = (дней) => {
+    const [y, m, d] = moscowDate().split('-').map(Number)
+    return new Date(Date.UTC(y, m - 1, d - дней)).toISOString().slice(0, 10)
+  }
+
+  beforeEach(() => {
+    resetDay()
+    resetProgress()
+    setStreamStart(null)
+  })
+
+  it('заходы, остаток и итог считаются на дне потока', () => {
+    setStreamStart(назад(4))
+
+    submitAttempt('novice', 900)
+    submitAttempt('pro', 1500)
+
+    // без номера дня — и всё легло в пятый день потока
+    expect(dayAttemptsUsed()).toBe(2)
+    expect(dayAttemptsUsed(5)).toBe(2)
+    expect(attemptsLeft()).toBe(MAX_ATTEMPTS - 2)
+    expect(dayTotal()).toBe(1500)
+    expect(dayTotal(5)).toBe(1500)
+    // соседние дни не тронуты: вчерашний остаётся закрытым нулём
+    expect(dayTotal(4)).toBe(0)
+    expect(dayAttemptsUsed(6)).toBe(0)
+  })
+
+  it('продолжение незавершённой сессии ищется в дне потока', () => {
+    setStreamStart(назад(4))
+    holdSession('novice', { attempt: 1, cycle: 3, runs: 1, totals: { score: 700, hits: 9, spawned: 12 } })
+
+    expect(sessionResume()?.day).toBe(5)
+    expect(sessionResume(5)).toBeTruthy()
+    // вчерашний день своего продолжения не получает
+    expect(sessionResume(4)).toBe(null)
+  })
+
+  it('назавтра счёт заходов начинается заново, а вчерашний остаётся как был', () => {
+    setStreamStart(назад(4))
+    submitAttempt('novice', 900)
+    submitAttempt('novice', 800)
+    submitAttempt('novice', 700)
+    expect(attemptsLeft()).toBe(0)
+
+    // тот же поток сутки спустя — шестой день, заходы свежие
+    setStreamStart(назад(5))
+    expect(dayAttemptsUsed()).toBe(0)
+    expect(attemptsLeft()).toBe(MAX_ATTEMPTS)
+    expect(dayTotal()).toBe(0)
+    // а пятый день остался при своём: пропущенное и сыгранное не переписываются
+    expect(dayTotal(5)).toBe(900)
+  })
+
+  it('приехавшие с другого устройства заходы читаются по номеру дня', () => {
+    /**
+     * Слияние (sync.js) складывает попытки по НОМЕРУ ДНЯ, а не по календарю, —
+     * значит второй телефон, стоящий в том же потоке, кладёт свои заходы в тот
+     * же пятый день, и лимит трёх заходов считается по ним вместе.
+     */
+    setStreamStart(назад(4))
+    submitAttempt('novice', 900)
+
+    const своё = readJson(KEYS.challengeAttempts)
+    const чужое = { days: { 5: { pro: [{ score: 1800, at: '2026-09-14T10:00:00Z' }] } }, started: { 5: { pro: 1 } } }
+    writeJson(KEYS.challengeAttempts, mergeAttempts(своё, чужое))
+
+    expect(dayAttemptsUsed()).toBe(2)
+    expect(attemptsLeft()).toBe(1)
+    expect(dayTotal()).toBe(1800)
   })
 })

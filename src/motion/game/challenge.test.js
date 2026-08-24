@@ -19,6 +19,10 @@ import {
   movementsOf,
   progress,
   resetProgress,
+  moscowDate,
+  setStreamStart,
+  streamDay,
+  streamPhase,
 } from './challenge.js'
 import { STRENGTH_TYPES } from './strength.js'
 import { KEYS, writeRaw } from '../storage.js'
@@ -396,5 +400,132 @@ describe('прогресс участника', () => {
 
     advanceDay()
     expect(isChallengeDone()).toBe(true)
+  })
+})
+
+/**
+ * ПОТОК ИДЁТ ПО КАЛЕНДАРЮ. Здесь проверяется единственное правило, из-за
+ * которого возможен спор о призах: в день N потока играется день N, и никакой
+ * другой. Время всюду задаётся явно — тест, зависящий от часов машины, в этом
+ * вопросе не доказывает ничего.
+ */
+describe('день потока считает календарь', () => {
+  beforeEach(() => {
+    globalThis.localStorage?.clear()
+    resetProgress()
+    setStreamStart(null)
+  })
+
+  const START = '2026-09-10'
+  /** Полдень по Москве указанного дня — заведомо середина суток, не край. */
+  const мск = (iso) => new Date(`${iso}T09:00:00Z`)
+
+  it('день = (сегодня − старт) + 1', () => {
+    expect(streamDay(START, мск('2026-09-10'))).toBe(1)
+    expect(streamDay(START, мск('2026-09-14'))).toBe(5)
+    expect(streamDay(START, мск('2026-10-09'))).toBe(30)
+    // до старта и после конца число не прижимается: оба ответа нужны экранам
+    expect(streamDay(START, мск('2026-09-07'))).toBe(-2)
+    expect(streamDay(START, мск('2026-10-10'))).toBe(31)
+    expect(streamDay(null, мск('2026-09-14'))).toBe(null)
+  })
+
+  it('граница суток — полночь по Москве, и она одна на всех', () => {
+    /**
+     * 20:59:59 UTC — это 23:59:59 в Москве, ещё вчерашний день; секунда спустя
+     * начинается следующий. Ни часовой пояс браузера, ни летнее время сюда не
+     * входят: у человека из Владивостока и у человека из Берлина день потока
+     * меняется в одну и ту же секунду, иначе последний день у них был бы
+     * разной длины — а на нём призы.
+     */
+    expect(streamDay(START, new Date('2026-09-13T20:59:59Z'))).toBe(4)
+    expect(streamDay(START, new Date('2026-09-13T21:00:00Z'))).toBe(5)
+
+    // и меняется РОВНО ОДИН РАЗ: минута до, минута после и час после — один день
+    expect(streamDay(START, new Date('2026-09-13T21:01:00Z'))).toBe(5)
+    expect(streamDay(START, new Date('2026-09-13T22:00:00Z'))).toBe(5)
+    expect(streamDay(START, new Date('2026-09-14T20:59:59Z'))).toBe(5)
+  })
+
+  it('фазы потока: до старта, идёт, завершён', () => {
+    expect(streamPhase(START, мск('2026-09-09'))).toBe('before')
+    expect(streamPhase(START, мск('2026-09-10'))).toBe('running')
+    expect(streamPhase(START, мск('2026-10-09'))).toBe('running')
+    expect(streamPhase(START, мск('2026-10-10'))).toBe('over')
+    expect(streamPhase(null)).toBe('unknown')
+  })
+
+  it('участник в день 5 играет только день 5 — ни четвёртый, ни шестой', () => {
+    const at = мск('2026-09-14')
+    expect(dayPlayable(5, true, START, at)).toBe(true)
+    // вчерашний закрыт навсегда: пропущенный день остаётся нулём
+    expect(dayPlayable(4, true, START, at)).toBe(false)
+    expect(dayPlayable(1, true, START, at)).toBe(false)
+    // завтрашний под замком
+    expect(dayPlayable(6, true, START, at)).toBe(false)
+    expect(dayPlayable(30, true, START, at)).toBe(false)
+  })
+
+  it('пропущенный день не открывается задним числом', () => {
+    // человек не играл день 5 вовсе; на шестой день он по-прежнему недоступен
+    expect(dayPlayable(5, true, START, мск('2026-09-15'))).toBe(false)
+    expect(dayPlayable(6, true, START, мск('2026-09-15'))).toBe(true)
+    // и сданный день назад тоже не пускает — дверь одна и только сегодняшняя
+    completeDay(5)
+    expect(dayPlayable(5, true, START, мск('2026-09-15'))).toBe(false)
+  })
+
+  it('до старта и после тридцатого дня закрыто всё', () => {
+    for (const day of [1, 5, 30]) {
+      expect(dayPlayable(day, true, START, мск('2026-09-09'))).toBe(false)
+      expect(dayPlayable(day, true, START, мск('2026-10-10'))).toBe(false)
+    }
+  })
+
+  it('поток без объявленной даты идёт по-старому — все тридцать дней', () => {
+    // поле пустое у сезона, а место оплачено: закрыть человеку всё было бы хуже
+    expect(dayPlayable(6, true, null, мск('2026-09-14'))).toBe(true)
+    expect(dayPlayable(30, true, null, мск('2026-09-14'))).toBe(true)
+  })
+
+  it('не участник ходит по пяти дням кнопкой, календарь его не касается', () => {
+    setStreamStart(START)
+    for (let day = 1; day <= FREE_DAYS; day += 1) expect(dayPlayable(day, false)).toBe(true)
+    expect(dayPlayable(6, false)).toBe(false)
+
+    // и переход у него по-прежнему работает
+    completeDay(1)
+    expect(advanceDay().advanced).toBe(true)
+    expect(progress().day).toBe(2)
+  })
+
+  it('currentDay участника — день потока, а не его прогресс', () => {
+    completeDay(1)
+    advanceDay()
+    expect(currentDay()).toBe(2)
+
+    /**
+     * Поток, начавшийся четыре московских дня назад, идёт пятым днём — и это
+     * тот день, которым подписывается ВСЁ: попытки, черновик, снимок сессии и
+     * сид трассы (day.js берёт день по умолчанию отсюда). Дата собирается от
+     * сегодняшнего московского числа, а не от машинного полудня: иначе тест
+     * ломался бы у всех, кто западнее Москвы.
+     */
+    const [y, m, d] = moscowDate().split('-').map(Number)
+    const старт = new Date(Date.UTC(y, m - 1, d - 4)).toISOString().slice(0, 10)
+    setStreamStart(старт)
+    expect(currentDay()).toBe(5)
+
+    setStreamStart(null)
+    expect(currentDay()).toBe(2)
+  })
+
+  it('поток кончился — день упирается в тридцатый, а не растёт дальше', () => {
+    const [y, m, d] = moscowDate().split('-').map(Number)
+    const давно = new Date(Date.UTC(y, m - 1, d - 60)).toISOString().slice(0, 10)
+    setStreamStart(давно)
+    expect(currentDay()).toBe(DAYS)
+    // играть при этом нечего
+    expect(dayPlayable(DAYS, true)).toBe(false)
   })
 })

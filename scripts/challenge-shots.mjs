@@ -206,6 +206,17 @@ const DIARY = [
 ]
 
 /** Сезон и участие — для экранов Motion, где виден счётчик попыток. */
+/**
+ * Дата за N дней до сегодня, `YYYY-MM-DD`. Нужна снимкам, где поток обязан
+ * ИДТИ: день участника считает календарь (src/motion/game/challenge.js), и с
+ * датой из будущего экран честно покажет «поток ещё не начался» вместо игры.
+ */
+const daysAgo = (n) => {
+  const d = new Date()
+  d.setDate(d.getDate() - n)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 const SEASON = {
   // дата — как на проде (sql/2026-08-24_season1_starts_on.sql): предпросмотр
   // обязан показывать ровно то, что увидит человек
@@ -599,7 +610,9 @@ if (want('fight')) {
   say('fight — жду мишень и счёт (персонаж бьёт сам)')
   // ?round=1 — прежний одиночный зачётный раунд: тот же экран боя, но без
   // двадцати минут сессии впереди. Мишени, счёт и таймер здесь настоящие.
-  const page = await motionPage({ query: '?round=1&motion-debug=1' })
+  // поток идёт пятый день: участнику открыт ровно сегодняшний день, и именно
+  // его мы и снимаем
+  const page = await motionPage({ query: '?round=1&motion-debug=1', seasonStart: daysAgo(4) })
   await framesFlowing(page)
   const panel = page.locator('[data-testid="panel-close"]')
   if (await panel.count()) await panel.first().click().catch(() => {})
@@ -641,7 +654,7 @@ if (want('diary')) {
   await page.context().close()
 }
 
-// ── ТАБЛИЦА УЧАСТНИКОВ: экрана ещё нет, снимаем макет ────────────────────────
+// ── ТАБЛИЦА УЧАСТНИКОВ ───────────────────────────────────────────────────────
 if (want('table')) {
   /**
    * НАСТОЯЩИЙ ЭКРАН, А НЕ МАКЕТ. Таблица потока теперь есть в приложении
@@ -650,7 +663,9 @@ if (want('table')) {
    * этом скрипте, живого потока для снимка мы не заводим.
    */
   say('table — таблица потока, настоящий экран')
-  const page = await motionPage({ seasonStart: '2026-07-27', props: { startScreen: 'challenge' } })
+  // поток пройден целиком: на картинке итог, а не середина, где средний
+  // процент питания заведомо ниже — он делится на все тридцать дней
+  const page = await motionPage({ seasonStart: daysAgo(29), props: { startScreen: 'challenge' } })
   await page.waitForSelector('[data-testid="challenge-screen"]', { timeout: 60000 })
   await page.locator('[data-testid="challenge-standings"]').click()
   await page.waitForSelector('[data-testid="standings-list"]', { timeout: 30000 })

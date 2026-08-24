@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import ChallengeScreen, { PRIZES } from './ChallengeScreen.jsx'
+import { moscowDate } from '../game/challenge.js'
 
 /**
  * СТРАНИЦА ЧЕЛЛЕНДЖА — ВИТРИНА, ПО КОТОРОЙ РЕШАЮТ, ПЛАТИТЬ ЛИ.
@@ -255,6 +256,12 @@ describe('гость: аккаунт вместо оплаты', () => {
   })
 })
 
+/** Дата за N московских дней от сегодня: минус — прошлое, плюс — будущее. */
+const сдвиг = (дней) => {
+  const [y, m, d] = moscowDate().split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d + дней)).toISOString().slice(0, 10)
+}
+
 describe('участник: комната потока вместо витрины', () => {
   it('номер, имя и обратный отсчёт до старта', () => {
     /**
@@ -279,11 +286,31 @@ describe('участник: комната потока вместо витри�
 
   it('прямым текстом: дни откроются в старт, остальное доступно сейчас', () => {
     // это первый вопрос оплатившего — «я заплатил, а где тренировки?»
-    render(<ChallengeScreen state={{ season: SEASON, entry: ENTRY }} />)
+    render(<ChallengeScreen state={{ season: { ...SEASON, starts_on: сдвиг(3) }, entry: ENTRY }} />)
     const early = screen.getByTestId('challenge-early').textContent
 
     expect(early).toContain('откроются в день старта')
     expect(early).toContain('тренировки, программы и дневник питания доступны уже сейчас')
+  })
+
+  it('поток идёт — комната называет сегодняшний день, а не отсчёт', () => {
+    /**
+     * У участника день назначает календарь, и это первое, что ему нужно знать:
+     * играется сегодня день N, и никакой другой.
+     */
+    render(<ChallengeScreen state={{ season: { ...SEASON, starts_on: сдвиг(-4) }, entry: ENTRY }} />)
+
+    expect(screen.getByTestId('challenge-start').textContent).toContain('Идёт день 5 из 30')
+    expect(screen.getByTestId('challenge-today').textContent).toContain('пропущенный день закрывается')
+    // «дни откроются в день старта» здесь уже неправда
+    expect(screen.queryByTestId('challenge-early')).toBeNull()
+  })
+
+  it('поток кончился — так и сказано', () => {
+    render(<ChallengeScreen state={{ season: { ...SEASON, starts_on: сдвиг(-40) }, entry: ENTRY }} />)
+
+    expect(screen.getByTestId('challenge-start').textContent).toContain('Поток завершён')
+    expect(screen.queryByTestId('challenge-today')).toBeNull()
   })
 
   it('участнику не показывают ни цены, ни кнопки покупки', () => {

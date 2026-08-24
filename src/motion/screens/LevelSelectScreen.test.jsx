@@ -9,6 +9,7 @@ import {
   completeDay,
   currentDay,
   isUnlocked,
+  moscowDate,
   resetProgress,
 } from '../game/challenge.js'
 import { KEYS, writeRaw } from '../storage.js'
@@ -316,5 +317,76 @@ describe('остаток заходов виден участнику челле
     cleanup()
     render(<LevelSelectScreen challengeDay={6} />)
     expect(screen.getByTestId('free-wall')).toBeTruthy()
+  })
+})
+
+/**
+ * УЧАСТНИК ПОТОКА ЖИВЁТ ПО КАЛЕНДАРЮ. Кнопки перехода у него нет вовсе: день
+ * назначает дата старта, а не его воля. Проверяется именно исчезновение кнопки
+ * и честные тексты по краям потока — то, что человек увидит вместо игры.
+ */
+describe('участник потока: день по календарю', () => {
+  /** Дата за N московских дней до сегодня — поток идёт (N+1)-м днём. */
+  const назад = (дней) => {
+    const [y, m, d] = moscowDate().split('-').map(Number)
+    return new Date(Date.UTC(y, m - 1, d - дней)).toISOString().slice(0, 10)
+  }
+  const вперёд = (дней) => назад(-дней)
+
+  it('кнопки перехода нет — даже когда день сдан', () => {
+    completeDay(5)
+    render(<LevelSelectScreen challengeDay={5} challengeMember challengeStart={назад(4)} />)
+
+    expect(screen.queryByTestId('advance-day')).toBeNull()
+    expect(screen.getByTestId('challenge-day').textContent).toContain('День 5')
+    // уровни при этом играются: сегодняшний день открыт
+    expect(screen.getByTestId('level-novice')).toBeTruthy()
+  })
+
+  it('одиночке кнопка остаётся: две модели живут рядом', () => {
+    completeDay(1)
+    render(<LevelSelectScreen challengeDay={1} challengeMember={false} />)
+    expect(screen.getByTestId('advance-day')).toBeTruthy()
+  })
+
+  it('вчерашний день закрыт, и сказано почему', () => {
+    // отладочный ?day= привёл на четвёртый, а поток идёт пятым
+    render(<LevelSelectScreen challengeDay={4} challengeMember challengeStart={назад(4)} />)
+
+    expect(screen.queryByTestId('level-novice')).toBeNull()
+    expect(screen.getByTestId('stream-wall').textContent).toContain('день 5')
+    // стена бесплатных дней здесь ни при чём: человек заплатил
+    expect(screen.queryByTestId('free-wall')).toBeNull()
+  })
+
+  it('до старта потока играть нечего, и это не «5 дней пройдено»', () => {
+    render(<LevelSelectScreen challengeDay={1} challengeMember challengeStart={вперёд(3)} />)
+
+    expect(screen.getByTestId('stream-before').textContent).toContain('в день старта')
+    expect(screen.queryByTestId('level-novice')).toBeNull()
+    expect(document.body.textContent).not.toContain('5 дней пройдено')
+  })
+
+  it('после тридцатого дня поток закрыт', () => {
+    render(<LevelSelectScreen challengeDay={30} challengeMember challengeStart={назад(40)} />)
+
+    expect(screen.getByTestId('stream-over').textContent).toContain('Тридцать дней позади')
+    expect(screen.queryByTestId('level-novice')).toBeNull()
+  })
+
+  it('поток без объявленной даты — всё как было, с кнопкой', () => {
+    completeDay(6)
+    render(<LevelSelectScreen challengeDay={6} challengeMember challengeStart={null} />)
+
+    expect(screen.getByTestId('advance-day')).toBeTruthy()
+    expect(screen.getByTestId('level-novice')).toBeTruthy()
+    expect(screen.queryByTestId('stream-wall')).toBeNull()
+  })
+
+  it('в правиле дня написано про календарь, а не про переход', () => {
+    render(<LevelSelectScreen challengeDay={5} challengeMember challengeStart={назад(4)} />)
+    const note = document.querySelector('.mt-levels__note').textContent
+    expect(note).toContain('по календарю')
+    expect(note).not.toContain('Перешёл к следующему')
   })
 })

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { MIN_MEALS, dayScore, streamScore } from '../../challengeNutrition.js'
+import { DAYS, streamDay, streamPhase } from '../game/challenge.js'
 
 /**
  * ЧЕЛЛЕНДЖ — ОДНА ДЛИННАЯ СТРАНИЦА, по которой человек решает, платить ли.
@@ -64,14 +65,17 @@ function formatDate(value) {
   return month ? `${Number(m[3])} ${month}` : null
 }
 
-/** Сколько дней осталось до старта. null — даты нет, 0 — старт сегодня. */
+/**
+ * Сколько дней осталось до старта. null — даты нет, 0 — старт сегодня.
+ *
+ * Считается через день потока (game/challenge.js), а не по часам телефона:
+ * граница суток у потока одна — полночь по Москве, и отсчёт обязан идти по той
+ * же черте, что и сами дни. Иначе человек с другим часовым поясом увидел бы
+ * «старт завтра» в день, когда день 1 у него уже идёт.
+ */
 function daysUntil(value) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''))
-  if (!m) return null
-  const start = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  return Math.round((start - today) / 86400000)
+  const n = streamDay(value)
+  return n === null ? null : 1 - n
 }
 
 /** «17 дней» / «1 день» / «2 дня» — счёт идёт людям, а не машине. */
@@ -128,6 +132,9 @@ export default function ChallengeScreen({
     : [50, 30, 20]
   const startDate = formatDate(season?.starts_on)
   const left = daysUntil(season?.starts_on)
+  /** Где поток по календарю и какой его день идёт сегодня — одна правда на всё. */
+  const phase = streamPhase(season?.starts_on)
+  const today = streamDay(season?.starts_on)
 
   const [agreed, setAgreed] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -200,14 +207,22 @@ export default function ChallengeScreen({
             <div className="mt-ch__noLabel">Твой номер участника</div>
             <div className="mt-ch__noValue" data-testid="challenge-number">№ {entry.participant_no}</div>
             <div className="mt-ch__noName" data-testid="challenge-name">{entry.display_name}</div>
+            {/**
+              * ГДЕ СЕЙЧАС ПОТОК. До старта — отсчёт, во время — номер дня (тот
+              * самый, который сегодня и играется), после — что всё кончилось.
+              * Номер дня здесь не украшение: у участника день назначает
+              * календарь, и человек должен видеть, какой именно ему выпал.
+              */}
             <div className="mt-ch__noSub" data-testid="challenge-start">
-              {left == null
+              {phase === 'unknown'
                 ? 'Дата старта будет объявлена'
-                : left > 0
-                  ? `До старта потока: ${pluralDays(left)}`
-                  : left === 0
+                : phase === 'before'
+                  ? left === 0
                     ? 'Старт сегодня'
-                    : `Поток идёт с ${startDate}`}
+                    : `До старта потока: ${pluralDays(left)}`
+                  : phase === 'running'
+                    ? `Идёт день ${today} из ${DAYS} · с ${startDate}`
+                    : `Поток завершён — все ${DAYS} дней позади`}
             </div>
           </div>
 
@@ -216,6 +231,7 @@ export default function ChallengeScreen({
            * тренировки?». Отвечаем прямо и сразу — иначе ответ придёт вопросом
            * в личку тренеру, и не один раз.
            */}
+          {phase !== 'running' && (
           <div className="mt-ch__early" data-testid="challenge-early">
             <div className="mt-ch__earlyTitle">Что доступно прямо сейчас</div>
             <p className="mt-ch__earlyP">
@@ -224,6 +240,23 @@ export default function ChallengeScreen({
               данные о себе и втягивайся.
             </p>
           </div>
+          )}
+
+          {/**
+            * ПРАВИЛО ДНЯ — на виду, пока поток идёт. Заходов три на день, день
+            * назначен календарём, пропущенный не открывается задним числом: это
+            * то, из-за чего спорят о призах, и узнать это человек должен здесь,
+            * а не постфактум.
+            */}
+          {phase === 'running' && (
+            <div className="mt-ch__early" data-testid="challenge-today">
+              <div className="mt-ch__earlyTitle">Сегодня — день {today}</div>
+              <p className="mt-ch__earlyP">
+                В день N потока играется день N: <b>пропущенный день закрывается</b> и
+                задним числом не открывается. Три захода на день, в зачёт идёт лучший.
+              </p>
+            </div>
+          )}
 
           <Nutrition rows={nutrition} startsOn={season?.starts_on} hasNorm={hasNorm} onFillNorm={onFillNorm} />
 

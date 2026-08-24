@@ -9,6 +9,8 @@ import {
   dayRuns,
   isChallengeDone,
   isDayDone,
+  streamDay,
+  streamPhase,
 } from '../game/challenge.js'
 import { readRoom } from './RoomScreen.jsx'
 
@@ -31,6 +33,23 @@ import { readRoom } from './RoomScreen.jsx'
  * @param {number} [props.challengeDay] Какой день челленджа идёт сейчас, 1..30.
  *   Ноль — челленджа нет вовсе (обычный подход), и строка не показывается.
  */
+/**
+ * ЧТО СКАЗАТЬ УЧАСТНИКУ, КОГДА ИГРАТЬ НЕЧЕГО. Два случая, и они разные: до
+ * старта надо дождаться, после тридцатого дня — уже нечего ждать. Третий
+ * случай — «поток идёт, но открыт не этот день» (сюда попадает отладочный
+ * `?day=N`), и текст к нему собирается на месте: в нём есть номер.
+ */
+const STREAM_WALL = {
+  before: {
+    title: 'Поток ещё не начался',
+    text: 'Дни челленджа откроются в день старта — они закрыты у всех участников одинаково. Тренировки, программы и дневник питания доступны уже сейчас.',
+  },
+  over: {
+    title: 'Поток завершён',
+    text: 'Тридцать дней позади. Итог потока — в таблице участников, и он больше не меняется.',
+  },
+}
+
 export default function LevelSelectScreen({
   onPick,
   onExit,
@@ -55,13 +74,20 @@ export default function LevelSelectScreen({
    * тридцать дней всякому, до кого ответ сервера не доехал.
    */
   challengeMember = false,
+  /**
+   * ДАТА СТАРТА ПОТОКА участника, `YYYY-MM-DD`. Есть она — день считается
+   * календарём, и кнопки перехода на экране нет вовсе: в день N потока играется
+   * день N. Нет её (одиночка либо поток без объявленной даты) — всё по-старому,
+   * вперёд по кнопке после сданного дня.
+   */
+  challengeStart = null,
 }) {
   /**
    * Снимок берётся при монтировании и пересчитывается ТОЛЬКО по переходу дня:
    * пока человек стоит на экране, попытки измениться не могут, а вот переход
    * меняет разом всё — день, попытки, обе суммы.
    */
-  const [view, setView] = useState(() => readView(challengeDay, challengeMember))
+  const [view, setView] = useState(() => readView(challengeDay, challengeMember, challengeStart))
   /**
    * НЕЗАВЕРШЁННАЯ СЕССИЯ этого дня. Снимок берётся при монтировании: пока
    * человек стоит на экране, начаться она не может, а вернуться он сюда может
@@ -70,11 +96,13 @@ export default function LevelSelectScreen({
   const [resume, setResume] = useState(() => sessionResume(challengeDay || undefined))
 
   const day = view.day
+  /** Поток ведёт человека по календарю — своей воли в выборе дня у него нет. */
+  const byCalendar = challengeMember && !!challengeStart
   const step = () => {
     const moved = advanceDay()
     if (!moved.advanced) return
     const next = Math.min(challengeDays, moved.day)
-    setView(readView(next, challengeMember))
+    setView(readView(next, challengeMember, challengeStart))
     onAdvance?.(next)
   }
 
@@ -103,12 +131,12 @@ export default function LevelSelectScreen({
        * до конца сессии. До нажатия уровни остаются играбельными — это и есть
        * оставшиеся попытки улучшить результат дня.
        */}
-      {view.number > 0 && view.challengeDone && (
+      {!byCalendar && view.number > 0 && view.challengeDone && (
         <div className="mt-levels__step mt-levels__step--done" data-testid="challenge-done">
           Челлендж пройден!
         </div>
       )}
-      {view.number > 0 && !view.challengeDone && view.dayDone && (
+      {!byCalendar && view.number > 0 && !view.challengeDone && view.dayDone && (
         <button
           type="button"
           className="mt-levels__step"
@@ -149,12 +177,33 @@ export default function LevelSelectScreen({
           onContinue={(r) => onPick?.(r.tier, { resume: r })}
           onRestart={() => {
             setResume(null)
-            setView(readView(challengeDay, challengeMember))
+            setView(readView(challengeDay, challengeMember, challengeStart))
           }}
         />
       )}
 
-      <h1 className="mt-title">{view.playable ? 'Выбери уровень' : '5 дней пройдено!'}</h1>
+      <h1 className="mt-title">
+        {view.playable
+          ? 'Выбери уровень'
+          : byCalendar
+            ? STREAM_WALL[view.phase]?.title ?? 'Этот день закрыт'
+            : '5 дней пройдено!'}
+      </h1>
+
+      {/**
+        * ПОТОК ЗАКРЫТ — ДО СТАРТА И ПОСЛЕ ТРИДЦАТОГО ДНЯ. Стена бесплатных дней
+        * здесь не годится: человеку не надо ничего покупать, ему надо дождаться
+        * или уже нечего ждать. Оба ответа короткие и без кнопок: нажимать
+        * нечего, и предлагать нажатие значит врать.
+        */}
+      {byCalendar && !view.playable && (
+        <div className="mt-levels__wall" data-testid="stream-wall">
+          <div className="mt-wall__text" data-testid={`stream-${view.phase}`}>
+            {STREAM_WALL[view.phase]?.text
+              ?? `Сегодня идёт день ${view.streamNumber} потока — играется только он. Прошлые дни закрыты, будущие откроются в свой срок.`}
+          </div>
+        </div>
+      )}
 
       {/**
        * ГРАНИЦА БЕСПЛАТНЫХ ДНЕЙ. Вместо карточек уровней — цифры самого человека
@@ -171,7 +220,7 @@ export default function LevelSelectScreen({
        * пятый день можно переигрывать сколько угодно. Заблокирована ровно
        * тренировка шестого дня.
        */}
-      {!view.playable && (
+      {!view.playable && !byCalendar && (
         <div className="mt-levels__wall" data-testid="free-wall">
           <div className="mt-wall__stats">
             <div className="mt-wall__stat" data-testid="wall-total">
@@ -270,7 +319,10 @@ export default function LevelSelectScreen({
       {challengeMember && (
         <div className="mt-levels__note">
           {MAX_ATTEMPTS} захода на весь день — на любые уровни, как решишь. В зачёт дня идёт
-          один, лучший. Перешёл к следующему дню — прошлый закрыт.
+          один, лучший.{' '}
+          {byCalendar
+            ? 'День потока идёт по календарю: сегодня играется сегодняшний. Не сыграл — за этот день ноль.'
+            : 'Перешёл к следующему дню — прошлый закрыт.'}
         </div>
       )}
 
@@ -296,7 +348,7 @@ export default function LevelSelectScreen({
  * попытки, сумма дня и сумма челленджа. Собирай их по отдельности — и экран
  * успел бы показать новый день со вчерашними попытками.
  */
-function readView(number, member = false) {
+function readView(number, member = false, startsOn = null) {
   /**
    * Цифры для плашки считает комната — той же функцией, что и на своём экране.
    * Второй расчёт тех же чисел разошёлся бы с первым: человек увидел бы одну
@@ -315,7 +367,11 @@ function readView(number, member = false) {
     runs: number > 0 ? dayRuns(number) : 0,
     challengeDone: isChallengeDone(),
     /** Можно ли сегодня тренироваться, или день за границей бесплатных пяти. */
-    playable: number <= 0 || dayPlayable(number, member),
+    playable: number <= 0 || dayPlayable(number, member, startsOn),
+    /** Где поток: до старта, идёт или закончился. Нет даты — `unknown`. */
+    phase: streamPhase(startsOn),
+    /** Какой день потока идёт сегодня. Нужен и тексту, и проверке номера. */
+    streamNumber: streamDay(startsOn),
     best: room.best,
     reactMs: room.reactMs,
   }
