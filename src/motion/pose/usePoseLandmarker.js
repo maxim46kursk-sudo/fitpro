@@ -21,6 +21,31 @@ import { assetSources } from './assets.js'
  * сборки в рантайме всё равно неоткуда.
  */
 
+/**
+ * ЧЕМ СЧИТАТЬ — ПРИНУДИТЕЛЬНО, И ТОЛЬКО РАДИ ЗАМЕРА.
+ *
+ * Обычный заход этого ключа не видит и ведёт себя ровно как раньше: поднимаем
+ * воркер, не поднялся — уходим на главный поток. Ключ нужен затем, что иначе
+ * сравнить два режима НЕЛЬЗЯ: какой из них достанется человеку, решает его
+ * телефон, а не мы, и одинакового материала в двух режимах взять неоткуда.
+ *
+ *   ?motion-thread=main    — сразу главный поток, воркер не заводим вовсе;
+ *   ?motion-thread=worker  — воркер, и НЕ откатываться: отказ должен быть
+ *                            виден замером, а не замаскирован резервом.
+ *
+ * Читается один раз при загрузке модуля: адресная строка за время сессии не
+ * меняется, а решение принимается ровно однажды.
+ */
+function readThreadForce() {
+  try {
+    const value = new URLSearchParams(globalThis.location?.search || '').get('motion-thread')
+    return value === 'main' || value === 'worker' ? value : null
+  } catch {
+    return null
+  }
+}
+const THREAD_FORCE = readThreadForce()
+
 /** Целевая частота инференса. Быстрее модель всё равно не успевает, а батарею жрёт. */
 const TARGET_FPS = 30
 const MIN_FRAME_INTERVAL_MS = 1000 / TARGET_FPS
@@ -196,6 +221,16 @@ export function usePoseLandmarker({ videoRef, active = true, onResult }) {
      */
     const fallbackToMainThread = (why) => {
       if (fellBack || disposed) return
+      /**
+       * Замер режима «воркер» держит воркер до конца: если бы резерв подхватил
+       * упавший воркер, в отчёте оказалась бы смесь двух режимов под именем
+       * одного — то есть ровно то враньё, ради опровержения которого замер и
+       * затевался.
+       */
+      if (THREAD_FORCE === 'worker') {
+        logEvent('worker.fallback.skipped', { why: String(why).slice(0, 300), env: lastWorkerEnv })
+        return
+      }
       fellBack = true
       console.warn('[motion] воркер не поднялся, считаем на главном потоке:', why)
       logEvent('worker.fallback', { why: String(why).slice(0, 300), env: lastWorkerEnv })
@@ -339,6 +374,26 @@ export function usePoseLandmarker({ videoRef, active = true, onResult }) {
           setErrorCode(data.code)
           setErrorDetail(data.message || null)
         }
+      }
+    }
+
+    /**
+     * Замер режима «главный поток»: воркер не заводим ВОВСЕ. Завести и уронить
+     * — это другой опыт: в нём остались бы и время на подъём воркера, и его
+     * след в журнале, а мерить надо чистый режим.
+     */
+    if (THREAD_FORCE === 'main') {
+      fallbackToMainThread('принудительно: ?motion-thread=main')
+      return () => {
+        disposed = true
+        try {
+          workerRef.current?.postMessage({ type: 'close' })
+          workerRef.current?.terminate?.()
+        } catch {
+          // уже закрыт
+        }
+        workerRef.current = null
+        readyRef.current = false
       }
     }
 
