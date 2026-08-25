@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { MIN_MEALS, dayScore } from '../../challengeNutrition.js'
+import { MIN_ENTRIES, MIN_MEALS, dayScore, whatIsMissing } from '../../challengeNutrition.js'
 import { standings } from '../../challengeStandings.js'
 import DayMacros from '../../DayMacros.jsx'
 import { DAYS, dayRuns, isDayDone, progress } from '../game/challenge.js'
@@ -217,7 +217,8 @@ export function todayNutrition(rows, today) {
 
   const norms = { kcal: row.norm_kcal, p: row.norm_p, f: row.norm_f, c: row.norm_c }
   const facts = { kcal: row.kcal, p: row.p, f: row.f, c: row.c }
-  const scored = dayScore(facts, norms, row.meals)
+  const entries = row.entries == null ? undefined : round(row.entries)
+  const scored = dayScore(facts, norms, row.meals, entries)
   const meals = round(row.meals)
 
   /**
@@ -236,7 +237,9 @@ export function todayNutrition(rows, today) {
     score: scored.score,
     counted: scored.counted,
     meals,
-    mealsLeft: Math.max(0, MIN_MEALS - meals),
+    entries: entries ?? 0,
+    /** Чего именно не хватило дню — считает судья, не экран. */
+    missing: whatIsMissing(row.meals, entries),
     /**
      * Съеденное и норма — целыми объектами, ровно в той форме, в какой их ждёт
      * общий блок дневника. Раньше отсюда уходили только остатки, и блок,
@@ -539,10 +542,17 @@ export default function StreamRoom({
                 */}
               <DayMacros totals={food.eaten} goals={food.norms} testId="stream-macros" />
 
+              {/**
+                * ЧЕГО НЕ ХВАТИЛО — СЛОВАМИ И ПО ДЕЛУ. Не «меньше трёх приёмов»
+                * (это правило зачёта, вывернутое наружу), а что сделать. Чего
+                * именно недостаёт, считает судья (whatIsMissing), а не экран:
+                * разъедься они — здесь писали бы одно, а в зачёт шло другое.
+                */}
               {!food.counted && (
                 <p className="mt-stream__cardP" data-testid="stream-nutri-todo">
-                  Запиши приёмы пищи — засчитываем от {MIN_MEALS}.
-                  {food.mealsLeft > 0 && <> Сегодня записано {food.meals}, осталось {food.mealsLeft}.</>}
+                  День засчитывается от {MIN_ENTRIES} записей минимум в {MIN_MEALS} приёмах пищи.
+                  {food.missing?.записей > 0 && <> Не хватает записей: {food.missing.записей}.</>}
+                  {food.missing?.приёмов > 0 && <> Добавь ещё {food.missing.приёмов === 1 ? 'один приём' : `приёмов: ${food.missing.приёмов}`}.</>}
                 </p>
               )}
               <button type="button" className="mt-stream__act" data-testid="stream-diary" onClick={() => onOpenDiary?.()}>

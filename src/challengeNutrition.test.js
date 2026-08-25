@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CORRIDOR, FALLOFF, MIN_MEALS, accuracy, dayScore, streamScore } from './challengeNutrition.js'
+import { CORRIDOR, FALLOFF, MIN_ENTRIES, MIN_MEALS, accuracy, dayScore, streamScore, whatIsMissing } from './challengeNutrition.js'
 
 /**
  * АРИФМЕТИКА ВТОРОГО ЗАЧЁТА. Половина места в челлендже считается этими
@@ -73,18 +73,56 @@ describe('dayScore: оценка дня', () => {
     expect(day.parts.f).toBe(80)
   })
 
-  it('меньше трёх приёмов — день не считается', () => {
-    // одна строка «торт, 2400 ккал» в норму попадает, но днём не является
-    expect(MIN_MEALS).toBe(3)
-    const day = dayScore({ kcal: 2000, p: 120, c: 220, f: 65 }, NORM, 2)
+  /**
+   * ПОРОГ ДНЯ СМЯГЧЁН, И ЭТО ПРАВИЛО, ПО КОТОРОМУ ДЕЛЯТ ДЕНЬГИ.
+   *
+   * Было: записи в трёх РАЗНЫХ приёмах. Оно било по честному случаю — завтрак из
+   * трёх продуктов давал за день ноль. Стало: не меньше трёх ЗАПИСЕЙ и не меньше
+   * чем в двух приёмах. Дверь, ради которой порог заводили, осталась закрытой:
+   * одной строкой «торт, 2400 ккал» не пройти.
+   */
+  const ЕДА = { kcal: 2000, p: 120, c: 220, f: 65 }
+
+  it('одна строка «торт» — не день', () => {
+    const day = dayScore(ЕДА, NORM, 1, 1)
     expect(day.counted).toBe(false)
     expect(day.score).toBe(0)
     // при этом сами показатели посчитаны — видно, ПОЧЕМУ день не засчитан
     expect(day.parts.kcal).toBe(100)
   })
 
-  it('ровно три приёма — уже считается', () => {
-    expect(dayScore({ kcal: 2000, p: 120, c: 220, f: 65 }, NORM, 3).counted).toBe(true)
+  it('завтрак из трёх продуктов — всё ещё не день: приём один', () => {
+    // три записи есть, а приём один — второго не хватает
+    expect(dayScore(ЕДА, NORM, 1, 3).counted).toBe(false)
+  })
+
+  it('три записи в двух приёмах — день считается', () => {
+    // ровно тот случай, ради которого правило и меняли
+    expect(MIN_ENTRIES).toBe(3)
+    expect(MIN_MEALS).toBe(2)
+    expect(dayScore(ЕДА, NORM, 2, 3).counted).toBe(true)
+  })
+
+  it('две записи в двух приёмах — мало: записей меньше трёх', () => {
+    expect(dayScore(ЕДА, NORM, 2, 2).counted).toBe(false)
+  })
+
+  it('много записей, но один приём — по-прежнему не день', () => {
+    expect(dayScore(ЕДА, NORM, 1, 9).counted).toBe(false)
+  })
+
+  it('сырьё без числа записей судится по-старому, по приёмам', () => {
+    // база могла не успеть отдать колонку entries; молча обнулять людям дни
+    // из-за недостающего поля нельзя — это деньги
+    expect(dayScore(ЕДА, NORM, 3).counted).toBe(true)
+    expect(dayScore(ЕДА, NORM, 2).counted).toBe(false)
+  })
+
+  it('чего не хватает — считает судья, а не экран', () => {
+    expect(whatIsMissing(2, 3)).toBe(null)
+    expect(whatIsMissing(1, 3)).toEqual({ записей: 0, приёмов: 1 })
+    expect(whatIsMissing(2, 1)).toEqual({ записей: 2, приёмов: 0 })
+    expect(whatIsMissing(1, 1)).toEqual({ записей: 2, приёмов: 1 })
   })
 
   it('незаданная норма не портит среднее', () => {

@@ -38,16 +38,56 @@ export const CORRIDOR = 10
 export const FALLOFF = 2
 
 /**
- * МЕНЬШЕ ТРЁХ ПРИЁМОВ С ЗАПИСЯМИ — ДЕНЬ НЕ СЧИТАЕТСЯ ВОВСЕ.
+ * ПОРОГ ДНЯ: НЕ МЕНЬШЕ ТРЁХ ЗАПИСЕЙ И НЕ МЕНЬШЕ ЧЕМ В ДВУХ ПРИЁМАХ.
  *
- * Без этого порога зачёт выигрывает не тот, кто ел по норме, а тот, кто
- * записал одну строку, случайно попавшую в цифры. «Торт, 2400 ккал» в норму по
- * калориям попадает — и не должен давать за это сто баллов.
+ * ЗАЧЕМ ПОРОГ ВООБЩЕ. Без него зачёт выигрывает не тот, кто ел по норме, а тот,
+ * кто записал одну строку, случайно попавшую в цифры: «торт, 2400 ккал» в норму
+ * по калориям попадает — и не должен давать за это сто баллов.
+ *
+ * ПОЧЕМУ ПРАВИЛО ИЗМЕНИЛОСЬ. Было «записи в трёх РАЗНЫХ приёмах», и оно било по
+ * честному случаю: человек записал завтрак из трёх продуктов — кофе, батон,
+ * брынза, — и получал за день ноль. Это не подгонка цифр, это нормально
+ * заполненный завтрак, и обнулять его не за что.
+ *
+ * Новый порог держит ту же дверь закрытой: одной строкой не пройти (нужно три),
+ * и одним продуктом, размазанным по одному приёму, тоже (нужно два приёма). А
+ * честный завтрак из трёх продуктов плюс любой второй приём — проходит.
+ *
+ * ДВА ЧИСЛА, А НЕ ОДНО, и оба здесь: правило, по которому делят деньги, должно
+ * читаться в одном месте целиком.
  */
-export const MIN_MEALS = 3
+export const MIN_ENTRIES = 3
+export const MIN_MEALS = 2
 
 /** Четыре показателя дня — в одном месте, чтобы порядок не разъезжался. */
 export const KEYS = ['kcal', 'p', 'c', 'f']
+
+/**
+ * НАБРАЛСЯ ЛИ ДЕНЬ. Отдельной функцией, потому что спрашивают её двое: судья
+ * (dayScore) и экраны, которым надо объяснить человеку, чего не хватило.
+ * Разъедься они — в комнате писали бы одно, а в зачёт шло другое.
+ *
+ * `entries` может не приехать (старое сырьё без этого поля): тогда судим по
+ * приёмам, как раньше. Молча обнулять людям дни из-за недостающей колонки
+ * нельзя — это деньги.
+ */
+export function enoughRecords(meals, entries) {
+  const п = num(meals) ?? 0
+  if (entries == null) return п >= MIN_ENTRIES
+  return (num(entries) ?? 0) >= MIN_ENTRIES && п >= MIN_MEALS
+}
+
+/** Чего не хватает дню до зачёта. Пусто — всё набрано. */
+export function whatIsMissing(meals, entries) {
+  if (enoughRecords(meals, entries)) return null
+  const п = num(meals) ?? 0
+  const з = num(entries) ?? 0
+  if (entries == null) return { записей: 0, приёмов: Math.max(0, MIN_ENTRIES - п) }
+  return {
+    записей: Math.max(0, MIN_ENTRIES - з),
+    приёмов: Math.max(0, MIN_MEALS - п),
+  }
+}
 
 const num = (v) => {
   const n = Number(v)
@@ -89,18 +129,20 @@ export function accuracy(fact, norm) {
  * @param {{kcal?: number, p?: number, c?: number, f?: number}} facts съедено за день
  * @param {{kcal?: number, p?: number, c?: number, f?: number}} norms дневная норма
  * @param {number} meals в скольких приёмах пищи есть записи
+ * @param {number} [entries] сколько записей за день всего. Не передали — считаем
+ *   по приёмам, как раньше: старые вызовы не должны молча обнулять людям дни.
  * @returns {{score: number, parts: object, counted: boolean}}
  */
-export function dayScore(facts, norms, meals) {
+export function dayScore(facts, norms, meals, entries) {
   const parts = {}
   for (const key of KEYS) parts[key] = accuracy(facts?.[key], norms?.[key])
 
   const known = KEYS.map((k) => parts[k]).filter((v) => v != null)
-  const enoughMeals = (num(meals) ?? 0) >= MIN_MEALS
+  const мало = enoughRecords(meals, entries) === false
 
   // День без нормы и день без записей — оба нули, но нули разного рода; какой
-  // именно, видно по parts и meals у вызывающего.
-  if (!enoughMeals || !known.length) return { score: 0, parts, counted: false }
+  // именно, видно по parts, meals и entries у вызывающего.
+  if (мало || !known.length) return { score: 0, parts, counted: false }
 
   const score = known.reduce((a, b) => a + b, 0) / known.length
   return { score, parts, counted: true }

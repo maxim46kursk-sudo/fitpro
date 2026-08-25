@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { MIN_MEALS, dayScore, streamScore } from '../../challengeNutrition.js'
+import { MIN_ENTRIES, MIN_MEALS, dayScore, streamScore } from '../../challengeNutrition.js'
 import { DAYS, streamDay, streamPhase } from '../game/challenge.js'
 import StreamRoom from './StreamRoom.jsx'
 
@@ -680,9 +680,9 @@ export default function ChallengeScreen({
               <li>дальше падает: 20% мимо — 80 баллов, 30% — 60, 60% и хуже — ноль.</li>
             </ul>
             <p>
-              Оценка дня — среднее по четырём. Чтобы день считался, записи должны быть{' '}
-              <b>минимум в трёх приёмах пищи</b>: одна строчка «торт, 2400 ккал» в норму не
-              попадает и не должна.
+              Оценка дня — среднее по четырём. Чтобы день считался, за него нужно{' '}
+              <b>минимум {MIN_ENTRIES} записи и хотя бы {MIN_MEALS} приёма пищи</b>: одной
+              строчкой «торт, 2400 ккал» в зачёт не попасть, и это правильно.
             </p>
             <p>Итог за поток — средний процент за все 30 дней. День без записей — ноль.</p>
           </div>
@@ -897,7 +897,7 @@ function Nutrition({ rows, startsOn, hasNorm, onFillNorm }) {
   if (!Array.isArray(rows) || !rows.length) return null
 
   const norms = (row) => ({ kcal: row.norm_kcal, p: row.norm_p, f: row.norm_f, c: row.norm_c })
-  const scores = rows.map((row) => dayScore(row, norms(row), row.meals))
+  const scores = rows.map((row) => dayScore(row, norms(row), row.meals, row.entries ?? undefined))
 
   const today = dayOfStream(startsOn)
   const todayRow = today && today >= 1 && today <= rows.length ? scores[today - 1] : null
@@ -914,7 +914,7 @@ function Nutrition({ rows, startsOn, hasNorm, onFillNorm }) {
           <div className="mt-ch__nutriRow">
             <span>Сегодня</span>
             <b data-testid="nutri-today">
-              {todayRow ? (todayRow.counted ? pct(todayRow.score) : `меньше ${MIN_MEALS} приёмов`) : '—'}
+              {todayRow ? (todayRow.counted ? pct(todayRow.score) : `нужно ${MIN_ENTRIES} записи в ${MIN_MEALS} приёмах`) : '—'}
             </b>
           </div>
           <div className="mt-ch__nutriRow">

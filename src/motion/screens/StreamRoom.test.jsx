@@ -35,6 +35,8 @@ const facts = (days) => Array.from({ length: 30 }, (_, i) => ({
   f: days[i]?.f ?? 0,
   c: days[i]?.c ?? 0,
   meals: days[i]?.meals ?? 0,
+  // сколько записей за день: второе слагаемое порога (challengeNutrition.js)
+  entries: days[i]?.entries ?? 0,
   norm_kcal: 2000,
   norm_p: 120,
   norm_f: 65,
@@ -169,7 +171,7 @@ describe('питание за сегодня: настоящие цифры и �
    * проверяется именно это: обе половины на экране.
    */
   it('съеденное и норма — как в дневнике: «1500 из 2000 ккал»', () => {
-    const rows = facts([{}, {}, {}, {}, { kcal: 1500, p: 90, f: 40, c: 150, meals: 3 }])
+    const rows = facts([{}, {}, {}, {}, { kcal: 1500, p: 90, f: 40, c: 150, meals: 3, entries: 4 }])
     room({ nutrition: rows })
 
     expect(screen.getByTestId('stream-macros-kcal').textContent).toBe('1500')
@@ -186,35 +188,53 @@ describe('питание за сегодня: настоящие цифры и �
   it('процент зачёта считает судья челленджа, а не заполненность шкалы', () => {
     // каждый показатель судится отдельно и усредняется: калории и белки по 70,
     // жиры 43, углеводы 56 — среднее 60. Недоел наказывается ровно как переел
-    const rows = facts([{}, {}, {}, {}, { kcal: 1500, p: 90, f: 40, c: 150, meals: 3 }])
+    const rows = facts([{}, {}, {}, {}, { kcal: 1500, p: 90, f: 40, c: 150, meals: 3, entries: 4 }])
     room({ nutrition: rows })
 
     expect(screen.getByTestId('stream-nutri-pct').textContent).toBe('60%')
   })
 
   it('перебор показывается словом «перебор», а не отрицательным остатком', () => {
-    const rows = facts([{}, {}, {}, {}, { kcal: 2600, p: 120, f: 65, c: 220, meals: 3 }])
+    const rows = facts([{}, {}, {}, {}, { kcal: 2600, p: 120, f: 65, c: 220, meals: 3, entries: 4 }])
     room({ nutrition: rows })
 
     expect(screen.getByTestId('stream-macros-left').textContent).toBe('перебор 600 ккал')
   })
 
-  it('мало приёмов — говорим, ЧТО СДЕЛАТЬ, а не «меньше 3 приёмов»', () => {
+  it('порог не набран — говорим, ЧЕГО не хватает, а не правило зачёта', () => {
     /**
-     * Живая поломка: экран выворачивал наружу внутреннее правило зачёта, и
-     * человек читал его как отказ. Правило не изменилось — изменилось то, что
-     * ему говорят.
+     * Живая поломка: экран выворачивал наружу внутреннее правило («меньше трёх
+     * приёмов»), и человек читал его как отказ. Теперь ему говорят, что
+     * сделать, и считает это судья, а не экран.
      */
-    const rows = facts([{}, {}, {}, {}, { kcal: 900, p: 60, f: 30, c: 90, meals: 1 }])
+    const rows = facts([{}, {}, {}, {}, { kcal: 900, p: 60, f: 30, c: 90, meals: 1, entries: 1 }])
     room({ nutrition: rows })
 
     const todo = screen.getByTestId('stream-nutri-todo').textContent
-    expect(todo).toContain('Запиши приёмы пищи')
-    expect(todo).toContain('засчитываем от 3')
-    expect(todo).toContain('осталось 2')
+    expect(todo).toContain('от 3 записей минимум в 2 приёмах')
+    expect(todo).toContain('Не хватает записей: 2')
+    expect(todo).toContain('Добавь ещё один приём')
     // и съеденное всё равно показано: человеку надо знать, сколько доесть
     expect(screen.getByTestId('stream-macros-kcal').textContent).toBe('900')
     expect(screen.getByTestId('stream-macros-left').textContent).toBe('осталось 1100 ккал')
+  })
+
+  it('завтрак из трёх продуктов — не хватает только второго приёма', () => {
+    // тот самый случай, ради которого смягчили правило: записи есть, приём один
+    const rows = facts([{}, {}, {}, {}, { kcal: 522, p: 29, f: 27, c: 39, meals: 1, entries: 3 }])
+    room({ nutrition: rows })
+
+    const todo = screen.getByTestId('stream-nutri-todo').textContent
+    expect(todo).toContain('Добавь ещё один приём')
+    expect(todo).not.toContain('Не хватает записей')
+  })
+
+  it('три записи в двух приёмах — день засчитан, подсказки нет', () => {
+    const rows = facts([{}, {}, {}, {}, { kcal: 2000, p: 120, f: 65, c: 220, meals: 2, entries: 3 }])
+    room({ nutrition: rows })
+
+    expect(screen.queryByTestId('stream-nutri-todo')).toBeNull()
+    expect(screen.getByTestId('stream-nutri-pct').textContent).toBe('100%')
   })
 
   it('кнопка ведёт в дневник, а не в норму', () => {

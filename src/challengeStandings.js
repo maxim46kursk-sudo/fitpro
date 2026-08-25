@@ -70,6 +70,9 @@ export function collect(rows, { days = STREAM_DAYS } = {}) {
       { kcal: row?.kcal, p: row?.p, f: row?.f, c: row?.c },
       { kcal: row?.norm_kcal, p: row?.norm_p, f: row?.norm_f, c: row?.norm_c },
       num(row?.meals),
+      // Число записей за день — второе слагаемое порога. Строки без него (старое
+      // сырьё) судья разберёт по-прежнему, по приёмам: см. enoughRecords.
+      row?.entries == null ? undefined : num(row.entries),
     )
     person.dayScores.push(scored)
     if (scored.counted) person.countedDays += 1
