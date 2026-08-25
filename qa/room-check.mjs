@@ -141,7 +141,7 @@ try {
    * fullPage тут снял бы страницу ПОД разделом и соврал бы про вёрстку.
    */
   R.высотаКомнаты = await page.evaluate(() => {
-    const el = document.querySelector('.mt-ch--stream')
+    const el = document.querySelector('.mt-stream')
     if (!el) return null
     el.scrollTop = el.scrollHeight
     return { видно: el.clientHeight, всего: el.scrollHeight, прокрутка: el.scrollTop }
