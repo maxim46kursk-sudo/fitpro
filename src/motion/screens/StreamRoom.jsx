@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { MIN_MEALS, dayScore } from '../../challengeNutrition.js'
 import { standings } from '../../challengeStandings.js'
+import DayMacros from '../../DayMacros.jsx'
 import { DAYS, dayRuns, isDayDone, progress } from '../game/challenge.js'
 import { MAX_ATTEMPTS, attemptsFor, challengeTotal, dayTotal, daySummary, sessionResume } from '../game/day.js'
 
@@ -236,12 +237,17 @@ export function todayNutrition(rows, today) {
     counted: scored.counted,
     meals,
     mealsLeft: Math.max(0, MIN_MEALS - meals),
+    /**
+     * Съеденное и норма — целыми объектами, ровно в той форме, в какой их ждёт
+     * общий блок дневника. Раньше отсюда уходили только остатки, и блок,
+     * который их рисовал, не мог показать «522 из 2000»: слагаемого «522» у
+     * него на руках не было.
+     */
+    eaten: { kcal: facts.kcal, p: facts.p, c: facts.c, f: facts.f },
+    norms: { kcal: norms.kcal, p: norms.p, c: norms.c, f: norms.f },
     rest,
   }
 }
-
-const REST_LABEL = { kcal: 'ккал', p: 'белки', f: 'жиры', c: 'углеводы' }
-const REST_UNIT = { kcal: '', p: ' г', f: ' г', c: ' г' }
 
 /**
  * @param {object} props.entry запись участника
@@ -259,6 +265,11 @@ const REST_UNIT = { kcal: '', p: ' г', f: ' г', c: ' г' }
  * @param {() => void} [props.onStartDay] начать сегодняшний день
  * @param {(tier: string, opts: object) => void} [props.onResume] продолжить сессию
  * @param {() => void} [props.onOpenDiary] открыть дневник питания
+ * @param {{workouts7d?: number, lastWorkout?: string|null}} [props.app] сводка по
+ *   остальному приложению. Считает её хозяин (App.jsx): раздел Motion про неё
+ *   ничего не знает и знать не должен.
+ * @param {() => void} [props.onOpenWorkouts] открыть тренировки
+ * @param {() => void} [props.onOpenProgress] открыть прогресс
  * @param {() => void} [props.onFillNorm] завести дневную норму
  * @param {() => void} [props.onStandings] открыть таблицу потока
  * @param {() => void} [props.onRules] открыть правила потока
@@ -279,6 +290,9 @@ export default function StreamRoom({
   onStartDay = null,
   onResume = null,
   onOpenDiary = null,
+  app = null,
+  onOpenWorkouts = null,
+  onOpenProgress = null,
   onFillNorm = null,
   onStandings = null,
   onRules = null,
@@ -471,7 +485,7 @@ export default function StreamRoom({
                 Норма ещё не посчитана, а питание — половина зачёта. Заполни данные о себе:
                 рост, вес, цель — остальное приложение посчитает само.
               </p>
-              <button type="button" className="mt-stream__line" data-testid="stream-fill-norm" onClick={() => onFillNorm?.()}>
+              <button type="button" className="mt-stream__act" data-testid="stream-fill-norm" onClick={() => onFillNorm?.()}>
                 Заполнить данные о себе
               </button>
             </>
@@ -479,26 +493,29 @@ export default function StreamRoom({
             <p className="mt-stream__cardP" data-testid="stream-nutri-wait">Смотрю дневник…</p>
           ) : (
             <>
+              {/**
+                * СЪЕДЕНО ПРОТИВ НОРМЫ — ТОТ ЖЕ БЛОК, ЧТО В ДНЕВНИКЕ
+                * (src/DayMacros.jsx), а не своя картинка тех же данных.
+                *
+                * Здесь стояли четыре плитки «осталось»: человек видел, сколько
+                * ему ЕЩЁ надо, и не видел, сколько уже съел — ноль и две тысячи
+                * выглядели одинаково. Понять по такому блоку, идёшь ты в норму
+                * или нет, было нельзя.
+                *
+                * ЗАПОЛНЕННОСТЬ ШКАЛЫ — НЕ ПРОЦЕНТ ЗАЧЁТА. Шкала говорит «сколько
+                * съедено от нормы», а число справа сверху — сколько за день
+                * начислено (challengeNutrition.js, со своим коридором и порогом
+                * приёмов). Совпадать они не обязаны и не должны.
+                */}
+              <DayMacros totals={food.eaten} goals={food.norms} testId="stream-macros" />
+
               {!food.counted && (
                 <p className="mt-stream__cardP" data-testid="stream-nutri-todo">
                   Запиши приёмы пищи — засчитываем от {MIN_MEALS}.
                   {food.mealsLeft > 0 && <> Сегодня записано {food.meals}, осталось {food.mealsLeft}.</>}
                 </p>
               )}
-              <div className="mt-stream__rest" data-testid="stream-nutri-rest">
-                {food.rest.filter((r) => r.has).map((r) => (
-                  <div key={r.key} className={`mt-stream__restCell ${r.left < 0 ? 'is-over' : ''}`} data-testid={`stream-rest-${r.key}`}>
-                    <div className="mt-stream__restVal">
-                      {r.left >= 0 ? `${r.left}${REST_UNIT[r.key]}` : `+${-r.left}${REST_UNIT[r.key]}`}
-                    </div>
-                    <div className="mt-stream__restLabel">
-                      {REST_LABEL[r.key]}
-                      <span>{r.left >= 0 ? 'осталось' : 'сверх нормы'}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <button type="button" className="mt-stream__line" data-testid="stream-diary" onClick={() => onOpenDiary?.()}>
+              <button type="button" className="mt-stream__act" data-testid="stream-diary" onClick={() => onOpenDiary?.()}>
                 Открыть дневник
               </button>
             </>
@@ -522,11 +539,47 @@ export default function StreamRoom({
             <p className="mt-stream__cardP">Таблица соберётся, как только пойдут первые заходы.</p>
           )}
           {onStandings && (
-            <button type="button" className="mt-stream__line" data-testid="stream-standings" onClick={onStandings}>
+            <button type="button" className="mt-stream__act" data-testid="stream-standings" onClick={onStandings}>
               Таблица потока
             </button>
           )}
         </section>
+
+        {/**
+          * ═══ ОСТАЛЬНОЕ ПРИЛОЖЕНИЕ ═══
+          *
+          * Комната задумана как единственное место, куда участник заходит
+          * каждый день. Значит из неё должно быть видно и то, что живёт за её
+          * пределами: тренировки и прогресс. Без этого человек всё равно
+          * возвращался бы на главную — и терял бы комнату из виду.
+          *
+          * Числа сюда приносит хозяин приложения (App.jsx). Считать их здесь
+          * нельзя: раздел Motion не знает ни про тренировки FitPro, ни про его
+          * базу, и лезть туда значило бы завести вторую правду о них.
+          */}
+        {(onOpenWorkouts || onOpenProgress) && (
+          <section className="mt-stream__card" data-testid="stream-app">
+            <div className="mt-stream__cardHead">
+              <span className="mt-stream__cardTitle">Остальное приложение</span>
+            </div>
+            <p className="mt-stream__cardP">
+              {app?.workouts7d > 0
+                ? `Тренировок за неделю: ${app.workouts7d}.`
+                : 'Тренировок за неделю пока нет.'}
+              {app?.lastWorkout ? ` Последняя — ${app.lastWorkout}.` : ''}
+            </p>
+            {onOpenWorkouts && (
+              <button type="button" className="mt-stream__act" data-testid="stream-workouts" onClick={onOpenWorkouts}>
+                Тренировки
+              </button>
+            )}
+            {onOpenProgress && (
+              <button type="button" className="mt-stream__act" data-testid="stream-progress" onClick={onOpenProgress}>
+                Мой прогресс
+              </button>
+            )}
+          </section>
+        )}
 
         {/* ═══ 7. КАЛЕНДАРЬ ═══ */}
         <div className="mt-stream__days" data-testid="stream-days">

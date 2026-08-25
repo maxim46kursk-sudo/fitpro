@@ -15,6 +15,7 @@
 import { useState, useEffect, useMemo, lazy, Suspense } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from './supabase.js'
+import DayMacros from './DayMacros.jsx'
 import { resolveLoadOutcome, LOAD_OUTCOME } from './authState.js'
 import { ensureFoodDiaryMigrated } from './foodDiaryMigrate.js'
 import { getGuestFood, setGuestFood } from './guestStore.js'
@@ -28,7 +29,7 @@ import {
 } from './nutrition.js'
 import {
   MEALS, MEAL_ICONS, NO_MEAL, NO_MEAL_LABEL, mealLabel,
-  groupByMeal, sumEntries, remainingOf, overBy, pctOf, recentProducts, moveEntry,
+  groupByMeal, sumEntries, recentProducts, moveEntry,
   scaleEntryByPortions, clampPortions, PORTIONS_DEFAULT, PORTIONS_MIN, PORTIONS_MAX,
   shiftISO,
 } from './foodMeals.js'
@@ -587,7 +588,6 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
     return { iso, d, entries, tot: sumEntries(entries) }
   })
   const weekTotal = weekDays.reduce((a, d) => ({ kcal: a.kcal + d.tot.kcal, p: a.p + d.tot.p, c: a.c + d.tot.c, f: a.f + d.tot.f }), { kcal: 0, p: 0, c: 0, f: 0 })
-  const hasGoal = foodGoals.kcal > 0
 
   // ── Стили
   const inputStyle = { width: '100%', padding: '11px 13px', fontSize: 15, borderRadius: 10, border: `1.5px solid ${HAIR}`, outline: 'none', boxSizing: 'border-box', color: TXT, background: SURF2 }
@@ -887,61 +887,34 @@ export default function FoodDiary({ userId, readOnly = false, readOnlyName = '',
             )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
-            <div style={{ fontSize: 44, fontWeight: 800, color: TXT, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{dayTotal.kcal}</div>
-            {hasGoal
-              ? <div style={{ fontSize: 18, fontWeight: 700, color: TXT3, paddingBottom: 4 }}>из {foodGoals.kcal} ккал</div>
-              : <div style={{ fontSize: 18, fontWeight: 700, color: TXT3, paddingBottom: 4 }}>ккал</div>}
-            {foodLoading && dayEntries.length === 0 ? (
-              <div style={{ fontSize: 11, color: TXT3, paddingBottom: 4 }}>загрузка…</div>
-            ) : foodLoadError ? (
-              <div style={{ fontSize: 11, color: COR, paddingBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-                не удалось загрузить
-                <button onClick={() => setFoodReloadToken(t => t + 1)} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 6, border: 'none', background: COR, color: '#fff', cursor: 'pointer', fontWeight: 600, minHeight: 'unset' }}>Повторить</button>
-              </div>
-            ) : null}
-          </div>
-
-          {/* Остаток или перебор — одной строкой, крупно. Норма не задана —
-              вместо остатка ссылка на экран норм: без неё «осталось» не из
-              чего считать, а промолчать значило бы спрятать настройку. */}
-          {hasGoal ? (
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: overBy(dayTotal.kcal, foodGoals.kcal) > 0 ? COR : TEA }}>
-              {overBy(dayTotal.kcal, foodGoals.kcal) > 0
-                ? `перебор ${overBy(dayTotal.kcal, foodGoals.kcal)} ккал`
-                : `осталось ${remainingOf(dayTotal.kcal, foodGoals.kcal)} ккал`}
+          {/* Загрузка и ошибка — обвязка ДНЕВНИКА, а не сводки: они про то,
+              откуда приехали числа, и в комнате челленджа их нет. Поэтому
+              стоят рядом с блоком, а не внутри него. */}
+          {(foodLoading && dayEntries.length === 0) || foodLoadError ? (
+            <div style={{ marginBottom: 6 }}>
+              {foodLoading && dayEntries.length === 0 ? (
+                <span style={{ fontSize: 11, color: TXT3 }}>загрузка…</span>
+              ) : (
+                <span style={{ fontSize: 11, color: COR, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  не удалось загрузить
+                  <button onClick={() => setFoodReloadToken(t => t + 1)} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 6, border: 'none', background: COR, color: '#fff', cursor: 'pointer', fontWeight: 600, minHeight: 'unset' }}>Повторить</button>
+                </span>
+              )}
             </div>
-          ) : !readOnly && (
-            <button onClick={openGoals}
-              style={{ background: 'none', border: 'none', color: PUR, fontSize: 13, fontWeight: 700, cursor: 'pointer', padding: 0, marginBottom: 12, minHeight: 'unset' }}>
-              Задать норму
-            </button>
-          )}
+          ) : null}
 
-          <div style={{ height: 10, background: 'rgba(255,255,255,.10)', borderRadius: 6, overflow: 'hidden', marginBottom: 14 }}>
-            <div style={{ height: '100%', width: `${pctOf(dayTotal.kcal, foodGoals.kcal)}%`, background: `linear-gradient(90deg, ${KCAL}, #e07bff)`, borderRadius: 6, transition: 'width 0.3s' }} />
-          </div>
-
-          {/* Три тонкие шкалы Б/У/Ж */}
-          {[['Белки', 'p', TEA], ['Углеводы', 'c', BLU], ['Жиры', 'f', COR]].map(([l, k, c]) => {
-            const ov = overBy(dayTotal[k], foodGoals[k])
-            return (
-              <div key={k} style={{ marginBottom: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4, gap: 4, flexWrap: 'wrap' }}>
-                  <span style={{ color: TXT2, fontWeight: 600 }}>{l}</span>
-                  <span style={{ fontWeight: 700, color: c }}>{Math.round(dayTotal[k])} г</span>
-                  <span style={{ flex: 1 }} />
-                  {foodGoals[k] > 0 && (ov > 0
-                    ? <span style={{ fontSize: 11, color: COR }}>+{ov} г перебор</span>
-                    : <span style={{ fontSize: 11, color: TXT3 }}>осталось {remainingOf(dayTotal[k], foodGoals[k])} г</span>)}
-                  {foodGoals[k] > 0 && <span style={{ fontSize: 11, color: TXT3 }}>/ {foodGoals[k]} г</span>}
-                </div>
-                <div style={{ height: 7, background: 'rgba(255,255,255,.10)', borderRadius: 4, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${pctOf(dayTotal[k], foodGoals[k])}%`, background: ov > 0 ? COR : c, borderRadius: 4, transition: 'width 0.3s' }} />
-                </div>
-              </div>
-            )
-          })}
+          {/*
+            СВОДКА ДНЯ — общий блок (src/DayMacros.jsx), а не разметка по месту.
+            Тот же самый показывает комната участника челленджа: два изображения
+            одних и тех же данных разошлись бы на первой правке, и человек
+            увидел бы в двух местах разные цифры о собственном дне.
+          */}
+          <DayMacros
+            totals={dayTotal}
+            goals={foodGoals}
+            onSetGoal={readOnly ? null : openGoals}
+            testId="diary-day-macros"
+          />
         </Card>
         {/* ── Приёмы пищи */}
         {[...MEALS, { key: NO_MEAL, label: NO_MEAL_LABEL }].map(meal => {

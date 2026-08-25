@@ -57,6 +57,16 @@ let entry = null
 
 let season = SEASON
 
+/**
+ * Сервер таблицы потока: отвечает ТЕМ, что успело до него доехать. Первый ответ
+ * — до захода (нули), дальше — то, что положили в `наСервере`.
+ */
+let таблица = []
+let читалиТаблицу = 0
+let отправлено = 0
+/** Порядок событий: отправка обязана идти ПЕРЕД чтением таблицы. */
+let порядок = []
+
 vi.mock('../challengeSeason.js', () => ({
   CHALLENGE_PRICE: 2990,
   loadChallengeState: vi.fn(async ({ guest } = {}) =>
@@ -67,8 +77,17 @@ vi.mock('../challengeSeason.js', () => ({
   hasNorm: vi.fn(() => true),
   freezeNorm: vi.fn(async () => 'already'),
   loadNutritionFacts: vi.fn(async () => []),
-  loadStandings: vi.fn(async () => []),
+  loadStandings: vi.fn(async () => { читалиТаблицу += 1; порядок.push('таблица'); return таблица }),
 }))
+
+vi.mock('./sync.js', async (importOriginal) => {
+  const real = await importOriginal()
+  return {
+    ...real,
+    // отправка «доезжает» мгновенно и отмечается — на неё и смотрит проверка
+    flushPush: vi.fn(async () => { отправлено += 1; порядок.push('отправка') }),
+  }
+})
 
 /** Дата за N московских дней от сегодня: минус — прошлое. */
 const сдвиг = (дней) => {
@@ -80,6 +99,10 @@ beforeEach(() => {
   accepted = null
   entry = null
   season = SEASON
+  таблица = []
+  читалиТаблицу = 0
+  отправлено = 0
+  порядок = []
   globalThis.localStorage?.clear()
   // jsdom не знает matchMedia, а без него падает блокировка ландшафта
   vi.stubGlobal('matchMedia', () => ({
@@ -241,5 +264,64 @@ describe('у участника комната одна', () => {
     await waitFor(() => expect(screen.getByTestId('calibration-room')).toBeTruthy())
     act(() => screen.getByTestId('calibration-room').click())
     expect(screen.getByTestId('room-screen')).toBeTruthy()
+  })
+})
+
+/**
+ * КОМНАТА И ТАБЛИЦА ОБЯЗАНЫ ГОВОРИТЬ ОДНО И ТО ЖЕ.
+ *
+ * ЖИВАЯ ПОЛОМКА (прод, 25.08): в комнате у человека тысяча очков за сегодня, а
+ * в таблице потока у него же ноль. Причин было две, и обе про порядок:
+ *
+ *   1) комната читает УСТРОЙСТВО, таблица — СЕРВЕР. Заход попадает в кэш
+ *      мгновенно, наверх уезжает отложенно. Спроси сервер раньше — он честно
+ *      ответит ноль;
+ *   2) таблица читалась ОДИН РАЗ за открытие раздела и дальше бралась из
+ *      памяти: человек уходил играть и возвращался к снимку, сделанному ДО игры.
+ *
+ * Для призовых денег такое расхождение недопустимо, а «обнови страницу» — не
+ * ответ. Поэтому здесь проверяется не арифметика, а ПОРЯДОК: на каждый вход в
+ * комнату сперва дожидаемся отправки, потом спрашиваем таблицу.
+ */
+describe('комната и таблица потока не расходятся', () => {
+  const вКомнату = async () => {
+    season = { ...SEASON, starts_on: сдвиг(-4) }
+    accepted = '2026-08-24T10:00:00Z'
+    entry = { id: 1, participant_no: 24, display_name: 'Пётр', paid_at: 'x' }
+    render(<MotionApp startScreen="challenge" />)
+    await waitFor(() => expect(screen.getByTestId('stream-room')).toBeTruthy())
+  }
+
+  it('таблица спрашивается ПОСЛЕ того, как наигранное уехало наверх', async () => {
+    await вКомнату()
+    await waitFor(() => expect(читалиТаблицу).toBeGreaterThan(0))
+    expect(отправлено).toBeGreaterThan(0)
+    // порядок и есть суть правки: сперва отдать наигранное, потом спрашивать
+    expect(порядок[0]).toBe('отправка')
+    expect(порядок).toContain('таблица')
+  })
+
+  it('вернулся из игры — таблица перечитана, а не взята из памяти', async () => {
+    await вКомнату()
+    await waitFor(() => expect(читалиТаблицу).toBe(1))
+
+    // ушёл играть
+    act(() => screen.getByTestId('stream-start').click())
+    await waitFor(() => expect(screen.getByTestId('level-novice')).toBeTruthy())
+
+    // пока играл, на сервере появился его результат
+    таблица = [{
+      participant_no: 24, display_name: 'Пётр', is_me: true, days_done: 1,
+      day: 5, best_score: 1000, kcal: 0, p: 0, f: 0, c: 0, meals: 0,
+      norm_kcal: 2000, norm_p: 120, norm_f: 65, norm_c: 220,
+    }]
+
+    // вернулся в комнату
+    act(() => document.querySelector('.mt-corner--left').click())
+    await waitFor(() => expect(screen.getByTestId('stream-room')).toBeTruthy())
+
+    await waitFor(() => expect(читалиТаблицу).toBe(2))
+    await waitFor(() =>
+      expect(screen.getByTestId('stream-place-value').textContent).toBe('1-й из 1'))
   })
 })

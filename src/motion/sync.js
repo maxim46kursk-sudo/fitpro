@@ -89,7 +89,17 @@ export const noteLoadFailed = () => setHealth({ loaded: false })
 let backend = null
 let unwatch = null
 let pushTimer = null
-let pushing = false
+/**
+ * ИДУЩАЯ ОТПРАВКА — обещанием, а не булевым флагом.
+ *
+ * Раньше здесь стоял `pushing = true/false`, и повторный вызов во время
+ * отправки просто возвращал undefined: дождаться его было нельзя. Комнате
+ * участника это стоило дорого — она читала таблицу потока РАНЬШЕ, чем заход
+ * успевал уехать наверх, и человек видел у себя тысячу очков, а в таблице ноль.
+ * Теперь тот, кто позвал push во время отправки, получает ту же самую отправку
+ * и может её дождаться (см. flushPush ниже).
+ */
+let inflight = null
 /** Попытки, про которые сервер уже знает: `${day}:${tier}:${no}`. */
 const knownAttempts = new Set()
 
@@ -369,7 +379,32 @@ function schedulePush() {
  * три попытки — не беда: всё лежит в кэше, и следующая же запись или следующее
  * открытие раздела отправят его снова.
  */
-export async function push({ force = false } = {}) {
+export function push({ force = false } = {}) {
+  if (!backend) return Promise.resolve()
+  // отправка уже идёт — отдаём её же: два вызова не должны слать одно дважды
+  if (inflight) return inflight
+  inflight = doPush({ force }).finally(() => { inflight = null })
+  return inflight
+}
+
+/**
+ * ДОЖДАТЬСЯ, ЧТО НАИГРАННОЕ УЕХАЛО НАВЕРХ.
+ *
+ * Нужно ровно в одном месте и по одной причине: комната участника показывает
+ * своё место в потоке, а место считает сервер по motion_attempts. Прочитай она
+ * таблицу до того, как заход доехал, — человек увидит в комнате свою тысячу
+ * очков, а в таблице ноль. Для призовых денег это недопустимо.
+ *
+ * Два вызова подряд, и оба нужны: первый присоединяется к идущей отправке (она
+ * могла начаться до нас и не знать о последнем заходе), второй отправляет то,
+ * что появилось, пока первая шла.
+ */
+export async function flushPush() {
+  await push().catch(() => {})
+  await push().catch(() => {})
+}
+
+async function doPush({ force = false } = {}) {
   /**
    * Адаптер берётся В ЛОКАЛЬНУЮ переменную и дальше используется только она.
    *
@@ -379,8 +414,7 @@ export async function push({ force = false } = {}) {
    * Ровно это и случилось: попытки уезжали, прогресс молча нет.
    */
   const api = backend
-  if (!api || pushing) return
-  pushing = true
+  if (!api) return
   try {
     const payload = { ...collectProgress(), [STAMP]: new Date().toISOString() }
     // Черновик незакрытой попытки — состояние этого устройства, серверу его
@@ -428,7 +462,7 @@ export async function push({ force = false } = {}) {
       }
     }
   } finally {
-    pushing = false
+    /* отметку о завершении снимает push(): она живёт в inflight */
   }
 }
 
@@ -436,6 +470,7 @@ export async function push({ force = false } = {}) {
 export function resetSync() {
   if (pushTimer) clearTimeout(pushTimer)
   pushTimer = null
+  inflight = null
   knownAttempts.clear()
   /**
    * Состояние обмена сбрасывается тоже: оно про ТЕКУЩИЙ заход в раздел.

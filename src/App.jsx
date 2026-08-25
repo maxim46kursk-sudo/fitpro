@@ -146,13 +146,44 @@ function motionSyncFor(userId) {
  * @param {object|null} [props.guestMotion] попытки из буфера переезда
  * @param {() => void} [props.onGuestMotionApplied]
  */
-function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null }) {
+function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null, onOpenWorkouts = null, onOpenProgress = null }) {
   /**
    * Адаптер собирается ОДИН раз на человека. Новый объект на каждый рендер
    * означал бы новую загрузку прогресса на каждый рендер — то есть заставку,
    * возвращающуюся посреди тренировки.
    */
   const sync = useMemo(() => (userId ? motionSyncFor(userId) : null), [userId])
+
+  /**
+   * СВОДКА ПО ОСТАЛЬНОМУ ПРИЛОЖЕНИЮ — для комнаты участника челленджа.
+   *
+   * Комната задумана как единственное место, куда человек заходит каждый день,
+   * и из неё должно быть видно то, что живёт за её пределами. Считает это
+   * ХОЗЯИН: раздел Motion про тренировки FitPro ничего не знает, и лезть ему в
+   * эту таблицу значило бы завести вторую правду о них.
+   *
+   * Один запрос на открытие раздела и только у вошедшего. Отказ — не беда:
+   * комната покажет карточку без числа, а не заставку с извинениями.
+   */
+  const [appSummary, setAppSummary] = useState(null)
+  useEffect(() => {
+    // Гостю сводки нет и сбрасывать нечего: overlay пересоздаётся на каждого
+    // человека, и начальное состояние уже пустое.
+    if (!userId) return undefined
+    let alive = true
+    const since = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
+    supabase.from('workouts').select('date').eq('user_id', userId).gte('date', since)
+      .then(({ data, error }) => {
+        if (!alive || error) return
+        const days = new Set((data || []).map(w => String(w.date).slice(0, 10)))
+        const last = [...days].sort().pop() || null
+        setAppSummary({
+          workouts7d: days.size,
+          lastWorkout: last ? new Date(last + 'T00:00:00').toLocaleDateString('ru', { day: 'numeric', month: 'long' }) : null,
+        })
+      })
+    return () => { alive = false }
+  }, [userId])
 
   return createPortal(
     <div
@@ -207,6 +238,9 @@ function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onG
           startScreen={startScreen}
           onFillNorm={onFillNorm}
           onOpenDiary={onOpenDiary}
+          app={appSummary}
+          onOpenWorkouts={onOpenWorkouts}
+          onOpenProgress={onOpenProgress}
         />
       </Suspense>
     </div>,
@@ -11243,6 +11277,20 @@ export default function App() {
     handleNav('nutrition')
   }
 
+  /**
+   * ИЗ КОМНАТЫ — В ОСТАЛЬНОЕ ПРИЛОЖЕНИЕ. Раздел закрывается той же дорогой, что
+   * и всегда (closeMotion гасит камеру размонтированием), и человек попадает на
+   * нужную вкладку, а не на главную «куда-нибудь».
+   */
+  const openWorkoutsTab=()=>{
+    closeMotion()
+    handleNav('workouts')
+  }
+  const openProgressTab=()=>{
+    closeMotion()
+    handleNav('progress')
+  }
+
   const openFoodGoals=()=>{
     closeMotion()
     handleNav('nutrition')
@@ -12222,6 +12270,8 @@ export default function App() {
           startScreen={motionStart}
           onFillNorm={openFoodGoals}
           onOpenDiary={openFoodDiary}
+          onOpenWorkouts={openWorkoutsTab}
+          onOpenProgress={openProgressTab}
           userId={user?.id}
           guest={guestMode}
           onGuestValue={handleGuestValue}

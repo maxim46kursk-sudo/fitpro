@@ -160,27 +160,43 @@ describe('поздравление — полосой и один раз', () =>
 
 // ═══════════════════════════════════════════════════════════════════════════
 describe('питание за сегодня: настоящие цифры и что делать', () => {
-  it('процент дня и остатки до нормы по каждому показателю', () => {
+  /**
+   * СЪЕДЕНО ВИДНО, А НЕ ТОЛЬКО «ОСТАЛОСЬ».
+   *
+   * Здесь стояли четыре сухие плитки с остатками: человек видел, сколько ему
+   * ЕЩЁ надо, и не видел, сколько уже съел — ноль и две тысячи выглядели
+   * одинаково. Теперь блок тот же, что в дневнике (src/DayMacros.jsx), и
+   * проверяется именно это: обе половины на экране.
+   */
+  it('съеденное и норма — как в дневнике: «1500 из 2000 ккал»', () => {
     const rows = facts([{}, {}, {}, {}, { kcal: 1500, p: 90, f: 40, c: 150, meals: 3 }])
     room({ nutrition: rows })
 
-    // каждый показатель судится отдельно и усредняется: калории и белки по 70,
-    // жиры 43, углеводы 56 — среднее 60. Недоел наказывается ровно как переел
-    expect(screen.getByTestId('stream-nutri-pct').textContent).toBe('60%')
-    expect(screen.getByTestId('stream-rest-kcal').textContent).toContain('500')
-    expect(screen.getByTestId('stream-rest-p').textContent).toContain('30 г')
-    expect(screen.getByTestId('stream-rest-f').textContent).toContain('25 г')
-    expect(screen.getByTestId('stream-rest-c').textContent).toContain('70 г')
+    expect(screen.getByTestId('stream-macros-kcal').textContent).toBe('1500')
+    expect(screen.getByTestId('stream-macros').textContent).toContain('из 2000 ккал')
+    expect(screen.getByTestId('stream-macros-left').textContent).toBe('осталось 500 ккал')
+
+    // и три шкалы: съедено, остаток, норма — по каждому показателю
+    const белки = screen.getByTestId('stream-macros-p').textContent
+    expect(белки).toContain('90 г')
+    expect(белки).toContain('осталось 30 г')
+    expect(белки).toContain('/ 120 г')
   })
 
-  it('перебор показывается плюсом и своими словами, а не отрицательным остатком', () => {
+  it('процент зачёта считает судья челленджа, а не заполненность шкалы', () => {
+    // каждый показатель судится отдельно и усредняется: калории и белки по 70,
+    // жиры 43, углеводы 56 — среднее 60. Недоел наказывается ровно как переел
+    const rows = facts([{}, {}, {}, {}, { kcal: 1500, p: 90, f: 40, c: 150, meals: 3 }])
+    room({ nutrition: rows })
+
+    expect(screen.getByTestId('stream-nutri-pct').textContent).toBe('60%')
+  })
+
+  it('перебор показывается словом «перебор», а не отрицательным остатком', () => {
     const rows = facts([{}, {}, {}, {}, { kcal: 2600, p: 120, f: 65, c: 220, meals: 3 }])
     room({ nutrition: rows })
 
-    const kcal = screen.getByTestId('stream-rest-kcal')
-    expect(kcal.textContent).toContain('+600')
-    expect(kcal.textContent).toContain('сверх нормы')
-    expect(kcal.className).toContain('is-over')
+    expect(screen.getByTestId('stream-macros-left').textContent).toBe('перебор 600 ккал')
   })
 
   it('мало приёмов — говорим, ЧТО СДЕЛАТЬ, а не «меньше 3 приёмов»', () => {
@@ -196,8 +212,9 @@ describe('питание за сегодня: настоящие цифры и �
     expect(todo).toContain('Запиши приёмы пищи')
     expect(todo).toContain('засчитываем от 3')
     expect(todo).toContain('осталось 2')
-    // и остатки всё равно показаны: человеку надо знать, сколько доесть
-    expect(screen.getByTestId('stream-rest-kcal').textContent).toContain('1100')
+    // и съеденное всё равно показано: человеку надо знать, сколько доесть
+    expect(screen.getByTestId('stream-macros-kcal').textContent).toBe('900')
+    expect(screen.getByTestId('stream-macros-left').textContent).toBe('осталось 1100 ккал')
   })
 
   it('кнопка ведёт в дневник, а не в норму', () => {
@@ -218,6 +235,33 @@ describe('питание за сегодня: настоящие цифры и �
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
+describe('остальное приложение', () => {
+  it('числа приносит хозяин, комната их только показывает', () => {
+    const onOpenWorkouts = vi.fn()
+    const onOpenProgress = vi.fn()
+    room({ app: { workouts7d: 3, lastWorkout: '24 августа' }, onOpenWorkouts, onOpenProgress })
+
+    const card = screen.getByTestId('stream-app').textContent
+    expect(card).toContain('Тренировок за неделю: 3')
+    expect(card).toContain('24 августа')
+
+    act(() => screen.getByTestId('stream-workouts').click())
+    expect(onOpenWorkouts).toHaveBeenCalled()
+    act(() => screen.getByTestId('stream-progress').click())
+    expect(onOpenProgress).toHaveBeenCalled()
+  })
+
+  it('сводки не приехало — карточка не врёт числом', () => {
+    room({ onOpenWorkouts: () => {} })
+    expect(screen.getByTestId('stream-app').textContent).toContain('пока нет')
+  })
+
+  it('вести человека некуда — карточки нет вовсе', () => {
+    room({})
+    expect(screen.queryByTestId('stream-app')).toBeNull()
+  })
+})
+
 describe('место в потоке', () => {
   it('«Ты N-й из M» — тем же судьёй, что и таблица', () => {
     const rows = standingRows([

@@ -114,6 +114,9 @@ const money = (n) =>
  * @param {(tier: string, opts: object) => void} [props.onResume] продолжить
  *   незавершённую сессию. Комната сессий не запускает — отдаёт решение наверх.
  * @param {() => void} [props.onOpenDiary] открыть дневник питания.
+ * @param {object} [props.app] сводка по остальному приложению (App.jsx).
+ * @param {() => void} [props.onOpenWorkouts] открыть тренировки.
+ * @param {() => void} [props.onOpenProgress] открыть прогресс.
  * @param {boolean} [props.syncBroken] прогресс не прочитан — заход не в зачёт.
  * @param {boolean} [props.pushFailed] результат не уехал наверх после повторов.
  * @param {boolean} [props.greet] первый заход после покупки: показать полосу
@@ -137,6 +140,9 @@ export default function ChallengeScreen({
   onStartDay = null,
   onResume = null,
   onOpenDiary = null,
+  app = null,
+  onOpenWorkouts = null,
+  onOpenProgress = null,
   syncBroken = false,
   pushFailed = false,
   greet = false,
@@ -243,6 +249,9 @@ export default function ChallengeScreen({
         onStartDay={onStartDay}
         onResume={onResume}
         onOpenDiary={onOpenDiary}
+        app={app}
+        onOpenWorkouts={onOpenWorkouts}
+        onOpenProgress={onOpenProgress}
         onFillNorm={onFillNorm}
         onStandings={onStandings}
         onRules={() => setRulesOpen(true)}
@@ -469,10 +478,10 @@ export default function ChallengeScreen({
           <h2 className="mt-ch__h2">Призовой фонд —<br />это <em>две части</em></h2>
 
           <div className="mt-ch__prize">
-            <div className="mt-ch__fundLbl">Часть первая · гарантирована</div>
+            <div className="mt-ch__fundLbl">Часть первая · призы</div>
             <div className="mt-ch__fund" data-testid="challenge-prizes-total">{money(PRIZES_TOTAL)}</div>
             <div className="mt-ch__fundL">
-              Призами. Они уже есть и не зависят от того, сколько человек придёт в поток.
+              Они уже есть и не зависят от того, сколько человек придёт в поток.
             </div>
             <div className="mt-ch__places">
               {PRIZES.map((p) => (
@@ -488,7 +497,7 @@ export default function ChallengeScreen({
           </div>
 
           <div className="mt-ch__prize mt-ch__prize--second">
-            <div className="mt-ch__fundLbl">Часть вторая · деньгами</div>
+            <div className="mt-ch__fundLbl">Часть вторая · деньги</div>
             <div className="mt-ch__fund" data-testid="challenge-prize-pct">+ {prizePct}% каждого билета</div>
             <div className="mt-ch__fundL">
               Живые деньги, которые делятся между теми же тремя. Чем больше народу в потоке —

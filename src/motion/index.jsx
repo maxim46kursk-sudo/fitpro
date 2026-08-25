@@ -40,7 +40,7 @@ import { recordFrame } from './debug/recorder.js'
 import { isCalibrating, subscribeCalibration } from './debug/calibrationMode.js'
 import { openMotion } from './lifecycle.js'
 import { configureLogShipper } from './debug/logShipper.js'
-import { configureSync, hydrate, noteLoadFailed, onSyncHealth, push, resetSync, startSync, stopSync, syncHealth } from './sync.js'
+import { configureSync, flushPush, hydrate, noteLoadFailed, onSyncHealth, push, resetSync, startSync, stopSync, syncHealth } from './sync.js'
 import { KEYS, readRaw, useMemoryStorage, writeRaw } from './storage.js'
 import { attemptsFor, challengeTotal, submitAttempt } from './game/day.js'
 import { progress } from './game/challenge.js'
@@ -94,7 +94,7 @@ import './motion.css'
  *   остальное (камера, калибровка, уровни) на этом пути не нужно и не должно
  *   стоять между ним и ответом.
  */
-export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null } = {}) {
+export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null, app = null, onOpenWorkouts = null, onOpenProgress = null } = {}) {
   /**
    * ГОСТЬ ПИШЕТ В ПАМЯТЬ, А НЕ НА УСТРОЙСТВО — и решается это здесь, раньше
    * всего остального.
@@ -266,6 +266,9 @@ export default function MotionApp({ onExit, day, tier, paused = false, log = nul
         startScreen={startScreen}
         onFillNorm={onFillNorm}
         onOpenDiary={onOpenDiary}
+        app={app}
+        onOpenWorkouts={onOpenWorkouts}
+        onOpenProgress={onOpenProgress}
       />
     </ErrorBoundary>
   )
@@ -327,7 +330,7 @@ function readBlockMode() {
   }
 }
 
-function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null }) {
+function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null, app = null, onOpenWorkouts = null, onOpenProgress = null }) {
   // calibration | setup | levels | room | challenge | workout | result
   // выбор уровня и настройка под себя — только в игре
   const [screen, setScreen] = useState(startScreen === 'challenge' ? 'challenge' : 'calibration')
@@ -435,15 +438,6 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
    * приложение только даёт ей повод посмотреть.
    */
   const [nutrition, setNutrition] = useState(null)
-  useEffect(() => {
-    const seasonId = membership?.season?.id
-    if (!seasonId || !membership?.entry) return undefined
-    let alive = true
-    freezeNorm(seasonId)
-      .then(() => loadNutritionFacts(seasonId))
-      .then((rows) => { if (alive) setNutrition(rows) })
-    return () => { alive = false }
-  }, [membership?.season?.id, membership?.entry])
 
   /**
    * ТАБЛИЦА ПОТОКА. Читается по требованию, а не вместе с разделом: строк в ней
@@ -454,24 +448,58 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
   const [standingsBusy, setStandingsBusy] = useState(false)
 
   /**
-   * МЕСТО В ПОТОКЕ КОМНАТА ПОКАЗЫВАЕТ СРАЗУ, поэтому таблица читается вместе с
-   * разделом, а не только по кнопке. Прежний довод («строк участники × тридцать
-   * дней, незачем тащить каждому») остаётся верным для того, кто просто зашёл
-   * посмотреть на челлендж, — поэтому запрос уходит только у УЧАСТНИКА ИДУЩЕГО
-   * потока: у него это и есть один из вопросов, ради которых он сюда пришёл.
+   * ДАННЫЕ КОМНАТЫ ЧИТАЮТСЯ ОДНИМ ДВИЖЕНИЕМ И НА КАЖДЫЙ ВХОД В НЕЁ.
    *
-   * Прочитанное кладётся в тот же standingsRows, что и раньше, — экран таблицы
-   * подхватывает готовое и не спрашивает второй раз.
+   * ЖИВАЯ ПОЛОМКА, из-за которой это переписано. В комнате у человека стояла
+   * тысяча очков за сегодня, а в таблице потока — ноль. Причин было две, и обе
+   * про порядок, а не про арифметику:
+   *
+   *   1) КОМНАТА ЧИТАЕТ УСТРОЙСТВО, ТАБЛИЦА — СЕРВЕР. Заход попадает в кэш
+   *      мгновенно, а наверх уезжает отложенно (sync.js). Спроси сервер раньше,
+   *      чем заход доехал, — он честно ответит ноль;
+   *   2) ТАБЛИЦА ЧИТАЛАСЬ ОДИН РАЗ ЗА ОТКРЫТИЕ РАЗДЕЛА и потом бралась из
+   *      памяти. Человек уходил играть и возвращался в комнату к снимку,
+   *      сделанному ДО игры.
+   *
+   * Поэтому здесь: сперва дожидаемся, что наигранное уехало (flushPush), и
+   * только потом спрашиваем и питание, и таблицу — вместе, одним заходом. Для
+   * призовых денег расхождение комнаты и таблицы недопустимо, а «обнови
+   * страницу» не ответ.
+   *
+   * Ключ эффекта — roomVisit: он растёт на каждый вход в комнату, в том числе
+   * при возврате из игры, когда ни сезон, ни участие не менялись.
    */
+  const [roomVisit, setRoomVisit] = useState(0)
+  const [roomBusy, setRoomBusy] = useState(false)
   useEffect(() => {
     const seasonId = membership?.season?.id
-    if (!seasonId || !membership?.entry || standingsRows) return undefined
-    if (streamPhase(membership?.season?.starts_on) !== 'running') return undefined
+    if (!seasonId || !membership?.entry) return undefined
+    if (screen !== 'challenge') return undefined
     let alive = true
-    loadStandings(seasonId).then((rows) => { if (alive) setStandingsRows(rows) })
+    setRoomBusy(true)
+    ;(async () => {
+      // сперва отдать наверх то, что человек только что наиграл
+      await flushPush()
+      // какой сегодня день потока и пора ли снимать второй слепок, решает база
+      await freezeNorm(seasonId)
+      const running = streamPhase(membership?.season?.starts_on) === 'running'
+      const [facts, table] = await Promise.all([
+        loadNutritionFacts(seasonId),
+        running ? loadStandings(seasonId) : Promise.resolve(null),
+      ])
+      if (!alive) return
+      setNutrition(facts)
+      if (table) setStandingsRows(table)
+      setRoomBusy(false)
+    })()
     return () => { alive = false }
-  }, [membership?.season?.id, membership?.entry, membership?.season?.starts_on, standingsRows])
+  }, [membership?.season?.id, membership?.entry, membership?.season?.starts_on, screen, roomVisit])
 
+  /**
+   * Таблица открывается уже прочитанной — комната спросила её при входе. Но
+   * если человек пришёл к ней в обход комнаты (или та ещё не ответила),
+   * спрашиваем сами: пустая таблица читается как «в потоке никого».
+   */
   const openStandings = async () => {
     setScreen('standings')
     const seasonId = membership?.season?.id
@@ -595,6 +623,15 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
     challengeBack.current = from
     setScreen('challenge')
   }
+  /**
+   * ВЕРНУЛИСЬ В КОМНАТУ — перечитать её данные. Между уходом и возвратом человек
+   * успел сыграть заход и записать еду; показать ему прежний снимок значит
+   * соврать ровно там, где считаются призы.
+   */
+  const backToRoom = useCallback(() => {
+    setRoomVisit((n) => n + 1)
+    setScreen('challenge')
+  }, [])
   const [needsTap, setNeedsTap] = useState(false)
 
   /**
@@ -967,6 +1004,9 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
            */
           onResume={startSession}
           onOpenDiary={() => onOpenDiary?.()}
+          app={app}
+          onOpenWorkouts={onOpenWorkouts ? () => onOpenWorkouts() : null}
+          onOpenProgress={onOpenProgress ? () => onOpenProgress() : null}
           /**
            * ВСТУПЛЕНИЕ ОДНОЙ ДОРОГОЙ: сперва фиксируем согласие В БАЗЕ, и
            * только если оно записалось — открываем оплату. Обратный порядок
@@ -1091,7 +1131,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
           /** Участнику — нечего: его комната одна, и он пришёл из неё. */
           onRoom={member ? null : () => openRoom('levels')}
           onChallenge={() => openChallenge('levels')}
-          onExit={() => setScreen(levelsBack.current)}
+          onExit={() => (levelsBack.current === 'challenge' ? backToRoom() : setScreen(levelsBack.current))}
         />
       )}
 
