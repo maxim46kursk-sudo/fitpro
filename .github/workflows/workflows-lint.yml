@@ -1,0 +1,61 @@
+# ПОСЛЕДНИЙ РУБЕЖ: битый workflow-файл не должен притворяться живым сторожем.
+#
+# Что случилось. В fitpro-monitor.yml внутри блока `run: |` оказался буквальный
+# перевод строки внутри $'...' — вторая половина строки начиналась с нулевого
+# отступа и разрывала блок. GitHub отклонял файл целиком («Invalid workflow
+# file»), и монитор НЕ ЗАПУСКАЛСЯ НИ РАЗУ по расписанию. Снаружи это выглядело
+# ровно как «всё тихо, значит всё хорошо» — худший из отказов наблюдения:
+# тишина читается как норма.
+#
+# Отсюда правило: файлы сторожа разбираются на каждом пуше, который их трогает,
+# и о поломке сообщают туда же, куда сторож шлёт свои тревоги.
+#
+# ЭТОТ ФАЙЛ НАРОЧНО ПРОСТОЙ. Ни расписания, ни матриц, ни условий сложнее
+# одного `if`; имена файлов и переменных — латиницей. Он последний, кто скажет
+# правду, когда сломалось всё остальное, и ломаться ему негде.
+name: workflows-lint
+
+on:
+  push:
+    paths:
+      - '.github/workflows/**'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Разобрать все workflow-файлы
+        run: |
+          python -c "
+          import glob, sys, yaml
+          bad = []
+          for f in sorted(glob.glob('.github/workflows/*.yml') + glob.glob('.github/workflows/*.yaml')):
+              try:
+                  yaml.safe_load(open(f, encoding='utf-8'))
+                  print('ok   ' + f)
+              except yaml.YAMLError as e:
+                  mark = getattr(e, 'problem_mark', None)
+                  line = (mark.line + 1) if mark else 0
+                  print('БИТЫЙ ' + f + ', строка ' + str(line) + ': ' + str(getattr(e, 'problem', e)))
+                  bad.append(f + ', строка ' + str(line))
+          if bad:
+              open('broken.txt', 'w', encoding='utf-8').write('; '.join(bad))
+              sys.exit(1)
+          "
+
+      - name: Сказать в Телеграм
+        if: failure()
+        run: |
+          # Разбор оставил файл — значит виноват workflow, и мы знаем какой.
+          # Файла нет — значит не отработала сама проверка, и врать про «битый
+          # файл» нельзя: это другая беда, и чинить её надо иначе.
+          if [ -f broken.txt ]; then
+            TEXT="🔴 Битый workflow-файл: $(cat broken.txt). Сторож не запускается."
+          else
+            TEXT="🔴 Проверка workflow-файлов не отработала сама. Сторож без присмотра."
+          fi
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --data-urlencode text="$TEXT" > /dev/null
