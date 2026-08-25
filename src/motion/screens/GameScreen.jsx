@@ -34,6 +34,7 @@ import {
 } from '../game/space.js'
 import { getLive, pushLive, rateStats, resetRate } from '../debug/diagnostics.js'
 import { domCounts, heapMb, noteCounts, noteFrame, noteStage, resetStages, stageReport } from '../debug/stageMeter.js'
+import { HITS_TIMED, noteHit } from '../debug/hitLatency.js'
 import { createTransitionLog, logEvent } from '../debug/logShipper.js'
 import { TARGETS_LIVE, publishTargets } from '../debug/liveTargets.js'
 import { useWakeLock } from '../device/useWakeLock.js'
@@ -497,6 +498,14 @@ export default function GameScreen({
    * движение дожидается своего кадра на экране (см. showFeedback ниже).
    */
   const poseAtRef = useRef(0)
+  /**
+   * Часы пути попадания — только под отладкой (debug/hitLatency.js). Когда
+   * результат этого кадра вернулся и сколько прошло с предыдущего: по второму
+   * видно, на сколько «размазано» начало отсчёта — рука вошла в круг где-то
+   * между двумя замерами.
+   */
+  const poseGotAtRef = useRef(0)
+  const poseGapRef = useRef(0)
   /** Экономный режим боя пишется в лог переходами, а не каждым кадром. */
   const noteCheapRef = useRef(null)
   if (!noteCheapRef.current) noteCheapRef.current = createTransitionLog(CHEAP_LOG_GAP_MS)
@@ -670,7 +679,20 @@ export default function GameScreen({
           reactSumRef.current += ev.timing
           reactCountRef.current += 1
         }
+        // Часы пути попадания: судейство состоялось ЗДЕСЬ, показ — внутри.
+        const судимВ = HITS_TIMED ? performance.now() : 0
         showFeedback(() => {
+          if (HITS_TIMED) {
+            noteHit({
+              cycle,
+              poseAt: poseAtRef.current,
+              gotAt: poseGotAtRef.current,
+              judgeAt: судимВ,
+              shownAt: performance.now(),
+              gapMs: poseGapRef.current,
+              mode: getShownPose().mode,
+            })
+          }
           if (w && h) particlesRef.current.push(...burstForObstacle(w, h, ev.obstacle.id))
           // мишень взрывается ровно там, где висела: ответ приходит в ту точку,
           // куда человек тянулся. Судил при этом движок — слой мишеней только
@@ -842,6 +864,11 @@ export default function GameScreen({
   useEffect(() => {
     return subscribe(({ landmarks, worldLandmarks, timestamp }) => {
       lastResultAtRef.current = performance.now()
+      if (HITS_TIMED) {
+        const at = lastResultAtRef.current
+        poseGapRef.current = poseGotAtRef.current ? at - poseGotAtRef.current : 0
+        poseGotAtRef.current = at
+      }
       if (!hasFrameRef.current) {
         hasFrameRef.current = true
         setGotFrame(true)

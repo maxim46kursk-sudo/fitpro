@@ -27,6 +27,7 @@ import { getShippedText } from '../../src/motion/debug/logShipper.js'
 import { rateStats } from '../../src/motion/debug/diagnostics.js'
 import { TARGETS_LIVE, readTargets } from '../../src/motion/debug/liveTargets.js'
 
+import { readHits } from '../../src/motion/debug/hitLatency.js'
 import { installVirtualCamera } from './camera.js'
 import { createPersona, makeRandom, readActivity } from './persona.js'
 
@@ -153,6 +154,12 @@ async function boot() {
       harvest()
       return collected
     },
+    /**
+     * Путь каждого попадания от захвата кадра до кадра со взрывом. Пишет его
+     * сам экран боя (src/motion/debug/hitLatency.js) — прогон только забирает,
+     * ничего не измеряя от себя: мерил бы прогон себя, а не приложение.
+     */
+    hits: () => readHits(),
     log: () => getShippedText(),
   }
 

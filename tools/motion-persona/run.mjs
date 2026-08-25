@@ -378,6 +378,8 @@ while (Date.now() < deadline) {
 const collected = await page.evaluate(() => window.__vt.collect())
 const fromProd = await page.evaluate(() => window.__vt.profileFromProd)
 const finalLog = await page.evaluate(() => window.__vt.log())
+/** Путь попаданий: пусто, если сборка старая или отладочный ключ не встал. */
+const hits = await page.evaluate(() => (window.__vt.hits ? window.__vt.hits() : []))
 
 await browser.close()
 server.close()
@@ -411,6 +413,7 @@ writeFileSync(
       table,
       verdict,
       events: collected,
+      hits,
       log: finalLog.split('\n'),
     },
     null,
