@@ -679,20 +679,20 @@ export default function GameScreen({
           reactSumRef.current += ev.timing
           reactCountRef.current += 1
         }
-        // Часы пути попадания: судейство состоялось ЗДЕСЬ, показ — внутри.
-        const судимВ = HITS_TIMED ? performance.now() : 0
+        /**
+         * ЧАСЫ ПУТИ ПОПАДАНИЯ. Снимаются ЗДЕСЬ, а не внутри показа, и это не
+         * стилистика: показ отложен на кадр-другой, а к тому времени ссылки
+         * `poseAtRef`/`poseGotAtRef` уже указывают на СЛЕДУЮЩИЙ кадр — та же
+         * запись получалась с чужим началом отсчёта и отрицательным судейством.
+         */
+        const часы = HITS_TIMED ? {
+          poseAt: poseAtRef.current,
+          gotAt: poseGotAtRef.current,
+          judgeAt: performance.now(),
+          gapMs: poseGapRef.current,
+        } : null
         showFeedback(() => {
-          if (HITS_TIMED) {
-            noteHit({
-              cycle,
-              poseAt: poseAtRef.current,
-              gotAt: poseGotAtRef.current,
-              judgeAt: судимВ,
-              shownAt: performance.now(),
-              gapMs: poseGapRef.current,
-              mode: getShownPose().mode,
-            })
-          }
+          if (часы) noteHit({ cycle, ...часы, shownAt: performance.now(), mode: getShownPose().mode })
           if (w && h) particlesRef.current.push(...burstForObstacle(w, h, ev.obstacle.id))
           // мишень взрывается ровно там, где висела: ответ приходит в ту точку,
           // куда человек тянулся. Судил при этом движок — слой мишеней только

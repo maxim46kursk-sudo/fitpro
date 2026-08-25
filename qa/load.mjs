@@ -206,8 +206,10 @@ async function сценарийA() {
 }
 
 async function сценарийB(список) {
+  // Номер сезона спрашиваем служебным ключом: у anon нет прав на эту таблицу
+  // (у неё вообще нет GRANT для anon), а нам тут нужен просто номер.
   const сезон = await (await fetch(`${SUPA}/rest/v1/challenge_seasons?select=id,status&status=eq.open`, {
-    headers: { apikey: ANON, Authorization: `Bearer ${ANON}` },
+    headers: { apikey: SRK, Authorization: `Bearer ${SRK}` },
   })).json()
   const id = сезон?.[0]?.id
   console.log(`страница челленджа и таблица потока: сезон ${id}, людей ${список.length}`)
@@ -224,14 +226,28 @@ async function сценарийB(список) {
     const табл = await замер(`${SUPA}/rest/v1/rpc/challenge_standings`, {
       method: 'POST', headers: h, body: JSON.stringify({ p_season_id: id }),
     })
-    const плохо = [...шаги, табл].find((c) => !c.ok)
-    return { ok: !плохо, status: плохо?.status ?? плохо?.error, ms: performance.now() - t0, таблицаМс: табл.ms }
+    /**
+     * ТАБЛИЦУ ПОТОКА ВИДЯТ ТОЛЬКО ЕГО УЧАСТНИКИ — так написана сама функция.
+     * Тестовый аккаунт билет не покупал, и отказ здесь ОЖИДАЕМ: он всё равно
+     * проходит весь путь (Caddy → Kong → PostgREST → соединение из пула →
+     * plpgsql), то есть меряет накладные расходы обращения. Стоимость самого
+     * запроса на живом числе участников меряется отдельно, синтетикой: вписать
+     * полсотни выдуманных участников в боевой поток нельзя — их увидят люди,
+     * купившие билет.
+     */
+    const отказТаблицы = !табл.ok && [400, 403, 404].includes(табл.status)
+    const плохо = [...шаги, ...(отказТаблицы ? [] : [табл])].find((c) => !c.ok)
+    return {
+      ok: !плохо, status: плохо?.status ?? плохо?.error, ms: performance.now() - t0,
+      таблицаМс: табл.ms, таблицаКод: табл.status ?? табл.error,
+    }
   }
   const { записи, стенка } = await залп(N, задача)
   return свод('б) челлендж + таблица', записи, {
     стенкаМс: стенка,
     'таблица медиана': кв(записи.filter((r) => r.таблицаМс).map((r) => r.таблицаМс), 0.5),
     'таблица p90': кв(записи.filter((r) => r.таблицаМс).map((r) => r.таблицаМс), 0.9),
+    'таблица коды': записи.reduce((a, r) => ({ ...a, [r.таблицаКод]: (a[r.таблицаКод] ?? 0) + 1 }), {}),
   })
 }
 
@@ -275,11 +291,14 @@ async function сценарийD(список) {
     const h = { apikey: ANON, Authorization: `Bearer ${u.token}`, 'Content-Type': 'application/json' }
     const t0 = performance.now()
     // Ровно то, чем заканчивается заход: попытка, прогресс, строка журнала.
-    const попытка = await замер(`${SUPA}/rest/v1/motion_attempts`, {
+    // День у каждого запроса свой: у motion_attempts уникальность по
+    // (user_id, day, tier, attempt_no), и без этого половина залпа упиралась бы
+    // в собственный конфликт, а не в сервер.
+    const попытка = await замер(`${SUPA}/rest/v1/motion_attempts?on_conflict=user_id,day,tier,attempt_no`, {
       method: 'POST', headers: { ...h, Prefer: 'resolution=merge-duplicates' },
-      body: JSON.stringify({ user_id: u.id, day: 1, tier: 'load', attempt_no: (i % 3) + 1, score: 100, reps: 10, hits: 8, spawned: 10, react_ms: 400 }),
+      body: JSON.stringify({ user_id: u.id, day: (i % 30) + 1, tier: 'load', attempt_no: (Math.floor(i / 30) % 3) + 1, score: 100, reps: 10, hits: 8, spawned: 10, react_ms: 400 }),
     })
-    const прогресс = await замер(`${SUPA}/rest/v1/motion_progress`, {
+    const прогресс = await замер(`${SUPA}/rest/v1/motion_progress?on_conflict=user_id`, {
       method: 'POST', headers: { ...h, Prefer: 'resolution=merge-duplicates' },
       body: JSON.stringify({ user_id: u.id, payload: { load: true, at: Date.now() } }),
     })
@@ -312,6 +331,13 @@ async function сценарийD(список) {
  * строки в счётчиках погоды не делают.
  */
 async function сценарийE() {
+  /**
+   * ТЕЛО НАРОЧНО НЕГОДНОЕ. Ограничитель считает запрос ДО разбора тела, а вот
+   * до базы негодное тело не доходит: ветка маячка выходит первой строкой, если
+   * приехал не объект. Так проверка меряет ровно лимитер и не оставляет за
+   * собой ни одного маячка — иначе она сама подняла бы тревогу «больше трёх
+   * маячков за час», и владелец пошёл бы искать несуществующий белый экран.
+   */
   const проба = async (имя, url, тело, n) => {
     const { записи } = await залп(n, () => замер(url, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(тело),
@@ -320,7 +346,7 @@ async function сценарийE() {
     return { ветка: имя, послано: n, отказов, первыйОтказНа: отказов ? записи.findIndex((r) => r.status === 429) + 1 : null }
   }
   const out = []
-  out.push(await проба('/api/boot (лимит 20/мин)', `${APP}/api/boot`, { stage: 'html', ms: 9000, attempt: 1, ua: 'load-test' }, 25))
+  out.push(await проба('/api/boot (лимит 20/мин)', `${APP}/api/boot`, 'нагрузочная проверка', 25))
   out.push(await проба('воронка (лимит 60/мин)', `${APP}/api/set-exercise?action=funnel`, { event: 'нет-такого-события' }, 65))
   return { сценарий: 'д) наши ограничители', пробы: out }
 }
