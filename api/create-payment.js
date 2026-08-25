@@ -1,6 +1,7 @@
 import qs from 'qs'
 import { createClient } from '@supabase/supabase-js'
 import { createSignature, buildPaymentData, STAFF_PLANS, CHALLENGE_ITEM } from './_prodamus.js'
+import { ступеньСервера } from './_challengeLog.js'
 // Какой поток человеку — общее правило на клиент и обе платёжные ручки.
 import { resolveSeasonFor } from './_challengeSeason.js'
 import { rateLimit } from './_ratelimit.js'
@@ -96,6 +97,11 @@ export default async function handler(req, res) {
   // Цена билета — из потока, а не из константы: у каждого потока она своя
   // (challenge_seasons.price_rub). Заполняется в ветке билета ниже.
   let priceRub
+  /**
+   * Номер потока — для строки воронки ниже. Отдельная переменная, а не `season`
+   * из ветки билета: та объявлена внутри блока и за его границей не существует.
+   */
+  let seasonId = null
 
   // Второй билет в тот же поток — это деньги, за которые человек ничего не
   // получит: challenge_enroll идемпотентна по user_id и вернёт ему прежний
@@ -148,6 +154,7 @@ export default async function handler(req, res) {
       })
     }
     priceRub = season.price_rub
+    seasonId = season.id
 
     const { data: mine, error: entryErr } = await supabaseAdmin
       .from('challenge_entries').select('id').eq('user_id', userId).eq('season_id', season.id).limit(1)
@@ -190,6 +197,25 @@ export default async function handler(req, res) {
   // иначе Продамус отклонит ссылку как неподписанную по этим полям.
   const signature = createSignature(data, secret)
   const url = PAYFORM_BASE + '?' + qs.stringify({ ...data, signature })
+
+  /**
+   * СТУПЕНЬ 5: касса открыта. Пишется ЗДЕСЬ, а не по нажатию кнопки в
+   * браузере, и разница существенная: между нажатием и кассой стоит этот
+   * сервер, который может и отказать (нет потока, билет уже есть). Считать
+   * нажатия как «дошёл до оплаты» значило бы рисовать воронку шире настоящей.
+   *
+   * Только для билета: тарифы к этой воронке отношения не имеют.
+   */
+  if (isChallenge) {
+    await ступеньСервера(supabaseAdmin, 'pay-start', {
+      userId,
+      vid: typeof req.body?.vid === 'string' ? req.body.vid.slice(0, 40) : null,
+      s: req.body?.src?.s ? String(req.body.src.s).slice(0, 40) : undefined,
+      m: req.body?.src?.m ? String(req.body.src.m).slice(0, 40) : undefined,
+      цена: priceRub,
+      поток: seasonId,
+    })
+  }
 
   return res.status(200).json({ url })
 }

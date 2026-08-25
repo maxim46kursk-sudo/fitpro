@@ -984,6 +984,12 @@ function коротко(ua) {
   return внутри.split(';').slice(0, 2).join(';').trim().slice(0, 60) || '—'
 }
 
+/** Один шаг одного посетителя в разбивку по источникам. */
+function poИсточникуДобавить(куда, метка, шаг) {
+  if (!куда[метка]) куда[метка] = {}
+  куда[метка][шаг] = (куда[метка][шаг] ?? 0) + 1
+}
+
 async function handleMotionHealth(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
@@ -1109,6 +1115,82 @@ async function handleMotionHealth(req, res) {
   }
 
   /**
+   * ВОРОНКА ЛЕНДИНГА ЧЕЛЛЕНДЖА — шесть ступеней и где сыплется.
+   *
+   * СЧИТАЮТСЯ ЛЮДИ, А НЕ СОБЫТИЯ. Ключ ступени — анонимный номер посетителя
+   * (vid); у двух последних ступеней его нет, их пишет сервер и знает только
+   * user_id, поэтому строится соответствие uid → vid по ступени «касса
+   * открыта» — она единственная, где известны оба. Без этого «оплатил» считался
+   * бы по другому ключу, чем «открыл», и проценты сравнивали бы разное.
+   *
+   * ПРОЦЕНТ — ОТ ПРЕДЫДУЩЕЙ СТУПЕНИ, а не от первой. Вопрос всегда один: где
+   * именно теряем; доля от начала на него не отвечает — она у последней
+   * ступени мала всегда.
+   */
+  const ВОРОНКА = ['open', 'scroll', 'join-click', 'auth', 'pay-start', 'paid']
+  const воронкаЛендинга = async (от) => {
+    const { data, error } = await db
+      .from('motion_log')
+      .select('payload')
+      .gte('at', от)
+      .order('at', { ascending: false })
+      .limit(HEALTH_MAX_ROWS)
+    if (error) throw new Error(`motion_log: ${error.message}`)
+
+    /** ступень → множество посетителей */
+    const люди = new Map(ВОРОНКА.map((ш) => [ш, new Set()]))
+    /** посетитель → откуда пришёл */
+    const откуда = new Map()
+    /** user_id → посетитель, по ступени «касса открыта» */
+    const uidVid = new Map()
+    /** сырые события, отложенные до построения соответствия */
+    const отложены = []
+
+    for (const строка of data ?? []) {
+      for (const line of строка?.payload?.lines ?? []) {
+        const тег = тегСтроки(line)
+        if (!тег.startsWith('challenge.')) continue
+        const шаг = тег.slice('challenge.'.length)
+        if (!люди.has(шаг)) continue
+        let д
+        try { д = JSON.parse(line.slice(line.indexOf('{'))) } catch { /* строка без данных */ }
+        const vid = typeof д?.vid === 'string' ? д.vid : null
+        const uid = typeof д?.uid === 'string' ? д.uid : null
+        if (vid && uid) uidVid.set(uid, vid)
+        if (vid && д?.s) откуда.set(vid, String(д.s).slice(0, 40))
+        отложены.push({ шаг, vid, uid })
+      }
+    }
+    for (const { шаг, vid, uid } of отложены) {
+      const кто = vid || (uid ? uidVid.get(uid) || uid : null)
+      if (кто) люди.get(шаг).add(кто)
+    }
+
+    // Ступени с процентом от предыдущей.
+    const ступени = []
+    let прошлое = null
+    for (const шаг of ВОРОНКА) {
+      const сколько = люди.get(шаг).size
+      ступени.push({
+        ступень: шаг,
+        людей: сколько,
+        от_предыдущей: прошлое == null || прошлое === 0 ? null : `${Math.round((сколько / прошлое) * 100)}%`,
+      })
+      прошлое = сколько
+    }
+
+    // Разбивка по источникам: тот же счёт, но внутри метки.
+    const поИсточникам = {}
+    for (const шаг of ВОРОНКА) {
+      for (const кто of люди.get(шаг)) {
+        const метка = откуда.get(кто) || 'прямой'
+        poИсточникуДобавить(поИсточникам, метка, шаг)
+      }
+    }
+    return { ступени, по_источникам: поИсточникам, строк_прочитано: data?.length ?? 0 }
+  }
+
+  /**
    * Попытки и сколько РАЗНЫХ людей их делало. user_id читается, чтобы построить
    * множество, и не покидает эту функцию — наружу идёт только его размер.
    */
@@ -1159,16 +1241,18 @@ async function handleMotionHealth(req, res) {
   }
 
   const окно = async (от) => {
-    const [лог, att, ошибок, boot, поток] = await Promise.all([
+    const [лог, att, ошибок, boot, поток, ворон] = await Promise.all([
       поТипам(от),
       попытки(от),
       сколько('error_log', 'created_at', от),
       маячки(от),
       потоки(от),
+      воронкаЛендинга(от),
     ])
     return {
       motion_log: { записей: лог.записей, событий: лог.событий, по_типам: лог.типы, обрезано: лог.обрезано },
       инференс: поток,
+      воронка: ворон,
       motion_attempts: { попыток: att.попыток, уникальных_людей: att.людей, обрезано: att.обрезано },
       error_log: { записей: ошибок },
       boot_beacons: boot,
@@ -1373,6 +1457,56 @@ const BOOT_STAGES = new Set(['html', 'bundle', 'react', 'data'])
 /** Раз в сутки на процесс: чистка старых маячков идёт попутно, без cron. */
 let bootSweptAt = 0
 
+/**
+ * ВОРОНКА ЛЕНДИНГА ОТ ГОСТЯ — без токена, потому что гостя иначе не бывает.
+ *
+ * Лендинг челленджа читают ДО регистрации, и именно эти люди нам интересны:
+ * где они отваливаются, там и дыра. Токена у них нет по построению, а обычная
+ * ветка журнала (?action=motion-log ниже) стоит за проверкой токена и отвечала
+ * им 401 — то есть весь верх воронки не записывался вовсе.
+ *
+ * ПОЧЕМУ ЭТО НЕ ОТКРЫТАЯ СВАЛКА. Ветка принимает СТРОГО строки `challenge.*` и
+ * ничего больше: пачка от гостя может нести и обычные события Motion, они
+ * молча отбрасываются. Плюс потолок на число строк и лимит по адресу. То есть
+ * посторонний может написать в журнал ровно то же, что и так пишет лендинг, —
+ * и ничего сверх.
+ *
+ * ЛИЧНОСТИ ЗДЕСЬ НЕТ И НЕ ДОЛЖНО БЫТЬ: user_id остаётся пустым (миграция
+ * sql/2026-08-26_motion_log_anon.sql), а вместо него в строке анонимный номер
+ * посетителя из localStorage. Ни адреса, ни устройства сверх «телефон/
+ * компьютер» в базу не попадает.
+ */
+async function handleGuestChallengeLog(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') return res.status(200).end()
+  if (req.method !== 'POST') return res.status(405).end()
+
+  // Триста в минуту с адреса — тот же потолок, что у воронки: полсотни человек
+  // из одной сети, у каждого до шести ступеней, и запас.
+  if (!rateLimit(req, res, { name: 'challenge-log', limit: 300 })) return
+
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!serviceRoleKey) return res.status(200).json({ ok: true })
+
+  const session = cleanText(req.body?.session, 64) || 'гость'
+  const lines = Array.isArray(req.body?.lines) ? req.body.lines.slice(0, MOTION_LOG_MAX_LINES) : []
+  // Только ступени воронки. Всё прочее от гостя нам не нужно и в базу не идёт.
+  const наши = lines
+    .map((line) => motionReportLine(motionLogLine(line)))
+    .filter((line) => typeof line === 'string' && line.includes('[challenge.'))
+  if (!наши.length) return res.status(200).json({ ok: true })
+
+  try {
+    const db = createClient(SUPABASE_URL, serviceRoleKey)
+    await db.from('motion_log').insert({ user_id: null, session, payload: { lines: наши } })
+  } catch {
+    // Счётчик сломался — лендинг работает. Молчим.
+  }
+  return res.status(200).json({ ok: true })
+}
+
 async function handleBoot(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -1463,6 +1597,14 @@ export default async function handler(req, res) {
   // которой ничего не поднялось, и чем короче и стабильнее адрес, тем меньше
   // поводов ему не доехать.
   if (req.query?.action === 'boot') return handleBoot(req, res)
+  /**
+   * Гость, пишущий воронку лендинга. Отличаем по отсутствию токена: у вошедшего
+   * человека тот же журнал идёт обычной веткой ниже, со своим user_id, — то
+   * есть дорожка не рвётся на середине, когда человек по пути завёл аккаунт.
+   */
+  if (req.query?.action === 'motion-log' && !String(req.headers.authorization || '').startsWith('Bearer ')) {
+    return handleGuestChallengeLog(req, res)
+  }
 
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')

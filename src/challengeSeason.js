@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js'
 import { bump } from './funnel.js'
+import { vid, источник } from './motion/challengeFunnel.js'
 // Какой поток человеку — правило одно на клиент и сервер, и живёт оно там же,
 // где им пользуются платёжные ручки. Файл чистый, без единого импорта: в
 // браузерную сборку из него приезжает только эта функция и список состояний.
@@ -339,7 +340,19 @@ export async function buyTicket() {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       // source — МЕТКА, а не адрес: сервер подписывает адрес возврата своим
       // ключом, и принимать URL из тела было бы открытым редиректом.
-      body: JSON.stringify({ plan: 'challenge', source: inTelegram ? 'telegram' : 'web' }),
+      /**
+       * `vid` и `src` — не про оплату, а про воронку: ступень «открыл кассу»
+       * пишет сервер, а номер посетителя и метку источника знает только
+       * браузер. Без них шесть ступеней одного человека не сложатся в дорожку.
+       * На платёж они не влияют никак: сумму и товар сервер берёт из базы, а
+       * не из тела.
+       */
+      body: JSON.stringify({
+        plan: 'challenge',
+        source: inTelegram ? 'telegram' : 'web',
+        vid: vid(),
+        src: источник(),
+      }),
     })
     const body = await res.json().catch(() => ({}))
 

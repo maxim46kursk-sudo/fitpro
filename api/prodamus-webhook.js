@@ -6,6 +6,7 @@ import { reportError } from './_logError.js'
 import { verifySignature, PLAN_PRICE, CHALLENGE_ITEM } from './_prodamus.js'
 // Какой поток человеку — общее правило на клиент и обе платёжные ручки.
 import { resolveSeasonFor } from './_challengeSeason.js'
+import { ступеньСервера } from './_challengeLog.js'
 
 // Вебхук уведомлений Продамуса. Тело подписано, поэтому НЕ даём Vercel его
 // разобрать — подпись считается по точной сырой форме, любой репарсинг
@@ -362,6 +363,20 @@ export default async function handler(req, res) {
       return res.status(200).send('OK')
     }
     console.log(`Prodamus webhook: ${userId} зачислен в поток ${enrollChallenge.seasonId} участником №${participantNo}`)
+    /**
+     * СТУПЕНЬ 6: оплата подтверждена. Строго после зачисления — «оплатил» и
+     * «попал в поток» это одно событие, и записывать первое, не убедившись во
+     * втором, значило бы считать успехом наполовину сделанное.
+     *
+     * Номера посетителя здесь нет: касса его не возвращает. В сводке он
+     * подставляется по предыдущей ступени того же человека — их и связывает
+     * `uid`.
+     */
+    await ступеньСервера(supabaseAdmin, 'paid', {
+      userId,
+      поток: enrollChallenge.seasonId,
+      номер: participantNo,
+    })
     return res.status(200).send('OK')
   }
 

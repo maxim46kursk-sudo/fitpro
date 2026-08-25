@@ -3,6 +3,7 @@ import { MIN_ENTRIES, MIN_MEALS, dayScore, streamScore } from '../../challengeNu
 import { DAYS, streamDay, streamPhase } from '../game/challenge.js'
 import StreamRoom from './StreamRoom.jsx'
 import { bump } from '../../funnel.js'
+import { ступень } from '../challengeFunnel.js'
 
 /**
  * ЧЕЛЛЕНДЖ — ОДНА ДЛИННАЯ СТРАНИЦА, по которой человек решает, платить ли.
@@ -172,7 +173,10 @@ export default function ChallengeScreen({
   useEffect(() => {
     if (loading || entry) return
     bump('ch_open')
-  }, [loading, entry])
+    // Ступень 1 воронки лендинга. Гость или нет — главная развилка всей
+    // дорожки: на ней стоит регистрация, и без этого поля отвал не читается.
+    ступень('open', { гость: !!guest })
+  }, [loading, entry, guest])
   /**
    * УЧАСТНИК ЧИТАЕТ ПРАВИЛА. Открывается та же самая страница, что и до
    * покупки, — другой у правил нет и быть не должно: человек согласился именно
@@ -201,6 +205,17 @@ export default function ChallengeScreen({
       const end = endRef.current
       const atEnd = end ? view.scrollTop + view.clientHeight > end.offsetTop + 120 : false
       setBarOn(past && !atEnd)
+      /**
+       * Ступень 2: долистал до цены. «Цена» — это последний блок, тот самый, где
+       * галочка и кнопка: цену видно и в шапке, но решение принимают здесь.
+       *
+       * Отметка ставится один раз за визит (см. challengeFunnel.js), поэтому
+       * звать её на каждом пикселе прокрутки не жалко: после первого раза
+       * функция выходит на проверке отметки, не трогая ни журнал, ни сеть.
+       */
+      if (end && view.scrollTop + view.clientHeight > end.offsetTop) {
+        ступень('scroll', { гость: !!guest })
+      }
     }
     view.addEventListener('scroll', onScroll, { passive: true })
     onScroll()
@@ -849,8 +864,20 @@ export default function ChallengeScreen({
             data-testid="challenge-join"
             disabled={!agreed || busy || (!guest && !season)}
             onClick={guest
-              ? () => { bump('ch_join'); bump('ch_signup'); onCreateAccount?.() }
-              : () => { bump('ch_join'); join() }}
+              ? () => {
+                bump('ch_join'); bump('ch_signup')
+                // Ступени 3 и 4 подряд: гость нажал «Участвовать» и на этом же
+                // пути упёрся в регистрацию. Порядок важен — по нему в сводке
+                // видно, что стена именно здесь, а не где-то дальше.
+                ступень('join-click', { гость: true })
+                ступень('auth', { куда: 'регистрация' })
+                onCreateAccount?.()
+              }
+              : () => {
+                bump('ch_join')
+                ступень('join-click', { гость: false })
+                join()
+              }}
           >
             {!guest && !season ? 'Набор пока закрыт' : busy ? 'Открываю оплату…' : `Участвовать — ${priceLabel}`}
           </button>
