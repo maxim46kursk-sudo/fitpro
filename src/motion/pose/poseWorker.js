@@ -63,6 +63,71 @@ function installImportScriptsShim() {
 const importScriptsShimmed = installImportScriptsShim()
 
 /**
+ * ЗАГЛУШКА document — РОВНО ТО, ЧТО ТРОГАЕТ EMSCRIPTEN, И НИЧЕГО СВЕРХ.
+ *
+ * Откуда взялась. В поле у всех заходов с айфона воркер падает одинаково:
+ * «Can't find variable: document», причём на ВСЕХ трёх попытках подряд —
+ * GPU/буфер, CPU/буфер, CPU/путь. Раньше это списывали на ветку загрузчика
+ * MediaPipe, где при отсутствии importScripts создаётся <script>. Но журнал
+ * прода говорит другое: `importScripts: true` и `offscreen: true` — то есть обе
+ * ветки, которые видно в коде MediaPipe, на этом устройстве не берутся.
+ *
+ * Остаётся третья, в сгенерированной Emscripten обвязке (vision_wasm_*.js),
+ * в разделе «Canvas event setup»:
+ *
+ *     var canvas = Browser.getCanvas();
+ *     if (canvas) {
+ *       document.addEventListener("pointerlockchange", pointerLockChange, false);
+ *
+ * Ни `document`, ни весь этот блок ничем не защищены, а `Browser.getCanvas()`
+ * отдаёт тот самый OffscreenCanvas, который MediaPipe завела для GL. Обвязка
+ * писалась для страницы, и в воркере эта строка обязана падать.
+ *
+ * ЧТО ЗДЕСЬ ЕСТЬ. Только поля, которые обвязка действительно читает: подписка
+ * на события (пустая), createElement для canvas, пустые body и head,
+ * pointerLockElement и fullscreenElement. Никакого DOM: если MediaPipe
+ * когда-нибудь начнёт им пользоваться по-настоящему, она получит honest-пустоту
+ * и упадёт заметно, а не поедет вкривь.
+ *
+ * ПОЧЕМУ ЭТО НЕ ЛОМАЕТ ВЕТКУ СО <script>. Та ветка берётся только когда
+ * importScripts не объявлен, — а он либо объявлен движком, либо подставлен
+ * заглушкой выше. То есть до `createElement('script')` дело не доходит ни на
+ * одном движке; иначе заглушка вернула бы объект, у которого событие load не
+ * наступит никогда, и загрузка молча повисла бы.
+ *
+ * ЖИВЁТ ТОЛЬКО В ВОРКЕРЕ. На главном потоке document настоящий, и заглушка,
+ * увидев его, ничего не делает.
+ */
+function installDocumentShim() {
+  if (typeof document !== 'undefined') return false
+  const ничего = () => {}
+  const элемент = (tag) => (String(tag).toLowerCase() === 'canvas' && typeof OffscreenCanvas !== 'undefined'
+    ? new OffscreenCanvas(1, 1)
+    : { style: {}, appendChild: ничего, setAttribute: ничего, addEventListener: ничего, removeEventListener: ничего })
+  const stub = {
+    createElement: элемент,
+    addEventListener: ничего,
+    removeEventListener: ничего,
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    getElementById: () => null,
+    currentScript: null,
+    pointerLockElement: null,
+    fullscreenElement: null,
+    body: { appendChild: ничего, removeChild: ничего },
+    head: { appendChild: ничего, removeChild: ничего },
+  }
+  try {
+    Object.defineProperty(self, 'document', { value: stub, configurable: true, writable: true })
+  } catch {
+    try { self.document = stub } catch { return false }
+  }
+  return true
+}
+
+const documentShimmed = installDocumentShim()
+
+/**
  * Есть ли в воркере webgl2 поверх OffscreenCanvas. Спрашивается ОДИН РАЗ и
  * только на пути отказа: создание контекста стоит заметно, и звать это в
  * рабочем цикле было бы платой за диагностику из кармана человека.
@@ -309,6 +374,7 @@ async function init({ sources = [], delegate = 'GPU' }) {
         type: 'ready',
         delegate: attempt.delegate,
         importScriptsShimmed,
+        documentShimmed,
       })
       return
     } catch (error) {
@@ -345,6 +411,7 @@ async function init({ sources = [], delegate = 'GPU' }) {
       offscreen: typeof OffscreenCanvas !== 'undefined',
       importScripts: typeof importScripts === 'function',
       shimmed: importScriptsShimmed,
+      docShim: documentShimmed,
       // без webgl2 в воркере разговор про делегат GPU вообще не имеет смысла
       webgl2: hasWorkerWebgl2(),
     },
