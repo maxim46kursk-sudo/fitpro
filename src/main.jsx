@@ -23,7 +23,24 @@ createRoot(document.getElementById('root')).render(
   </StrictMode>,
 )
 
-requestAnimationFrame(() => {
+/**
+ * `react` СТАВИТСЯ, КОГДА В КОРНЕ ЧТО-ТО ПОЯВИЛОСЬ, а не через один кадр после
+ * render(). Одного кадра не хватает: React успевает смонтироваться позже, и
+ * прогон на проде это показал — стадия шла html → bundle → data, минуя react
+ * вовсе. Для сторожа это опаснее, чем кажется: приложение, которое нарисовалось,
+ * но ждёт медленную базу, выглядело бы «не поднявшимся», и человек получил бы
+ * экран ошибки поверх работающего приложения.
+ *
+ * Поэтому смотрим каждый кадр, пока не появится содержимое. Потолок в десять
+ * секунд — чтобы цикл не жил вечно на странице, которая и правда не поднялась:
+ * там своё слово скажет сторож.
+ */
+const ждёмПервыйКадр = (дедлайн = Date.now() + 10000) => {
   const root = document.getElementById('root')
-  if (root && root.childElementCount > 0) window.__bootStage?.('react')
-})
+  if (root && root.childElementCount > 0) {
+    window.__bootStage?.('react')
+    return
+  }
+  if (Date.now() < дедлайн) requestAnimationFrame(() => ждёмПервыйКадр(дедлайн))
+}
+requestAnimationFrame(() => ждёмПервыйКадр())

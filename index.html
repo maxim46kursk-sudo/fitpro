@@ -168,9 +168,11 @@
             var list = performance.getEntriesByType('resource') || []
             for (var i = 0; i < list.length && out.length < 20; i++) {
               var r = list[i]
-              // duration 0 у незавершённых и у взятых из кэша; кэш отсекаем по
-              // transferSize, а responseEnd 0 значит «ответ не пришёл вовсе»
-              if (r.responseEnd === 0 || (r.duration === 0 && r.transferSize === 0 && r.decodedBodySize === 0)) {
+              // responseEnd 0 — ответ не пришёл вовсе (запрос ещё в полёте).
+              // transferSize и decodedBodySize по нулям — запрос ЗАВЕРШИЛСЯ
+              // ничем: сорвался или отказал. Взятое из кэша сюда не попадает —
+              // у него transferSize 0, но decodedBodySize больше нуля.
+              if (r.responseEnd === 0 || (r.transferSize === 0 && r.decodedBodySize === 0)) {
                 out.push({ name: String(r.name).slice(-120), ms: Math.round(r.startTime) })
               }
             }
