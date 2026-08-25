@@ -1268,10 +1268,19 @@ async function handleFunnel(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  // Свой ключ лимита, как у остальных публичных веток: счётчики не смешиваются.
-  // Шестьдесят в минуту — событий у одного человека за заход единицы, а за
-  // одним IP их бывает несколько.
-  if (!rateLimit(req, res, { name: 'funnel', limit: 60 })) return
+  /**
+   * ПО АДРЕСУ — тоже по построению: воронку считают ДО регистрации, личности
+   * ещё нет. Триста в минуту: полсотни человек, пришедших по одной ссылке из
+   * Инстаграма, дают за первую минуту по несколько событий каждый, а
+   * шестидесяти на них не хватало.
+   *
+   * ЧЕМ ПЛАТИМ: с одного адреса можно накрутить триста событий в минуту, и
+   * вечерняя сводка покажет неправду. Считать это защитой и раньше было нельзя
+   * (шестьдесят в минуту — те же восемьдесят тысяч за сутки), но сказать прямо
+   * стоит: цифры воронки — оценка, а не учёт. Деньги считаются не здесь, а по
+   * challenge_entries.
+   */
+  if (!rateLimit(req, res, { name: 'funnel', limit: 300 })) return
 
   const event = typeof req.body?.event === 'string' ? req.body.event : ''
   if (!FUNNEL_EVENTS.has(event)) return res.status(200).json({ ok: true })
@@ -1322,9 +1331,21 @@ async function handleBoot(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).end()
 
-  // Двадцать в минуту с адреса: у одного захода маячков максимум два, а за
-  // одним адресом (общий wifi, оператор) их бывает несколько разом.
-  if (!rateLimit(req, res, { name: 'boot', limit: 20 })) return
+  /**
+   * ПО АДРЕСУ — И ИНАЧЕ НЕЛЬЗЯ: маячок шлёт человек, у которого приложение НЕ
+   * ПОДНЯЛОСЬ. Ни токена, ни сессии, ни личности у него нет по построению.
+   *
+   * Сто двадцать в минуту — это полсотни человек из одной сети по два маячка
+   * (восьмая и двадцатая секунда) плюс запас. Двадцати не хватало: в день
+   * старта потока полсотни человек, у которых всё легло, — это ровно тот
+   * случай, ради которого маячок и заведён, а старый потолок отрезал бы три
+   * четверти сигнала именно тогда, когда он нужен.
+   *
+   * ЧЕМ ПЛАТИМ: с одного адреса можно насыпать сто двадцать строк в минуту в
+   * boot_beacons. Таблица чистится раз в неделю, а тревога «больше трёх маячков
+   * за час» на такой поток сработает — то есть шум будет виден, а не растворится.
+   */
+  if (!rateLimit(req, res, { name: 'boot', limit: 120 })) return
 
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!serviceRoleKey) return res.status(200).end()
@@ -1399,7 +1420,21 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-  if (!rateLimit(req, res, { name: 'set-exercise', limit: 30 })) return
+  /**
+   * ДВА ЛИМИТА ВМЕСТО ОДНОГО, И ЭТО НЕ УСЛОЖНЕНИЕ, А ИСПРАВЛЕНИЕ КЛЮЧА.
+   *
+   * Здесь сходятся почти все записи вошедшего человека: подходы, шаблоны,
+   * журнал Motion, ошибки клиента. Раньше на всё это стоял один лимит — 30 в
+   * минуту НА АДРЕС. Замер (qa/load.mjs, сценарий «г»): пятьдесят заходов,
+   * заканчивающихся одновременно с одного адреса, теряли двадцать журналов из
+   * пятидесяти.
+   *
+   * До токена — грубый заслон по адресу: триста в минуту, то есть полсотни
+   * человек по шесть запросов. ЧЕМ ПЛАТИМ: с одного адреса можно заставить
+   * сервер триста раз в минуту проверить токен — пять запросов в секунду к
+   * своему же GoTrue.
+   */
+  if (!rateLimit(req, res, { name: 'set-exercise-ip', limit: 300 })) return
 
   // Личность — только из подписанного токена.
   const authHeader = req.headers.authorization || ''
@@ -1409,6 +1444,15 @@ export default async function handler(req, res) {
   const { data, error: authError } = await supabase.auth.getUser(token)
   if (authError || !data?.user) return res.status(401).json({ error: 'Требуется авторизация' })
   const userId = data.user.id
+
+  /**
+   * НАСТОЯЩИЙ ЛИМИТ — ПО ЧЕЛОВЕКУ. Шестьдесят в минуту: тренер, записывающий
+   * занятие, ставит подход за подходом, и тридцати ему бывает мало даже одному.
+   * ЧЕМ ПЛАТИМ: угнанный аккаунт напишет шестьдесят строк в минуту вместо
+   * тридцати. Это по-прежнему потолок, а не свобода, и он больше не зависит от
+   * того, кто ещё сидит в той же сети.
+   */
+  if (!rateLimit(req, res, { name: 'set-exercise', limit: 60, subject: userId })) return
 
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!serviceRoleKey) {

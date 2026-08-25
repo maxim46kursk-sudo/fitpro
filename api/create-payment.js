@@ -32,7 +32,16 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-  if (!rateLimit(req, res, { name: 'create-payment', limit: 10 })) return
+  /**
+   * ЗАСЛОН ДО ТОКЕНА — грубый и только по адресу: личности мы ещё не знаем.
+   *
+   * Сто двадцать в минуту — это полсотни человек из одной сети, каждый жмёт
+   * «Участвовать» и разок промахивается. ЧЕМ ПЛАТИМ: с одного адреса можно
+   * заставить сервер сто двадцать раз в минуту сходить в GoTrue за проверкой
+   * токена. Это два запроса в секунду к своей же базе — заметно дешевле, чем
+   * отказать одиннадцатому покупателю с офисного вайфая.
+   */
+  if (!rateLimit(req, res, { name: 'create-payment-ip', limit: 120 })) return
 
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   const secret = process.env.PRODAMUS_SECRET_KEY
@@ -51,6 +60,14 @@ export default async function handler(req, res) {
   const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(token)
   if (authError || !authData?.user?.id) return res.status(401).json({ error: 'Требуется авторизация' })
   const userId = authData.user.id
+
+  /**
+   * НАСТОЯЩИЙ ЛИМИТ — ПО ЧЕЛОВЕКУ, и он ровно там, где надо: покупка это
+   * редкое действие, десять ссылок в минуту одному человеку хватит на любое
+   * количество передумываний. Здесь же он и защищает от перебора: подделать
+   * ключ нельзя — он взят из подписанного токена, а не из тела запроса.
+   */
+  if (!rateLimit(req, res, { name: 'create-payment', limit: 10, subject: userId })) return
 
   const plan = req.body?.plan
   // Билет челленджа — не тариф: уровня доступа он не даёт и в PAID_PLANS его
