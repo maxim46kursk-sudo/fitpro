@@ -168,6 +168,15 @@ const RETURN_TO_TTL_MS = 2 * 60 * 60 * 1000
 const rememberReturn = (where) => {
   try{localStorage.setItem(RETURN_TO_KEY,JSON.stringify({where,at:Date.now()}))}catch{/* приватный режим */}
 }
+const peekReturn = () => {
+  let raw=null
+  try{raw=localStorage.getItem(RETURN_TO_KEY)}catch{/* приватный режим */}
+  if(!raw)return null
+  try{
+    const v=JSON.parse(raw)
+    return Date.now()-Number(v?.at||0)<RETURN_TO_TTL_MS?v.where:null
+  }catch{return null}
+}
 const takeReturn = () => {
   let raw=null
   try{raw=localStorage.getItem(RETURN_TO_KEY)}catch{/* приватный режим */}
@@ -11269,6 +11278,13 @@ export default function App() {
   const returnedRef=useRef(false)
   useEffect(()=>{
     /**
+     * КЛЮЧ ЭФФЕКТА — `user?.id`, А НЕ `user`. Объект человека пересоздаётся,
+     * когда доезжает профиль (mergeUserWithProfile), и эффект перезапускался бы
+     * на ровном месте: уборка гасила отложенный вызов ДО того, как он сработает,
+     * а метка к этому моменту уже была съедена. Человек оставался и без метки, и
+     * без челленджа — ровно это и показал прогон.
+     */
+    /**
      * ЖДЁМ, ПОКА ЧЕЛОВЕК ДЕЙСТВИТЕЛЬНО В ПРИЛОЖЕНИИ.
      *
      * consentGiven здесь обязателен. Экран согласия подменяет собой ВЕСЬ
@@ -11278,16 +11294,22 @@ export default function App() {
      * доезжал. Найдено прогоном пути гостя на проде.
      */
     if(!user||guestMode||!consentGiven||returnedRef.current)return undefined
-    const want=takeReturn()
-    if(want!=='challenge')return undefined
+    if(peekReturn()!=='challenge')return undefined
     returnedRef.current=true
-    // Не синхронно: открытие раздела — это setState, а мы внутри эффекта.
-    const t=setTimeout(()=>openMotion('challenge'),0)
+    /**
+     * Метку снимаем ВНУТРИ отложенного вызова, вместе с открытием: снятая
+     * заранее, она пропала бы впустую, если бы до открытия дело не дошло.
+     * Отложенный — потому что открытие раздела это setState, а мы в эффекте.
+     */
+    const t=setTimeout(()=>{
+      takeReturn()
+      openMotion('challenge')
+    },300)
     return ()=>clearTimeout(t)
     // openMotion пересоздаётся каждый рендер и от него тут ничего не зависит:
     // эффект обязан сработать РОВНО ОДИН РАЗ, на появлении человека.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[user,guestMode,consentGiven])
+  },[user?.id,guestMode,consentGiven])
 
   /**
    * ДВЕРЬ В ЧЕЛЛЕНДЖ С ГЛАВНОЙ.
