@@ -134,8 +134,20 @@ try {
   R.естьПонятно = /Понятно/.test(текст)
   R.меньшеПриёмовНаружу = /меньше \d+ приёмов/.test(текст)
 
-  await shot('02-room', true)
   await shot('02-room-top')
+  /**
+   * КОМНАТА ПРОКРУЧИВАЕТСЯ ВНУТРИ СЕБЯ, а не документом: раздел лежит поверх
+   * приложения. Поэтому снимок «низа» берётся после прокрутки самого экрана —
+   * fullPage тут снял бы страницу ПОД разделом и соврал бы про вёрстку.
+   */
+  R.высотаКомнаты = await page.evaluate(() => {
+    const el = document.querySelector('.mt-ch--stream')
+    if (!el) return null
+    el.scrollTop = el.scrollHeight
+    return { видно: el.clientHeight, всего: el.scrollHeight, прокрутка: el.scrollTop }
+  })
+  await sleep(600)
+  await shot('02-room-bottom')
 
   // календарь: сегодняшний, пропущенные, будущие
   R.календарь = await page.evaluate(() => {
