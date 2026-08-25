@@ -13,7 +13,7 @@ import PersonalSetupScreen from './screens/PersonalSetupScreen.jsx'
 import ResultScreen from './screens/ResultScreen.jsx'
 import { DEFAULT_TIER } from './game/levels.js'
 import { needsPersonalSetup } from './game/personal.js'
-import { DAYS, currentDay, forcedDay, setStreamStart } from './game/challenge.js'
+import { DAYS, currentDay, forcedDay, setStreamStart, streamPhase } from './game/challenge.js'
 import ChallengeScreen from './screens/ChallengeScreen.jsx'
 import StandingsScreen from './screens/StandingsScreen.jsx'
 import {
@@ -41,7 +41,7 @@ import { isCalibrating, subscribeCalibration } from './debug/calibrationMode.js'
 import { openMotion } from './lifecycle.js'
 import { configureLogShipper } from './debug/logShipper.js'
 import { configureSync, hydrate, noteLoadFailed, onSyncHealth, push, resetSync, startSync, stopSync, syncHealth } from './sync.js'
-import { useMemoryStorage } from './storage.js'
+import { KEYS, readRaw, useMemoryStorage, writeRaw } from './storage.js'
 import { attemptsFor, challengeTotal, submitAttempt } from './game/day.js'
 import { progress } from './game/challenge.js'
 import './motion.css'
@@ -94,7 +94,7 @@ import './motion.css'
  *   остальное (камера, калибровка, уровни) на этом пути не нужно и не должно
  *   стоять между ним и ответом.
  */
-export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null } = {}) {
+export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null } = {}) {
   /**
    * ГОСТЬ ПИШЕТ В ПАМЯТЬ, А НЕ НА УСТРОЙСТВО — и решается это здесь, раньше
    * всего остального.
@@ -265,6 +265,7 @@ export default function MotionApp({ onExit, day, tier, paused = false, log = nul
         onGuestMotionApplied={onGuestMotionApplied}
         startScreen={startScreen}
         onFillNorm={onFillNorm}
+        onOpenDiary={onOpenDiary}
       />
     </ErrorBoundary>
   )
@@ -326,7 +327,7 @@ function readBlockMode() {
   }
 }
 
-function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null }) {
+function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null }) {
   // calibration | setup | levels | room | challenge | workout | result
   // выбор уровня и настройка под себя — только в игре
   const [screen, setScreen] = useState(startScreen === 'challenge' ? 'challenge' : 'calibration')
@@ -451,6 +452,26 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
    */
   const [standingsRows, setStandingsRows] = useState(null)
   const [standingsBusy, setStandingsBusy] = useState(false)
+
+  /**
+   * МЕСТО В ПОТОКЕ КОМНАТА ПОКАЗЫВАЕТ СРАЗУ, поэтому таблица читается вместе с
+   * разделом, а не только по кнопке. Прежний довод («строк участники × тридцать
+   * дней, незачем тащить каждому») остаётся верным для того, кто просто зашёл
+   * посмотреть на челлендж, — поэтому запрос уходит только у УЧАСТНИКА ИДУЩЕГО
+   * потока: у него это и есть один из вопросов, ради которых он сюда пришёл.
+   *
+   * Прочитанное кладётся в тот же standingsRows, что и раньше, — экран таблицы
+   * подхватывает готовое и не спрашивает второй раз.
+   */
+  useEffect(() => {
+    const seasonId = membership?.season?.id
+    if (!seasonId || !membership?.entry || standingsRows) return undefined
+    if (streamPhase(membership?.season?.starts_on) !== 'running') return undefined
+    let alive = true
+    loadStandings(seasonId).then((rows) => { if (alive) setStandingsRows(rows) })
+    return () => { alive = false }
+  }, [membership?.season?.id, membership?.entry, membership?.season?.starts_on, standingsRows])
+
   const openStandings = async () => {
     setScreen('standings')
     const seasonId = membership?.season?.id
@@ -460,6 +481,26 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
     setStandingsRows(rows)
     setStandingsBusy(false)
   }
+
+  /**
+   * ПОЗДРАВЛЕНИЕ С ПОКУПКОЙ — ОДИН РАЗ ЗА ПОТОК.
+   *
+   * Раньше «оплата прошла» было заголовком комнаты и висело все тридцать дней:
+   * человек с идущим потоком каждый день читал новость про деньги вместо
+   * своего дня. Теперь это полоса внутри комнаты, и живёт она до первого
+   * закрытия — отметка пишется на устройство под id потока (storage.js).
+   *
+   * Состоянием, а не чтением хранилища по месту: полоса обязана исчезнуть
+   * сразу по нажатию, а не после следующего открытия раздела.
+   */
+  const seasonId = membership?.season?.id ?? null
+  const [greetSeen, setGreetSeen] = useState(() => readRaw(KEYS.challengeGreeted))
+  const greet = !!membership?.entry && seasonId != null && String(greetSeen) !== String(seasonId)
+  const markGreetSeen = useCallback(() => {
+    if (seasonId == null) return
+    writeRaw(KEYS.challengeGreeted, String(seasonId))
+    setGreetSeen(String(seasonId))
+  }, [seasonId])
 
   /** Перечитать участие после покупки: до неё не участник, после — участник. */
   const refreshMembership = useCallback(() => {
@@ -886,6 +927,30 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
            */
           onFillNorm={() => onFillNorm?.()}
           onStandings={openStandings}
+          /** Сырьё таблицы — комната показывает место, не открывая таблицу. */
+          standingsRows={standingsRows}
+          /** Прогресс не прочитан — заход участника в зачёт не идёт. */
+          syncBroken={challengeBlocked}
+          greet={greet}
+          onGreetSeen={markGreetSeen}
+          /**
+           * НАЧАТЬ ДЕНЬ ИЗ КОМНАТЫ. Ведёт на выбор уровня — тот самый экран, с
+           * которого сессия и запускается: уровень человек выбирает каждый день
+           * заново, и подставить его за него нельзя, разница между НОВИЧКОМ и
+           * ПРОФИ — это очки за препятствие, то есть место в таблице.
+           *
+           * Камера до этой секунды не поднималась (она выключена на экранах
+           * челленджа), поэтому дальше человек увидит обычную заставку
+           * конвейера — ту же, что при входе в раздел.
+           */
+          onStartDay={() => setScreen('levels')}
+          /**
+           * ПРОДОЛЖИТЬ НЕЗАКРЫТЫЙ ЗАХОД — сразу в сессию, минуя выбор уровня:
+           * уровень у начатой сессии уже есть, и спрашивать его заново значило
+           * бы дать сменить его в середине дня.
+           */
+          onResume={startSession}
+          onOpenDiary={() => onOpenDiary?.()}
           /**
            * ВСТУПЛЕНИЕ ОДНОЙ ДОРОГОЙ: сперва фиксируем согласие В БАЗЕ, и
            * только если оно записалось — открываем оплату. Обратный порядок

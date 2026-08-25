@@ -4317,3 +4317,374 @@
   font-size: 12px;
   color: #ffb95c;
 }
+
+/* ── КОМНАТА УЧАСТНИКА, ПОКА ПОТОК ИДЁТ ─────────────────────────────────────
+   Рабочее место дня, а не квитанция об оплате (см. StreamRoom.jsx). Отсюда
+   человек начинает день, поэтому главная кнопка крупная и одна, а всё
+   остальное — карточки одного размера под ней. */
+
+.mt-ch--stream {
+  overflow-y: auto;
+}
+
+.mt-stream {
+  width: 100%;
+  max-width: 460px;
+  margin: 0 auto;
+  padding: calc(56px + env(safe-area-inset-top, 0px)) 18px calc(28px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Поздравление — полосой и один раз: оплата это событие, а не состояние */
+.mt-stream__greet {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(157, 150, 255, 0.22), rgba(124, 122, 240, 0.14));
+  border: 1px solid rgba(157, 150, 255, 0.4);
+  font-size: 13px;
+  line-height: 1.5;
+  color: #fff;
+}
+
+.mt-stream__greet b {
+  color: #cfcbff;
+}
+
+.mt-stream__greetX {
+  flex: none;
+  background: none;
+  border: 0;
+  color: rgba(235, 235, 245, 0.6);
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+
+.mt-stream__head {
+  text-align: center;
+}
+
+.mt-stream__day {
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  color: #fff;
+  line-height: 1.1;
+}
+
+.mt-stream__date {
+  font-size: 13px;
+  color: rgba(235, 235, 245, 0.5);
+  margin-top: 4px;
+}
+
+.mt-stream__state {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(235, 235, 245, 0.66);
+}
+
+.mt-stream__state.is-done { background: rgba(78, 201, 137, 0.18); color: #6fdba4; }
+.mt-stream__state.is-started,
+.mt-stream__state.is-partial { background: rgba(255, 190, 90, 0.16); color: #ffc46b; }
+.mt-stream__state.is-spent { background: rgba(255, 255, 255, 0.06); color: rgba(235, 235, 245, 0.44); }
+
+.mt-stream__warn {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 190, 90, 0.12);
+  border: 1px solid rgba(255, 190, 90, 0.34);
+  color: #ffd9a3;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ГЛАВНАЯ КНОПКА: одна на экран, ростом с намерение */
+.mt-stream__start {
+  width: 100%;
+  min-height: 58px;
+  border: 0;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #9d96ff, #7c7af0);
+  box-shadow: 0 10px 26px rgba(124, 122, 240, 0.34);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+}
+
+.mt-stream__start.is-off,
+.mt-stream__start:disabled {
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: none;
+  color: rgba(235, 235, 245, 0.42);
+  cursor: default;
+}
+
+.mt-stream__why {
+  margin-top: -6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(235, 235, 245, 0.56);
+  text-align: center;
+}
+
+.mt-stream__why b { color: #fff; }
+
+.mt-stream__runs {
+  text-align: center;
+  font-size: 14px;
+  color: rgba(235, 235, 245, 0.62);
+}
+
+.mt-stream__runs b {
+  font-size: 16px;
+  font-weight: 800;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Плитки очков — те же пропорции, что в «Моей комнате» */
+.mt-stream__tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.mt-stream__tile {
+  background: #1c1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 12px 8px;
+  text-align: center;
+  min-width: 0;
+}
+
+.mt-stream__tileValue {
+  font-size: 20px;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.mt-stream__tileLabel {
+  font-size: 11px;
+  color: rgba(235, 235, 245, 0.62);
+  margin-top: 2px;
+}
+
+.mt-stream__tileHint {
+  font-size: 10px;
+  color: rgba(235, 235, 245, 0.34);
+  margin-top: 2px;
+}
+
+.mt-stream__card {
+  background: #1c1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  padding: 16px 18px;
+}
+
+.mt-stream__cardHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mt-stream__cardTitle {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(235, 235, 245, 0.34);
+}
+
+.mt-stream__pct {
+  font-size: 20px;
+  font-weight: 900;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mt-stream__cardP {
+  font-size: 13px;
+  line-height: 1.55;
+  color: rgba(235, 235, 245, 0.62);
+  margin: 10px 0 0;
+}
+
+/* Остатки до нормы: четыре числа в ряд, перебор — своим цветом */
+.mt-stream__rest {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.mt-stream__restCell {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 9px 4px;
+  text-align: center;
+  min-width: 0;
+}
+
+.mt-stream__restVal {
+  font-size: 15px;
+  font-weight: 800;
+  color: #6fdba4;
+  font-variant-numeric: tabular-nums;
+}
+
+.mt-stream__restCell.is-over .mt-stream__restVal { color: #ff9d8a; }
+
+.mt-stream__restLabel {
+  font-size: 10px;
+  color: rgba(235, 235, 245, 0.5);
+  margin-top: 2px;
+  line-height: 1.3;
+}
+
+.mt-stream__restLabel span {
+  display: block;
+  font-size: 9px;
+  color: rgba(235, 235, 245, 0.3);
+}
+
+.mt-stream__line {
+  width: 100%;
+  margin-top: 12px;
+  min-height: 42px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: transparent;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Календарь тридцати дней */
+.mt-stream__days {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+
+.mt-stream__cell {
+  aspect-ratio: 1;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 0;
+  min-width: 0;
+}
+
+.mt-stream__cellNum {
+  font-size: 10px;
+  color: rgba(235, 235, 245, 0.4);
+  font-variant-numeric: tabular-nums;
+}
+
+.mt-stream__cellScore {
+  font-size: 12px;
+  font-weight: 800;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.mt-stream__cell.is-done {
+  background: rgba(78, 201, 137, 0.16);
+  border-color: rgba(78, 201, 137, 0.34);
+  cursor: pointer;
+}
+
+/* Пропущенный виден нулём, а не пустотой: ноль — это результат */
+.mt-stream__cell.is-missed .mt-stream__cellScore { color: rgba(255, 157, 138, 0.9); }
+.mt-stream__cell.is-missed { border-color: rgba(255, 157, 138, 0.24); }
+
+.mt-stream__cell.is-now {
+  background: linear-gradient(180deg, rgba(157, 150, 255, 0.28), rgba(124, 122, 240, 0.18));
+  border-color: #9d96ff;
+}
+
+.mt-stream__cell.is-now .mt-stream__cellNum { color: #fff; }
+
+.mt-stream__cell.is-future { opacity: 0.42; }
+.mt-stream__cell.is-future .mt-stream__cellScore { font-size: 10px; }
+
+.mt-stream__cell.is-open {
+  outline: 2px solid #9d96ff;
+  outline-offset: 1px;
+}
+
+.mt-stream__summary {
+  background: #1c1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mt-stream__summaryHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.mt-stream__summaryRuns {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(235, 235, 245, 0.44);
+}
+
+.mt-stream__legend {
+  font-size: 12px;
+  line-height: 1.55;
+  color: rgba(235, 235, 245, 0.4);
+  margin: 0;
+  text-align: center;
+}
+
+/* Тихая ссылка: правила должны быть под рукой и не спорить с главной кнопкой */
+.mt-stream__rules,
+.mt-ch__rulesLink {
+  background: none;
+  border: 0;
+  color: rgba(235, 235, 245, 0.44);
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 6px;
+  margin: 2px auto 0;
+  cursor: pointer;
+}

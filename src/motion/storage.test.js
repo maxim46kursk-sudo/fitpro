@@ -40,6 +40,14 @@ describe('ключи не изменились', () => {
     'fitpro-motion.challenge.v1',
     'fitpro-motion.challenge.attempts.v1',
     'fitpro-motion.challenge.unlocked.v1',
+    /**
+     * «Поздравление с покупкой в этом потоке уже показывали» — id потока
+     * строкой. Не данные игры, а память экрана: полоса «оплата прошла» имеет
+     * право появиться в комнате один раз, а не висеть все тридцать дней.
+     * Хранится на устройстве (DEVICE_KEYS): цена ошибки — одна лишняя строка на
+     * втором телефоне, и она дешевле лишнего поля в общем прогрессе.
+     */
+    'fitpro-motion.challenge.greeted.v1',
     'fitpro-motion.debug.open.v1',
     'fitpro-motion.game.best.v1',
     'fitpro-motion.game.personal.v1',

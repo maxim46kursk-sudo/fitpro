@@ -146,7 +146,7 @@ function motionSyncFor(userId) {
  * @param {object|null} [props.guestMotion] попытки из буфера переезда
  * @param {() => void} [props.onGuestMotionApplied]
  */
-function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null }) {
+function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null }) {
   /**
    * Адаптер собирается ОДИН раз на человека. Новый объект на каждый рендер
    * означал бы новую загрузку прогресса на каждый рендер — то есть заставку,
@@ -206,6 +206,7 @@ function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onG
           onGuestMotionApplied={onGuestMotionApplied}
           startScreen={startScreen}
           onFillNorm={onFillNorm}
+          onOpenDiary={onOpenDiary}
         />
       </Suspense>
     </div>,
@@ -11232,6 +11233,16 @@ export default function App() {
    * раздел, переключаемся на «Питание» и просим дневник открыть «Норму»: без
    * последнего человек попал бы на экран дня и искал бы шестерёнку сам.
    */
+  /**
+   * ОТКРЫТЬ ДНЕВНИК ПИТАНИЯ — из комнаты челленджа. Не «Норму», как
+   * openFoodGoals ниже, а сам дневник: человек в комнате видит, сколько ему
+   * осталось до нормы, и идёт эти граммы записывать, а не пересчитывать норму.
+   */
+  const openFoodDiary=()=>{
+    closeMotion()
+    handleNav('nutrition')
+  }
+
   const openFoodGoals=()=>{
     closeMotion()
     handleNav('nutrition')
@@ -12210,6 +12221,7 @@ export default function App() {
           onExit={closeMotion}
           startScreen={motionStart}
           onFillNorm={openFoodGoals}
+          onOpenDiary={openFoodDiary}
           userId={user?.id}
           guest={guestMode}
           onGuestValue={handleGuestValue}

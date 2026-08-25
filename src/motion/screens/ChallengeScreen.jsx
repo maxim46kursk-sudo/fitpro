@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { MIN_MEALS, dayScore, streamScore } from '../../challengeNutrition.js'
 import { DAYS, streamDay, streamPhase } from '../game/challenge.js'
+import StreamRoom from './StreamRoom.jsx'
 
 /**
  * ЧЕЛЛЕНДЖ — ОДНА ДЛИННАЯ СТРАНИЦА, по которой человек решает, платить ли.
@@ -107,6 +108,16 @@ const money = (n) =>
  * @param {object[]} [props.nutrition] сырьё по питанию за поток: тридцать строк
  *   из challenge_nutrition_facts. Проценты по ним считает challengeNutrition.js.
  * @param {() => void} [props.onStandings] открыть таблицу потока.
+ * @param {object[]} [props.standingsRows] сырьё таблицы потока: место в ней
+ *   комната показывает сразу, не заставляя человека открывать таблицу.
+ * @param {() => void} [props.onStartDay] начать сегодняшний день потока.
+ * @param {(tier: string, opts: object) => void} [props.onResume] продолжить
+ *   незавершённую сессию. Комната сессий не запускает — отдаёт решение наверх.
+ * @param {() => void} [props.onOpenDiary] открыть дневник питания.
+ * @param {boolean} [props.syncBroken] прогресс не прочитан — заход не в зачёт.
+ * @param {boolean} [props.greet] первый заход после покупки: показать полосу
+ *   поздравления. Один раз — дальше комната открывается рабочим экраном дня.
+ * @param {() => void} [props.onGreetSeen] полосу увидели, больше не показывать.
  */
 export default function ChallengeScreen({
   state = null,
@@ -121,6 +132,13 @@ export default function ChallengeScreen({
   onFillNorm = null,
   nutrition = null,
   onStandings = null,
+  standingsRows = null,
+  onStartDay = null,
+  onResume = null,
+  onOpenDiary = null,
+  syncBroken = false,
+  greet = false,
+  onGreetSeen = null,
 }) {
   const season = state?.season || null
   const entry = state?.entry || null
@@ -138,6 +156,13 @@ export default function ChallengeScreen({
 
   const [agreed, setAgreed] = useState(false)
   const [busy, setBusy] = useState(false)
+  /**
+   * УЧАСТНИК ЧИТАЕТ ПРАВИЛА. Открывается та же самая страница, что и до
+   * покупки, — другой у правил нет и быть не должно: человек согласился именно
+   * с этим текстом, и показывать ему пересказ значило бы показывать другой
+   * документ. Покупка на ней при этом гасится: покупать ему уже нечего.
+   */
+  const [rulesOpen, setRulesOpen] = useState(false)
   const [note, setNote] = useState('')
   const [openQ, setOpenQ] = useState(null)
   const [barOn, setBarOn] = useState(false)
@@ -194,14 +219,51 @@ export default function ChallengeScreen({
     )
   }
 
-  // ── УЧАСТНИК: комната потока вместо лендинга ────────────────────────────────
-  if (entry) {
+  // ── УЧАСТНИК, ПОКА ПОТОК ИДЁТ: рабочая комната дня ──────────────────────────
+  //
+  // Отдельным файлом (StreamRoom.jsx), а не ещё одной веткой здесь: это уже не
+  // «страница про покупку в состоянии купленного», а другое место с другим
+  // назначением — оттуда человек начинает день, а не узнаёт, дошли ли деньги.
+  if (entry && phase === 'running' && !rulesOpen) {
+    return (
+      <StreamRoom
+        entry={entry}
+        today={today}
+        days={DAYS}
+        startsOn={season?.starts_on}
+        nutrition={nutrition}
+        standingsRows={standingsRows}
+        hasNorm={hasNorm}
+        syncBroken={syncBroken}
+        greet={greet}
+        onGreetSeen={onGreetSeen}
+        onStartDay={onStartDay}
+        onResume={onResume}
+        onOpenDiary={onOpenDiary}
+        onFillNorm={onFillNorm}
+        onStandings={onStandings}
+        onRules={() => setRulesOpen(true)}
+        onExit={onExit}
+      />
+    )
+  }
+
+  // ── УЧАСТНИК ДО СТАРТА И ПОСЛЕ ФИНИША ───────────────────────────────────────
+  //
+  // До старта играть нечего, и экран честно отвечает на единственный вопрос,
+  // который в этот момент есть: сколько ждать и чем заняться пока. После
+  // тридцатого дня — то же самое зеркально: доигрывать нечего, остаётся итог.
+  if (entry && !rulesOpen) {
     return (
       <div className="mt-screen mt-ch mt-ch--room" data-testid="challenge-screen">
         <div className="mt-ch__done" data-testid="challenge-member">
-          <div className="mt-ch__ring" aria-hidden="true">✓</div>
-          <h3>Ты в потоке</h3>
-          <p>Оплата прошла. Дальше — заполнить данные о себе, чтобы приложение посчитало твою норму.</p>
+          <div className="mt-ch__ring" aria-hidden="true">{phase === 'over' ? '🏁' : '✓'}</div>
+          <h3>{phase === 'over' ? 'Поток пройден' : 'Ты в потоке'}</h3>
+          <p>
+            {phase === 'over'
+              ? 'Все тридцать дней позади. Таблица заморожена — доигрывать нечего.'
+              : 'Место в потоке за тобой. Дни откроются в день старта — они закрыты у всех одинаково.'}
+          </p>
 
           <div className="mt-ch__no">
             <div className="mt-ch__noLabel">Твой номер участника</div>
@@ -242,22 +304,6 @@ export default function ChallengeScreen({
           </div>
           )}
 
-          {/**
-            * ПРАВИЛО ДНЯ — на виду, пока поток идёт. Заходов три на день, день
-            * назначен календарём, пропущенный не открывается задним числом: это
-            * то, из-за чего спорят о призах, и узнать это человек должен здесь,
-            * а не постфактум.
-            */}
-          {phase === 'running' && (
-            <div className="mt-ch__early" data-testid="challenge-today">
-              <div className="mt-ch__earlyTitle">Сегодня — день {today}</div>
-              <p className="mt-ch__earlyP">
-                В день N потока играется день N: <b>пропущенный день закрывается</b> и
-                задним числом не открывается. Три захода на день, в зачёт идёт лучший.
-              </p>
-            </div>
-          )}
-
           <Nutrition rows={nutrition} startsOn={season?.starts_on} hasNorm={hasNorm} onFillNorm={onFillNorm} />
 
           {/* Таблица потока — рядом со своим номером: «где я среди остальных»
@@ -273,14 +319,29 @@ export default function ChallengeScreen({
             </button>
           )}
 
-          <button type="button" className="mt-ch__btn" data-testid="challenge-room-exit" onClick={onExit}>
-            Понятно
+          <button type="button" className="mt-ch__rulesLink" data-testid="challenge-rules-link" onClick={() => setRulesOpen(true)}>
+            Правила
           </button>
         </div>
+
+        {/**
+          * ВЫХОД ТОЛЬКО КРЕСТИКОМ. Кнопки «Понятно» здесь больше нет: она
+          * высаживала человека на список программ, то есть уводила ровно
+          * оттуда, куда он пришёл. Комната — место назначения, а не диалог.
+          */}
+        <button className="mt-corner mt-corner--left mt-ch__close" onClick={onExit} aria-label="Закрыть">✕</button>
       </div>
     )
   }
 
+  /**
+   * СТРАНИЦУ ЧИТАЕТ УЧАСТНИК. Сюда он попадает по тихой ссылке «Правила» из
+   * комнаты, и единственное, что для него меняется, — покупка: она гасится
+   * целиком (кнопки, галочка, липкая полоса с ценой). Сам текст правил не
+   * трогается ни на слово: человек согласился именно с ним, и показывать ему
+   * пересказ значило бы показывать другой документ.
+   */
+  const readOnly = !!entry
   const priceLabel = money(price)
 
   return (
@@ -303,7 +364,7 @@ export default function ChallengeScreen({
               абонемента.</b> Камера считает каждое движение сама.
             </p>
             <div className="mt-ch__heroCta">
-              {guest ? (
+              {readOnly ? null : guest ? (
                 <button type="button" className="mt-ch__btn" data-testid="challenge-signup" onClick={() => onCreateAccount?.()}>
                   Создать аккаунт
                 </button>
@@ -692,6 +753,17 @@ export default function ChallengeScreen({
 
         {/* ═══ ФИНАЛ ═══ */}
         <section className="mt-ch__final" ref={endRef}>
+          {readOnly ? (
+            <>
+              <p className="mt-ch__kicker">Ты в потоке</p>
+              <h2 className="mt-ch__h2">Участник<br />№ {entry.participant_no}</h2>
+              <p className="mt-ch__foot" data-testid="challenge-rules-back-note">
+                Это те самые правила, с которыми ты согласился при вступлении. Вернуться в
+                комнату — крестиком слева сверху.
+              </p>
+            </>
+          ) : (
+          <>
           <p className="mt-ch__kicker">Вход в поток</p>
           <h2 className="mt-ch__h2">Тридцать дней<br />начинаются <em>сейчас</em></h2>
 
@@ -774,6 +846,8 @@ export default function ChallengeScreen({
               ? `Старт потока — ${startDate}. Опоздал к старту — ждёшь следующий: все идут день в день.`
               : 'Дата старта будет объявлена. Все идут день в день: опоздал к старту — ждёшь следующий.'}
           </p>
+          </>
+          )}
         </section>
       </div>
 
@@ -785,8 +859,9 @@ export default function ChallengeScreen({
        */}
       <div className="mt-ch__top" aria-hidden="true" />
 
-      {/* ЛИПКАЯ ПОЛОСА: появляется после первого экрана, прячется в конце. */}
-      {!guest && (
+      {/* ЛИПКАЯ ПОЛОСА: появляется после первого экрана, прячется в конце.
+          Участнику её нет вовсе — покупать ему нечего. */}
+      {!guest && !readOnly && (
         <div className={`mt-ch__bar ${barOn ? 'is-on' : ''}`} data-testid="challenge-bar">
           <div className="mt-ch__barPrice">{priceLabel}</div>
           <button type="button" className="mt-ch__btn" data-testid="challenge-bar-join" onClick={() => scrollTo(endRef)}>
@@ -795,7 +870,14 @@ export default function ChallengeScreen({
         </div>
       )}
 
-      <button className="mt-corner mt-corner--left mt-ch__close" onClick={onExit} aria-label="Назад">✕</button>
+      {/* У участника крестик возвращает в КОМНАТУ, а не закрывает раздел: он
+          пришёл сюда из неё и туда же должен вернуться. */}
+      <button
+        className="mt-corner mt-corner--left mt-ch__close"
+        data-testid="challenge-rules-back"
+        onClick={readOnly ? () => setRulesOpen(false) : onExit}
+        aria-label="Назад"
+      >✕</button>
     </div>
   )
 }

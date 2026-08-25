@@ -154,6 +154,11 @@ describe('без нормы питания билет не продаётся', 
   })
 })
 
+/**
+ * ПИТАНИЕ ДО СТАРТА И ПОСЛЕ ФИНИША — три числа за весь поток. Пока поток ИДЁТ,
+ * человеку нужны не итоги, а сегодняшний день и остатки до нормы, и это уже
+ * другой экран — рабочая комната (StreamRoom.test.jsx).
+ */
 describe('участник видит своё питание', () => {
   /** Сырьё, как его отдаёт challenge_nutrition_facts: без процентов. */
   const facts = (days) => days.map((d, i) => ({
@@ -169,50 +174,23 @@ describe('участник видит своё питание', () => {
     norm_c: 220,
   }))
 
-  /** Дата старта такая, что «сегодня» — второй день потока. */
-  const startedYesterday = () => {
-    const d = new Date()
-    d.setDate(d.getDate() - 1)
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  }
-
-  it('процент за сегодня, средний за поток и дни с дневником', () => {
+  it('средний за поток и дни с дневником — по итогам, а не по заполненным', () => {
     const rows = facts([
-      // день 1: точно в норму, четыре приёма
       { kcal: 2000, p: 120, f: 65, c: 220, meals: 4 },
-      // день 2 (сегодня): тоже в коридоре, три приёма
       { kcal: 1950, p: 118, f: 63, c: 215, meals: 3 },
       ...Array.from({ length: 28 }, () => ({})),
     ])
     render(
       <ChallengeScreen
-        state={{ season: { ...SEASON, starts_on: startedYesterday() }, entry: ENTRY }}
+        state={{ season: { ...SEASON, starts_on: сдвиг(-40) }, entry: ENTRY }}
         nutrition={rows}
       />,
     )
 
-    expect(screen.getByTestId('nutri-today').textContent).toBe('100%')
     // два дня из тридцати по сотне — это 7%, а не 100: средний делится на весь
     // поток, иначе три честных дня выглядели бы отличным результатом
     expect(screen.getByTestId('nutri-average').textContent).toBe('7%')
     expect(screen.getByTestId('nutri-days').textContent).toBe('2 из 30')
-  })
-
-  it('меньше трёх приёмов — день не засчитан, и так и написано', () => {
-    const rows = facts([
-      { kcal: 2000, p: 120, f: 65, c: 220, meals: 4 },
-      { kcal: 900, p: 60, f: 30, c: 90, meals: 1 },
-      ...Array.from({ length: 28 }, () => ({})),
-    ])
-    render(
-      <ChallengeScreen
-        state={{ season: { ...SEASON, starts_on: startedYesterday() }, entry: ENTRY }}
-        nutrition={rows}
-      />,
-    )
-
-    expect(screen.getByTestId('nutri-today').textContent).toContain('приёмов')
-    expect(screen.getByTestId('nutri-days').textContent).toBe('1 из 30')
   })
 
   it('нормы у участника нет — блок зовёт её завести, а не показывает нули', () => {
@@ -293,24 +271,57 @@ describe('участник: комната потока вместо витри�
     expect(early).toContain('тренировки, программы и дневник питания доступны уже сейчас')
   })
 
-  it('поток идёт — комната называет сегодняшний день, а не отсчёт', () => {
+  it('поток идёт — вместо квитанции открывается рабочая комната дня', () => {
     /**
-     * У участника день назначает календарь, и это первое, что ему нужно знать:
-     * играется сегодня день N, и никакой другой.
+     * ГЛАВНАЯ ПЕРЕМЕНА. Раньше участник идущего потока видел здесь галочку,
+     * слова «Оплата прошла» и кнопку «Понятно», которая выбрасывала его на
+     * список программ. Начать тренировку с этого экрана было нельзя вовсе.
+     *
+     * Теперь тот же случай отдаёт другое место — комнату (StreamRoom.jsx), в
+     * которой первым делом стоит кнопка старта сегодняшнего дня.
      */
     render(<ChallengeScreen state={{ season: { ...SEASON, starts_on: сдвиг(-4) }, entry: ENTRY }} />)
 
-    expect(screen.getByTestId('challenge-start').textContent).toContain('Идёт день 5 из 30')
-    expect(screen.getByTestId('challenge-today').textContent).toContain('пропущенный день закрывается')
-    // «дни откроются в день старта» здесь уже неправда
-    expect(screen.queryByTestId('challenge-early')).toBeNull()
+    expect(screen.getByTestId('stream-room')).toBeTruthy()
+    expect(screen.getByTestId('stream-day').textContent).toBe('День 5 из 30')
+    expect(screen.getByTestId('stream-start').textContent).toContain('день 5')
+    // ни поздравления как заголовка, ни выхода «в никуда»
+    expect(screen.queryByTestId('challenge-member')).toBeNull()
+    expect(screen.queryByTestId('challenge-room-exit')).toBeNull()
+    expect(pageText()).not.toContain('Понятно')
   })
 
-  it('поток кончился — так и сказано', () => {
+  it('поток кончился — итог, а не рабочий день', () => {
     render(<ChallengeScreen state={{ season: { ...SEASON, starts_on: сдвиг(-40) }, entry: ENTRY }} />)
 
     expect(screen.getByTestId('challenge-start').textContent).toContain('Поток завершён')
-    expect(screen.queryByTestId('challenge-today')).toBeNull()
+    expect(screen.queryByTestId('stream-room')).toBeNull()
+    // и здесь кнопки «Понятно» тоже нет: выход только крестиком
+    expect(pageText()).not.toContain('Понятно')
+  })
+
+  it('до старта комната остаётся прежней — ждать и втягиваться', () => {
+    render(<ChallengeScreen state={{ season: { ...SEASON, starts_on: сдвиг(3) }, entry: ENTRY }} />)
+
+    expect(screen.getByTestId('challenge-start').textContent).toContain('До старта потока')
+    expect(screen.queryByTestId('stream-room')).toBeNull()
+    expect(pageText()).not.toContain('Понятно')
+  })
+
+  it('тихая ссылка «Правила» открывает те же правила, но без покупки', () => {
+    render(<ChallengeScreen state={{ season: { ...SEASON, starts_on: сдвиг(-4) }, entry: ENTRY }} />)
+
+    act(() => screen.getByTestId('stream-rules').click())
+    // текст правил — тот самый, с которым человек согласился при вступлении
+    expect(screen.getByTestId('challenge-rules')).toBeTruthy()
+    // а покупки на нём для участника нет ни в каком виде
+    expect(screen.queryByTestId('challenge-join')).toBeNull()
+    expect(screen.queryByTestId('challenge-hero-join')).toBeNull()
+    expect(screen.queryByTestId('challenge-bar')).toBeNull()
+
+    // крестик возвращает в комнату, а не закрывает раздел
+    act(() => screen.getByTestId('challenge-rules-back').click())
+    expect(screen.getByTestId('stream-room')).toBeTruthy()
   })
 
   it('участнику не показывают ни цены, ни кнопки покупки', () => {
