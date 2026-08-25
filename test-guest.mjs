@@ -27,8 +27,11 @@
 //
 // Запуск: npm run build && node test-guest.mjs
 import { createServer } from 'node:http'
-import { readFileSync, existsSync } from 'node:fs'
+import { existsSync, mkdtempSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { chromium } from 'playwright'
+import { createRequestHandler } from './server.mjs'
 
 const DIST = 'dist'
 const PORT = 4392
@@ -44,20 +47,26 @@ if (!existsSync(`${DIST}/index.html`)) {
   process.exit(1)
 }
 
-const TYPES = {
-  '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css',
-  '.svg': 'image/svg+xml', '.json': 'application/json', '.wasm': 'application/wasm',
-  '.png': 'image/png', '.woff2': 'font/woff2',
-}
-
-const server = createServer((req, res) => {
-  const url = req.url.split('?')[0]
-  // SPA: всё без расширения — это маршрут, отдаём страницу
-  const file = url === '/' || !url.includes('.') ? `${DIST}/index.html` : `${DIST}${url}`
-  if (!existsSync(file)) { res.writeHead(404); res.end('not found'); return }
-  res.writeHead(200, { 'content-type': TYPES[file.slice(file.lastIndexOf('.'))] || 'application/octet-stream' })
-  res.end(readFileSync(file))
-})
+/**
+ * СТРАНИЦУ ОТДАЁТ ТОТ ЖЕ SERVER.MJS, ЧТО И ПРОД, — РАДИ CSP.
+ *
+ * Раньше здесь стоял свой маленький сервер на десять строк, и этого хватало,
+ * пока ответы не несли заголовков. Теперь несут: строгая Content-Security-Policy
+ * с хэшами встроенных скриптов index.html. Политика, которую не проверил
+ * НАСТОЯЩИЙ браузер на НАСТОЯЩЕЙ странице, — это обещание, а не проверка:
+ * сборка соберётся, тесты пройдут, а у человека молча не выполнится скрипт или
+ * не поднимется воркер позы. Своим сервером такую беду не поймать по
+ * построению — он про CSP не знает.
+ *
+ * Отсюда: сервер тот же, что в проде. Нарушения политики браузер пишет в
+ * консоль, а консоль здесь уже собирается в pageErrors — то есть проверка
+ * появляется бесплатно, вместе с остальными.
+ *
+ * apiDir — пустой временный каталог: маршруты /api/* в этом прогоне должны
+ * честно отвечать 404, а не поднимать боевые функции без переменных окружения.
+ */
+const ПУСТОЙ_API = mkdtempSync(path.join(os.tmpdir(), 'fitpro-guest-noapi-'))
+const server = createServer(createRequestHandler({ apiDir: ПУСТОЙ_API, distDir: DIST }))
 await new Promise(r => server.listen(PORT, r))
 
 const browser = await chromium.launch()
@@ -411,6 +420,15 @@ await page.locator('[data-testid="auth-back-to-app"]').click()
 await page.waitForTimeout(800)
 report('из неё можно уйти в приложение гостем',
   await page.locator('[data-testid="guest-login"]').count() === 1)
+
+// ── 9. CSP не мешает приложению работать ───────────────────────────────────
+// Отдельной строкой, а не внутри общей проверки ошибок: нарушение политики
+// выглядит в консоли как обычная ошибка, и в общей куче его причина потерялась
+// бы. Здесь же сразу видно, ЧТО именно политика не пустила, — а значит видно и
+// куда это дописывать в buildCsp() в server.mjs.
+const нарушенияCsp = [...new Set(pageErrors)].filter(t => /Content Security Policy|Refused to (load|execute|connect|frame)/i.test(t))
+report('за весь прогон CSP ничего не заблокировала', нарушенияCsp.length === 0,
+  нарушенияCsp.slice(0, 3).join(' | '))
 
 // ── итог ───────────────────────────────────────────────────────────────────
 report('ни одной ошибки на странице за весь прогон', pageErrors.length === 0,

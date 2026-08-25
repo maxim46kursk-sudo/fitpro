@@ -22,6 +22,7 @@
 // пишет, — это тест, который однажды спишет чьи-то деньги.
 
 import { strict as assert } from 'node:assert'
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -101,7 +102,15 @@ fs.writeFileSync(path.join(sandboxApi, '_secret.js'), `
 export default async function handler(req, res) { return res.status(200).send('LEAKED') }
 `)
 
-fs.writeFileSync(path.join(sandboxDist, 'index.html'), '<!doctype html><title>FitPro</title><div id=root></div>')
+// Встроенный <script> здесь не для красоты: в боевом index.html их три, и
+// именно их хэши CSP обязана посчитать сама. Без такого скрипта в песочнице
+// проверка хэшей проверяла бы пустоту.
+const ВСТРОЕННЫЙ = 'window.__boot = { stage: "html" }'
+const ХЭШ_ВСТРОЕННОГО = crypto.createHash('sha256').update(ВСТРОЕННЫЙ, 'utf8').digest('base64')
+fs.writeFileSync(
+  path.join(sandboxDist, 'index.html'),
+  `<!doctype html><title>FitPro</title><script>${ВСТРОЕННЫЙ}</script><div id=root></div>`,
+)
 fs.writeFileSync(path.join(sandboxDist, 'assets', 'index-abc123.js'), 'console.log("app")')
 
 // ── Поднимаем сервер на свободном порту ─────────────────────────────────────
@@ -294,6 +303,44 @@ await test('выход за пределы dist/ закрыт', async () => {
   const res = await fetch(`${base}/../server.mjs`)
   assert.ok(res.status === 403 || res.status === 404, `ожидали отказ, получили ${res.status}`)
   assert.doesNotMatch(await res.text(), /createRequestHandler/)
+})
+
+// ══════════════════════════════════════════════════════════════════════════
+// 4. ЗАГОЛОВКИ БЕЗОПАСНОСТИ
+// ══════════════════════════════════════════════════════════════════════════
+
+await test('базовые заголовки стоят на статике и на api/', async () => {
+  for (const адрес of [`${base}/`, `${base}/assets/index-abc123.js`, `${base}/api/echo?a=1`]) {
+    const res = await fetch(адрес)
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff', адрес)
+    assert.equal(res.headers.get('referrer-policy'), 'strict-origin-when-cross-origin', адрес)
+    assert.match(res.headers.get('permissions-policy'), /camera=\(self\)/, адрес)
+  }
+})
+
+await test('CSP есть на документе и считает хэш встроенного скрипта', async () => {
+  const res = await fetch(`${base}/`)
+  const csp = res.headers.get('content-security-policy')
+  assert.ok(csp, 'CSP на index.html обязана быть')
+  assert.ok(
+    csp.includes(`'sha256-${ХЭШ_ВСТРОЕННОГО}'`),
+    'хэш не совпал — встроенные скрипты index.html будут заблокированы',
+  )
+  const scriptSrc = csp.split(';').map(s => s.trim()).find(s => s.startsWith('script-src'))
+  assert.doesNotMatch(scriptSrc, /'unsafe-inline'/, 'unsafe-inline в script-src обесценил бы всю политику')
+  assert.match(scriptSrc, /'wasm-unsafe-eval'/, 'без этого не поднимется wasm MediaPipe')
+  assert.match(csp, /connect-src[^;]*api\.fitproapp\.ru/, 'без этого приложение не достучится до базы')
+  assert.match(csp, /worker-src[^;]*blob:/, 'без этого не запустится воркер позы')
+})
+
+await test('фреймить страницу может только Telegram', async () => {
+  const csp = (await fetch(`${base}/`)).headers.get('content-security-policy')
+  assert.match(csp, /frame-ancestors 'self' https:\/\/web\.telegram\.org https:\/\/\*\.telegram\.org/)
+})
+
+await test('CSP не вешается на картинки и скрипты', async () => {
+  const res = await fetch(`${base}/assets/index-abc123.js`)
+  assert.equal(res.headers.get('content-security-policy'), null)
 })
 
 // ── Итог ────────────────────────────────────────────────────────────────────

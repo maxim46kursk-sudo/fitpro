@@ -17,6 +17,7 @@
  * читает .env (это systemd через EnvironmentFile).
  */
 import http from 'node:http'
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
@@ -244,6 +245,114 @@ function cacheHeaderFor(urlPath) {
   return null
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// ЗАГОЛОВКИ БЕЗОПАСНОСТИ
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Стоят ЗДЕСЬ, а не в Caddyfile, по той же причине, что и заголовки кэша:
+ * раздаёт файлы этот сервер, и защита не должна зависеть от того, кто стоит
+ * перед ним и не потеряется ли она при следующем переезде. Caddy их не
+ * перетирает — он проксирует ответ как есть.
+ */
+const BASE_SECURITY_HEADERS = {
+  // Браузер не имеет права угадывать тип: .json, отданный как текст, не должен
+  // выполниться скриптом только потому, что похож на него.
+  'X-Content-Type-Options': 'nosniff',
+  // На чужой домен уходит только схема+хост, без пути. Пути здесь говорящие
+  // (/trainer/<id>), и отдавать их наружу незачем.
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  /**
+   * КАМЕРА РАЗРЕШЕНА — НА НЕЙ ДЕРЖИТСЯ MOTION.
+   *
+   * `camera=(self)` даёт её своим страницам и запрещает любому встроенному
+   * фрейму. Всё остальное выключено: приложение этого не просит, а выключенное
+   * разрешение не может быть выпрошено чужим кодом, если он сюда попадёт.
+   */
+  'Permissions-Policy':
+    'camera=(self), microphone=(), geolocation=(), payment=(), usb=(), midi=(), magnetometer=(), gyroscope=(), accelerometer=()',
+}
+
+/** Внешние адреса, без которых приложение не работает. */
+const CDN = 'https://cdn.jsdelivr.net' // wasm MediaPipe, запасной источник
+const MODELS = 'https://storage.googleapis.com' // модель позы, запасной источник
+const API = 'https://api.fitproapp.ru' // Supabase: база, storage, видео
+const PAY = 'https://maximathlete.payform.ru' // Продамус: страница оплаты
+
+/**
+ * ХЭШИ ВСТРОЕННЫХ СКРИПТОВ СЧИТАЮТСЯ ИЗ ФАЙЛА, А НЕ ПИШУТСЯ РУКАМИ.
+ *
+ * В index.html три инлайновых <script> — метки загрузки, страховка от чёрного
+ * экрана и сторож. Все три обязаны выполняться раньше бандла, вынести их
+ * наружу нельзя (в этом весь их смысл), а `'unsafe-inline'` обесценил бы CSP
+ * целиком. Остаются хэши — и единственный способ, которым они не разъедутся с
+ * файлом, это считать их из того же файла при отдаче.
+ *
+ * Кэш по mtime: заново считается только после выкладки нового index.html.
+ */
+let cspCache = { mtimeMs: -1, value: '' }
+
+function inlineScriptHashes(html) {
+  const out = []
+  const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi
+  let m
+  while ((m = re.exec(html)) !== null) {
+    out.push(`'sha256-${crypto.createHash('sha256').update(m[1], 'utf8').digest('base64')}'`)
+  }
+  return out
+}
+
+/**
+ * Экспортируется ради tools/csp-check.mjs: сторож сборки обязан читать ТУ ЖЕ
+ * политику, что уходит в ответ. Свою копию списка адресов он бы однажды не
+ * обновил — и пропустил ровно то, ради чего заведён.
+ */
+export function buildCsp(html) {
+  const scripts = ["'self'", "'wasm-unsafe-eval'", CDN, ...inlineScriptHashes(html)].join(' ')
+  return [
+    `default-src 'self'`,
+    `base-uri 'none'`,
+    `object-src 'none'`,
+    // Вместо X-Frame-Options: DENY здесь не годится — SDK Telegram в head
+    // остался, и возможность открыться внутри Telegram терять не за чем.
+    `frame-ancestors 'self' https://web.telegram.org https://*.telegram.org`,
+    `form-action 'self' ${PAY}`,
+    `frame-src 'self' ${PAY}`,
+    `script-src ${scripts}`,
+    // Воркер позы собирается Vite и может уехать в blob: — это свой же код.
+    `worker-src 'self' blob:`,
+    `child-src 'self' blob:`,
+    // Стили пишутся в style={{...}} по всему приложению — это инлайн по
+    // построению. В отличие от скриптов, дыры это не открывает.
+    `style-src 'self' 'unsafe-inline'`,
+    `img-src 'self' data: blob: ${API}`,
+    `media-src 'self' data: blob: ${API}`,
+    `font-src 'self' data:`,
+    // base — свой сервер и Supabase; остальные два — запасные источники wasm и
+    // модели, когда своё зеркало недоступно (src/motion/pose/assets.js).
+    `connect-src 'self' ${API} ${CDN} ${MODELS} blob: data:`,
+    `manifest-src 'self'`,
+  ].join('; ')
+}
+
+async function cspFor(indexFile) {
+  const stat = await fsp.stat(indexFile).catch(() => null)
+  if (!stat) return null
+  if (cspCache.mtimeMs !== stat.mtimeMs) {
+    cspCache = { mtimeMs: stat.mtimeMs, value: buildCsp(await fsp.readFile(indexFile, 'utf8')) }
+  }
+  return cspCache.value
+}
+
+/**
+ * РЫЧАГ ОТКАТА. `CSP_REPORT_ONLY=1` в EnvironmentFile переводит политику в
+ * режим наблюдения: браузер ругается в консоль, но ничего не блокирует.
+ * Нужен ровно один раз — если после выкладки что-то отвалится, это способ
+ * вернуть работу за перезапуск сервиса, не откатывая выкладку целиком.
+ */
+const CSP_HEADER =
+  process.env.CSP_REPORT_ONLY === '1' ? 'Content-Security-Policy-Report-Only' : 'Content-Security-Policy'
+
 async function serveStatic(req, res, distDir, urlPath) {
   const decoded = decodeURIComponent(urlPath)
   const relative = decoded === '/' ? 'index.html' : decoded.replace(/^\/+/, '')
@@ -280,9 +389,18 @@ async function serveStatic(req, res, distDir, urlPath) {
   }
 
   const cache = cacheHeaderFor(urlPath)
-  res.setHeader('Content-Type', mimeOf(file))
+  const type = mimeOf(file)
+  res.setHeader('Content-Type', type)
   res.setHeader('Content-Length', stat.size)
   if (cache) res.setHeader('Cache-Control', cache)
+
+  // CSP имеет смысл только на документе: она управляет тем, что этому документу
+  // позволено грузить и выполнять. Вешать её на картинку — лишние байты в каждом
+  // ответе и ноль защиты.
+  if (type.startsWith('text/html')) {
+    const csp = await cspFor(file)
+    if (csp) res.setHeader(CSP_HEADER, csp)
+  }
 
   if (req.method === 'HEAD') { res.end(); return }
   fs.createReadStream(file).pipe(res)
@@ -319,6 +437,9 @@ export function createRequestHandler({ apiDir, distDir }) {
 
   return async function handleRequest(req, res) {
     decorateResponse(res)
+    // До всякой маршрутизации: эти три заголовка нужны и статике, и ответам
+    // api/, и странице 404 — то есть всему, что уходит из процесса.
+    for (const [name, value] of Object.entries(BASE_SECURITY_HEADERS)) res.setHeader(name, value)
     const url = new URL(req.url, 'http://localhost')
     const pathname = url.pathname
 
