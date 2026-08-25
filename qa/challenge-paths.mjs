@@ -187,6 +187,9 @@ async function путьА() {
     // из виду то, что читал.
     R.A.предложениеПоНажатию = await page.evaluate(() =>
       /Создать аккаунт/i.test(document.body.innerText))
+    R.A.меткаПослеНажатия = await page.evaluate(() => {
+      try { return localStorage.getItem('fitpro_return_to') } catch { return 'нет доступа' }
+    })
     await shot(page, 'A-предложение-аккаунта')
 
     // регистрация
@@ -206,6 +209,9 @@ async function путьА() {
     await shot(page, 'A-форма-заполнена')
     await page.locator('button:visible').filter({ hasText: /Создать аккаунт/ }).first().click()
     await sleep(4000)
+    R.A.меткаПослеРегистрации = await page.evaluate(() => {
+      try { return localStorage.getItem('fitpro_return_to') } catch { return 'нет доступа' }
+    })
     await shot(page, 'A-после-регистрации')
 
     /**
@@ -269,34 +275,47 @@ async function путьА() {
 // Б. ОПЛАТИВШИЙ БЕЗ ДАННЫХ
 // ═══════════════════════════════════════════════════════════════════════════
 async function путьБ() {
+  /**
+   * ПОД ВЛАДЕЛЬЦЕМ, А НЕ ПОД СВЕЖИМ ЧЕЛОВЕКОМ — и вот почему.
+   *
+   * Живой поток сейчас только один и он служебный: его видит ТОЛЬКО тренер
+   * (RLS). Завести гостя, зачислить его туда и открыть комнату не выйдет —
+   * поток для него не существует, и он увидит витрину. Проверять на потоке,
+   * которого нет, нечего.
+   *
+   * Поэтому «оплативший без данных» изображается владельцем: у него временно
+   * снимается дневная норма. Его настоящие цифры снимаются снимком ДО и
+   * возвращаются в finally — включая слепок нормы, который иначе переписался бы
+   * новой датой. Снимок печатается в отчёт: если прогон оборвётся посреди,
+   * восстановить можно руками.
+   */
   const b = await browser()
   const page = await tab(b)
-  let uid = null
+  let снимокЦелей = null
+  let снимокСлепка = null
+  let trainerId = null
   try {
-    // человек, у которого нет ни нормы, ни данных о себе
-    const email = `qa-e2e-room-${Date.now().toString().slice(-6)}@qa.fitproapp.ru`
-    const created = await (await admin('/auth/v1/admin/users', {
-      method: 'POST',
-      body: JSON.stringify({ email, password: 'QaE2E-passw0rd!', email_confirm: true }),
-    })).json()
-    uid = created?.id
-    R.Б.почта = email
-    if (!uid) throw new Error('не удалось завести человека: ' + JSON.stringify(created).slice(0, 160))
-    await admin('/rest/v1/profiles', {
-      method: 'POST', headers: { Prefer: 'resolution=merge-duplicates' },
-      body: JSON.stringify({ id: uid, name: 'Гость Прогонов' }),
+    const [trainer] = await (await admin('/rest/v1/profiles?select=id&role=eq.trainer&limit=1')).json()
+    trainerId = trainer.id
+    const user = await (await admin(`/auth/v1/admin/users/${trainerId}`)).json()
+
+    const [цели] = await (await admin(`/rest/v1/food_goals?select=*&user_id=eq.${trainerId}`)).json()
+    const [запись] = await (await admin(`/rest/v1/challenge_entries?select=id,norm1_kcal,norm1_p,norm1_f,norm1_c,norm1_at&user_id=eq.${trainerId}`)).json()
+    снимокЦелей = цели
+    снимокСлепка = запись
+    R.Б.снимокДо = { цели, запись }
+    if (!цели || !запись) throw new Error('нечего снимать: у владельца нет нормы или записи в потоке')
+
+    // «оплатил, данных нет»: снимаем норму и слепок
+    await admin(`/rest/v1/food_goals?user_id=eq.${trainerId}`, { method: 'DELETE' })
+    await admin(`/rest/v1/challenge_entries?id=eq.${запись.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ norm1_kcal: null, norm1_p: null, norm1_f: null, norm1_c: null, norm1_at: null }),
     })
 
-    // зачисляем его в тест-поток тем же путём, что и вебхук
-    const [season] = await (await admin('/rest/v1/challenge_seasons?select=id&status=eq.staff')).json()
-    const no = await (await admin('/rest/v1/rpc/challenge_enroll', {
-      method: 'POST',
-      body: JSON.stringify({ p_season_id: season.id, p_user_id: uid, p_payment_id: `qa-${Date.now()}`, p_display_name: 'Гость Прогонов' }),
-    })).json()
-    R.Б.номерУчастника = no
-
-    await page.goto(await magicLink(email), { waitUntil: 'domcontentloaded', timeout: 60000 })
+    await page.goto(await magicLink(user.email), { waitUntil: 'domcontentloaded', timeout: 60000 })
     await page.waitForURL((u) => u.host === new URL(BASE).host, { timeout: 60000 }).catch(() => {})
+    await page.waitForSelector('[data-screen]', { timeout: 60000 })
     await пройтиСогласие(page)
     await sleep(2500)
 
@@ -307,22 +326,27 @@ async function путьБ() {
     await sleep(4000)
 
     R.Б.блокЕсть = (await page.locator(tid('stream-need-data')).count()) > 0
-    R.Б.блокТекст = await page.locator(tid('stream-need-data')).innerText().catch(() => null)
+    R.Б.блокТекст = (await page.locator(tid('stream-need-data')).innerText().catch(() => '')).replace(/\s+/g, ' ')
     R.Б.кнопка = await page.locator(tid('stream-my-data')).innerText().catch(() => null)
+    R.Б.питаниеБезНормы = (await page.locator(tid('stream-nutrition')).innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 160)
     await shot(page, 'Б-комната-без-данных')
 
+    // кнопка ведёт в «Мои данные», а не на экран нормы КБЖУ
     await page.locator(tid('stream-my-data')).click()
-    await sleep(3000)
-    R.Б.экранДанных = await page.evaluate(() => document.body.innerText.slice(0, 200).replace(/\s+/g, ' '))
+    await sleep(3500)
+    R.Б.кудаПривело = (await page.evaluate(() => document.body.innerText.replace(/\s+/g, ' ').slice(0, 160)))
     await shot(page, 'Б-мои-данные')
 
-    // заполняем данные о себе прямо в базе — форма профиля своя у каждого поля,
-    // а проверяем мы не её, а то, что норма после этого доезжает до комнаты
+    /**
+     * Заполнение — в базу, а не через форму профиля: форма своя у каждого поля
+     * и проверяется своими тестами, а здесь важно другое — что норма, однажды
+     * появившись, доезжает до комнаты и замораживается.
+     */
     await admin('/rest/v1/food_goals', {
       method: 'POST', headers: { Prefer: 'resolution=merge-duplicates' },
-      body: JSON.stringify({ user_id: uid, kcal: 2100, p: 130, f: 70, c: 230 }),
+      body: JSON.stringify({ user_id: trainerId, kcal: цели.kcal, p: цели.p, f: цели.f, c: цели.c }),
     })
-    R.Б.нормаЗаписана = true
+    R.Б.нормаВернулась = true
 
     await page.goto(BASE, { waitUntil: 'networkidle', timeout: 60000 })
     await sleep(2500)
@@ -330,21 +354,38 @@ async function путьБ() {
     await sleep(2500)
     await page.locator(tid('program-folder-challenge')).click()
     await page.waitForSelector(tid('stream-room'), { timeout: 60000 })
-    await sleep(5000)
+    await sleep(6000)
 
     R.Б.блокПослеЗаполнения = (await page.locator(tid('stream-need-data')).count()) > 0
-    R.Б.нормаВКомнате = await page.locator(tid('stream-macros')).innerText().catch(() => null)
+    R.Б.нормаВКомнате = (await page.locator(tid('stream-macros')).innerText().catch(() => '')).replace(/\s+/g, ' ')
     await shot(page, 'Б-комната-с-нормой')
 
-    const [entry] = await (await admin(`/rest/v1/challenge_entries?select=norm1_kcal,norm1_at&user_id=eq.${uid}`)).json()
-    R.Б.слепокНормы = entry
+    const [после] = await (await admin(`/rest/v1/challenge_entries?select=norm1_kcal,norm1_at&user_id=eq.${trainerId}`)).json()
+    R.Б.слепокСнятВДеньСтарта = после
   } catch (e) {
     R.Б.ошибка = e.message
     await shot(page, 'Б-упал').catch(() => {})
   } finally {
+    // ВОЗВРАТ БОЕВЫХ ДАННЫХ — всегда, чем бы прогон ни кончился.
+    if (trainerId && снимокЦелей) {
+      await admin('/rest/v1/food_goals', {
+        method: 'POST', headers: { Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify(снимокЦелей),
+      }).catch(() => {})
+    }
+    if (снимокСлепка) {
+      await admin(`/rest/v1/challenge_entries?id=eq.${снимокСлепка.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          norm1_kcal: снимокСлепка.norm1_kcal, norm1_p: снимокСлепка.norm1_p,
+          norm1_f: снимокСлепка.norm1_f, norm1_c: снимокСлепка.norm1_c, norm1_at: снимокСлепка.norm1_at,
+        }),
+      }).catch(() => {})
+      R.Б.данныеВозвращены = true
+    }
     await b.close()
   }
-  return uid
+  return null
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
