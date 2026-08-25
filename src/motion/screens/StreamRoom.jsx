@@ -307,6 +307,12 @@ export default function StreamRoom({
   const [openDay, setOpenDay] = useState(null)
 
   const food = todayNutrition(nutrition, today)
+  /**
+   * null — таблицы ЕЩЁ НЕТ (едет с сервера), пустой массив — она пришла и в ней
+   * никого. Разница видна человеку: прочерк на месте своего места читается как
+   * «меня в таблице нет», а это неправда — её просто не успели принести.
+   */
+  const tableLoading = standingsRows === null || standingsRows === undefined
   const table = standings(standingsRows || [], { days })
   const me = table.find((p) => p.isMe) || null
 
@@ -527,10 +533,12 @@ export default function StreamRoom({
           <div className="mt-stream__cardHead">
             <span className="mt-stream__cardTitle">Место в потоке</span>
             <b className="mt-stream__pct" data-testid="stream-place-value">
-              {me ? `${ordinal(me.place)} из ${table.length}` : '—'}
+              {me ? `${ordinal(me.place)} из ${table.length}` : tableLoading ? '…' : '—'}
             </b>
           </div>
-          {me ? (
+          {tableLoading ? (
+            <p className="mt-stream__cardP">Считаю таблицу потока…</p>
+          ) : me ? (
             <p className="mt-stream__cardP">
               Движение — {ordinal(me.movementPlace)}, питание — {ordinal(me.nutritionPlace)}.
               Место в потоке складывается из двух.

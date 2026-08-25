@@ -274,9 +274,17 @@ describe('место в потоке', () => {
     expect(screen.getByTestId('stream-place-value').textContent).toBe('2-й из 3')
   })
 
-  it('таблицы ещё нет — прочерк вместо выдуманного места', () => {
+  it('таблица приехала пустой — прочерк вместо выдуманного места', () => {
     room({ standingsRows: [] })
     expect(screen.getByTestId('stream-place-value').textContent).toBe('—')
+  })
+
+  it('таблица ещё едет — так и говорим, а не рисуем прочерк', () => {
+    // прочерк на месте своего места читается как «меня в таблице нет», а это
+    // неправда: её просто не успели принести
+    room({})
+    expect(screen.getByTestId('stream-place-value').textContent).toBe('…')
+    expect(screen.getByTestId('stream-place').textContent).toContain('Считаю таблицу')
   })
 
   it('кнопка открывает полную таблицу', () => {
