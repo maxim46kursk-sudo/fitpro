@@ -162,6 +162,33 @@ function motionSyncFor(userId) {
  * забывший об этом, при следующем входе получил бы в лицо страницу челленджа,
  * которую не просил. Два часа — с запасом на «отвлёкся и вернулся к письму».
  */
+/**
+ * ПРЯМОЙ АДРЕС ЧЕЛЛЕНДЖА: /challenge или /?challenge=1.
+ *
+ * Зачем. Пост опубликован, люди идут по ссылке — и попадали на главный экран,
+ * откуда до продающей страницы надо было ещё догадаться дойти карточкой в
+ * «Тренировках». Половина дороги теряется на ровном месте: человек пришёл
+ * читать про поток, а ему показывают дневник питания.
+ *
+ * ДВА АДРЕСА, А НЕ ОДИН. `/challenge` красивее и годится для поста; `?challenge=1`
+ * — страховка на случай, если путь без расширения когда-нибудь упрётся в
+ * раздачу статики (сейчас server.mjs отдаёт на такие пути index.html, но это
+ * его правило, а не закон природы). Оба ведут в одно место.
+ *
+ * ЧИТАЕТСЯ ОДИН РАЗ при загрузке модуля: адрес за время сессии меняем мы сами
+ * (замена ?access=, ?paid= и прочих), и перечитывание превратило бы разовое
+ * намерение «открой челлендж» в постоянное.
+ */
+const ПРЯМОЙ_ЧЕЛЛЕНДЖ = (() => {
+  try{
+    const путь=(window.location.pathname||'').replace(/\/+$/,'').toLowerCase()
+    if(путь==='/challenge')return true
+    return new URLSearchParams(window.location.search||'').get('challenge')==='1'
+  }catch{
+    return false
+  }
+})()
+
 const RETURN_TO_KEY = 'fitpro_return_to'
 const RETURN_TO_TTL_MS = 2 * 60 * 60 * 1000
 
@@ -11253,10 +11280,25 @@ export default function App() {
    */
   const motionPushedRef=useRef(false)
 
-  const openMotion=(startScreen=null)=>{
+  /**
+   * @param {string|null} startScreen с какого экрана открыть раздел
+   * @param {object} [опции]
+   * @param {boolean} [опции.вИсторию] класть ли свою запись в историю браузера.
+   *   ЛОЖЬ — только для входа по прямому адресу челленджа: человек пришёл
+   *   СРАЗУ на эту страницу, и «назад» у него значит «уйти отсюда», а не
+   *   «показать главный экран», которого он не просил и не видел. Своя запись
+   *   в истории превратила бы первую же «назад» в переход на дневник питания —
+   *   то есть ровно в ту потерю, ради которой прямой адрес и заводится.
+   */
+  const openMotion=(startScreen=null,{вИсторию=true}={})=>{
     if(motionOpen)return
     if(guestMode)bump('try_motion')
     setMotionStart(startScreen)
+    if(!вИсторию){
+      motionPushedRef.current=false
+      setMotionOpen(true)
+      return
+    }
     try{
       window.history.pushState({fitproMotion:1},'',window.location.href)
       motionPushedRef.current=true
@@ -11370,6 +11412,32 @@ export default function App() {
   const openChallenge=()=>{
     openMotion('challenge')
   }
+
+  /**
+   * ВХОД ПО ПРЯМОМУ АДРЕСУ — открыть продающую страницу и никого ни о чём не
+   * спрашивать.
+   *
+   * Гостю — сразу: страница челленджа и есть ответ на «что это и почём», и
+   * читать её должно быть можно без всяких условий (то же правило, что у
+   * карточки, см. openChallenge выше).
+   *
+   * Вошедшему — после согласия: ConsentGate подменяет собой ВЕСЬ интерфейс, и
+   * раздел, открытый под ним, открылся бы в невидимое место. На этом уже
+   * обжигались с возвратом после регистрации — там же и объяснено подробно.
+   *
+   * Один раз за жизнь вкладки: ref, а не состояние, — человек может закрыть
+   * раздел крестиком, и открывать его заново поверх закрытия было бы навязчиво.
+   */
+  const directChallengeRef=useRef(false)
+  useEffect(()=>{
+    if(!ПРЯМОЙ_ЧЕЛЛЕНДЖ||directChallengeRef.current)return
+    if(user&&!consentGiven)return
+    directChallengeRef.current=true
+    // Отложенно: открытие — это setState, а мы в эффекте.
+    const t=setTimeout(()=>openMotion('challenge',{вИсторию:false}),0)
+    return ()=>clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[user,consentGiven])
 
 
 
