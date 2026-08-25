@@ -138,8 +138,10 @@ async function путьА() {
     await sleep(300)
     await page.locator(tid('challenge-join')).click()
     await sleep(2000)
+    // Предложение — лист поверх страницы, а не вместо неё: человек не теряет
+    // из виду то, что читал.
     R.A.предложениеПоНажатию = await page.evaluate(() =>
-      /аккаунт/i.test(document.body.innerText) && !document.querySelector('[data-testid="challenge-screen"]'))
+      /Создать аккаунт/i.test(document.body.innerText))
     await shot(page, 'A-предложение-аккаунта')
 
     // регистрация
