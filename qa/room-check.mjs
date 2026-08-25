@@ -190,7 +190,32 @@ try {
       const el = document.querySelector(`[data-testid="level-${t}"]`)
       return el ? `${t}:${el.disabled ? 'закрыт' : 'открыт'}` : `${t}:нет`
     }).join(' '))
+
+  /**
+   * ВТОРОЙ КОМНАТЫ У УЧАСТНИКА БЫТЬ НЕ ДОЛЖНО. Кнопка «Моя комната» жила в трёх
+   * местах игры; ищем её во всех сразу — и по имени тоже, чтобы не проверять
+   * только те три, о которых мы помним.
+   */
+  R.кнопкаМояКомната = await page.evaluate(() => {
+    const byId = ['open-room', 'calibration-room', 'boot-room']
+      .filter((t) => document.querySelector(`[data-testid="${t}"]`))
+    const byText = [...document.querySelectorAll('button')]
+      .filter((b) => /Моя комната/i.test(b.innerText || '')).length
+    return { поId: byId, поТексту: byText }
+  })
+  R.втораяКомнатаНаЭкране = (await page.locator(tid('room-screen')).count()) > 0
   await shot('04-levels')
+
+  // ── ВОЗВРАТ: крестик выбора уровня ведёт в комнату участника ─────────────
+  await page.locator('.mt-corner--left').first().click()
+  await sleep(2500)
+  R.послеКрестика = await page.evaluate(() => {
+    if (document.querySelector('[data-testid="stream-room"]')) return 'комната участника'
+    if (document.querySelector('[data-testid="room-screen"]')) return 'ВТОРАЯ КОМНАТА'
+    if (document.querySelector('.mt-calib')) return 'постановка в кадр'
+    return document.querySelector('[data-testid]')?.getAttribute('data-testid') || '—'
+  })
+  await shot('06-back-to-room')
 
   console.log(JSON.stringify(R, null, 2))
   console.log(`\nснимки: ${OUT}/`)

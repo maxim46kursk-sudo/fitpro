@@ -444,11 +444,13 @@ export default function StreamRoom({
             label="точность"
             hint={room.spawned > 0 ? `${room.hits} из ${room.spawned}` : 'мишеней ещё не было'}
           />
+          {/* «из 0 прошедших» в первый день читается как поломка, а не как
+              «прошедших ещё не было» — поэтому в первый день говорим словами */}
           <Tile
             testid="stream-days-done"
             value={room.rows.filter((r) => r.state === 'done').length || '—'}
             label="дней сыграно"
-            hint={`из ${room.today - 1 > 0 ? room.today - 1 : 0} прошедших`}
+            hint={room.today > 1 ? `из ${room.today - 1} прошедших` : 'поток только начался'}
           />
         </div>
 
