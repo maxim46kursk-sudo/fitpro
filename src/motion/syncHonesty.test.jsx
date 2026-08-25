@@ -68,6 +68,20 @@ function pushFrame(timestamp) {
   })
 }
 
+/**
+ * ПОЧЕМУ ЗДЕСЬ ВЕЗДЕ `waitFor`, А НЕ ПРОСТОЙ `getByTestId`.
+ *
+ * Прогон крутит кадры руками (см. ниже) и замораживает `performance.now`, но
+ * React всё равно раскладывает состояние по своим тактам, а не по нашим. Узел
+ * вроде «заход в зачёт закрыт» появляется на такт-другой позже последнего
+ * кадра, и спрошенный мгновенно он то есть, то нет — в зависимости от того,
+ * насколько занята машина.
+ *
+ * Так этот файл и падал: раз в несколько прогонов, каждый раз на другом тесте,
+ * и никогда в одиночку на свободной машине. `waitFor` ждёт появления и падает,
+ * если узел не пришёл вовсе, — то есть проверяет ровно то же, но не зависит от
+ * того, сколько ядер сейчас свободно.
+ */
 function stayInFrame(seconds) {
   for (let i = 0; i < seconds * 30; i += 1) {
     now += 33
@@ -78,6 +92,31 @@ function stayInFrame(seconds) {
       callbacks.forEach((cb) => cb(now))
     })
   }
+}
+
+/**
+ * СТОЯТЬ В КАДРЕ, ПОКА НЕ ПОЯВИТСЯ НУЖНЫЙ ЭКРАН, а не «четыре секунды и будь
+ * что будет».
+ *
+ * Постановка требует простоять в кадре несколько секунд, и прогон отсчитывает
+ * их сам, синтетическими кадрами. Но сколько именно кадров нужно, зависит от
+ * того, на каком из них раздел успел подписаться на результаты позы, — а это
+ * решают такты React, то есть занятость машины. Фиксированные сто двадцать
+ * кадров то доводили до экрана выбора, то не доводили, и тест падал «узла нет»
+ * раз в несколько прогонов, каждый раз на другом месте.
+ *
+ * Здесь кадры идут порциями, пока узел не появится, с потолком: не появился за
+ * пятнадцать секунд синтетического времени — значит его и правда нет, и тест
+ * обязан упасть.
+ */
+async function достоятьДо(testId, потолокСекунд = 15) {
+  for (let прошло = 0; прошло < потолокСекунд; прошло += 1) {
+    if (screen.queryByTestId(testId)) return
+    stayInFrame(1)
+    // дать React разложить состояние между порциями
+    await act(async () => {})
+  }
+  await waitFor(() => expect(screen.getByTestId(testId)).toBeTruthy())
 }
 
 const SEASON = { id: 1, title: 'Поток 1', starts_on: null, price_rub: 2990, prize_pct: 50, prize_split: [50, 30, 20], status: 'open' }
@@ -142,7 +181,7 @@ describe('прогресс не загрузился', () => {
     const { api } = backend()
     render(<MotionApp sync={api} />)
     await waitFor(() => expect(screen.getByTestId('sync-warn')).toBeTruthy())
-    stayInFrame(4)
+    await достоятьДо('unscored-note')
 
     // полоса — не всплывашка: она висит и предлагает единственное действие
     await waitFor(() => expect(screen.getByTestId('sync-warn')).toBeTruthy())
@@ -156,7 +195,7 @@ describe('прогресс не загрузился', () => {
     expect(screen.queryByTestId('runs-left')).toBeNull()
 
     // но тренироваться можно: уровни на месте и нажимаются
-    expect(screen.getByTestId('level-novice')).toBeTruthy()
+    await waitFor(() => expect(screen.getByTestId('level-novice')).toBeTruthy())
     expect(screen.getByTestId('level-novice').disabled).toBe(false)
   })
 
@@ -164,8 +203,7 @@ describe('прогресс не загрузился', () => {
     const { api, fix } = backend()
     render(<MotionApp sync={api} />)
     await waitFor(() => expect(screen.getByTestId('sync-warn')).toBeTruthy())
-    stayInFrame(4)
-    expect(screen.getByTestId('unscored-note')).toBeTruthy()
+    await достоятьДо('unscored-note')
 
     fix()
     await act(async () => {
@@ -175,7 +213,7 @@ describe('прогресс не загрузился', () => {
     await waitFor(() => expect(screen.queryByTestId('sync-warn')).toBeNull())
     await waitFor(() => expect(screen.queryByTestId('unscored-note')).toBeNull())
     // зачёт вернулся: снова видно, сколько заходов осталось на день
-    expect(screen.getByTestId('runs-left')).toBeTruthy()
+    await waitFor(() => expect(screen.getByTestId('runs-left')).toBeTruthy())
   })
 
   it('не участнику играть по своему кэшу никто не мешает', async () => {
@@ -184,17 +222,19 @@ describe('прогресс не загрузился', () => {
     const { api } = backend()
     render(<MotionApp sync={api} />)
     await waitFor(() => expect(screen.getByTestId('sync-warn')).toBeTruthy())
-    stayInFrame(4)
+    await достоятьДо('level-novice')
 
+    // сперва дожидаемся экрана выбора, и только потом спрашиваем, чего на нём
+    // НЕТ: «отказа не видно» на ещё не отрисованном экране — не проверка
+    await waitFor(() => expect(screen.getByTestId('level-novice')).toBeTruthy())
     expect(screen.queryByTestId('unscored-note')).toBeNull()
-    expect(screen.getByTestId('level-novice')).toBeTruthy()
   })
 
   it('сервер ответил — полосы нет вовсе', async () => {
     const { api } = backend({ ok: true })
     render(<MotionApp sync={api} />)
     await waitFor(() => expect(screen.getByTestId('calibration-room')).toBeTruthy())
-    stayInFrame(4)
+    await достоятьДо('level-novice')
     expect(screen.queryByTestId('sync-warn')).toBeNull()
     expect(screen.queryByTestId('unscored-note')).toBeNull()
   })
