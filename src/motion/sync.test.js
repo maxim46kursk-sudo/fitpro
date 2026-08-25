@@ -219,6 +219,97 @@ describe('перенос того, что уже есть', () => {
   })
 })
 
+/**
+ * ЗАХОД, КОТОРЫЙ НАВСЕГДА ОСТАВАЛСЯ НА УСТРОЙСТВЕ.
+ *
+ * ЖИВАЯ ПОЛОМКА (прод, 25.08): в комнате у владельца 1000 очков за день, в
+ * таблице потока — 0. Разбор показал, что заход лежал в motion_progress (его
+ * payload уезжает целиком) и НЕ лежал в motion_attempts, а места считаются
+ * именно по ней.
+ *
+ * Причина была в hydrate: в «уже отправленные» (knownAttempts) записывался
+ * результат СЛИЯНИЯ локального и серверного — то есть в том числе попытки,
+ * которые наверх не уезжали ни разу. Дальше push отфильтровывал их как
+ * повторы, и уехать они не могли уже никогда: ни временем, ни повторным
+ * заходом это не лечилось.
+ *
+ * Отсюда правило, которое здесь и проверяется: ИЗВЕСТНО ТОЛЬКО ТО, ЧТО ОТДАЛ
+ * СЕРВЕР. Всё остальное обязано уехать.
+ */
+describe('локальная попытка обязана доехать до таблицы', () => {
+  it('на сервере её нет — она уезжает следующей же отправкой', async () => {
+    vi.useFakeTimers()
+    // на устройстве заход есть, в motion_attempts его нет, а в payload он уже
+    // засветился — ровно то состояние, в котором застрял прод
+    writeJson(KEYS.challengeAttempts, день(1, 'pro', [попытка(1000, '2026-08-25T10:10:15Z')]))
+    const saveAttempts = vi.fn(async () => {})
+    configureSync({
+      load: async () => ({
+        progress: { challenge: { day: 1, done: [] }, attempts: день(1, 'pro', [попытка(1000, '2026-08-25T10:10:15Z')]) },
+        attempts: [],
+      }),
+      saveProgress: async () => {},
+      saveAttempts,
+    })
+
+    await hydrate('человек-А')
+    await vi.advanceTimersByTimeAsync(3000)
+    vi.useRealTimers()
+
+    expect(saveAttempts).toHaveBeenCalledTimes(1)
+    expect(saveAttempts.mock.calls[0][0]).toEqual([
+      expect.objectContaining({ day: 1, tier: 'pro', attempt_no: 1, score: 1000 }),
+    ])
+  })
+
+  it('то, что сервер уже отдал, второй раз не шлём', async () => {
+    vi.useFakeTimers()
+    writeJson(KEYS.challengeAttempts, день(1, 'pro', [попытка(1000, '2026-08-25T10:10:15Z')]))
+    const saveAttempts = vi.fn(async () => {})
+    configureSync({
+      load: async () => ({
+        progress: { challenge: { day: 1, done: [] }, attempts: день(1, 'pro', [попытка(1000, '2026-08-25T10:10:15Z')]) },
+        // сервер подтверждает: строка у него есть
+        attempts: [{ day: 1, tier: 'pro', attempt_no: 1, score: 1000, reps: 0, hits: 0, spawned: 0, react_ms: 0, at: '2026-08-25T10:10:15Z' }],
+      }),
+      saveProgress: async () => {},
+      saveAttempts,
+    })
+
+    await hydrate('человек-А')
+    await vi.advanceTimersByTimeAsync(3000)
+    vi.useRealTimers()
+
+    expect(saveAttempts).not.toHaveBeenCalled()
+  })
+
+  it('половина доехала, половина нет — уезжает только недостающее', async () => {
+    vi.useFakeTimers()
+    writeJson(KEYS.challengeAttempts, день(1, 'pro', [
+      попытка(1000, '2026-08-25T10:10:15Z'),
+      попытка(1200, '2026-08-25T10:40:00Z'),
+    ]))
+    const saveAttempts = vi.fn(async () => {})
+    configureSync({
+      load: async () => ({
+        progress: { challenge: { day: 1, done: [] }, attempts: день(1, 'pro', [попытка(1000, '2026-08-25T10:10:15Z')]) },
+        attempts: [{ day: 1, tier: 'pro', attempt_no: 1, score: 1000, reps: 0, hits: 0, spawned: 0, react_ms: 0, at: '2026-08-25T10:10:15Z' }],
+      }),
+      saveProgress: async () => {},
+      saveAttempts,
+    })
+
+    await hydrate('человек-А')
+    await vi.advanceTimersByTimeAsync(3000)
+    vi.useRealTimers()
+
+    expect(saveAttempts).toHaveBeenCalledTimes(1)
+    const ушло = saveAttempts.mock.calls[0][0]
+    expect(ушло.length).toBe(1)
+    expect(ушло[0]).toMatchObject({ attempt_no: 2, score: 1200 })
+  })
+})
+
 describe('сеть отвалилась посреди тренировки', () => {
   it('отправка повторяется, и результат доезжает', async () => {
     vi.useFakeTimers()
