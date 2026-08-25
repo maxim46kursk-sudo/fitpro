@@ -285,7 +285,16 @@ export function usePoseLandmarker({ videoRef, active = true, onResult }) {
       }
 
       if (data.type === 'ready') {
-        logEvent('model.ready', { delegate: data.delegate, thread: data.thread || 'worker' })
+        /**
+         * `thread` — чем считали, `shim` — понадобилась ли заглушка document.
+         * Вместе они и есть проверка починки: строка «worker + shim: true» с
+         * телефона, где раньше был откат, значит, что чинили именно то.
+         */
+        logEvent('model.ready', {
+          delegate: data.delegate,
+          thread: data.thread || 'worker',
+          shim: data.documentShimmed ?? undefined,
+        })
         readyRef.current = true
         const counter = fpsRef.current
         if (counter.delegate && counter.delegate !== data.delegate) counter.delegateSwitches += 1
