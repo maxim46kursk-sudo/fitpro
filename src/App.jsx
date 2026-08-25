@@ -11268,7 +11268,16 @@ export default function App() {
    */
   const returnedRef=useRef(false)
   useEffect(()=>{
-    if(!user||guestMode||returnedRef.current)return undefined
+    /**
+     * ЖДЁМ, ПОКА ЧЕЛОВЕК ДЕЙСТВИТЕЛЬНО В ПРИЛОЖЕНИИ.
+     *
+     * consentGiven здесь обязателен. Экран согласия подменяет собой ВЕСЬ
+     * интерфейс (`if(user&&!consentGiven) return <ConsentGate…>`), а эффекты
+     * при этом работают: без этой проверки метка съедалась ещё под гейтом,
+     * раздел «открывался» в невидимое место, и до челленджа человек уже не
+     * доезжал. Найдено прогоном пути гостя на проде.
+     */
+    if(!user||guestMode||!consentGiven||returnedRef.current)return undefined
     const want=takeReturn()
     if(want!=='challenge')return undefined
     returnedRef.current=true
@@ -11278,7 +11287,7 @@ export default function App() {
     // openMotion пересоздаётся каждый рендер и от него тут ничего не зависит:
     // эффект обязан сработать РОВНО ОДИН РАЗ, на появлении человека.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[user,guestMode])
+  },[user,guestMode,consentGiven])
 
   /**
    * ДВЕРЬ В ЧЕЛЛЕНДЖ С ГЛАВНОЙ.

@@ -73,6 +73,51 @@ async function magicLink(email) {
   return u.toString()
 }
 
+/**
+ * ЭКРАН СОГЛАСИЯ — он появляется НЕ СРАЗУ. После входа приложение успевает
+ * нарисовать основной экран, и только потом поверх встаёт согласие: ждать его
+ * одним waitForSelector нельзя — он срабатывает на первом же, и дальше прогон
+ * идёт мимо. Поэтому смотрим в цикле.
+ *
+ * Галочка — не input, а строка с обработчиком на всей себе: кликать надо по
+ * строке, иначе «Поехали» останется серой.
+ */
+async function пройтиСогласие(page, сек = 20) {
+  /**
+   * НЕ ВЫХОДИМ РАНО ПО «ПРИЛОЖЕНИЕ УЖЕ ВИДНО». Экран согласия — слой ПОВЕРХ
+   * приложения: вкладки под ним существуют с первой секунды, и выход по ним
+   * пропускал согласие целиком. Ждём именно его и только его.
+   */
+  for (let i = 0; i < сек * 2; i += 1) {
+    if (await page.locator(tid('consent-accept')).count()) {
+      /**
+       * Кликаем РОВНО ПО КВАДРАТИКУ галочки, по его координатам.
+       *
+       * Строка согласия — див с обработчиком, но её центр приходится на ссылку
+       * «Политику конфиденциальности»: клик туда уводит на политику вместо
+       * переключения, и «Поехали» остаётся серой. Разведано на проде
+       * (tools/.cache/probe/consent.mjs): по квадрату — работает.
+       */
+      const квадрат = await page.evaluate(() => {
+        const span = [...document.querySelectorAll('span')]
+          .find((e) => /^Я даю согласие на обработку/.test((e.textContent || '').trim()))
+        const box = span?.parentElement?.children?.[0]?.getBoundingClientRect()
+        return box ? { x: box.left + box.width / 2, y: box.top + box.height / 2 } : null
+      })
+      if (квадрат) await page.mouse.click(квадрат.x, квадрат.y)
+      await sleep(500)
+      const btn = page.locator(tid('consent-accept'))
+      if (await btn.isEnabled().catch(() => false)) {
+        await btn.click().catch(() => {})
+        await page.waitForSelector('[data-screen]', { timeout: 60000 }).catch(() => {})
+        return true
+      }
+    }
+    await sleep(500)
+  }
+  return false
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // А. ГОСТЬ
 // ═══════════════════════════════════════════════════════════════════════════
@@ -179,22 +224,25 @@ async function путьА() {
     }
 
     // ВХОД В ТОЙ ЖЕ ВКЛАДКЕ — метка возврата обязана его пережить
-    await page.locator('button:visible').filter({ hasText: /^Войти$/ }).first().click().catch(() => {})
-    await sleep(1200)
+    // Переключаемся ссылкой «Уже есть аккаунт? Войти» под формой, а не вкладкой:
+    // кнопка «Войти» есть ещё и в шапке, и она забирала нажатие себе.
+    // Переключение перерисовывает форму и стирает введённое — заполняем ПОСЛЕ.
+    await page.locator('text=Уже есть аккаунт?').locator('..').locator('text=Войти').first().click()
+      .catch(async () => { await page.getByRole('link', { name: 'Войти' }).first().click().catch(() => {}) })
+    await sleep(1500)
     await page.locator('input[type="email"]:visible').first().fill(email)
     await page.locator('input[type="password"]:visible').first().fill(pass)
-    await page.locator('button:visible').filter({ hasText: /Войти/ }).last().click()
-    await page.waitForSelector(`${tid('consent-accept')}, [data-screen]`, { timeout: 60000 })
-    if (await page.locator(tid('consent-accept')).count()) {
-      await page.locator('text=Я даю согласие').first().click().catch(() => {})
-      await sleep(400)
-      await page.locator(tid('consent-accept')).click()
-      await page.waitForSelector('[data-screen]', { timeout: 60000 })
-    }
+    await sleep(300)
+    await shot(page, 'A-вход-заполнен')
+    await page.locator('button:visible').filter({ hasText: /Войти →/ }).first().click()
+    await пройтиСогласие(page)
     await sleep(5000)
     await shot(page, 'A-после-входа')
 
     // ВЕРНУЛСЯ ЛИ НА СТРАНИЦУ ЧЕЛЛЕНДЖА
+    R.A.меткаВозврата = await page.evaluate(() => {
+      try { return localStorage.getItem('fitpro_return_to') } catch { return 'нет доступа' }
+    })
     R.A.вернулсяНаЧеллендж = (await page.locator(tid('challenge-screen')).count()) > 0
     R.A.кнопкаОплаты = await page.locator(tid('challenge-join')).innerText().catch(() => null)
 
@@ -249,13 +297,7 @@ async function путьБ() {
 
     await page.goto(await magicLink(email), { waitUntil: 'domcontentloaded', timeout: 60000 })
     await page.waitForURL((u) => u.host === new URL(BASE).host, { timeout: 60000 }).catch(() => {})
-    await page.waitForSelector(`${tid('consent-accept')}, [data-screen]`, { timeout: 60000 })
-    if (await page.locator(tid('consent-accept')).count()) {
-      await page.locator('text=Я даю согласие').first().click().catch(() => {})
-      await sleep(400)
-      await page.locator(tid('consent-accept')).click()
-      await page.waitForSelector('[data-screen]', { timeout: 60000 })
-    }
+    await пройтиСогласие(page)
     await sleep(2500)
 
     await page.locator(tid('tab-workouts')).click({ force: true })
