@@ -34,6 +34,27 @@
  *   node scripts/funnel-digest.mjs --day=2026-08-24  — за конкретные сутки UTC
  */
 import { readFileSync, existsSync } from 'node:fs'
+import { setDefaultResultOrder } from 'node:dns'
+import { setDefaultAutoSelectFamily } from 'node:net'
+
+/**
+ * TELEGRAM — ТОЛЬКО ПО IPv6, И ЭТО НЕ ПРИДИРКА.
+ *
+ * С этого сервера api.telegram.org по IPv4 не отвечает вовсе: соединение
+ * висит до таймаута (проверено — 15 секунд молчания), по IPv6 отвечает за
+ * секунду. Node сам выбирает семейство адресов и с настройками по умолчанию
+ * упирается в мёртвый IPv4, а сводка, которая молча не доходит, хуже
+ * отсутствующей: её отсутствие читается как «ничего не происходило».
+ *
+ * Порядка адресов мало: Node по умолчанию пробует оба семейства наперегонки
+ * («happy eyeballs») и на живом IPv6 всё равно упирался в мёртвый IPv4 —
+ * соединение отваливалось по таймауту. Гонку выключаем: адрес один, и он
+ * рабочий.
+ *
+ * curl в соседних скриптах этой беды не знает — он пробует адреса по-своему.
+ */
+setDefaultResultOrder('ipv6first')
+setDefaultAutoSelectFamily(false)
 
 // ── Настройки из окружения или из .env приложения ──────────────────────────
 const ENV_FILES = [process.env.DIGEST_ENV, '/root/fitpro-app/.env', '.env.local', '.env'].filter(Boolean)
@@ -222,7 +243,9 @@ if (!ответ?.ok) {
   console.error('сводка: Telegram отказал —', JSON.stringify(ответ))
   process.exit(1)
 }
-console.log(`сводка за ${ДЕНЬ} отправлена`)
+// Номер сообщения в журнал: по нему видно, что канал её принял, а не что мы
+// её сочинили. Пустой журнал и «сводка ушла» — разные вещи.
+console.log(`сводка за ${ДЕНЬ} отправлена, сообщение №${ответ.result?.message_id} в «${ответ.result?.chat?.title || CHAT}»`)
 
 // ── Установка ────────────────────────────────────────────────────────────────
 //   scp scripts/funnel-digest.mjs fitpro:/root/fitpro/funnel-digest.mjs
