@@ -151,9 +151,39 @@ async function путьА() {
     await page.locator('button:visible, a:visible').filter({ hasText: /Создать аккаунт|Зарегистр/i }).first().click().catch(() => {})
     await sleep(2000)
     await shot(page, 'A-форма-регистрации')
+    // Форма просит имя, почту и пароль дважды — заполняем всё, иначе она
+    // молча не отправится, и прогон соврёт про «регистрация не работает».
+    await page.locator('input[type="text"]:visible').first().fill('Гость Прогонов').catch(() => {})
+    await page.locator('input[type="email"]:visible').first().fill(email)
+    const passFields = page.locator('input[type="password"]:visible')
+    const n = await passFields.count()
+    for (let i = 0; i < n; i += 1) await passFields.nth(i).fill(pass)
+    await shot(page, 'A-форма-заполнена')
+    await page.locator('button:visible').filter({ hasText: /Создать аккаунт/ }).first().click()
+    await sleep(4000)
+    await shot(page, 'A-после-регистрации')
+
+    /**
+     * ПОЧТУ ПОДТВЕРЖДАЕМ ЗА ЧЕЛОВЕКА. GoTrue настроен на подтверждение
+     * (GOTRUE_MAILER_AUTOCONFIRM=false): после формы человек уходит в почтовый
+     * ящик и возвращается по ссылке. Ждать письма в прогоне нечем, поэтому
+     * подтверждаем сервисным ключом — это ровно то же, что делает переход по
+     * ссылке, и дальше человек входит сам, как вошёл бы он.
+     */
+    const список = await (await admin('/auth/v1/admin/users?page=1&per_page=200')).json()
+    const свежий = (список?.users || []).find((u) => u.email === email)
+    R.A.аккаунтЗаведён = !!свежий
+    if (свежий) {
+      await admin(`/auth/v1/admin/users/${свежий.id}`, { method: 'PUT', body: JSON.stringify({ email_confirm: true }) })
+      R.A.почтаПодтверждена = true
+    }
+
+    // ВХОД В ТОЙ ЖЕ ВКЛАДКЕ — метка возврата обязана его пережить
+    await page.locator('button:visible').filter({ hasText: /^Войти$/ }).first().click().catch(() => {})
+    await sleep(1200)
     await page.locator('input[type="email"]:visible').first().fill(email)
     await page.locator('input[type="password"]:visible').first().fill(pass)
-    await page.locator('button:visible').filter({ hasText: /Создать|Зарегистр|→/ }).first().click()
+    await page.locator('button:visible').filter({ hasText: /Войти/ }).last().click()
     await page.waitForSelector(`${tid('consent-accept')}, [data-screen]`, { timeout: 60000 })
     if (await page.locator(tid('consent-accept')).count()) {
       await page.locator('text=Я даю согласие').first().click().catch(() => {})
@@ -161,8 +191,8 @@ async function путьА() {
       await page.locator(tid('consent-accept')).click()
       await page.waitForSelector('[data-screen]', { timeout: 60000 })
     }
-    await sleep(4000)
-    await shot(page, 'A-после-регистрации')
+    await sleep(5000)
+    await shot(page, 'A-после-входа')
 
     // ВЕРНУЛСЯ ЛИ НА СТРАНИЦУ ЧЕЛЛЕНДЖА
     R.A.вернулсяНаЧеллендж = (await page.locator(tid('challenge-screen')).count()) > 0

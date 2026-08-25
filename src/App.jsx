@@ -151,11 +151,33 @@ function motionSyncFor(userId) {
  *
  * Гость дочитал длинную страницу челленджа и нажал «Участвовать». Отправить его
  * после регистрации на главную — значит попросить пройти весь путь заново, и
- * ровно на этом шаге люди отваливаются. Метка живёт в sessionStorage: она
- * переживает уход на форму входа и не переживает закрытие вкладки, а больше от
- * неё ничего и не требуется.
+ * ровно на этом шаге люди отваливаются.
+ *
+ * ПОЧЕМУ localStorage, А НЕ sessionStorage. Регистрация здесь не заканчивается
+ * входом: GoTrue просит подтвердить почту, человек уходит в почтовый ящик и
+ * возвращается по ссылке — часто НОВОЙ ВКЛАДКОЙ. sessionStorage живёт в одной
+ * вкладке и до этого момента не доживает, а метка нужна именно там.
+ *
+ * СРОК ЖИЗНИ обязателен: без него человек, зарегистрировавшийся неделю назад и
+ * забывший об этом, при следующем входе получил бы в лицо страницу челленджа,
+ * которую не просил. Два часа — с запасом на «отвлёкся и вернулся к письму».
  */
 const RETURN_TO_KEY = 'fitpro_return_to'
+const RETURN_TO_TTL_MS = 2 * 60 * 60 * 1000
+
+const rememberReturn = (where) => {
+  try{localStorage.setItem(RETURN_TO_KEY,JSON.stringify({where,at:Date.now()}))}catch{/* приватный режим */}
+}
+const takeReturn = () => {
+  let raw=null
+  try{raw=localStorage.getItem(RETURN_TO_KEY)}catch{/* приватный режим */}
+  if(!raw)return null
+  try{localStorage.removeItem(RETURN_TO_KEY)}catch{/* приватный режим */}
+  try{
+    const v=JSON.parse(raw)
+    return Date.now()-Number(v?.at||0)<RETURN_TO_TTL_MS?v.where:null
+  }catch{return null}
+}
 
 function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null, onOpenMyData = null }) {
   /**
@@ -10752,9 +10774,7 @@ export default function App() {
      * Метка ставится здесь, а не у кнопки, — предложение показывается из
      * нескольких мест, и запоминать должно то, что общее для всех.
      */
-    if(section==='challenge'){
-      try{sessionStorage.setItem(RETURN_TO_KEY,'challenge')}catch{/* приватный режим */}
-    }
+    if(section==='challenge')rememberReturn('challenge')
     if(section==='diary'){
       if(offeredDiaryRef.current)return false
       offeredDiaryRef.current=true
@@ -11249,11 +11269,9 @@ export default function App() {
   const returnedRef=useRef(false)
   useEffect(()=>{
     if(!user||guestMode||returnedRef.current)return undefined
-    let want=null
-    try{want=sessionStorage.getItem(RETURN_TO_KEY)}catch{/* приватный режим */}
+    const want=takeReturn()
     if(want!=='challenge')return undefined
     returnedRef.current=true
-    try{sessionStorage.removeItem(RETURN_TO_KEY)}catch{/* приватный режим */}
     // Не синхронно: открытие раздела — это setState, а мы внутри эффекта.
     const t=setTimeout(()=>openMotion('challenge'),0)
     return ()=>clearTimeout(t)
