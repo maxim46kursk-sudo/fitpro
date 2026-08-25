@@ -573,6 +573,18 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
     setScreen('room')
   }
   /**
+   * ОТКУДА ПРИШЛИ НА ВЫБОР УРОВНЯ — туда и вернёт крестик.
+   *
+   * Участник попадает в игру ИЗ СВОЕЙ КОМНАТЫ и обязан вернуться в неё же:
+   * высадить его на постановку в кадр значит увести из единственного места,
+   * где живёт его поток. Одиночка приходит с постановки — и возвращается на
+   * неё, как было.
+   *
+   * Ref, а не состояние: от этого ответа ничего не перерисовывается, он нужен
+   * ровно в момент нажатия.
+   */
+  const levelsBack = useRef('calibration')
+  /**
    * То же и для экрана челленджа. Открыть его можно с двух сторон: с границы
    * бесплатных дней и снаружи, прямо с главной (startScreen). Во втором случае
    * возвращаться внутри раздела некуда — человек шёл не в игру, — и крестик
@@ -886,7 +898,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
           modelReady={pose.status === 'ready'}
           progress={pose.progress}
           // пока грузится модель, смотреть свою статистику уже можно
-          onRoom={gameMode ? () => openRoom('calibration') : null}
+          onRoom={gameMode && !member ? () => openRoom('calibration') : null}
         />
       )}
 
@@ -931,6 +943,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
           standingsRows={standingsRows}
           /** Прогресс не прочитан — заход участника в зачёт не идёт. */
           syncBroken={challengeBlocked}
+          pushFailed={health.pushFailed}
           greet={greet}
           onGreetSeen={markGreetSeen}
           /**
@@ -943,7 +956,10 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
            * челленджа), поэтому дальше человек увидит обычную заставку
            * конвейера — ту же, что при входе в раздел.
            */
-          onStartDay={() => setScreen('levels')}
+          onStartDay={() => {
+            levelsBack.current = 'challenge'
+            setScreen('levels')
+          }}
           /**
            * ПРОДОЛЖИТЬ НЕЗАКРЫТЫЙ ЗАХОД — сразу в сессию, минуя выбор уровня:
            * уровень у начатой сессии уже есть, и спрашивать его заново значило
@@ -1008,10 +1024,18 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
            * было: за этим экраном сразу работа, и отсчёт нужен.
            */
           instant={gameMode}
-          // единственный вход в комнату, не требующий встать перед камерой
-          onRoom={gameMode ? () => openRoom('calibration') : null}
+          /**
+           * «МОЯ КОМНАТА» — ТОЛЬКО НЕ УЧАСТНИКУ. У участника комната одна и
+           * другая: та, в которой идёт его поток (StreamRoom). Две комнаты с
+           * одинаковыми цифрами в разных местах человек читает как «какая-то из
+           * них врёт», и правильного ответа на это нет.
+           *
+           * У одиночки никакой другой комнаты нет — ему всё как было.
+           */
+          onRoom={gameMode && !member ? () => openRoom('calibration') : null}
           onStart={() => {
             setRunId((n) => n + 1)
+            levelsBack.current = 'calibration'
             // Самый первый раз — «Настройка под себя»: игра должна узнать личную
             // амплитуду ДО челленджа, а не в первом же раунде на скорости.
             // Дальше человека сюда не перехватывают, кнопка есть на выборе уровня.
@@ -1064,9 +1088,10 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
             setRunId((n) => n + 1)
             setScreen('setup')
           }}
-          onRoom={() => openRoom('levels')}
+          /** Участнику — нечего: его комната одна, и он пришёл из неё. */
+          onRoom={member ? null : () => openRoom('levels')}
           onChallenge={() => openChallenge('levels')}
-          onExit={() => setScreen('calibration')}
+          onExit={() => setScreen(levelsBack.current)}
         />
       )}
 

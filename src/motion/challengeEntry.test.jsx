@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import MotionApp from './index.jsx'
+import { moscowDate } from './game/challenge.js'
 
 /**
  * ДВЕРЬ С ГЛАВНОЙ ВЕДЁТ СРАЗУ К ЧЕЛЛЕНДЖУ — И БЕЗ КАМЕРЫ.
@@ -66,7 +67,14 @@ vi.mock('../challengeSeason.js', () => ({
   hasNorm: vi.fn(() => true),
   freezeNorm: vi.fn(async () => 'already'),
   loadNutritionFacts: vi.fn(async () => []),
+  loadStandings: vi.fn(async () => []),
 }))
+
+/** Дата за N московских дней от сегодня: минус — прошлое. */
+const сдвиг = (дней) => {
+  const [y, m, d] = moscowDate().split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d + дней)).toISOString().slice(0, 10)
+}
 
 beforeEach(() => {
   accepted = null
@@ -162,6 +170,17 @@ describe('дорога: карточка на главной ведёт на с�
     expect(screen.queryByTestId('challenge-price')).toBeNull()
   })
 
+  it('поток идёт — участник попадает в рабочую комнату дня', async () => {
+    season = { ...SEASON, starts_on: сдвиг(-4) }
+    accepted = '2026-08-24T10:00:00Z'
+    entry = { id: 1, participant_no: 24, display_name: 'Пётр', paid_at: 'x' }
+    render(<MotionApp startScreen="challenge" />)
+
+    await waitFor(() => expect(screen.getByTestId('stream-room')).toBeTruthy())
+    expect(screen.getByTestId('stream-day').textContent).toBe('День 5 из 30')
+    expect(cameraEnabled).toBe(false)
+  })
+
   it('гостю — предложение аккаунта, цена при этом видна', async () => {
     const onGuestValue = vi.fn()
     render(<MotionApp startScreen="challenge" guest onGuestValue={onGuestValue} />)
@@ -172,5 +191,55 @@ describe('дорога: карточка на главной ведёт на с�
 
     screen.getByTestId('challenge-signup').click()
     expect(onGuestValue).toHaveBeenCalledWith('challenge', 0)
+  })
+})
+
+/**
+ * ВТОРОЙ КОМНАТЫ У УЧАСТНИКА НЕТ, И ДОРОГА ИЗ ИГРЫ ВЕДЁТ В ЕГО СОБСТВЕННУЮ.
+ *
+ * Внутри Motion жила «Моя комната» — со своим календарём тридцати дней, своими
+ * очками и показателями. Рядом с комнатой участника она стала дублем: две
+ * комнаты с одинаковыми цифрами в разных местах человек читает как «какая-то из
+ * них врёт», и правильного ответа на это нет.
+ *
+ * Проверяется дорога целиком, а не наличие кнопки: участник входит в игру ИЗ
+ * СВОЕЙ КОМНАТЫ и обязан вернуться в неё же. Высадить его на постановку в
+ * кадр — значит увести из единственного места, где живёт его поток.
+ */
+describe('у участника комната одна', () => {
+  const вКомнату = async () => {
+    season = { ...SEASON, starts_on: сдвиг(-4) }
+    accepted = '2026-08-24T10:00:00Z'
+    entry = { id: 1, participant_no: 24, display_name: 'Пётр', paid_at: 'x' }
+    render(<MotionApp startScreen="challenge" />)
+    await waitFor(() => expect(screen.getByTestId('stream-room')).toBeTruthy())
+  }
+
+  it('из комнаты в игру и обратно — крестик возвращает в комнату', async () => {
+    await вКомнату()
+
+    act(() => screen.getByTestId('stream-start').click())
+    await waitFor(() => expect(screen.getByTestId('level-novice')).toBeTruthy())
+    expect(screen.getByTestId('challenge-day').textContent).toContain('День 5')
+
+    // выхода во вторую комнату из игры нет
+    expect(screen.queryByTestId('open-room')).toBeNull()
+    expect(screen.queryByTestId('room-screen')).toBeNull()
+
+    // крестик выбора уровня ведёт обратно в комнату участника, а не на
+    // постановку в кадр
+    act(() => document.querySelector('.mt-corner--left').click())
+    await waitFor(() => expect(screen.getByTestId('stream-room')).toBeTruthy())
+  })
+
+  it('одиночке «Моя комната» остаётся: другой у него нет', async () => {
+    season = null
+    entry = null
+    render(<MotionApp />)
+
+    // одиночка входит в раздел на постановке в кадр — там его дверь в комнату
+    await waitFor(() => expect(screen.getByTestId('calibration-room')).toBeTruthy())
+    act(() => screen.getByTestId('calibration-room').click())
+    expect(screen.getByTestId('room-screen')).toBeTruthy()
   })
 })

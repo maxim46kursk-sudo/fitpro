@@ -301,6 +301,36 @@ describe('очки', () => {
     expect(screen.getByTestId('stream-best').textContent).toContain('300')
   })
 
+  /**
+   * ПОКАЗАТЕЛИ ПРИЕХАЛИ ИЗ СТАРОЙ «МОЕЙ КОМНАТЫ». Участнику она больше не
+   * показывается — комната у него одна, — и потерять вместе с ней реакцию с
+   * точностью значило бы отнять ответ на «а меняюсь ли я вообще»: очки за месяц
+   * могут стоять на месте, а эти два числа — нет.
+   */
+  it('реакция и точность за поток — взвешенно по попаданиям', () => {
+    submitAttempt('novice', { score: 100, hits: 10, spawned: 20, reactMs: 500 }, 4)
+    submitAttempt('novice', { score: 300, hits: 40, spawned: 60, reactMs: 300 }, 5)
+    room({})
+
+    // (500×10 + 300×40) / 50 = 340: заход с четырьмя случайными попаданиями не
+    // должен весить столько же, сколько отработанные двадцать минут
+    expect(screen.getByTestId('stream-react').textContent).toContain('340 мс')
+    expect(screen.getByTestId('stream-accuracy').textContent).toContain('63%')
+    expect(screen.getByTestId('stream-accuracy').textContent).toContain('50 из 80')
+  })
+
+  it('мишеней ещё не было — прочерк, а не деление на ноль', () => {
+    room({})
+    expect(screen.getByTestId('stream-react').textContent).toContain('—')
+    expect(screen.getByTestId('stream-accuracy').textContent).toContain('мишеней ещё не было')
+  })
+
+  it('результат не уехал наверх — человек узнаёт об этом здесь', () => {
+    // он смотрит на свой счёт и считает, что судья видит то же самое
+    room({ pushFailed: true })
+    expect(screen.getByTestId('stream-unsent').textContent).toContain('Результат не отправлен')
+  })
+
   it('человек без единого захода не видит ни одного NaN', () => {
     room({ nutrition: facts([]), standingsRows: [] })
     expect(screen.getByTestId('stream-room').textContent).not.toContain('NaN')

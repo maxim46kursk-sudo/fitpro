@@ -115,6 +115,7 @@ const money = (n) =>
  *   незавершённую сессию. Комната сессий не запускает — отдаёт решение наверх.
  * @param {() => void} [props.onOpenDiary] открыть дневник питания.
  * @param {boolean} [props.syncBroken] прогресс не прочитан — заход не в зачёт.
+ * @param {boolean} [props.pushFailed] результат не уехал наверх после повторов.
  * @param {boolean} [props.greet] первый заход после покупки: показать полосу
  *   поздравления. Один раз — дальше комната открывается рабочим экраном дня.
  * @param {() => void} [props.onGreetSeen] полосу увидели, больше не показывать.
@@ -137,6 +138,7 @@ export default function ChallengeScreen({
   onResume = null,
   onOpenDiary = null,
   syncBroken = false,
+  pushFailed = false,
   greet = false,
   onGreetSeen = null,
 }) {
@@ -235,6 +237,7 @@ export default function ChallengeScreen({
         standingsRows={standingsRows}
         hasNorm={hasNorm}
         syncBroken={syncBroken}
+        pushFailed={pushFailed}
         greet={greet}
         onGreetSeen={onGreetSeen}
         onStartDay={onStartDay}

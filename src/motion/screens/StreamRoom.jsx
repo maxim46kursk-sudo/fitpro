@@ -91,6 +91,23 @@ export function readStreamRoom(today, { days = DAYS } = {}) {
   const summary = daySummary(today)
   const resume = sessionResume(today)
   /**
+   * ПОКАЗАТЕЛИ ЗА ВЕСЬ ПОТОК, А НЕ ТОЛЬКО ОЧКИ. Очки могут стоять на месте:
+   * человек берёт те же мишени и получает те же баллы. Реакция при этом уезжает
+   * на двести миллисекунд, а точность — на десять процентов, и это единственные
+   * два числа, по которым видно, что он вырос. Они приехали сюда из старой
+   * «Моей комнаты», которая участнику больше не показывается.
+   */
+  let hits = 0
+  let spawned = 0
+  /**
+   * Реакция усредняется ВЗВЕШЕННО ПО ПОПАДАНИЯМ. Простое среднее по заходам
+   * приравняло бы заход с четырьмя случайными попаданиями к целой сессии из
+   * пятисот: у первого реакция почти случайна, и он тянул бы общую цифру на
+   * себя ровно так же, как честно отработанные двадцать минут.
+   */
+  let reactWeighted = 0
+  let reactHits = 0
+  /**
    * «Сдан» и «в нём были заходы» — разные вещи, и обе нужны. Сдан — пройден
    * целиком (completeDay); заходы могли быть и без этого, и очки за них идут в
    * зачёт наравне. В календаре прошлый день считается прожитым при любом из
@@ -101,22 +118,27 @@ export function readStreamRoom(today, { days = DAYS } = {}) {
   const rows = []
   for (let day = 1; day <= days; day += 1) {
     let attempts = 0
-    let hits = 0
-    let spawned = 0
-    let reactWeighted = 0
-    let reactHits = 0
+    let dayHits = 0
+    let daySpawned = 0
+    let dayReactWeighted = 0
+    let dayReactHits = 0
     for (const list of Object.values(attemptsFor(day).tiers)) {
       for (const attempt of list) {
         attempts += 1
-        hits += attempt.hits ?? 0
-        spawned += attempt.spawned ?? 0
-        // ноль в реакции значит «замера не было», а не «мгновенно»
+        dayHits += attempt.hits ?? 0
+        daySpawned += attempt.spawned ?? 0
+        // ноль в реакции значит «замера не было», а не «мгновенно»: заходы без
+        // него в среднюю не идут вовсе, иначе они обнуляли бы её
         if ((attempt.reactMs ?? 0) > 0 && (attempt.hits ?? 0) > 0) {
-          reactWeighted += attempt.reactMs * attempt.hits
-          reactHits += attempt.hits
+          dayReactWeighted += attempt.reactMs * attempt.hits
+          dayReactHits += attempt.hits
         }
       }
     }
+    hits += dayHits
+    spawned += daySpawned
+    reactWeighted += dayReactWeighted
+    reactHits += dayReactHits
     const total = dayTotal(day)
     const played = attempts > 0 || doneSet.has(day)
 
@@ -141,10 +163,10 @@ export function readStreamRoom(today, { days = DAYS } = {}) {
       state,
       attempts,
       runs: dayRuns(day),
-      hits,
-      spawned,
-      accuracy: spawned > 0 ? Math.round((hits / spawned) * 100) : 0,
-      reactMs: reactHits > 0 ? Math.round(reactWeighted / reactHits) : 0,
+      hits: dayHits,
+      spawned: daySpawned,
+      accuracy: daySpawned > 0 ? Math.round((dayHits / daySpawned) * 100) : 0,
+      reactMs: dayReactHits > 0 ? Math.round(dayReactWeighted / dayReactHits) : 0,
       /** Открывается то, где есть что показать: прошлый день с заходами. */
       openable: state === 'done',
     })
@@ -168,6 +190,10 @@ export function readStreamRoom(today, { days = DAYS } = {}) {
     }),
     total: challengeTotal(),
     best: { day: best.day, total: best.total },
+    hits,
+    spawned,
+    accuracy: spawned > 0 ? Math.round((hits / spawned) * 100) : 0,
+    reactMs: reactHits > 0 ? Math.round(reactWeighted / reactHits) : 0,
     rows,
   }
 }
@@ -225,6 +251,9 @@ const REST_UNIT = { kcal: '', p: ' г', f: ' г', c: ' г' }
  * @param {object[]} [props.standingsRows] сырьё таблицы потока
  * @param {boolean} [props.hasNorm] заполнена ли дневная норма
  * @param {boolean} [props.syncBroken] прогресс не прочитан — заход не в зачёт
+ * @param {boolean} [props.pushFailed] результат не уехал наверх после всех
+ *   повторов. Комната — то место, куда человек приходит смотреть свой счёт, и
+ *   именно здесь он должен узнать, что на сервере этого счёта пока нет.
  * @param {boolean} [props.greet] показать полосу поздравления (первый заход)
  * @param {() => void} [props.onGreetSeen] полосу закрыли — больше не показывать
  * @param {() => void} [props.onStartDay] начать сегодняшний день
@@ -244,6 +273,7 @@ export default function StreamRoom({
   standingsRows = null,
   hasNorm = true,
   syncBroken = false,
+  pushFailed = false,
   greet = false,
   onGreetSeen = null,
   onStartDay = null,
@@ -346,6 +376,18 @@ export default function StreamRoom({
           </div>
         )}
 
+        {/**
+          * РЕЗУЛЬТАТ НЕ УЕХАЛ — и молчать об этом нельзя: человек смотрит на
+          * свой счёт и считает, что судья видит то же самое. Не видит. Потерян
+          * результат при этом не будет — он лежит на устройстве и уедет сам,
+          * как только появится связь, — но знать разницу человек обязан.
+          */}
+        {pushFailed && !syncBroken && (
+          <div className="mt-stream__warn" data-testid="stream-unsent">
+            Результат не отправлен — отправим сами, как только появится связь.
+          </div>
+        )}
+
         {/* ═══ 2. ГЛАВНАЯ КНОПКА ═══ */}
         <button
           type="button"
@@ -377,6 +419,36 @@ export default function StreamRoom({
             value={dash(room.best.total)}
             label="лучший день"
             hint={room.best.total > 0 ? `день ${room.best.day}` : 'ещё впереди'}
+          />
+        </div>
+
+        {/**
+          * РЕАКЦИЯ И ТОЧНОСТЬ — вторым рядом, и это не украшение. Очки за месяц
+          * могут стоять на месте: человек берёт те же мишени и получает те же
+          * баллы. Эти два числа — единственное, по чему видно, что он вырос.
+          *
+          * Приехали из старой «Моей комнаты»: участнику она больше не
+          * показывается (его комната одна), и потерять вместе с ней показатели
+          * значило бы отнять у него ответ на «а меняюсь ли я вообще».
+          */}
+        <div className="mt-stream__tiles">
+          <Tile
+            testid="stream-react"
+            value={dash(room.reactMs, ' мс')}
+            label="реакция"
+            hint="средняя по всем попаданиям"
+          />
+          <Tile
+            testid="stream-accuracy"
+            value={dash(room.accuracy, '%')}
+            label="точность"
+            hint={room.spawned > 0 ? `${room.hits} из ${room.spawned}` : 'мишеней ещё не было'}
+          />
+          <Tile
+            testid="stream-days-done"
+            value={room.rows.filter((r) => r.state === 'done').length || '—'}
+            label="дней сыграно"
+            hint={`из ${room.today - 1 > 0 ? room.today - 1 : 0} прошедших`}
           />
         </div>
 
