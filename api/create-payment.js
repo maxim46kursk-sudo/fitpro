@@ -1,6 +1,8 @@
 import qs from 'qs'
 import { createClient } from '@supabase/supabase-js'
 import { createSignature, buildPaymentData, STAFF_PLANS, CHALLENGE_ITEM } from './_prodamus.js'
+// Какой поток человеку — общее правило на клиент и обе платёжные ручки.
+import { resolveSeasonFor } from './_challengeSeason.js'
 import { rateLimit } from './_ratelimit.js'
 
 // Статические ссылки Продамуса не могут нести наш идентификатор пользователя
@@ -52,20 +54,43 @@ export default async function handler(req, res) {
 
   const plan = req.body?.plan
   // Билет челленджа — не тариф: уровня доступа он не даёт и в PAID_PLANS его
-  // нет. Покупает кто угодно из вошедших, роль не проверяется.
+  // нет. Покупает кто угодно из вошедших — но КАКОЙ поток ему достанется,
+  // зависит от роли (см. resolveSeasonFor ниже).
   const isChallenge = plan === CHALLENGE_ITEM
   if (!isChallenge && !PAID_PLANS.has(plan)) return res.status(400).json({ error: 'Неизвестный пакет' })
+
+  // ── РОЛЬ: ИЗ БАЗЫ, service_role-ключом, и только когда она нужна ───────────
+  // Ни телу запроса, ни метаданным токена тут верить нельзя: и то и другое
+  // клиент подставляет сам. От роли зависят ровно две вещи — доступ к
+  // служебному тарифу и то, какой поток челленджа человеку положен. Боевым
+  // пакетам она не нужна вовсе, и лишний запрос в профиль на каждой покупке
+  // был бы платой за одну служебную кнопку.
+  let role = null
+  if (STAFF_PLANS.has(plan) || isChallenge) {
+    const { data: me, error: roleErr } = await supabaseAdmin
+      .from('profiles').select('role').eq('id', userId).maybeSingle()
+    if (roleErr) {
+      console.error(`create-payment: ошибка чтения роли ${userId}:`, roleErr)
+      return res.status(500).json({ error: 'Не удалось проверить доступ' })
+    }
+    role = me?.role || null
+  }
+
+  // Цена билета — из потока, а не из константы: у каждого потока она своя
+  // (challenge_seasons.price_rub). Заполняется в ветке билета ниже.
+  let priceRub
 
   // Второй билет в тот же поток — это деньги, за которые человек ничего не
   // получит: challenge_enroll идемпотентна по user_id и вернёт ему прежний
   // номер, а оплата останется. Поэтому отказываем ДО выписки ссылки, пока
   // платить ещё не начали.
   //
-  // Открытых сезонов нет — ссылку всё равно выписываем: набор объявляется
-  // раньше, чем сезон переводят в 'open', и запирать продажу здесь значило бы
-  // ронять покупку по состоянию, которое меняется одной правкой в базе.
-  // Платёж, которому не нашлось сезона, вебхук запишет в журнал и поднимет
-  // тревогу — деньги не потеряются.
+  // ЖИВОГО ПОТОКА НЕТ — ССЫЛКУ БОЛЬШЕ НЕ ВЫПИСЫВАЕМ, и это перемена. Прежде
+  // выписывали: цена билета была константой, а сезон могли открыть той же
+  // минутой. Теперь цену объявляет сам поток, и без потока её просто неоткуда
+  // взять — ссылка ушла бы на выдуманную сумму, которую вебхук потом не
+  // сопоставит ни с чем. Отказ здесь честнее: человек не платит за то, чего
+  // ещё нет.
   if (isChallenge) {
     /**
      * БЕЗ НОРМЫ БИЛЕТ НЕ ПРОДАЁТСЯ.
@@ -93,42 +118,56 @@ export default async function handler(req, res) {
       })
     }
 
-    const { data: openSeasons, error: seasonErr } = await supabaseAdmin
-      .from('challenge_seasons').select('id').eq('status', 'open')
+    /**
+     * КУДА ИМЕННО ПРОДАЁМ БИЛЕТ. Тренеру — служебный поток, если он есть; всем
+     * остальным — открытый. Правило одно на всё приложение и живёт в
+     * api/_challengeSeason.js: разъедься оно с экраном, человек увидел бы одну
+     * цену, а заплатил другую.
+     *
+     * ЭТО И ЕСТЬ ЗАЩИТА СЛУЖЕБНОГО ПОТОКА ОТ ПРЯМОГО ЗАПРОСА. Скрытие в
+     * интерфейсе — удобство; отказ здесь — защита. Постороннему служебный поток
+     * не выбирается вовсе, поэтому и ссылки на 50 ₽ он не получит ни телом
+     * запроса, ни ярлыком, ни как-либо ещё: сумму ставит сервер по выбранному
+     * потоку, а не клиент.
+     */
+    const { season, error: seasonErr } = await resolveSeasonFor(supabaseAdmin, role)
     if (seasonErr) {
       console.error('create-payment: ошибка чтения сезонов челленджа:', seasonErr)
       return res.status(500).json({ error: 'Не удалось проверить участие' })
     }
-    const openIds = (openSeasons || []).map(s => s.id)
-    if (openIds.length) {
-      const { data: mine, error: entryErr } = await supabaseAdmin
-        .from('challenge_entries').select('id').eq('user_id', userId).in('season_id', openIds).limit(1)
-      if (entryErr) {
-        console.error(`create-payment: ошибка проверки участия ${userId}:`, entryErr)
-        return res.status(500).json({ error: 'Не удалось проверить участие' })
-      }
-      if (mine?.length) {
-        console.warn(`create-payment: ${userId} уже в открытом потоке, второй билет не выписываем`)
-        return res.status(409).json({ error: 'Вы уже участвуете в этом потоке — второй билет покупать не нужно' })
-      }
+    if (!season) {
+      console.warn(`create-payment: ${userId} просит билет, но живого потока нет`)
+      return res.status(409).json({
+        error: 'Набор в поток пока закрыт — откроем и объявим',
+        reason: 'no_season',
+      })
+    }
+    priceRub = season.price_rub
+
+    const { data: mine, error: entryErr } = await supabaseAdmin
+      .from('challenge_entries').select('id').eq('user_id', userId).eq('season_id', season.id).limit(1)
+    if (entryErr) {
+      console.error(`create-payment: ошибка проверки участия ${userId}:`, entryErr)
+      return res.status(500).json({ error: 'Не удалось проверить участие' })
+    }
+    if (mine?.length) {
+      console.warn(`create-payment: ${userId} уже в потоке ${season.id}, второй билет не выписываем`)
+      // reason важен: это ЕДИНСТВЕННЫЙ 409, который значит «всё в порядке» —
+      // человек уже в потоке, и экрану надо не ругаться, а показать комнату.
+      // Остальные 409 этой ручки — отказы (см. no_goals и no_season выше).
+      return res.status(409).json({
+        error: 'Вы уже участвуете в этом потоке — второй билет покупать не нужно',
+        reason: 'already',
+      })
     }
   }
 
-  // Служебный тариф — только тренеру. Роль читаем ИЗ БАЗЫ service_role-ключом,
-  // а не из тела и не из метаданных токена: и то и другое клиент подставляет
-  // сам. Ответ намеренно тот же, что на несуществующий пакет, — знать о
-  // служебном тарифе постороннему незачем.
-  if (STAFF_PLANS.has(plan)) {
-    const { data: me, error: roleErr } = await supabaseAdmin
-      .from('profiles').select('role').eq('id', userId).maybeSingle()
-    if (roleErr) {
-      console.error(`create-payment: ошибка чтения роли ${userId}:`, roleErr)
-      return res.status(500).json({ error: 'Не удалось проверить доступ' })
-    }
-    if (me?.role !== 'trainer') {
-      console.warn(`create-payment: ${userId} просит служебный тариф ${plan}, но он не тренер`)
-      return res.status(400).json({ error: 'Неизвестный пакет' })
-    }
+  // Служебный тариф — только тренеру (роль прочитана выше). Ответ намеренно тот
+  // же, что на несуществующий пакет, — знать о служебном тарифе постороннему
+  // незачем.
+  if (STAFF_PLANS.has(plan) && role !== 'trainer') {
+    console.warn(`create-payment: ${userId} просит служебный тариф ${plan}, но он не тренер`)
+    return res.status(400).json({ error: 'Неизвестный пакет' })
   }
 
   // Откуда платят — только метка, не адрес: 'web' даёт возврат в приложение,
@@ -140,7 +179,7 @@ export default async function handler(req, res) {
   // Цену и адрес возврата подставляет buildPaymentData — на сервере, не из
   // тела: сумму доверять клиенту нельзя (по ней вебхук определяет пакет), а
   // адрес возврата тем более.
-  const data = buildPaymentData({ userId, plan, source })
+  const data = buildPaymentData({ userId, plan, source, priceRub })
 
   // Подпись считается по данным, в которых адрес возврата УЖЕ подставлен —
   // иначе Продамус отклонит ссылку как неподписанную по этим полям.

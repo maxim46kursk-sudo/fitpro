@@ -35,13 +35,22 @@ export const STAFF_PLANS = new Set(['test50'])
 // поэтому в PLAN_PRICE он сломал бы проверку синхронности, которая стережёт
 // настоящие цены.
 export const CHALLENGE_ITEM  = 'challenge'
-export const CHALLENGE_PRICE = 2990
 export const CHALLENGE_TITLE = 'Челлендж FitPro — Поток'
 
-// Всё продаваемое разом: ключ товара → цена в рублях. Тарифы плюс билет.
-// Этой таблицей вебхук проверяет ярлык платежа: цена товара из ярлыка обязана
-// сойтись с оплаченной суммой (api/prodamus-webhook.js).
-export const ITEM_PRICE = { ...PLAN_PRICE, [CHALLENGE_ITEM]: CHALLENGE_PRICE }
+// ── ЦЕНЫ БИЛЕТА ЗДЕСЬ НЕТ, И ЭТО НАМЕРЕННО ──────────────────────────────────
+//
+// Раньше стояла константа CHALLENGE_PRICE = 2990, и вебхук сверял ярлык
+// '__challenge' именно с ней. Пока поток был один, разница не читалась; со
+// служебным потоком за 50 ₽ (sql/2026-08-25_challenge_staff_season.sql) она
+// стала решающей: 50 ₽ уже занято тарифом ТЕСТ 50, и билет по зашитой цене
+// начислил бы человеку тариф.
+//
+// Цена билета — это обещание КОНКРЕТНОГО потока (challenge_seasons.price_rub),
+// а не свойство приложения: у каждого потока она своя и задним числом не
+// меняется. Поэтому и ссылка выписывается на цену выбранного потока
+// (api/create-payment.js), и вебхук сверяет ярлык с ценой того потока, куда
+// человека зачисляют (api/prodamus-webhook.js). Какой это поток — решает общее
+// правило в api/_challengeSeason.js.
 
 // Название товара для чека Продамуса.
 export function itemTitle(item) {
@@ -86,10 +95,18 @@ export function returnUrlFor(source, appUrlOverride) {
 // plan здесь — ключ ТОВАРА: тариф ('profit', 'premium', 'test50') либо билет
 // челленджа ('challenge'). Имя параметра осталось прежним, чтобы не разъехаться
 // с полем plan, которое присылает клиент и которым подписан ярлык платежа.
-export function buildPaymentData({ userId, plan, source }) {
-  const price = Object.hasOwn(ITEM_PRICE, plan) ? ITEM_PRICE[plan] : undefined
-  // Неизвестный товар — это цена undefined в чеке и платёж, который вебхук
-  // потом не опознает. Лучше упасть здесь, чем выписать ссылку в никуда.
+//
+// priceRub обязателен и осмыслен ТОЛЬКО для билета: у тарифов цена своя и живёт
+// здесь, у билета — в потоке, и приезжает сюда прочитанной из базы. Число из
+// тела запроса сюда не попадает никогда: сумму подписываем мы, а по ней вебхук
+// потом опознаёт товар — доверить её клиенту значит продать что угодно за рубль.
+export function buildPaymentData({ userId, plan, source, priceRub }) {
+  const price = plan === CHALLENGE_ITEM
+    ? (Number.isInteger(priceRub) && priceRub > 0 ? priceRub : undefined)
+    : (Object.hasOwn(PLAN_PRICE, plan) ? PLAN_PRICE[plan] : undefined)
+  // Неизвестный товар (или билет без потока, а значит и без цены) — это цена
+  // undefined в чеке и платёж, который вебхук потом не опознает. Лучше упасть
+  // здесь, чем выписать ссылку в никуда.
   if (price === undefined) throw new Error(`buildPaymentData: неизвестный товар ${plan}`)
   const tag = `${userId}__${plan}`
   const returnUrl = returnUrlFor(source)

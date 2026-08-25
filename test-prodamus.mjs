@@ -195,9 +195,18 @@ const jsonResponse = (body, status = 200) =>
 // Мир одного сценария: состояние базы между вызовами вебхука. entries ведут
 // себя как challenge_enroll в проде — идемпотентно по платежу и по человеку,
 // номера подряд; payments — как UNIQUE(provider_order_num).
+//
+// СЕЗОНЫ ЛЕЖАТ ЗДЕСЬ ЦЕЛИКОМ, СО СТАТУСОМ И ЦЕНОЙ, и это не мелочь: цена билета
+// приезжает из потока, а какой поток человеку — решает его роль. Мир отдаёт
+// вебхуку ВСЕ строки, как отдал бы service_role-ключ (RLS его не касается), —
+// значит выбор служебного потока проверяется именно здесь, в коде, а не в базе.
+const OPEN_SEASON  = { id: 1, title: 'Поток 1',   status: 'open',  price_rub: 2990, starts_on: null }
+const STAFF_SEASON = { id: 2, title: 'Тест-поток', status: 'staff', price_rub: 50,   starts_on: '2026-09-10' }
+
 const makeWorld = (over = {}) => ({
-  openSeasons: [{ id: 1 }],
+  seasons: [{ ...OPEN_SEASON }],
   profileName: 'Пётр Петров',
+  profileRole: null,  // 'trainer' — владелец; null — обычный участник
   entries: [],        // { paymentId, userId, no, name }
   payments: new Set(),
   paymentRows: [],
@@ -228,11 +237,11 @@ async function callWebhook(world, { sum, tag, userId = USER, orderId = null }) {
     const p = u.pathname
     const method = (opts.method || 'GET').toUpperCase()
     if (p.startsWith('/rest/v1/profiles')) {
-      if (method === 'GET') return jsonResponse([{ id: userId, name: world.profileName, plan_until: null, coach_id: null }])
+      if (method === 'GET') return jsonResponse([{ id: userId, name: world.profileName, role: world.profileRole, plan_until: null, coach_id: null }])
       world.planWrites.push(JSON.parse(opts.body))
       return jsonResponse([{ id: userId, coach_id: null }])
     }
-    if (p.startsWith('/rest/v1/challenge_seasons')) return jsonResponse(world.openSeasons)
+    if (p.startsWith('/rest/v1/challenge_seasons')) return jsonResponse(world.seasons)
     if (p.startsWith('/rest/v1/rpc/challenge_enroll')) {
       const args = JSON.parse(opts.body)
       world.enrollCalls.push(args)
@@ -279,14 +288,13 @@ async function callWebhook(world, { sum, tag, userId = USER, orderId = null }) {
 console.log('\nprodamus: товар определяется ярлыком, подтверждённым суммой')
 
 test('ярлык + совпавшая цена → этот товар', () => {
-  assert.equal(resolveItem('challenge', 2990), 'challenge')
+  assert.equal(resolveItem('challenge', 2990, 2990), 'challenge')
   assert.equal(resolveItem('premium', 9990), 'premium')
 })
 
-test('ярлык без совпадения по сумме не действует — решает сумма', () => {
+test('ярлык без совпадения по сумме не действует', () => {
   // Главное про безопасность правила: подменивший ярлык не получит ничего
   // дороже оплаченного.
-  assert.equal(resolveItem('challenge', 50), 'test50')
   assert.equal(resolveItem('premium', 2990), 'profit')
   assert.equal(resolveItem('premium', 50), 'test50')
 })
@@ -295,7 +303,34 @@ test('незнакомый и пустой ярлык → прежний раз�
   assert.equal(resolveItem('x', 2990), 'profit')
   assert.equal(resolveItem(null, 2990), 'profit')
   assert.equal(resolveItem('constructor', 2990), 'profit', 'ключ из прототипа не должен считаться товаром')
-  assert.equal(resolveItem('challenge', 777), undefined, 'незнакомая сумма остаётся незнакомой')
+})
+
+// ── ЦЕНА БИЛЕТА — ИЗ ПОТОКА ─────────────────────────────────────────────────
+// Ровно то место, где служебный поток за 50 ₽ сталкивается с тарифом ТЕСТ 50 за
+// те же 50 ₽. Разводит их ярлык, но только вместе с ценой ТОГО потока, куда
+// человека зачисляют: зашитая цена билета обе стороны развести не может.
+test('50 ₽ с ярлыком билета — билет, если столько стоит поток человека', () => {
+  assert.equal(resolveItem('challenge', 50, 50), 'challenge')
+})
+
+test('50 ₽ без ярлыка — по-прежнему тариф ТЕСТ 50, поток тут ни при чём', () => {
+  assert.equal(resolveItem(null, 50, 50), 'test50')
+  assert.equal(resolveItem(null, 50, 2990), 'test50')
+  assert.equal(resolveItem('x', 50, 50), 'test50')
+})
+
+test('ярлык билета на чужую сумму не даёт НИЧЕГО — ни билета, ни тарифа', () => {
+  // Прежде «__challenge на чужую сумму» откатывался к разбору по сумме, и это
+  // было безобидно ровно пока цена билета была одна на все потоки. Теперь цены
+  // может не быть вовсе (потока нет), и старый откат означал бы, что билет за
+  // 2990 без открытого потока молча становится ПРОФИТом.
+  //
+  // Подменившему ярлык это ущерба не даёт и дать не может: он получает НЕ
+  // БОЛЬШЕ оплаченного, а меньше.
+  assert.equal(resolveItem('challenge', 50, 2990), undefined, 'билет чужого потока не покупается за 50')
+  assert.equal(resolveItem('challenge', 2990, 50), undefined)
+  assert.equal(resolveItem('challenge', 2990, undefined), undefined, 'потока нет — цены нет — товара нет')
+  assert.equal(resolveItem('challenge', 777, 2990), undefined)
 })
 
 console.log('\nprodamus: вебхук — билет челленджа не превращается в ПРОФИТ')
@@ -326,11 +361,72 @@ await testAsync('2990 без нашего ярлыка → по-прежнему
   }
 })
 
-await testAsync('ярлык __challenge на чужую сумму билета не даёт', async () => {
+await testAsync('ярлык __challenge на чужую сумму билета не даёт и тарифа тоже', async () => {
   const world = makeWorld()
   await callWebhook(world, { sum: 50, tag: 'challenge' })
-  assert.equal(world.enrollCalls.length, 0, 'сумма не сошлась — зачисления нет')
-  assert.equal(world.planWrites[0]?.plan, 'test50', 'работает прежний путь по сумме')
+  assert.equal(world.enrollCalls.length, 0, 'сумма не сошлась с ценой потока — зачисления нет')
+  assert.equal(world.planWrites.length, 0, 'и тарифом платёж, назвавшийся билетом, не становится')
+  assert.equal(world.errors.length > 0, true, 'про деньги, за которые ничего не выдано, обязаны узнать сразу')
+})
+
+console.log('\nprodamus: служебный поток за 50 ₽ и тариф ТЕСТ 50 за те же 50 ₽')
+
+await testAsync('тренер: 50 ₽ с ярлыком → билет в служебный поток, тариф НЕ начислен', async () => {
+  // Тот самый путь, ради которого служебный поток и заведён: владелец платит
+  // живые 50 ₽ и обязан получить МЕСТО В ПОТОКЕ, а не сутки ПРОФИТа.
+  const world = makeWorld({ seasons: [{ ...OPEN_SEASON }, { ...STAFF_SEASON }], profileRole: 'trainer' })
+  const res = await callWebhook(world, { sum: 50, tag: 'challenge' })
+
+  assert.equal(res.statusCode, 200)
+  assert.equal(world.enrollCalls.length, 1, 'зачисление обязано произойти')
+  assert.equal(world.enrollCalls[0].p_season_id, 2, 'и именно в служебный поток, а не в открытый')
+  assert.equal(world.entries[0].no, 1, 'первый участник получает номер 1')
+  assert.equal(world.planWrites.length, 0, 'ТЕСТ 50 по билету начисляться не должен')
+  assert.equal(world.paymentRows[0].plan, 'challenge', 'в журнале платёж числится билетом')
+  assert.equal(world.paymentRows[0].status, 'success')
+})
+
+await testAsync('тренер: 50 ₽ БЕЗ ярлыка → тариф ТЕСТ 50, в поток никого', async () => {
+  // Обратная половина того же правила. Служебный тариф остаётся покупаемым: он
+  // проверяет начисление, а билет — участие, и путать их нельзя ни в одну
+  // сторону.
+  const world = makeWorld({ seasons: [{ ...OPEN_SEASON }, { ...STAFF_SEASON }], profileRole: 'trainer' })
+  await callWebhook(world, { sum: 50, tag: null })
+
+  assert.equal(world.planWrites.length, 1, 'тариф обязан начислиться')
+  assert.equal(world.planWrites[0].plan, 'test50')
+  assert.equal(world.enrollCalls.length, 0, 'в поток по такому платежу никого')
+  assert.equal(world.paymentRows[0].plan, 'test50')
+})
+
+await testAsync('обычный участник: служебный поток ему не выбирается вовсе', async () => {
+  // Прямой запрос в обход экрана. Служебный поток лежит в базе и service_role
+  // его видит — отсекает его РОЛЬ, а не то, что строка не приехала. 50 ₽ с
+  // ярлыком билета для постороннего не сходятся с ценой ЕГО потока (2990),
+  // поэтому места в потоке он не получает.
+  const world = makeWorld({ seasons: [{ ...OPEN_SEASON }, { ...STAFF_SEASON }], profileRole: null })
+  await callWebhook(world, { sum: 50, tag: 'challenge' })
+
+  assert.equal(world.enrollCalls.length, 0, 'в служебный поток посторонний не попадает')
+  assert.equal(world.planWrites.length, 0, 'и тариф по ярлыку билета не начисляется')
+})
+
+await testAsync('обычный участник: 2990 с ярлыком → билет в открытый поток', async () => {
+  // Появление служебного потока не должно менять ничего для людей.
+  const world = makeWorld({ seasons: [{ ...OPEN_SEASON }, { ...STAFF_SEASON }], profileRole: null })
+  await callWebhook(world, { sum: 2990, tag: 'challenge' })
+
+  assert.equal(world.enrollCalls.length, 1)
+  assert.equal(world.enrollCalls[0].p_season_id, 1, 'открытый поток, а не служебный')
+  assert.equal(world.planWrites.length, 0)
+})
+
+await testAsync('тренер без служебного потока платит как все — 2990 в открытый', async () => {
+  const world = makeWorld({ profileRole: 'trainer' })
+  await callWebhook(world, { sum: 2990, tag: 'challenge' })
+
+  assert.equal(world.enrollCalls.length, 1)
+  assert.equal(world.enrollCalls[0].p_season_id, 1)
 })
 
 await testAsync('повторное уведомление с тем же order_id не создаёт второй записи', async () => {
@@ -355,7 +451,7 @@ await testAsync('второй платёж того же человека нов
 })
 
 await testAsync('билет без открытого сезона: платёж записан, тревога поднята', async () => {
-  const world = makeWorld({ openSeasons: [] })
+  const world = makeWorld({ seasons: [] })
   const res = await callWebhook(world, { sum: 2990, tag: 'challenge' })
   assert.equal(res.statusCode, 200, 'Продамусу отвечаем 200 — деньги уже взяты')
   assert.equal(world.enrollCalls.length, 0)

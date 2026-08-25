@@ -11,7 +11,7 @@
     "test:motion": "vitest run",
     "test:server": "node server.test.mjs",
     "test:egress": "node test-egress.mjs",
-    "test": "node test-progression.mjs && node test-constructor.mjs && node test-theme-guard.mjs && node test-nutrition.mjs && node test-barcode.mjs && node test-error-log.mjs && node test-food-diary.mjs && node test-food-basics.mjs && node test-off-import.mjs && node test-auth-state.mjs && node test-auth-session.mjs && node test-telegram-auth.mjs && node test-prodamus.mjs && node test-plan-test50.mjs && node test-exercise-suggest.mjs && node test-trainer-draft.mjs && node test-motion-attempts.mjs && node test-egress.mjs && node server.test.mjs && npm run check:webkit",
+    "test": "node test-progression.mjs && node test-constructor.mjs && node test-theme-guard.mjs && node test-nutrition.mjs && node test-barcode.mjs && node test-error-log.mjs && node test-food-diary.mjs && node test-food-basics.mjs && node test-off-import.mjs && node test-auth-state.mjs && node test-auth-session.mjs && node test-telegram-auth.mjs && node test-prodamus.mjs && node test-plan-test50.mjs && node test-challenge-staff.mjs && node test-exercise-suggest.mjs && node test-trainer-draft.mjs && node test-motion-attempts.mjs && node test-egress.mjs && node server.test.mjs && npm run check:webkit",
     "export": "node scripts/build-export.mjs",
     "test:webkit": "vite build && node test-webkit-boot.mjs",
     "check:webkit": "node tools/webkit-check.mjs && vite build && node test-webkit-boot.mjs",

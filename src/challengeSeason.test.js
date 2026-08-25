@@ -14,6 +14,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const USER = '6838d807-fb05-4c7d-af71-a13360373dcd'
 
+/**
+ * И ЗАОДНО — КАКОЙ ПОТОК ЭКРАН ВООБЩЕ ПОКАЗЫВАЕТ. Служебный тест-поток за 50 ₽
+ * (sql/2026-08-25_challenge_staff_season.sql) живёт рядом с боевым, и цену
+ * человек видит именно ту, что решил этот модуль. Ошибись он — владелец увидел
+ * бы 2990 там, где платит 50, или, что хуже, участник увидел бы 50.
+ *
+ * `rows` здесь — это то, что ОТДАЛА БАЗА, то есть уже после RLS. Служебная
+ * строка приезжает только тренеру, и «участник его не видит» проверяется не
+ * тут, а на самой миграции (test-challenge-staff.mjs): решает это база, и
+ * подменять её решение проверкой роли в браузере было бы враньём про то, где
+ * стоит защита.
+ */
+
 /** Что «лежит в базе» и что модуль в неё написал. */
 let rows = []
 let goals = null
@@ -144,6 +157,62 @@ describe('согласие переживает перезагрузку и др
   })
 })
 
+describe('какой поток показывать', () => {
+  const STAFF = {
+    ...SEASON,
+    id: 2,
+    title: 'Тест-поток',
+    starts_on: '2026-09-10',
+    price_rub: 50,
+    status: 'staff',
+  }
+
+  it('тренеру приехал служебный поток — берётся он, и цена его', async () => {
+    // RLS отдала обе строки: значит перед нами тренер.
+    rows = [{ ...SEASON }, { ...STAFF }]
+    const { loadChallengeState } = await freshModule()
+    const state = await loadChallengeState({})
+
+    expect(state.season.id).toBe(2)
+    expect(state.season.title).toBe('Тест-поток')
+    expect(state.season.price_rub).toBe(50)
+    expect(state.season.starts_on).toBe('2026-09-10')
+  })
+
+  it('участнику служебной строки не приезжает — он видит боевой поток и 2990', async () => {
+    rows = [{ ...SEASON }]
+    const { loadChallengeState } = await freshModule()
+    const state = await loadChallengeState({})
+
+    expect(state.season.id).toBe(1)
+    expect(state.season.price_rub).toBe(2990)
+  })
+
+  it('служебный поток спрашивается тем же запросом — отдельной ветки для него нет', async () => {
+    // Особый путь проверял бы особый путь: смысл тест-потока в том, что он
+    // читается, покупается и считается ровно как боевой.
+    rows = [{ ...STAFF }]
+    const { loadChallengeState, isChallengeMember } = await freshModule()
+    const state = await loadChallengeState({})
+
+    expect(state.season.id).toBe(2)
+    expect(isChallengeMember(state)).toBe(false)
+  })
+
+  it('свой поток важнее служебного: купивший билет видит свой номер, а не цену', async () => {
+    rows = [
+      { ...SEASON, status: 'running', challenge_entries: [{ id: 9, participant_no: 3, display_name: 'Пётр', paid_at: 'x', rules_accepted_at: null }] },
+      { ...STAFF },
+    ]
+    const { loadChallengeState, isChallengeMember } = await freshModule()
+    const state = await loadChallengeState({})
+
+    expect(state.season.id).toBe(1)
+    expect(isChallengeMember(state)).toBe(true)
+    expect(state.entry.participant_no).toBe(3)
+  })
+})
+
 describe('норма питания', () => {
   it('норма приезжает вместе с участием — она решает, продавать ли билет', async () => {
     const { loadChallengeState, hasNorm } = await freshModule()
@@ -186,6 +255,55 @@ describe('норма питания', () => {
     expect(await loadNutritionFacts(null)).toEqual([])
     expect(await freezeNorm(null)).toBe(null)
     expect(rpcCalls).toEqual([])
+  })
+})
+
+describe('покупка билета: 409 бывают разные', () => {
+  /** Ответ ручки create-payment на нажатие «Участвовать». */
+  const stubFetch = (status, body) => {
+    globalThis.fetch = vi.fn(async () => ({
+      status,
+      ok: status < 400,
+      json: async () => body,
+    }))
+    // вкладку под оплату модуль открывает до всякого await — подменяем и её
+    globalThis.open = vi.fn(() => ({ close: () => {}, location: { replace: () => {} } }))
+  }
+
+  it('«уже участник» — не ошибка: экран перечитает состояние', async () => {
+    stubFetch(409, { error: 'Вы уже участвуете в этом потоке', reason: 'already' })
+    const { buyTicket } = await freshModule()
+
+    expect(await buyTicket()).toEqual({ already: true })
+  })
+
+  it('«живого потока нет» — отказ словами сервера, а не «ты уже участник»', async () => {
+    // Соврать здесь особенно дорого: человек в этот момент пытается заплатить,
+    // и «ты уже участник» отправит его искать несуществующую комнату.
+    stubFetch(409, { error: 'Набор в поток пока закрыт — откроем и объявим', reason: 'no_season' })
+    const { buyTicket } = await freshModule()
+    const result = await buyTicket()
+
+    expect(result.already).toBeUndefined()
+    expect(result.error).toContain('Набор в поток пока закрыт')
+  })
+
+  it('«нормы нет» — тоже отказ, и тоже своими словами', async () => {
+    stubFetch(409, { error: 'Сначала заполни данные о себе', reason: 'no_goals' })
+    const { buyTicket } = await freshModule()
+    const result = await buyTicket()
+
+    expect(result.already).toBeUndefined()
+    expect(result.error).toContain('Сначала заполни данные о себе')
+  })
+
+  it('409 без reason читается по-старому — как «уже участник»', async () => {
+    // Совместимость на время выкладки: ответ старого сервера не должен
+    // превращаться в ошибку на новом экране.
+    stubFetch(409, { error: 'Вы уже участвуете в этом потоке' })
+    const { buyTicket } = await freshModule()
+
+    expect(await buyTicket()).toEqual({ already: true })
   })
 })
 

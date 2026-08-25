@@ -3,7 +3,9 @@ import { createClient } from '@supabase/supabase-js'
 // Журнал ошибок + мгновенное уведомление тренеру. Файл с подчёркиванием —
 // не serverless-функция.
 import { reportError } from './_logError.js'
-import { verifySignature, ITEM_PRICE, CHALLENGE_ITEM } from './_prodamus.js'
+import { verifySignature, PLAN_PRICE, CHALLENGE_ITEM } from './_prodamus.js'
+// Какой поток человеку — общее правило на клиент и обе платёжные ручки.
+import { resolveSeasonFor } from './_challengeSeason.js'
 
 // Вебхук уведомлений Продамуса. Тело подписано, поэтому НЕ даём Vercel его
 // разобрать — подпись считается по точной сырой форме, любой репарсинг
@@ -64,13 +66,35 @@ const extractItemTag = src => {
   return tag || null
 }
 
-// Товар платежа: ярлык, подтверждённый суммой, иначе прежний разбор по сумме.
+// ── ЦЕНА БИЛЕТА ПРИЕЗЖАЕТ ИЗ ПОТОКА, А НЕ ИЗ КОНСТАНТЫ ──────────────────────
+//
+// Здесь стояла зашитая CHALLENGE_PRICE = 2990, и пока поток был один, этого
+// хватало. Со служебным потоком за 50 ₽ (sql/2026-08-25_challenge_staff_season.sql)
+// перестало: 50 ₽ уже занято тарифом ТЕСТ 50, и билет, сверенный с зашитой
+// ценой, ярлыком бы не опознался — платёж за место в потоке начислил бы тариф.
+// Поэтому challengePrice — это price_rub ТОГО потока, куда человека зачисляют
+// (какого именно — решает api/_challengeSeason.js).
+//
+// ПРАВИЛО «ЯРЛЫК ДЕЙСТВУЕТ ТОЛЬКО ПРИ СОВПАДЕНИИ СУММЫ» ОСТАЁТСЯ. Сумма
+// по-прежнему сторож: подменивший ярлык не получит ничего дороже оплаченного.
+//
+// А ВОТ ЧТО ДОБАВИЛОСЬ: ярлык билета отменяет разбор по сумме насовсем. Раньше
+// «__challenge на чужую сумму» откатывался к таблице сумм, и это было безобидно
+// ровно до тех пор, пока цена билета была константой. Теперь цены может не быть
+// вовсе (потока нет) — и старый откат означал бы, что билет за 2990 без
+// открытого потока молча превращается в ПРОФИТ вместо честного 'no_open_season'.
+// Ущерба подменившему ярлык это не даёт и дать не может: он получит НЕ БОЛЬШЕ,
+// а меньше — билет вместо тарифа или вовсе ничего.
+//
 // Экспортируется ради теста — правило дороже, чем то, что вокруг него.
-export function resolveItem(tag, sumNum) {
+export function resolveItem(tag, sumNum, challengePrice) {
   if (!Number.isFinite(sumNum)) return undefined
-  // Object.hasOwn, а не просто ITEM_PRICE[tag]: ярлык приходит снаружи, и
+  if (tag === CHALLENGE_ITEM) {
+    return challengePrice === sumNum ? CHALLENGE_ITEM : undefined
+  }
+  // Object.hasOwn, а не просто PLAN_PRICE[tag]: ярлык приходит снаружи, и
   // 'constructor' или 'toString' достали бы из прототипа не цену, а функцию.
-  const taggedPrice = tag && Object.hasOwn(ITEM_PRICE, tag) ? ITEM_PRICE[tag] : undefined
+  const taggedPrice = tag && Object.hasOwn(PLAN_PRICE, tag) ? PLAN_PRICE[tag] : undefined
   if (taggedPrice !== undefined && taggedPrice === sumNum) return tag
   return AMOUNT_TO_PLAN[sumNum]
 }
@@ -208,10 +232,40 @@ export default async function handler(req, res) {
   const customerExtra = data.customer_extra != null ? String(data.customer_extra) : null
   const userId = extractUserId(customerExtra) || extractUserId(orderId)
 
+  const itemTag = extractItemTag(customerExtra) || extractItemTag(orderId)
+  const wantsChallenge = itemTag === CHALLENGE_ITEM
+
+  // ── ПРОФИЛЬ ЧИТАЕТСЯ РАНЬШЕ ОПОЗНАНИЯ ТОВАРА, и порядок здесь не случайный.
+  //
+  // Цена билета живёт в потоке, а какой поток человеку — зависит от его роли
+  // (api/_challengeSeason.js). Значит, чтобы понять, билет это или тариф, надо
+  // сперва узнать, кто платил. Раньше профиль читался позже, потому что цена
+  // билета была константой и роль ни на что не влияла.
+  //
+  // Читаем и при неуспешной оплате тоже: в журнал платежей идёт опознанный
+  // товар, и строка «отказ по билету» не должна числиться отказом по тарифу.
+  // Имя нужно здесь же — билет снимает его в момент покупки
+  // (sql/2026-08-24_challenge_entries_fix.sql).
+  let prof = null
+  let profErr = null
+  if (userId) {
+    ({ data: prof, error: profErr } = await supabaseAdmin
+      .from('profiles').select('id, name, role, plan_until, coach_id').eq('id', userId).maybeSingle())
+    if (profErr) console.error(`Prodamus webhook: ошибка проверки пользователя ${userId}:`, profErr)
+  }
+
+  // Поток, в который зачисляем ЭТОГО человека, и его цена. Спрашиваем только
+  // когда платёж вообще назвался билетом — тарифам поток не нужен.
+  let season = null
+  let seasonErr = null
+  if (wantsChallenge && prof) {
+    ({ season, error: seasonErr } = await resolveSeasonFor(supabaseAdmin, prof.role))
+    if (seasonErr) console.error('Prodamus webhook: ошибка чтения сезонов челленджа:', seasonErr)
+  }
+
   // Товар платежа: ярлык, подтверждённый суммой, иначе прежний разбор по сумме
   // (см. resolveItem выше). undefined → опознать нечем.
-  const itemTag = extractItemTag(customerExtra) || extractItemTag(orderId)
-  const item = resolveItem(itemTag, sumNum)
+  const item = resolveItem(itemTag, sumNum, season?.price_rub)
   const isChallenge = item === CHALLENGE_ITEM
 
   // Решаем статус для журнала и что делать дальше. Действуем только при
@@ -221,43 +275,28 @@ export default async function handler(req, res) {
   let enrollChallenge = null
   if (paymentStatus !== 'success') {
     status = paymentStatus || 'unknown'
-  } else if (!item) {
-    status = 'unknown_amount'
   } else if (!userId) {
     status = 'user_not_found'
+  } else if (profErr) {
+    // Отдаём 200, но НЕ начисляем и в журнал пишем как ошибку — Продамус
+    // не должен зациклить ретраи из-за нашего сбоя чтения.
+    status = 'user_check_failed'
+  } else if (!prof) {
+    status = 'user_not_found'
+  } else if (wantsChallenge && seasonErr) {
+    status = 'season_lookup_failed'
+  } else if (wantsChallenge && !season) {
+    // Деньги взяты, а зачислить некуда. Не начисляем ничего, но платёж
+    // обязан попасть в журнал — по нему потом зачисляют руками.
+    status = 'no_open_season'
+  } else if (!item) {
+    status = 'unknown_amount'
+  } else if (isChallenge) {
+    status = 'success'
+    enrollChallenge = { seasonId: season.id, displayName: prof.name || null }
   } else {
-    // Пользователь существует? Имя читаем здесь же: билет челленджа снимает
-    // его в момент покупки (sql/2026-08-24_challenge_entries_fix.sql).
-    const { data: prof, error: profErr } = await supabaseAdmin
-      .from('profiles').select('id, name, plan_until, coach_id').eq('id', userId).maybeSingle()
-    if (profErr) {
-      console.error(`Prodamus webhook: ошибка проверки пользователя ${userId}:`, profErr)
-      // Отдаём 200, но НЕ начисляем и в журнал пишем как ошибку — Продамус
-      // не должен зациклить ретраи из-за нашего сбоя чтения.
-      status = 'user_check_failed'
-    } else if (!prof) {
-      status = 'user_not_found'
-    } else if (isChallenge) {
-      // Билет покупается В ОТКРЫТЫЙ СЕЗОН. Их может быть только один осмысленно,
-      // но если их вдруг окажется два, берём самый старый — тот, набор в
-      // который открыли раньше.
-      const { data: seasons, error: seasonErr } = await supabaseAdmin
-        .from('challenge_seasons').select('id').eq('status', 'open').order('id').limit(1)
-      if (seasonErr) {
-        console.error('Prodamus webhook: ошибка чтения сезонов челленджа:', seasonErr)
-        status = 'season_lookup_failed'
-      } else if (!seasons?.length) {
-        // Деньги взяты, а зачислить некуда. Не начисляем ничего, но платёж
-        // обязан попасть в журнал — по нему потом зачисляют руками.
-        status = 'no_open_season'
-      } else {
-        status = 'success'
-        enrollChallenge = { seasonId: seasons[0].id, displayName: prof.name || null }
-      }
-    } else {
-      status = 'success'
-      accruePlan = { plan: item, currentUntil: prof.plan_until, coachId: prof.coach_id }
-    }
+    status = 'success'
+    accruePlan = { plan: item, currentUntil: prof.plan_until, coachId: prof.coach_id }
   }
 
   // ── Идемпотентность + журнал. Одна вставка: она же защищает от повторов по
@@ -269,7 +308,10 @@ export default async function handler(req, res) {
     user_id: userId,
     // В журнал пишем опознанный товар — в том числе 'challenge' и в том числе
     // когда начисления не было: иначе строку потом не с чем сопоставить.
-    plan: item || null,
+    // Платёж, назвавшийся билетом, числится билетом даже если потока для него
+    // не нашлось: цены тогда нет, опознать по сумме нечем, а разбираться с
+    // такой строкой руками будут именно как с билетом.
+    plan: item || (wantsChallenge ? CHALLENGE_ITEM : null),
     amount: Number.isFinite(sumNum) ? sumNum : null,
     status,
     raw: data,
@@ -323,13 +365,18 @@ export default async function handler(req, res) {
     return res.status(200).send('OK')
   }
 
-  // Билет оплачен, а открытого сезона нет — зачислять некуда. Платёж в журнале
-  // со статусом 'no_open_season', зачисление делается руками по нему, поэтому
-  // про это надо узнать сразу, а не из жалобы участника.
-  if (status === 'no_open_season' || status === 'season_lookup_failed') {
+  // ОПЛАЧЕННЫЙ БИЛЕТ, КОТОРЫЙ НЕ СТАЛ УЧАСТИЕМ. Поток не нашёлся, базу не
+  // спросили, сумма не сошлась с ценой потока — исходы разные, а последствие
+  // одно: деньги взяты, человека в потоке нет. Платёж в журнале, зачисление
+  // делается руками по нему, поэтому про это надо узнать сразу, а не из жалобы
+  // участника.
+  //
+  // Условие по wantsChallenge, а не по опознанному товару: когда цены не
+  // нашлось, товар как раз и не опознан — а именно этот случай и надо поймать.
+  if (wantsChallenge && paymentStatus === 'success' && status !== 'success') {
     reportError('api:prodamus:challenge',
       [`Prodamus webhook: билет ${dedupKey} оплачен, но зачислить некуда (${status})`],
-      { message: 'билет челленджа оплачен, а открытого сезона нет — зачислить некуда', status: 500, userId })
+      { message: `билет челленджа оплачен, а зачислить некуда: ${status}`, status: 500, userId })
     return res.status(200).send('OK')
   }
 
