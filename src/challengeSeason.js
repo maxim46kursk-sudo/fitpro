@@ -157,10 +157,51 @@ async function readState() {
  *   момент, когда ответ меняется под ногами.
  * @returns {Promise<{season: object, entry: object|null}|null>}
  */
+/**
+ * ЧТО ВИДИТ ГОСТЬ: сам поток — да, участие — нет.
+ *
+ * Раньше гостю не читали ВООБЩЕ ничего, и экран честно откатывался на запасные
+ * значения: цена из константы в коде, а даты нет вовсе — «ПОТОК 1 · ДАТА БУДЕТ
+ * ОБЪЯВЛЕНА». Пока на страницу попадали только изнутри приложения, то есть уже
+ * войдя, этого никто не видел. С прямым адресом из поста это стало ПЕРВЫМ, что
+ * читает оплаченный трафик, — и продающая страница без даты старта не продаёт.
+ *
+ * Читается ровно то, что и так напечатано на самой странице: название, дата,
+ * цена, доля фонда. Участие, согласие с правилами и норма питания у гостя не
+ * спрашиваются вовсе — их у него и нет, а запрос за ними стоил бы 401 на
+ * каждом заходе.
+ *
+ * Открывает эти строки политика для anon (sql/2026-08-26_seasons_read_anon.sql),
+ * и она же не пускает дальше публичных статусов: служебный поток за 50 ₽ и
+ * черновики гостю не достаются.
+ */
+async function readSeasonForGuest() {
+  const { data, error } = await supabase
+    .from('challenge_seasons')
+    .select('id, title, starts_on, price_rub, prize_pct, prize_split, status')
+    .in('status', ['open', 'running'])
+    .order('id')
+  if (error) throw error
+  const rows = Array.isArray(data) ? data : []
+  // Тот же порядок выбора, что и у вошедшего, — только без служебного потока:
+  // его гостю не отдаёт база.
+  const season = pickSeason(rows, { staffAllowed: false })
+  return season ? { season, entry: null, rulesAcceptedAt: null, goals: null } : null
+}
+
 export async function loadChallengeState({ guest = false, force = false } = {}) {
   if (guest) {
-    state = null
-    return null
+    if (state !== undefined && !force) return state
+    if (!pending || force) {
+      pending = readSeasonForGuest()
+        .catch((e) => {
+          // Не прочиталось — не беда экрана: он покажет запасные значения.
+          console.warn('challenge: гостю не прочитался поток', e?.message || e)
+          return null
+        })
+        .then((value) => { state = value; pending = null; return value })
+    }
+    return pending
   }
   if (state !== undefined && !force) return state
   if (!pending || force) {

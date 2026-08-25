@@ -175,9 +175,31 @@ describe('согласие переживает перезагрузку и др
     expect(localStorage.length).toBe(0)
   })
 
-  it('гость согласия не имеет и в базу за ним не ходит', async () => {
+  /**
+   * ГОСТЮ ЧИТАЕТСЯ ПОТОК, НО НЕ ЧЕЛОВЕК.
+   *
+   * Раньше гостю не читали ничего вовсе, и это было честно, пока на страницу
+   * попадали только изнутри приложения. С прямым адресом из поста (/challenge)
+   * первым, что видит оплаченный трафик, стала продающая страница — а без даты
+   * старта и цены она не продаёт: экран откатывался на «дата будет объявлена».
+   *
+   * Поэтому граница проходит не по «ходить в базу или нет», а по тому, ЧТО
+   * спрашивать: сам поток — публичная запись, её и так печатают на странице;
+   * участие, согласие и норма питания — про человека, которого ещё нет.
+   */
+  it('гостю читается поток, но не участие и не согласие', async () => {
     const { loadChallengeState } = await freshModule()
-    expect(await loadChallengeState({ guest: true })).toBe(null)
+    const состояние = await loadChallengeState({ guest: true })
+
+    // дата и цена — из базы, иначе страница врёт про «дата будет объявлена»
+    expect(состояние.season.starts_on).toBe(SEASON.starts_on)
+    expect(состояние.season.price_rub).toBe(SEASON.price_rub)
+
+    // а про самого человека не спрошено ничего: его ещё нет
+    expect(состояние.entry).toBe(null)
+    expect(состояние.rulesAcceptedAt).toBe(null)
+    expect(selectedColumns).not.toContain('challenge_entries')
+    expect(selectedColumns).not.toContain('challenge_rules_consent')
     expect(inserts.length).toBe(0)
   })
 })
