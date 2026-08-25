@@ -29,21 +29,45 @@ const USER = '6838d807-fb05-4c7d-af71-a13360373dcd'
 
 /** Что «лежит в базе» и что модуль в неё написал. */
 let rows = []
-let goals = null
+/**
+ * Строки food_goals, КОТОРЫЕ ОТДАЁТ БАЗА. Массив, а не одна строка, и это
+ * важно: у клиента RLS оставляет ровно свою, а тренеру видны ещё и нормы его
+ * клиентов (политика trainer_reads_client_goals). Мок ниже повторяет это
+ * буквально — фильтрует по user_id, только если запрос его назвал, — иначе
+ * проверка «спрашиваем чью-то конкретную норму» проверяла бы саму себя.
+ */
+let goalRows = []
+let goalsFilter = null
 let inserts = []
 let insertError = null
 let rpcCalls = []
 let selectedColumns = ''
+
+/** Ответ maybeSingle() у supabase-js: больше одной строки — это ошибка. */
+const asMaybeSingle = (list) => (
+  list.length > 1
+    ? { data: null, error: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' } }
+    : { data: list[0] || null, error: null }
+)
 
 vi.mock('./supabase.js', () => ({
   supabase: {
     from: (table) => ({
       select: (cols) => {
         if (table === 'challenge_seasons') selectedColumns = cols
+        const goalsQuery = {
+          eq: (col, value) => {
+            goalsFilter = { col, value }
+            return goalsQuery
+          },
+          maybeSingle: () => Promise.resolve(asMaybeSingle(
+            goalsFilter ? goalRows.filter((g) => g[goalsFilter.col] === goalsFilter.value) : goalRows,
+          )),
+        }
         return {
           // сезоны читаются списком, норма — одной строкой
           in: () => ({ order: () => Promise.resolve({ data: rows, error: null }) }),
-          maybeSingle: () => Promise.resolve({ data: goals, error: null }),
+          ...goalsQuery,
         }
       },
       insert: (row) => {
@@ -81,7 +105,8 @@ async function freshModule() {
 
 beforeEach(() => {
   rows = [{ ...SEASON }]
-  goals = { kcal: 2000, p: 120, c: 220, f: 65 }
+  goalRows = [{ user_id: USER, kcal: 2000, p: 120, c: 220, f: 65 }]
+  goalsFilter = null
   inserts = []
   rpcCalls = []
   insertError = null
@@ -218,18 +243,50 @@ describe('норма питания', () => {
     const { loadChallengeState, hasNorm } = await freshModule()
     const state = await loadChallengeState({})
 
-    expect(state.goals).toEqual({ kcal: 2000, p: 120, c: 220, f: 65 })
+    expect(state.goals).toEqual({ user_id: USER, kcal: 2000, p: 120, c: 220, f: 65 })
     expect(hasNorm(state)).toBe(true)
   })
 
   it('нормы нет или она нулевая — участвовать не в чем', async () => {
-    goals = null
+    goalRows = []
     const first = await freshModule()
     expect(first.hasNorm(await first.loadChallengeState({}))).toBe(false)
 
-    goals = { kcal: 0, p: 0, c: 0, f: 0 }
+    goalRows = [{ user_id: USER, kcal: 0, p: 0, c: 0, f: 0 }]
     const second = await freshModule()
     expect(second.hasNorm(await second.loadChallengeState({}))).toBe(false)
+  })
+
+  /**
+   * ЖИВОЙ СБОЙ, ИЗ-ЗА КОТОРОГО ВЛАДЕЛЕЦ НЕ ВИДЕЛ ПОТОКА ВОВСЕ.
+   *
+   * Запрос нормы не называл человека и полагался на RLS. У клиента своя строка
+   * одна, и всё сходилось; тренеру же видны и нормы его клиентов, строк
+   * приезжало несколько, maybeSingle() падал, падение ловил общий catch — и
+   * весь челлендж схлопывался в «набор пока закрыт».
+   *
+   * Правило, которое проверяется: RLS — это ЗАПРЕТ, а не ФИЛЬТР. Запрос обязан
+   * сам называть, чью строку просит, иначе он значит разное для разных ролей.
+   */
+  it('тренеру видны и чужие нормы — берётся своя, а поток не пропадает', async () => {
+    goalRows = [
+      { user_id: USER, kcal: 2000, p: 120, c: 220, f: 65 },
+      { user_id: 'c0ffee00-0000-4000-8000-000000000001', kcal: 1500, p: 90, c: 150, f: 50 },
+    ]
+    const { loadChallengeState, hasNorm } = await freshModule()
+    const state = await loadChallengeState({})
+
+    expect(state).not.toBe(null)
+    expect(state.season.id).toBe(1)
+    expect(state.goals.kcal).toBe(2000)
+    expect(hasNorm(state)).toBe(true)
+  })
+
+  it('запрос нормы называет человека, а не полагается на политику', async () => {
+    const { loadChallengeState } = await freshModule()
+    await loadChallengeState({})
+
+    expect(goalsFilter).toEqual({ col: 'user_id', value: USER })
   })
 
   it('заморозка нормы просит базу, а день не называет', async () => {
