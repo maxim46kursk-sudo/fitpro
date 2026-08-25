@@ -19,9 +19,21 @@ set -u
 
 REPO="${WATCHDOG_REPO:-maxim46kursk-sudo/fitpro}"
 FLOW="${WATCHDOG_WORKFLOW:-fitpro-monitor.yml}"
-# Порог с запасом: настоящие промежутки доходили до тридцати минут, и кричать
-# на каждый пропуск значит приучить себя не читать эти сообщения.
-STALE_MIN="${WATCHDOG_STALE_MIN:-45}"
+# ПОРОГ — ПОЛТОРА ЧАСА, И ЭТО НЕ ЗАПАС «НА ВСЯКИЙ СЛУЧАЙ».
+#
+# Сорок пять минут оказались внутри обычного разброса GitHub: по журналу
+# промежутки в 44 минуты приходят при полностью живом мониторе, и первая же
+# настоящая тревога («порог 45») была ложной — расписание просто сдвинулось.
+# Ложная тревога дороже пропущенной: сторож, которому не верят, не работает
+# вовсе. Полтора часа — это девять подряд пропущенных прогонов из обещанных
+# каждые десять минут; столько подряд расписание не теряет, а падение Actions
+# держится дольше.
+STALE_MIN="${WATCHDOG_STALE_MIN:-90}"
+# ПРОВЕРОЧНЫЙ ЗАПУСК НЕ ТРЕВОЖИТ КАНАЛ. Тревога с заниженным порогом, посланная
+# «на пробу», в канале неотличима от настоящей — один раз так и вышло, владелец
+# получил «порог 1» и пошёл проверять живой монитор. Считаем и печатаем, а в
+# Telegram не пишем.
+DRY="${WATCHDOG_DRY:-}"
 # Не чаще раза в час: молчащий монитор — состояние, а не событие.
 QUIET_FILE="${WATCHDOG_QUIET_FILE:-/tmp/fitpro-watchdog-alerted}"
 QUIET_MIN="${WATCHDOG_QUIET_MIN:-60}"
@@ -73,6 +85,12 @@ text="🟡 Сторож FitPro замолчал: последний прогон
 Проверь https://github.com/${REPO}/actions/workflows/${FLOW}
 Пока он молчит, падение сайта никто не заметит, кроме людей."
 
+if [ -n "$DRY" ]; then
+  echo "watchdog: ПРОВЕРКА, в канал не пишу. Отправил бы:"
+  echo "$text"
+  exit 0
+fi
+
 curl -s -m 20 -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
   -d chat_id="$CHAT" --data-urlencode text="$text" >/dev/null && touch "$QUIET_FILE"
 echo "watchdog: тревога отправлена, монитор молчит $age_min мин"
@@ -83,3 +101,6 @@ echo "watchdog: тревога отправлена, монитор молчит
 #   (TG_ALERT_TOKEN и TG_ALERT_CHAT в /root/fitpro-app/.env уже есть)
 #   в crontab:
 #     */10 * * * * /root/fitpro/watchdog-heartbeat.sh >> /root/fitpro/watchdog.log 2>&1
+#
+#   Проверить, не тревожа канал:
+#     WATCHDOG_DRY=1 WATCHDOG_STALE_MIN=1 /root/fitpro/watchdog-heartbeat.sh

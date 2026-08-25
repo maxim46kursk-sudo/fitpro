@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { MIN_ENTRIES, MIN_MEALS, dayScore, streamScore } from '../../challengeNutrition.js'
 import { DAYS, streamDay, streamPhase } from '../game/challenge.js'
 import StreamRoom from './StreamRoom.jsx'
+import { bump } from '../../funnel.js'
 
 /**
  * ЧЕЛЛЕНДЖ — ОДНА ДЛИННАЯ СТРАНИЦА, по которой человек решает, платить ли.
@@ -160,6 +161,18 @@ export default function ChallengeScreen({
 
   const [agreed, setAgreed] = useState(false)
   const [busy, setBusy] = useState(false)
+
+  /**
+   * ОТКРЫЛИ СТРАНИЦУ ПОТОКА — первая ступень воронки продажи.
+   *
+   * Только пока страница продаёт. Участник открывает ЭТУ ЖЕ страницу, чтобы
+   * перечитать правила, и считать его вместе с покупателями значило бы каждый
+   * день подмешивать в верх воронки тех, кто уже внизу.
+   */
+  useEffect(() => {
+    if (loading || entry) return
+    bump('ch_open')
+  }, [loading, entry])
   /**
    * УЧАСТНИК ЧИТАЕТ ПРАВИЛА. Открывается та же самая страница, что и до
    * покупки, — другой у правил нет и быть не должно: человек согласился именно
@@ -817,7 +830,13 @@ export default function ChallengeScreen({
             <input
               type="checkbox"
               checked={agreed}
-              onChange={(e) => setAgreed(e.target.checked)}
+              onChange={(e) => {
+                setAgreed(e.target.checked)
+                // Галочка стоит под всем текстом правил: её отметили — значит
+                // страницу дочитали до конца. Снятие не считаем, иначе одно
+                // сомнение выглядело бы как второй прочитавший.
+                if (e.target.checked) bump('ch_rules')
+              }}
               data-testid="challenge-agree"
             />
             <i aria-hidden="true">{agreed ? '✓' : ''}</i>
@@ -829,7 +848,9 @@ export default function ChallengeScreen({
             className="mt-ch__btn"
             data-testid="challenge-join"
             disabled={!agreed || busy || (!guest && !season)}
-            onClick={guest ? () => onCreateAccount?.() : join}
+            onClick={guest
+              ? () => { bump('ch_join'); bump('ch_signup'); onCreateAccount?.() }
+              : () => { bump('ch_join'); join() }}
           >
             {!guest && !season ? 'Набор пока закрыт' : busy ? 'Открываю оплату…' : `Участвовать — ${priceLabel}`}
           </button>

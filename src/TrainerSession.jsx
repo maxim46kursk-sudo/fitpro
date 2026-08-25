@@ -481,6 +481,66 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
     return id
   }, [workoutId, clientId, name, date, trainerId, editWorkoutId])
 
+  /**
+   * ТРЕНИРОВКА ИСЧЕЗЛА ИЗ-ПОД ЗАНЯТИЯ — восстановление на месте.
+   *
+   * Политика записи подходов требует, чтобы строка workouts существовала и
+   * принадлежала клиенту этого тренера. Если тренировки под номером больше нет,
+   * база отвечает отказом политики (42501) — тем же кодом, что и на чужого
+   * клиента. Тренер при этом видит «клиент числится не за тобой» и теряет всё
+   * занятие: каждая следующая запись упирается в тот же мёртвый номер.
+   *
+   * Так и случилось 24 августа: тридцать отказов подряд, ни одного сохранённого
+   * подхода. Причину (удаление пустой тренировки при сворачивании приложения)
+   * убрали ниже, но состояние, указывающее на несуществующую строку, может
+   * возникнуть и иначе — тренировку могли снести со второго устройства.
+   * Поэтому занятие чинит себя само.
+   *
+   * Отказ бывает и настоящим — клиента увели у тренера, — поэтому сначала
+   * СПРАШИВАЕМ БАЗУ, есть ли тренировка. Заводим новую только когда её нет.
+   *
+   * Подходы пропавшей тренировки ушли вместе с ней (внешний ключ объявлен с
+   * ON DELETE CASCADE), поэтому их номера в состоянии больше ничего не значат:
+   * сбрасываем и ставим всё, что заполнено, в очередь на повторную запись —
+   * «Завершить» допишет.
+   */
+  const воскреситьТренировку = useCallback(async (wid) => {
+    const { data, error } = await supabase.from('workouts').select('id').eq('id', wid).maybeSingle()
+    if (error || data?.id) return null            // тренировка на месте — отказ настоящий
+
+    creatingRef.current = null
+    const { data: свежая, error: eIns } = await supabase.from('workouts')
+      .insert({ user_id: clientId, name: name || 'Тренировка с тренером', date, created_by: trainerId })
+      .select('id').single()
+    if (eIns || !свежая?.id) return null
+
+    setWorkoutId(свежая.id)
+    latestRef.current = { ...latestRef.current, workoutId: свежая.id }
+    if (!editWorkoutId) {
+      saveDraft({
+        workoutId: свежая.id, clientId,
+        name: name || 'Тренировка с тренером', date,
+        startedAt: startedAtRef.current || Date.now(),
+      })
+    }
+    for (const ex of exercises) {
+      ex.sets.forEach((st, i) => {
+        if (String(st.kg).trim() !== '' || String(st.reps).trim() !== '') pendingRef.current.set(`${ex.key}:${i}`, true)
+      })
+    }
+    setExercises(list => list.map(e => ({ ...e, sets: e.sets.map(st => ({ ...st, id: null })) })))
+    return свежая.id
+  }, [exercises, clientId, name, date, trainerId, editWorkoutId])
+
+  /** Вставка подхода с одной попыткой воскрешения пропавшей тренировки. */
+  const вставитьПодход = useCallback(async (row) => {
+    const r = await supabase.from('workout_sets').insert(row).select('id').single()
+    if (r.error?.code !== '42501' || !row.workout_id) return r
+    const свежий = await воскреситьТренировку(row.workout_id)
+    if (!свежий) return r
+    return await supabase.from('workout_sets').insert({ ...row, workout_id: свежий }).select('id').single()
+  }, [воскреситьТренировку])
+
   // Один подход. Есть id — update, нет — insert (и запоминаем выданный id).
   // user_id подхода ВСЕГДА равен владельцу тренировки: иначе политика откажет.
   const persistSet = useCallback(async (exKey, setIdx) => {
@@ -503,17 +563,22 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
       workout_id: wid,
     }
     pendingRef.current.delete(`${exKey}:${setIdx}`)
+    let вставлять = s.id == null
     if (s.id) {
-      const { error } = await supabase.from('workout_sets').update(row).eq('id', s.id)
+      const { data: задето, error } = await supabase.from('workout_sets').update(row).eq('id', s.id).select('id')
       if (error) { fail('Подход не сохранён — проверь связь и нажми «Повторить»', error); return }
-    } else {
-      const { data, error } = await supabase.from('workout_sets').insert(row).select('id').single()
+      // Обновление никого не задело — строки под этим номером больше нет.
+      // Молча промолчать значило бы потерять подход: пишем его заново.
+      вставлять = !задето?.length
+    }
+    if (вставлять) {
+      const { data, error } = await вставитьПодход(row)
       if (error || !data?.id) { fail('Подход не сохранён — проверь связь и нажми «Повторить»', error); return }
       setExercises(list => list.map(e => e.key !== exKey ? e
         : { ...e, sets: e.sets.map((x, i) => i === setIdx ? { ...x, id: data.id } : x) }))
     }
     setSaveError(''); setSaveState('saved')
-  }, [exercises, ensureWorkout, clientId, date])
+  }, [exercises, ensureWorkout, вставитьПодход, clientId, date])
 
   // ── Правка состояния ──────────────────────────────────────────────────────
   const setField = (exKey, setIdx, field, value) => {
@@ -546,9 +611,8 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
       if (!wid) return
       const kg = String(copy.kg).trim() === '' ? null : Number(String(copy.kg).replace(',', '.'))
       const reps = String(copy.reps).trim() === '' ? null : parseInt(copy.reps, 10)
-      const { data, error } = await supabase.from('workout_sets')
-        .insert({ user_id: clientId, exercise: ex.name, date, kg: Number.isFinite(kg) ? kg : null, reps: Number.isFinite(reps) ? reps : null, workout_id: wid })
-        .select('id').single()
+      const { data, error } = await вставитьПодход(
+        { user_id: clientId, exercise: ex.name, date, kg: Number.isFinite(kg) ? kg : null, reps: Number.isFinite(reps) ? reps : null, workout_id: wid })
       if (error || !data?.id) { fail('Подход не сохранён — проверь связь и нажми «Повторить»', error); return }
       setExercises(list => list.map(e => e.key !== exKey ? e
         : { ...e, sets: e.sets.map((x, i) => i === idx ? { ...x, id: data.id } : x) }))
@@ -625,7 +689,7 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
   // программы: синхронный fetch с keepalive:true, адрес и ключ — из
   // src/supabase.js, токен из tokenRef. Ничего не ждём: любое await означало бы,
   // что страница может умереть раньше отправки.
-  const flushKeepalive = useCallback(() => {
+  const flushKeepalive = useCallback((уходимНасовсем = false) => {
     const token = tokenRef.current
     const { workoutId: wid, comment: cmt } = latestRef.current
     if (!token || !wid) return
@@ -671,9 +735,19 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
     // передумал) — тренировку сносим, пустышке в дневнике клиента не место.
     // Подходы ушли бы каскадом, но их тут и нет. Комментарий в этом случае
     // писать уже некуда.
+    //
+    // ТОЛЬКО ПРИ НАСТОЯЩЕМ УХОДЕ С ЭКРАНА, и это стоило тренеру занятия.
+    // Раньше досылка звалась и на visibilitychange, а он приходит от любого
+    // мелкого повода: свернул Телеграм, ответил на звонок, погас экран,
+    // открылась камера. Занятие при этом никуда не делось — тренер вернётся
+    // через минуту, — а пустая пока тренировка уже снесена. Дальше каждая
+    // запись подхода ссылается на несуществующий номер, политика отвечает
+    // отказом (42501), и тренер до конца занятия видит «клиент числится не за
+    // тобой». Двадцать четвёртого августа так пропало занятие целиком:
+    // тридцать отказов подряд, ни одного сохранённого подхода.
     if (willHaveSets === 0) {
       // Пока содержимое не загружено, «ноль подходов» ничего не значит.
-      if (contentReadyRef.current) {
+      if (уходимНасовсем && contentReadyRef.current) {
         send(`${SUPABASE_URL}/rest/v1/workouts?id=eq.${wid}`, 'DELETE', undefined)
         // Тренировки больше нет — продолжать нечего, пометку снимаем вместе с ней.
         clearDraft(wid)
@@ -692,9 +766,15 @@ export default function TrainerSession({ client, trainerId, catalogExercises = [
   // когда подходов в ней пока ноль.
   const flushRef = useRef(flushKeepalive)
   useEffect(() => { flushRef.current = flushKeepalive }, [flushKeepalive])
-  useEffect(() => () => { flushRef.current() }, [])
+  // Уход с экрана внутри приложения — единственный однозначный «ушёл насовсем»:
+  // экран закрыт, возвращаться некуда, пустую тренировку можно сносить.
+  useEffect(() => () => { flushRef.current(true) }, [])
   useEffect(() => {
-    const flush = () => flushRef.current()
+    // А это — «страница может умереть»: досылаем введённое, но ничего не
+    // удаляем. Незавершённое занятие подхватит пометка (saveDraft) и предложит
+    // продолжить; пустая тренировка уйдёт при «Завершить», который считает
+    // подходы по базе.
+    const flush = () => flushRef.current(false)
     const onVis = () => { if (document.visibilityState === 'hidden') flush() }
     window.addEventListener('pagehide', flush)
     window.addEventListener('visibilitychange', onVis)
