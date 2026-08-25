@@ -114,9 +114,7 @@ const money = (n) =>
  * @param {(tier: string, opts: object) => void} [props.onResume] продолжить
  *   незавершённую сессию. Комната сессий не запускает — отдаёт решение наверх.
  * @param {() => void} [props.onOpenDiary] открыть дневник питания.
- * @param {object} [props.app] сводка по остальному приложению (App.jsx).
- * @param {() => void} [props.onOpenWorkouts] открыть тренировки.
- * @param {() => void} [props.onOpenProgress] открыть прогресс.
+ * @param {() => void} [props.onOpenMyData] увести в «Мои данные».
  * @param {boolean} [props.syncBroken] прогресс не прочитан — заход не в зачёт.
  * @param {boolean} [props.pushFailed] результат не уехал наверх после повторов.
  * @param {boolean} [props.greet] первый заход после покупки: показать полосу
@@ -140,9 +138,7 @@ export default function ChallengeScreen({
   onStartDay = null,
   onResume = null,
   onOpenDiary = null,
-  app = null,
-  onOpenWorkouts = null,
-  onOpenProgress = null,
+  onOpenMyData = null,
   syncBroken = false,
   pushFailed = false,
   greet = false,
@@ -198,7 +194,27 @@ export default function ChallengeScreen({
     return () => view.removeEventListener('scroll', onScroll)
   }, [entry, loading, guest])
 
-  const scrollTo = (ref) => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  /**
+   * ПРЫЖОК ПО СТРАНИЦЕ — СВОИМИ РУКАМИ, А НЕ scrollIntoView.
+   *
+   * Живая поломка: «Участвовать» из липкой полосы роняло человека вниз, и там
+   * его же кнопку перекрывала эта самая полоса. Причин две, и обе от
+   * scrollIntoView: он прокручивает БЛИЖАЙШИЙ подходящий контейнер (а у нас их
+   * два — свиток страницы и экран под ним) и ставит цель ровно в верх окна, не
+   * зная ни про полосу внизу, ни про то, что у последнего раздела прокрутка
+   * упирается в конец и цель остаётся ниже, чем просили.
+   *
+   * Здесь мы двигаем ИМЕННО свиток страницы и на ИЗВЕСТНОЕ число. Плюс
+   * `.mt-ch__final` получил снизу поле в рост полосы (motion.css) — так кнопка
+   * не окажется под ней даже в тот миг, пока полоса ещё не спряталась.
+   */
+  const scrollTo = (ref) => {
+    const view = viewRef.current
+    const target = ref.current
+    if (!view || !target) return
+    const top = target.getBoundingClientRect().top - view.getBoundingClientRect().top + view.scrollTop
+    view.scrollTo({ top: Math.max(0, top - 12), behavior: 'smooth' })
+  }
 
   const join = async () => {
     if (busy || !agreed || !onJoin) return
@@ -249,10 +265,7 @@ export default function ChallengeScreen({
         onStartDay={onStartDay}
         onResume={onResume}
         onOpenDiary={onOpenDiary}
-        app={app}
-        onOpenWorkouts={onOpenWorkouts}
-        onOpenProgress={onOpenProgress}
-        onFillNorm={onFillNorm}
+        onOpenMyData={onOpenMyData}
         onStandings={onStandings}
         onRules={() => setRulesOpen(true)}
         onExit={onExit}
@@ -316,7 +329,7 @@ export default function ChallengeScreen({
           </div>
           )}
 
-          <Nutrition rows={nutrition} startsOn={season?.starts_on} hasNorm={hasNorm} onFillNorm={onFillNorm} />
+          <Nutrition rows={nutrition} startsOn={season?.starts_on} hasNorm={hasNorm} onFillNorm={onOpenMyData} />
 
           {/* Таблица потока — рядом со своим номером: «где я среди остальных»
               спрашивают сразу после «какой у меня номер». */}
@@ -376,11 +389,7 @@ export default function ChallengeScreen({
               абонемента.</b> Камера считает каждое движение сама.
             </p>
             <div className="mt-ch__heroCta">
-              {readOnly ? null : guest ? (
-                <button type="button" className="mt-ch__btn" data-testid="challenge-signup" onClick={() => onCreateAccount?.()}>
-                  Создать аккаунт
-                </button>
-              ) : (
+              {readOnly ? null : (
                 <button type="button" className="mt-ch__btn" data-testid="challenge-hero-join" onClick={() => scrollTo(endRef)}>
                   Участвовать — {priceLabel}
                 </button>
@@ -787,68 +796,49 @@ export default function ChallengeScreen({
             <p>{prizePct}% всех билетов уходит в призовой фонд потока.</p>
           </div>
 
-          {guest ? (
-            <>
-              <p className="mt-ch__guestNote" data-testid="challenge-guest">
-                Место в потоке привязывается к аккаунту: номер участника, результаты и призы
-                держатся на человеке, а не на телефоне. Аккаунт бесплатный.
-              </p>
-              <button type="button" className="mt-ch__btn" data-testid="challenge-signup-end" onClick={() => onCreateAccount?.()}>
-                Создать аккаунт
-              </button>
-            </>
-          ) : (
-            <>
-              {/* Галочка и есть «дочитал»: чтобы до неё добраться, правила надо
-                  прокрутить. Без нормы её не показываем вовсе — соглашаться
-                  пока не с чем, человеку сперва в дневник. */}
-              {hasNorm && (
-              <label className={`mt-ch__agree ${agreed ? 'is-on' : ''}`}>
-                <input
-                  type="checkbox"
-                  checked={agreed}
-                  onChange={(e) => setAgreed(e.target.checked)}
-                  data-testid="challenge-agree"
-                />
-                <i aria-hidden="true">{agreed ? '✓' : ''}</i>
-                <span>Я прочитал правила и согласен</span>
-              </label>
-              )}
+          {/**
+            * ОДНА КНОПКА НА ВСЕХ, И НИКАКОЙ АНКЕТЫ ПЕРЕД ДЕНЬГАМИ.
+            *
+            * Было два лишних порога, и оба стояли ДО оплаты. Гостю вместо цены
+            * предлагали завести аккаунт — то есть просили заплатить вниманием
+            * раньше, чем он решил, нужно ли ему это вообще. А тому, у кого не
+            * заполнены данные о себе, вместо «Участвовать» показывали
+            * «Заполнить данные»: форма между человеком и кнопкой оплаты убивает
+            * продажу вернее любой цены.
+            *
+            * Теперь кнопка одна и говорит одно и то же всем: «Участвовать —
+            * столько-то». Что происходит по нажатию, зависит от того, кто
+            * нажал: гостю показывают предложение аккаунта (место в потоке
+            * действительно держится на человеке, а не на телефоне), вошедшему —
+            * оплату. Данные о себе спрашиваются ПОСЛЕ оплаты, в комнате: там
+            * они и нужны, и там человек уже свой.
+            */}
+          <label className={`mt-ch__agree ${agreed ? 'is-on' : ''}`}>
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+              data-testid="challenge-agree"
+            />
+            <i aria-hidden="true">{agreed ? '✓' : ''}</i>
+            <span>Я прочитал правила и согласен</span>
+          </label>
 
-              {/**
-                * БЕЗ НОРМЫ БИЛЕТ НЕ ПРОДАЁТСЯ. Питание — половина зачёта, и
-                * человек без дневной нормы играл бы заведомо половину. Поэтому
-                * не отказ после нажатия, а другая кнопка: она ведёт туда, где
-                * норма считается за минуту. Сервер держит то же правило
-                * (api/create-payment.js) — экран лишь говорит об этом заранее.
-                */}
-              {hasNorm ? (
-                <button
-                  type="button"
-                  className="mt-ch__btn"
-                  data-testid="challenge-join"
-                  disabled={!agreed || busy || !season}
-                  onClick={join}
-                >
-                  {!season ? 'Набор пока закрыт' : busy ? 'Открываю оплату…' : `Участвовать — ${priceLabel}`}
-                </button>
-              ) : (
-                <>
-                  <p className="mt-ch__guestNote" data-testid="challenge-no-norm">
-                    Питание — половина зачёта, и считается оно от твоей дневной нормы. Заполни
-                    данные о себе: пол, возраст, рост, вес, цель — норму приложение посчитает само.
-                  </p>
-                  <button
-                    type="button"
-                    className="mt-ch__btn"
-                    data-testid="challenge-fill-norm"
-                    onClick={() => onFillNorm?.()}
-                  >
-                    Заполнить данные о себе
-                  </button>
-                </>
-              )}
-            </>
+          <button
+            type="button"
+            className="mt-ch__btn"
+            data-testid="challenge-join"
+            disabled={!agreed || busy || (!guest && !season)}
+            onClick={guest ? () => onCreateAccount?.() : join}
+          >
+            {!guest && !season ? 'Набор пока закрыт' : busy ? 'Открываю оплату…' : `Участвовать — ${priceLabel}`}
+          </button>
+
+          {guest && (
+            <p className="mt-ch__guestNote" data-testid="challenge-guest">
+              Место в потоке держится на человеке, а не на телефоне: номер участника,
+              результаты и призы привязываются к аккаунту. Он бесплатный и заводится за минуту.
+            </p>
           )}
 
           {note && <p className="mt-ch__note" data-testid="challenge-note">{note}</p>}
@@ -872,12 +862,13 @@ export default function ChallengeScreen({
       <div className="mt-ch__top" aria-hidden="true" />
 
       {/* ЛИПКАЯ ПОЛОСА: появляется после первого экрана, прячется в конце.
-          Участнику её нет вовсе — покупать ему нечего. */}
-      {!guest && !readOnly && (
+          Гостю она такая же, как всем: он читает ту же страницу и видит ту же
+          цену. Участнику её нет вовсе — покупать ему нечего. */}
+      {!readOnly && (
         <div className={`mt-ch__bar ${barOn ? 'is-on' : ''}`} data-testid="challenge-bar">
           <div className="mt-ch__barPrice">{priceLabel}</div>
           <button type="button" className="mt-ch__btn" data-testid="challenge-bar-join" onClick={() => scrollTo(endRef)}>
-            {hasNorm ? 'Участвовать' : 'Что нужно'}
+            Участвовать
           </button>
         </div>
       )}
@@ -937,7 +928,7 @@ function Nutrition({ rows, startsOn, hasNorm, onFillNorm }) {
         </div>
       ) : (
         <button type="button" className="mt-ch__btn mt-ch__btn--line" data-testid="nutri-fill" onClick={() => onFillNorm?.()}>
-          Заполнить данные о себе
+          Мои данные
         </button>
       )}
     </div>

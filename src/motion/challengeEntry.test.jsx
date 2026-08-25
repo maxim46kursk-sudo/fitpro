@@ -139,15 +139,25 @@ describe('вход в раздел сразу на экране челлендж
     expect(cameraEnabled).toBe(true)
   })
 
-  it('гость на этом экране видит предложение аккаунта, а не оплату', async () => {
+  it('гость читает ту же страницу и видит ту же цену', async () => {
+    // раньше вместо цены ему показывали «создать аккаунт» — то есть просили
+    // плату вниманием раньше, чем он узнал, что предлагают
+    render(<MotionApp startScreen="challenge" guest />)
+
+    await waitFor(() => expect(screen.getByTestId('challenge-screen')).toBeTruthy())
+    expect(screen.getByTestId('challenge-price').textContent).toContain('990')
+    expect(screen.getByTestId('challenge-join').textContent).toContain('Участвовать')
+    expect(screen.queryByTestId('challenge-signup')).toBeNull()
+  })
+
+  it('нажал «Участвовать» — предложение аккаунта рисует хозяин', async () => {
     const onGuestValue = vi.fn()
     render(<MotionApp startScreen="challenge" guest onGuestValue={onGuestValue} />)
 
     await waitFor(() => expect(screen.getByTestId('challenge-screen')).toBeTruthy())
-    expect(screen.getByTestId('challenge-signup')).toBeTruthy()
-    expect(screen.queryByTestId('challenge-buy')).toBeNull()
+    act(() => screen.getByTestId('challenge-agree').click())
+    act(() => screen.getByTestId('challenge-join').click())
 
-    screen.getByTestId('challenge-signup').click()
     // предложение рисует хозяин, одно на всё приложение (OfferSheet в App.jsx)
     expect(onGuestValue).toHaveBeenCalledWith('challenge', 0)
   })
@@ -204,15 +214,15 @@ describe('дорога: карточка на главной ведёт на с�
     expect(cameraEnabled).toBe(false)
   })
 
-  it('гостю — предложение аккаунта, цена при этом видна', async () => {
+  it('гостю — та же кнопка и та же цена, аккаунт по нажатию', async () => {
     const onGuestValue = vi.fn()
     render(<MotionApp startScreen="challenge" guest onGuestValue={onGuestValue} />)
 
     await waitFor(() => expect(screen.getByTestId('challenge-screen')).toBeTruthy())
     expect(screen.getByTestId('challenge-price').textContent).toContain('990')
-    expect(screen.queryByTestId('challenge-join')).toBeNull()
 
-    screen.getByTestId('challenge-signup').click()
+    act(() => screen.getByTestId('challenge-agree').click())
+    act(() => screen.getByTestId('challenge-join').click())
     expect(onGuestValue).toHaveBeenCalledWith('challenge', 0)
   })
 })

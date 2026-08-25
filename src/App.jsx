@@ -146,44 +146,24 @@ function motionSyncFor(userId) {
  * @param {object|null} [props.guestMotion] попытки из буфера переезда
  * @param {() => void} [props.onGuestMotionApplied]
  */
-function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null, onOpenWorkouts = null, onOpenProgress = null }) {
+/**
+ * КУДА ВЕРНУТЬ ЧЕЛОВЕКА ПОСЛЕ РЕГИСТРАЦИИ.
+ *
+ * Гость дочитал длинную страницу челленджа и нажал «Участвовать». Отправить его
+ * после регистрации на главную — значит попросить пройти весь путь заново, и
+ * ровно на этом шаге люди отваливаются. Метка живёт в sessionStorage: она
+ * переживает уход на форму входа и не переживает закрытие вкладки, а больше от
+ * неё ничего и не требуется.
+ */
+const RETURN_TO_KEY = 'fitpro_return_to'
+
+function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null, onOpenMyData = null }) {
   /**
    * Адаптер собирается ОДИН раз на человека. Новый объект на каждый рендер
    * означал бы новую загрузку прогресса на каждый рендер — то есть заставку,
    * возвращающуюся посреди тренировки.
    */
   const sync = useMemo(() => (userId ? motionSyncFor(userId) : null), [userId])
-
-  /**
-   * СВОДКА ПО ОСТАЛЬНОМУ ПРИЛОЖЕНИЮ — для комнаты участника челленджа.
-   *
-   * Комната задумана как единственное место, куда человек заходит каждый день,
-   * и из неё должно быть видно то, что живёт за её пределами. Считает это
-   * ХОЗЯИН: раздел Motion про тренировки FitPro ничего не знает, и лезть ему в
-   * эту таблицу значило бы завести вторую правду о них.
-   *
-   * Один запрос на открытие раздела и только у вошедшего. Отказ — не беда:
-   * комната покажет карточку без числа, а не заставку с извинениями.
-   */
-  const [appSummary, setAppSummary] = useState(null)
-  useEffect(() => {
-    // Гостю сводки нет и сбрасывать нечего: overlay пересоздаётся на каждого
-    // человека, и начальное состояние уже пустое.
-    if (!userId) return undefined
-    let alive = true
-    const since = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
-    supabase.from('workouts').select('date').eq('user_id', userId).gte('date', since)
-      .then(({ data, error }) => {
-        if (!alive || error) return
-        const days = new Set((data || []).map(w => String(w.date).slice(0, 10)))
-        const last = [...days].sort().pop() || null
-        setAppSummary({
-          workouts7d: days.size,
-          lastWorkout: last ? new Date(last + 'T00:00:00').toLocaleDateString('ru', { day: 'numeric', month: 'long' }) : null,
-        })
-      })
-    return () => { alive = false }
-  }, [userId])
 
   return createPortal(
     <div
@@ -238,9 +218,7 @@ function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onG
           startScreen={startScreen}
           onFillNorm={onFillNorm}
           onOpenDiary={onOpenDiary}
-          app={appSummary}
-          onOpenWorkouts={onOpenWorkouts}
-          onOpenProgress={onOpenProgress}
+          onOpenMyData={onOpenMyData}
         />
       </Suspense>
     </div>,
@@ -10768,6 +10746,15 @@ export default function App() {
   const offeredDiaryRef=useRef(false)
   const showOffer=useCallback((section,score)=>{
     if(!guestMode)return false
+    /**
+     * ЧЕЛЛЕНДЖ — ЗАПОМНИТЬ, ОТКУДА ЧЕЛОВЕК ПРИШЁЛ. Он дочитал длинную страницу
+     * и нажал «Участвовать»; после регистрации он обязан вернуться туда же.
+     * Метка ставится здесь, а не у кнопки, — предложение показывается из
+     * нескольких мест, и запоминать должно то, что общее для всех.
+     */
+    if(section==='challenge'){
+      try{sessionStorage.setItem(RETURN_TO_KEY,'challenge')}catch{/* приватный режим */}
+    }
     if(section==='diary'){
       if(offeredDiaryRef.current)return false
       offeredDiaryRef.current=true
@@ -11253,6 +11240,29 @@ export default function App() {
   }
 
   /**
+   * ВЕРНУТЬ ЧЕЛОВЕКА ТУДА, ОТКУДА ОН УШЁЛ РЕГИСТРИРОВАТЬСЯ.
+   *
+   * Срабатывает один раз: метку снимаем до открытия, чтобы повторный рендер не
+   * открывал раздел второй раз. Гостя это не касается — у него метки нет, а
+   * если бы и была, возвращать пока некуда.
+   */
+  const returnedRef=useRef(false)
+  useEffect(()=>{
+    if(!user||guestMode||returnedRef.current)return undefined
+    let want=null
+    try{want=sessionStorage.getItem(RETURN_TO_KEY)}catch{/* приватный режим */}
+    if(want!=='challenge')return undefined
+    returnedRef.current=true
+    try{sessionStorage.removeItem(RETURN_TO_KEY)}catch{/* приватный режим */}
+    // Не синхронно: открытие раздела — это setState, а мы внутри эффекта.
+    const t=setTimeout(()=>openMotion('challenge'),0)
+    return ()=>clearTimeout(t)
+    // openMotion пересоздаётся каждый рендер и от него тут ничего не зависит:
+    // эффект обязан сработать РОВНО ОДИН РАЗ, на появлении человека.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[user,guestMode])
+
+  /**
    * ДВЕРЬ В ЧЕЛЛЕНДЖ С ГЛАВНОЙ.
    *
    * ГОСТЮ — ПРЕДЛОЖЕНИЕ АККАУНТА, А НЕ ФОРМА ОПЛАТЫ. Место в потоке
@@ -11278,17 +11288,13 @@ export default function App() {
   }
 
   /**
-   * ИЗ КОМНАТЫ — В ОСТАЛЬНОЕ ПРИЛОЖЕНИЕ. Раздел закрывается той же дорогой, что
-   * и всегда (closeMotion гасит камеру размонтированием), и человек попадает на
-   * нужную вкладку, а не на главную «куда-нибудь».
+   * ИЗ КОМНАТЫ — В «МОИ ДАННЫЕ». Пол, возраст, рост, вес, цель, активность:
+   * по ним приложение считает норму само. Не на экран нормы КБЖУ — просить
+   * человека самому назначить себе калории значит просить сделать нашу работу.
    */
-  const openWorkoutsTab=()=>{
+  const openMyData=()=>{
     closeMotion()
-    handleNav('workouts')
-  }
-  const openProgressTab=()=>{
-    closeMotion()
-    handleNav('progress')
+    setShowProfileView(true)
   }
 
   const openFoodGoals=()=>{
@@ -11300,10 +11306,23 @@ export default function App() {
     setTimeout(()=>window.dispatchEvent(new CustomEvent(OPEN_GOALS_EVENT)),0)
   }
 
+  /**
+   * ЧЕЛЛЕНДЖ ОТКРЫВАЕТСЯ ВСЕМ, ВКЛЮЧАЯ ГОСТЯ.
+   *
+   * Здесь стояло предложение завести аккаунт — прямо на нажатие карточки.
+   * То есть у человека просили плату вниманием раньше, чем он узнал, что ему
+   * предлагают: ни правил, ни призов, ни цены он ещё не видел. Страница
+   * челленджа и есть ответ на «что это и почём», и читать её должно быть можно
+   * без всяких условий.
+   *
+   * Предложение аккаунта никуда не делось — оно появляется там, где становится
+   * осмысленным: по нажатию «Участвовать» (см. ChallengeScreen).
+   */
   const openChallenge=()=>{
-    if(guestMode){handleGuestValue('challenge',0);return}
     openMotion('challenge')
   }
+
+
 
   const closeMotion=()=>{
     setMotionOpen(false)
@@ -12270,8 +12289,7 @@ export default function App() {
           startScreen={motionStart}
           onFillNorm={openFoodGoals}
           onOpenDiary={openFoodDiary}
-          onOpenWorkouts={openWorkoutsTab}
-          onOpenProgress={openProgressTab}
+          onOpenMyData={openMyData}
           userId={user?.id}
           guest={guestMode}
           onGuestValue={handleGuestValue}

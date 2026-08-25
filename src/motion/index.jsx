@@ -94,7 +94,7 @@ import './motion.css'
  *   остальное (камера, калибровка, уровни) на этом пути не нужно и не должно
  *   стоять между ним и ответом.
  */
-export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null, app = null, onOpenWorkouts = null, onOpenProgress = null } = {}) {
+export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null, onOpenMyData = null } = {}) {
   /**
    * ГОСТЬ ПИШЕТ В ПАМЯТЬ, А НЕ НА УСТРОЙСТВО — и решается это здесь, раньше
    * всего остального.
@@ -266,9 +266,7 @@ export default function MotionApp({ onExit, day, tier, paused = false, log = nul
         startScreen={startScreen}
         onFillNorm={onFillNorm}
         onOpenDiary={onOpenDiary}
-        app={app}
-        onOpenWorkouts={onOpenWorkouts}
-        onOpenProgress={onOpenProgress}
+        onOpenMyData={onOpenMyData}
       />
     </ErrorBoundary>
   )
@@ -330,7 +328,7 @@ function readBlockMode() {
   }
 }
 
-function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null, app = null, onOpenWorkouts = null, onOpenProgress = null }) {
+function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null, onOpenMyData = null }) {
   // calibration | setup | levels | room | challenge | workout | result
   // выбор уровня и настройка под себя — только в игре
   const [screen, setScreen] = useState(startScreen === 'challenge' ? 'challenge' : 'calibration')
@@ -1004,9 +1002,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
            */
           onResume={startSession}
           onOpenDiary={() => onOpenDiary?.()}
-          app={app}
-          onOpenWorkouts={onOpenWorkouts ? () => onOpenWorkouts() : null}
-          onOpenProgress={onOpenProgress ? () => onOpenProgress() : null}
+          onOpenMyData={() => onOpenMyData?.()}
           /**
            * ВСТУПЛЕНИЕ ОДНОЙ ДОРОГОЙ: сперва фиксируем согласие В БАЗЕ, и
            * только если оно записалось — открываем оплату. Обратный порядок

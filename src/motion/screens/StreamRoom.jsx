@@ -265,12 +265,9 @@ export function todayNutrition(rows, today) {
  * @param {() => void} [props.onStartDay] начать сегодняшний день
  * @param {(tier: string, opts: object) => void} [props.onResume] продолжить сессию
  * @param {() => void} [props.onOpenDiary] открыть дневник питания
- * @param {{workouts7d?: number, lastWorkout?: string|null}} [props.app] сводка по
- *   остальному приложению. Считает её хозяин (App.jsx): раздел Motion про неё
- *   ничего не знает и знать не должен.
- * @param {() => void} [props.onOpenWorkouts] открыть тренировки
- * @param {() => void} [props.onOpenProgress] открыть прогресс
- * @param {() => void} [props.onFillNorm] завести дневную норму
+ * @param {() => void} [props.onOpenMyData] увести в «Мои данные»: пол, возраст,
+ *   рост, вес, цель, активность. Не на экран нормы КБЖУ — норму приложение
+ *   считает само, а человек не обязан знать про неё, чтобы её получить.
  * @param {() => void} [props.onStandings] открыть таблицу потока
  * @param {() => void} [props.onRules] открыть правила потока
  * @param {() => void} [props.onExit] закрыть комнату (крестик)
@@ -290,10 +287,7 @@ export default function StreamRoom({
   onStartDay = null,
   onResume = null,
   onOpenDiary = null,
-  app = null,
-  onOpenWorkouts = null,
-  onOpenProgress = null,
-  onFillNorm = null,
+  onOpenMyData = null,
   onStandings = null,
   onRules = null,
   onExit = null,
@@ -425,6 +419,36 @@ export default function StreamRoom({
           </div>
         )}
 
+        {/**
+          * ═══ ДАННЫЕ О СЕБЕ — ПОСЛЕ ОПЛАТЫ, НО ДО ЗАЧЁТА ═══
+          *
+          * Перед оплатой анкету больше не спрашивают: форма между человеком и
+          * кнопкой «Участвовать» убивает продажу вернее любой цены. Но питание
+          * — половина места в потоке, и считается оно от дневной нормы,
+          * которой без роста, веса и цели просто нет.
+          *
+          * Поэтому просьба стоит ЗДЕСЬ: человек уже свой, уже заплатил, и
+          * заполнение занимает минуту. Блок заметный и не прячется, пока
+          * данных нет, — но он не мешает начать день: кнопка старта выше.
+          *
+          * Ведёт в «Мои данные», а не на экран нормы КБЖУ: человек заполняет
+          * пол, возраст, рост, вес, цель и активность, а норму приложение
+          * считает само. Просить его самого назначить себе калории — значит
+          * просить сделать нашу работу.
+          */}
+        {!hasNorm && (
+          <div className="mt-stream__norm" data-testid="stream-need-data">
+            <div className="mt-stream__normTitle">Заполни данные о себе</div>
+            <p className="mt-stream__normP">
+              Без них <b>питание в зачёт не идёт</b>, а это половина места в потоке. Пол,
+              возраст, рост, вес, цель и активность — минута, норму приложение посчитает само.
+            </p>
+            <button type="button" className="mt-stream__act mt-stream__act--warn" data-testid="stream-my-data" onClick={() => onOpenMyData?.()}>
+              Мои данные
+            </button>
+          </div>
+        )}
+
         {/* ═══ 3. ЗАХОДЫ ═══ */}
         <div className="mt-stream__runs" data-testid="stream-runs">
           Осталось заходов: <b>{room.left}</b> из {MAX_ATTEMPTS}
@@ -488,11 +512,11 @@ export default function StreamRoom({
           {!hasNorm ? (
             <>
               <p className="mt-stream__cardP">
-                Норма ещё не посчитана, а питание — половина зачёта. Заполни данные о себе:
-                рост, вес, цель — остальное приложение посчитает само.
+                Норма появится, как только будут данные о себе — блок выше. До этого дни
+                питания считаются нулём.
               </p>
-              <button type="button" className="mt-stream__act" data-testid="stream-fill-norm" onClick={() => onFillNorm?.()}>
-                Заполнить данные о себе
+              <button type="button" className="mt-stream__act" data-testid="stream-fill-norm" onClick={() => onOpenMyData?.()}>
+                Мои данные
               </button>
             </>
           ) : !food ? (
@@ -552,42 +576,6 @@ export default function StreamRoom({
             </button>
           )}
         </section>
-
-        {/**
-          * ═══ ОСТАЛЬНОЕ ПРИЛОЖЕНИЕ ═══
-          *
-          * Комната задумана как единственное место, куда участник заходит
-          * каждый день. Значит из неё должно быть видно и то, что живёт за её
-          * пределами: тренировки и прогресс. Без этого человек всё равно
-          * возвращался бы на главную — и терял бы комнату из виду.
-          *
-          * Числа сюда приносит хозяин приложения (App.jsx). Считать их здесь
-          * нельзя: раздел Motion не знает ни про тренировки FitPro, ни про его
-          * базу, и лезть туда значило бы завести вторую правду о них.
-          */}
-        {(onOpenWorkouts || onOpenProgress) && (
-          <section className="mt-stream__card" data-testid="stream-app">
-            <div className="mt-stream__cardHead">
-              <span className="mt-stream__cardTitle">Остальное приложение</span>
-            </div>
-            <p className="mt-stream__cardP">
-              {app?.workouts7d > 0
-                ? `Тренировок за неделю: ${app.workouts7d}.`
-                : 'Тренировок за неделю пока нет.'}
-              {app?.lastWorkout ? ` Последняя — ${app.lastWorkout}.` : ''}
-            </p>
-            {onOpenWorkouts && (
-              <button type="button" className="mt-stream__act" data-testid="stream-workouts" onClick={onOpenWorkouts}>
-                Тренировки
-              </button>
-            )}
-            {onOpenProgress && (
-              <button type="button" className="mt-stream__act" data-testid="stream-progress" onClick={onOpenProgress}>
-                Мой прогресс
-              </button>
-            )}
-          </section>
-        )}
 
         {/* ═══ 7. КАЛЕНДАРЬ ═══ */}
         <div className="mt-stream__days" data-testid="stream-days">

@@ -4118,25 +4118,38 @@
 
 /* Пять колонок одной сеткой: шапка и строки обязаны совпадать по столбцам, а
    двух разных сеток для этого не надо. */
+/*
+ * КОЛОНКИ ТАБЛИЦЫ. «ПИТАНИЕ» не помещалось в свою дорожку и вылезало вправо —
+ * на телефоне владельца это читалось одним словом «ПИТАНИЕСУММА». Дорожки
+ * расширены под самое длинное слово заголовка, и слова больше не переносятся:
+ * заголовок, который налез на соседний, хуже узкой колонки.
+ */
 .mt-st__cols,
 .mt-st__row {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 68px 46px 38px;
-  gap: 8px;
+  grid-template-columns: 34px minmax(0, 1fr) 64px 52px 44px;
+  gap: 10px;
   align-items: center;
 }
 
+/*
+ * ЗАГОЛОВКИ СТОЯТ РОВНО НАД ЗНАЧЕНИЯМИ. Раньше шапка отступала от края на 16
+ * пикселей, а строка — на те же 16 плюс собственные 12 и рамку: сетки были
+ * разной ширины, и подписи уезжали правее своих чисел. Отступ здесь повторяет
+ * сумму отступов строки, поэтому дорожки у них совпадают до пикселя.
+ */
 .mt-st__cols {
   flex: none;
   width: 100%;
   max-width: 560px;
   margin: 0 auto;
-  padding: 0 16px 8px;
+  padding: 0 29px 8px;
   font-size: 9.5px;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: rgba(235, 235, 245, 0.34);
+  white-space: nowrap;
 }
 
 .mt-st__cols span:nth-child(3),
@@ -4715,4 +4728,16 @@
   padding: 6px;
   margin: 2px auto 0;
   cursor: pointer;
+}
+
+/* Отчего в питании ноль — под таблицей, а не в голове у читающего. */
+.mt-st__note {
+  flex: none;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 6px 29px calc(12px + env(safe-area-inset-bottom, 0px));
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: rgba(235, 235, 245, 0.38);
 }

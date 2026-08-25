@@ -224,41 +224,60 @@ describe('питание за сегодня: настоящие цифры и �
     expect(onOpenDiary).toHaveBeenCalled()
   })
 
-  it('нормы нет — зовём её завести, а не показываем нули', () => {
-    const onFillNorm = vi.fn()
-    room({ nutrition: facts([]), hasNorm: false, onFillNorm })
+  it('нормы нет — зовём заполнить данные, а не показываем нули', () => {
+    const onOpenMyData = vi.fn()
+    room({ nutrition: facts([]), hasNorm: false, onOpenMyData })
 
     expect(screen.queryByTestId('stream-nutri-pct')).toBeNull()
     act(() => screen.getByTestId('stream-fill-norm').click())
-    expect(onFillNorm).toHaveBeenCalled()
+    expect(onOpenMyData).toHaveBeenCalled()
   })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
-describe('остальное приложение', () => {
-  it('числа приносит хозяин, комната их только показывает', () => {
-    const onOpenWorkouts = vi.fn()
-    const onOpenProgress = vi.fn()
-    room({ app: { workouts7d: 3, lastWorkout: '24 августа' }, onOpenWorkouts, onOpenProgress })
+/**
+ * ДАННЫЕ О СЕБЕ СПРАШИВАЮТ ПОСЛЕ ОПЛАТЫ, В КОМНАТЕ.
+ *
+ * Перед кассой анкеты больше нет — она убивала продажу. Но питание половина
+ * места в потоке, и без роста, веса и цели нормы просто не существует. Значит
+ * просьба обязана быть здесь: заметной, не прячущейся и не мешающей начать день.
+ */
+describe('заполни данные о себе', () => {
+  it('данных нет — заметный блок, и он ведёт в «Мои данные»', () => {
+    const onOpenMyData = vi.fn()
+    room({ hasNorm: false, onOpenMyData })
 
-    const card = screen.getByTestId('stream-app').textContent
-    expect(card).toContain('Тренировок за неделю: 3')
-    expect(card).toContain('24 августа')
+    const block = screen.getByTestId('stream-need-data').textContent
+    expect(block).toContain('Заполни данные о себе')
+    expect(block).toContain('питание в зачёт не идёт')
 
-    act(() => screen.getByTestId('stream-workouts').click())
-    expect(onOpenWorkouts).toHaveBeenCalled()
-    act(() => screen.getByTestId('stream-progress').click())
-    expect(onOpenProgress).toHaveBeenCalled()
+    // именно «Мои данные», а не экран нормы КБЖУ
+    expect(screen.getByTestId('stream-my-data').textContent).toBe('Мои данные')
+    act(() => screen.getByTestId('stream-my-data').click())
+    expect(onOpenMyData).toHaveBeenCalled()
   })
 
-  it('сводки не приехало — карточка не врёт числом', () => {
-    room({ onOpenWorkouts: () => {} })
-    expect(screen.getByTestId('stream-app').textContent).toContain('пока нет')
+  it('блок не мешает начать день — кнопка старта выше и работает', () => {
+    const onStartDay = vi.fn()
+    room({ hasNorm: false, onStartDay })
+
+    act(() => screen.getByTestId('stream-start').click())
+    expect(onStartDay).toHaveBeenCalled()
   })
 
-  it('вести человека некуда — карточки нет вовсе', () => {
+  it('данные заполнены — блока нет вовсе', () => {
+    room({ hasNorm: true })
+    expect(screen.queryByTestId('stream-need-data')).toBeNull()
+  })
+})
+
+/** Второй комнаты и её кусков в комнате участника быть не должно. */
+describe('остального приложения в комнате нет', () => {
+  it('карточки «Остальное приложение» не существует', () => {
     room({})
     expect(screen.queryByTestId('stream-app')).toBeNull()
+    expect(screen.queryByTestId('stream-workouts')).toBeNull()
+    expect(screen.queryByTestId('stream-progress')).toBeNull()
   })
 })
 

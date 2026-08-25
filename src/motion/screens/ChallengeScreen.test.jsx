@@ -129,36 +129,48 @@ describe('не участник: цена, правила и вступлени�
   })
 })
 
-describe('без нормы питания билет не продаётся', () => {
-  it('вместо «Участвовать» — «Заполнить данные о себе»', () => {
-    /**
-     * Питание — половина зачёта, и считается оно от дневной нормы. Продать
-     * билет человеку без нормы значит взять деньги за заведомо половину
-     * челленджа. Сервер держит то же правило (api/create-payment.js), экран
-     * лишь говорит об этом заранее, а не отказом после нажатия.
-     */
-    const onFillNorm = vi.fn()
-    render(<ChallengeScreen state={{ season: SEASON, entry: null }} hasNorm={false} onFillNorm={onFillNorm} />)
+/**
+ * АНКЕТЫ ПЕРЕД ДЕНЬГАМИ НЕТ — И ЭТО РЕШЕНИЕ, А НЕ НЕДОСМОТР.
+ *
+ * Раньше человеку без заполненных данных о себе вместо «Участвовать» показывали
+ * «Заполнить данные о себе», а сервер добивал отказом 409. Довод был верный —
+ * питание половина зачёта, — а решение неверное: форма между человеком и
+ * кнопкой оплаты убивает продажу вернее любой цены, и теряли мы не
+ * «неподготовленных», а покупателей.
+ *
+ * Правило переехало туда, где работает: данные спрашивают ПОСЛЕ оплаты, в
+ * комнате, а дни без нормы честно считаются нулём. Здесь проверяется, что перед
+ * кассой не осталось ни одного порога.
+ */
+describe('без данных о себе билет всё равно продаётся', () => {
+  it('кнопка всегда «Участвовать», а не «Заполнить данные»', () => {
+    render(<ChallengeScreen state={{ season: SEASON, entry: null }} hasNorm={false} />)
 
-    expect(screen.queryByTestId('challenge-join')).toBeNull()
-    expect(screen.queryByTestId('challenge-agree')).toBeNull()
-    expect(screen.getByTestId('challenge-no-norm').textContent).toContain('половина зачёта')
-
-    act(() => screen.getByTestId('challenge-fill-norm').click())
-    expect(onFillNorm).toHaveBeenCalled()
+    expect(screen.getByTestId('challenge-join').textContent).toContain('Участвовать')
+    expect(screen.queryByTestId('challenge-fill-norm')).toBeNull()
+    expect(screen.queryByTestId('challenge-no-norm')).toBeNull()
   })
 
-  it('цена при этом видна — человек должен знать, к чему готовиться', () => {
+  it('галочка согласия на месте и без нормы — соглашаться есть с чем', () => {
     render(<ChallengeScreen state={{ season: SEASON, entry: null }} hasNorm={false} />)
-    expect(screen.getByTestId('challenge-price').textContent).toContain('990')
+    expect(screen.getByTestId('challenge-agree')).toBeTruthy()
+  })
+
+  it('и оплата открывается: без нормы она не отличается ничем', async () => {
+    const onJoin = vi.fn(async () => ({ ok: true }))
+    render(<ChallengeScreen state={{ season: SEASON, entry: null }} hasNorm={false} onJoin={onJoin} />)
+
+    fireEvent.click(screen.getByTestId('challenge-agree'))
+    await act(async () => { screen.getByTestId('challenge-join').click() })
+    expect(onJoin).toHaveBeenCalled()
+  })
+
+  it('липкая полоса зовёт участвовать, а не «что нужно»', () => {
+    render(<ChallengeScreen state={{ season: SEASON, entry: null }} hasNorm={false} />)
+    expect(screen.getByTestId('challenge-bar-join').textContent).toBe('Участвовать')
   })
 })
 
-/**
- * ПИТАНИЕ ДО СТАРТА И ПОСЛЕ ФИНИША — три числа за весь поток. Пока поток ИДЁТ,
- * человеку нужны не итоги, а сегодняшний день и остатки до нормы, и это уже
- * другой экран — рабочая комната (StreamRoom.test.jsx).
- */
 describe('участник видит своё питание', () => {
   /** Сырьё, как его отдаёт challenge_nutrition_facts: без процентов. */
   const facts = (days) => days.map((d, i) => ({
@@ -193,20 +205,23 @@ describe('участник видит своё питание', () => {
     expect(screen.getByTestId('nutri-days').textContent).toBe('2 из 30')
   })
 
-  it('нормы у участника нет — блок зовёт её завести, а не показывает нули', () => {
-    const onFillNorm = vi.fn()
+  it('нормы у участника нет — блок ведёт в «Мои данные», а не показывает нули', () => {
+    // не на экран нормы КБЖУ: просить человека самому назначить себе калории
+    // значит просить сделать нашу работу
+    const onOpenMyData = vi.fn()
     render(
       <ChallengeScreen
         state={{ season: SEASON, entry: ENTRY }}
         nutrition={facts([{}, {}])}
         hasNorm={false}
-        onFillNorm={onFillNorm}
+        onOpenMyData={onOpenMyData}
       />,
     )
 
     expect(screen.queryByTestId('nutri-average')).toBeNull()
+    expect(screen.getByTestId('nutri-fill').textContent).toBe('Мои данные')
     act(() => screen.getByTestId('nutri-fill').click())
-    expect(onFillNorm).toHaveBeenCalled()
+    expect(onOpenMyData).toHaveBeenCalled()
   })
 
   it('питание ещё не приехало — блока нет вовсе', () => {
@@ -215,22 +230,60 @@ describe('участник видит своё питание', () => {
   })
 })
 
-describe('гость: аккаунт вместо оплаты', () => {
-  it('видит цену, но не видит ни галочки, ни кнопки оплаты', () => {
-    const onCreateAccount = vi.fn()
-    render(<ChallengeScreen state={{ season: SEASON, entry: null }} guest onCreateAccount={onCreateAccount} />)
+/**
+ * ГОСТЬ ЧИТАЕТ ТУ ЖЕ СТРАНИЦУ, ЧТО И ВСЕ.
+ *
+ * Раньше ему вместо цены показывали «Создать аккаунт» — то есть просили плату
+ * вниманием раньше, чем он узнал, что ему предлагают. Страница челленджа и есть
+ * ответ на «что это и почём», и читать её должно быть можно без условий.
+ *
+ * Предложение аккаунта никуда не делось: оно появляется по нажатию
+ * «Участвовать», там, где становится осмысленным.
+ */
+describe('гость: та же страница, аккаунт по нажатию', () => {
+  it('видит цену и ту же кнопку «Участвовать»', () => {
+    render(<ChallengeScreen state={{ season: SEASON, entry: null }} guest />)
 
     expect(screen.getByTestId('challenge-price').textContent).toContain('990')
-    expect(screen.queryByTestId('challenge-join')).toBeNull()
-    expect(screen.queryByTestId('challenge-agree')).toBeNull()
-
-    act(() => screen.getByTestId('challenge-signup').click())
-    expect(onCreateAccount).toHaveBeenCalled()
+    expect(screen.getByTestId('challenge-join').textContent).toContain('Участвовать')
+    expect(screen.getByTestId('challenge-hero-join')).toBeTruthy()
+    // отдельной кнопки «создать аккаунт» на странице больше нет
+    expect(screen.queryByTestId('challenge-signup')).toBeNull()
+    expect(screen.queryByTestId('challenge-signup-end')).toBeNull()
   })
 
-  it('липкой кнопки оплаты у гостя нет вовсе', () => {
+  it('липкая полоса у гостя такая же', () => {
     render(<ChallengeScreen state={{ season: SEASON, entry: null }} guest />)
-    expect(screen.queryByTestId('challenge-bar')).toBeNull()
+    expect(screen.getByTestId('challenge-bar')).toBeTruthy()
+    expect(screen.getByTestId('challenge-bar-join').textContent).toBe('Участвовать')
+  })
+
+  it('нажал «Участвовать» — вот теперь предложение аккаунта', () => {
+    const onCreateAccount = vi.fn()
+    const onJoin = vi.fn()
+    render(<ChallengeScreen state={{ season: SEASON, entry: null }} guest onCreateAccount={onCreateAccount} onJoin={onJoin} />)
+
+    fireEvent.click(screen.getByTestId('challenge-agree'))
+    act(() => screen.getByTestId('challenge-join').click())
+
+    expect(onCreateAccount).toHaveBeenCalled()
+    // и никакой оплаты: платить ему пока нечем и незачем
+    expect(onJoin).not.toHaveBeenCalled()
+  })
+
+  it('почему аккаунт вообще нужен — сказано рядом, а не вместо цены', () => {
+    render(<ChallengeScreen state={{ season: SEASON, entry: null }} guest />)
+    expect(screen.getByTestId('challenge-guest').textContent).toContain('держится на человеке')
+  })
+
+  it('живого потока нет — гостю кнопка всё равно работает: он идёт в аккаунт', () => {
+    // сезона нет — покупать нечего, но завести аккаунт можно всегда
+    const onCreateAccount = vi.fn()
+    render(<ChallengeScreen state={null} guest onCreateAccount={onCreateAccount} fallbackPrice={2990} />)
+
+    fireEvent.click(screen.getByTestId('challenge-agree'))
+    act(() => screen.getByTestId('challenge-join').click())
+    expect(onCreateAccount).toHaveBeenCalled()
   })
 })
 

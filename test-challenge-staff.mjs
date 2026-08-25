@@ -196,15 +196,17 @@ const priceInUrl = url => new URL(String(url)).searchParams.get('products[0][pri
     seen.entryQueries.some(q => q.includes('season_id=eq.2')), seen.entryQueries.join(' | '))
 }
 {
-  // Норма питания — половина зачёта, и без неё билет не продаётся никому,
-  // включая владельца. Тест-поток эту проверку не отменяет: путь обязан быть
-  // неотличим от настоящего.
+  // АНКЕТЫ ПЕРЕД ДЕНЬГАМИ БОЛЬШЕ НЕТ. Здесь стоял отказ 409 тому, у кого не
+  // заполнена дневная норма. Довод был верный — питание половина зачёта, — а
+  // цена неверная: форма между человеком и кнопкой оплаты убивает продажу
+  // вернее любой цены. Правило переехало в комнату (данные спрашивают после
+  // оплаты), а дни без нормы честно считаются нулём.
   const res = mockRes()
   stubPay({ role: 'trainer', uid: TRAINER, kcal: 0 })
   await createPayment(payReq({ plan: 'challenge', source: 'web' }), res)
   restore()
-  assertEqual('без нормы билет не выписывается и тренеру', res.statusCode, 409)
-  assertEqual('и причина названа', res.body?.reason, 'no_goals')
+  assertEqual('без нормы билет ВЫПИСЫВАЕТСЯ: анкеты перед кассой нет', res.statusCode, 200)
+  report('и ссылка настоящая, на цену потока', priceInUrl(res.body?.url) === '50', String(res.body?.url).slice(0, 90))
 }
 
 // ══════════════════════════════════════════════════════════════════════════
