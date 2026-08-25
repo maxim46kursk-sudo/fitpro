@@ -113,6 +113,13 @@ jobs:
           syncload=$(h '.["час"].motion_log.["по_типам"].["sync.load-failed"]')
           synchydr=$(h '.["час"].motion_log.["по_типам"].["sync.hydrate-failed"]')
           syncpush=$(h '.["час"].motion_log.["по_типам"].["sync.push-failed"]')
+          # МАЯЧКИ НЕВЗЛЕТЕВШЕЙ ЗАГРУЗКИ. Один-два за час — это чей-то метущийся
+          # вагон метро, и кричать о нём значит приучить себя не читать эти
+          # сообщения. Больше трёх — уже не связь у одного человека, а мы.
+          boot=$(h '.["час"].boot_beacons.["маячков"]')
+          bootday=$(h '.["сутки"].boot_beacons.["маячков"]')
+          bootstage=$(jq -rc '.["час"].boot_beacons.["по_стадиям"] // {}' <<<"$json")
+          bootdev=$(jq -rc '.["час"].boot_beacons.["устройства"] // {}' <<<"$json")
           tries=$(h '.["сутки"].motion_attempts.["попыток"]')
           people=$(h '.["сутки"].motion_attempts.["уникальных_людей"]')
 
@@ -123,9 +130,11 @@ jobs:
           (( assets  >= 5 )) && problems+=$'\n'"— assets.fallback за час: $assets"
           (( syncload + synchydr > 0 )) && problems+=$'\n'"— прогресс не загрузился за час: $((syncload + synchydr)). Люди играют по кэшу устройства, у участников сезона результат может не попасть в зачёт."
           (( syncpush > 0 )) && problems+=$'\n'"— результат не уехал наверх за час: $syncpush. Не потерян (лежит на устройстве), но на сервере его пока нет."
+          (( boot > 3 )) && problems+=$'
+'"— приложение не загрузилось у людей: $boot раз за час (за сутки $bootday). Встали на стадиях: $bootstage. Устройства: $bootdev. Стадия html — не приехал бандл, bundle — упал код."
 
           if [[ -z $problems ]]; then
-            echo "Бета в порядке: событий за час $events; за сутки попыток $tries, людей $people"
+            echo "Бета в порядке: событий за час $events; за сутки попыток $tries, людей $people; маячков загрузки за час $boot, за сутки $bootday"
           else
             alert "🟠 ПРОБЛЕМА в бете Motion:$problems"$'\n'"Событий за час: $events; за сутки попыток $tries, людей $people"
             echo "ПРОБЛЕМА:$problems"

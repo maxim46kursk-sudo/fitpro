@@ -969,6 +969,21 @@ function тегСтроки(line) {
   return m ? m[1] : 'без-тега'
 }
 
+/**
+ * Модель устройства из User-Agent — коротко и без версий.
+ *
+ * Полная строка в сводке нечитаема и ничего не добавляет: чинить приходится по
+ * «все маячки с одного айфона» или «все с андроида такого-то», а не по номеру
+ * сборки WebKit.
+ */
+function коротко(ua) {
+  const s = String(ua || '')
+  if (!s) return '—'
+  const m = /\(([^)]+)\)/.exec(s)
+  const внутри = m ? m[1] : s
+  return внутри.split(';').slice(0, 2).join(';').trim().slice(0, 60) || '—'
+}
+
 async function handleMotionHealth(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
@@ -1062,16 +1077,52 @@ async function handleMotionHealth(req, res) {
     return { попыток: data?.length ?? 0, людей: люди.size, обрезано: (data?.length ?? 0) >= HEALTH_MAX_ROWS }
   }
 
+  /**
+   * МАЯЧКИ НЕВЗЛЕТЕВШЕЙ ЗАГРУЗКИ — не просто число, а разбор.
+   *
+   * Одно число отвечает «сколько», но не отвечает «что чинить». Стадия говорит,
+   * где встали: 'html' — не приехал бандл, 'bundle' — упал код. Устройства
+   * говорят, у кого: одна модель телефона на все маячки — это не сеть.
+   */
+  const маячки = async (от) => {
+    const { data, error } = await db
+      .from('boot_beacons')
+      .select('stage,attempt,conn,ua')
+      .gte('created_at', от)
+      .order('created_at', { ascending: false })
+      .limit(HEALTH_MAX_ROWS)
+    if (error) throw new Error(`boot_beacons: ${error.message}`)
+    const строки = data ?? []
+    const стадии = {}
+    const устройства = {}
+    for (const r of строки) {
+      стадии[r.stage || '—'] = (стадии[r.stage || '—'] ?? 0) + 1
+      // Не весь User-Agent, а модель: длинная строка в сводке нечитаема, а
+      // ответ на «у кого» даёт именно она.
+      const модель = коротко(r.ua)
+      устройства[модель] = (устройства[модель] ?? 0) + 1
+    }
+    return {
+      маячков: строки.length,
+      по_стадиям: стадии,
+      устройства,
+      повторных: строки.filter((r) => r.attempt === 2).length,
+      обрезано: строки.length >= HEALTH_MAX_ROWS,
+    }
+  }
+
   const окно = async (от) => {
-    const [лог, att, ошибок] = await Promise.all([
+    const [лог, att, ошибок, boot] = await Promise.all([
       поТипам(от),
       попытки(от),
       сколько('error_log', 'created_at', от),
+      маячки(от),
     ])
     return {
       motion_log: { записей: лог.записей, событий: лог.событий, по_типам: лог.типы, обрезано: лог.обрезано },
       motion_attempts: { попыток: att.попыток, уникальных_людей: att.людей, обрезано: att.обрезано },
       error_log: { записей: ошибок },
+      boot_beacons: boot,
     }
   }
 
@@ -1232,6 +1283,84 @@ async function handleFunnel(req, res) {
   return res.status(200).json({ ok: true })
 }
 
+/**
+ * МАЯЧОК НЕВЗЛЕТЕВШЕЙ ЗАГРУЗКИ.
+ *
+ * Шлёт его код из index.html, когда приложение за восемь секунд не дошло до
+ * монтирования. Смысл ветки — принять сигнал от человека, у которого приложение
+ * НЕ РАБОТАЕТ: ни токена, ни сессии, ни даже бандла у него нет.
+ *
+ * ПУБЛИЧНАЯ И БЕЗ ТОКЕНА — по построению, ровно как воронка. Отсюда и защита та
+ * же: лимит по адресу и жёсткая проверка каждого поля. Всё, что пришло, — чужой
+ * ввод, и в базу оно попадает обрезанным и приведённым к своему типу.
+ *
+ * ЧТО НЕ ХРАНИМ: ни личности, ни IP. Адрес нужен лимиту и остаётся в памяти
+ * процесса; в таблице его нет и быть не должно — маячок присылает человек,
+ * которого мы не знаем и знать не обязаны.
+ *
+ * ОТВЕТ ВСЕГДА 200 И ВСЕГДА ПУСТОЙ. sendBeacon ответа не читает, а человеку с
+ * белым экраном наша ошибка не поможет ничем: единственное, что мы можем ему
+ * дать, — не мешать.
+ */
+const BOOT_STAGES = new Set(['html', 'bundle', 'react', 'data'])
+/** Раз в сутки на процесс: чистка старых маячков идёт попутно, без cron. */
+let bootSweptAt = 0
+
+async function handleBoot(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  if (req.method === 'OPTIONS') return res.status(200).end()
+  if (req.method !== 'POST') return res.status(405).end()
+
+  // Двадцать в минуту с адреса: у одного захода маячков максимум два, а за
+  // одним адресом (общий wifi, оператор) их бывает несколько разом.
+  if (!rateLimit(req, res, { name: 'boot', limit: 20 })) return
+
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!serviceRoleKey) return res.status(200).end()
+
+  /**
+   * ТЕЛО РАЗБИРАЕМ САМИ. sendBeacon шлёт Blob, и обёртка Vercel разбирает его
+   * как JSON только когда тип угадан; на своём сервере тело приезжает строкой.
+   * Полагаться на догадку в ветке, которая существует ради сломанных случаев,
+   * было бы смешно.
+   */
+  let body = req.body
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body) } catch { body = null }
+  }
+  if (!body || typeof body !== 'object') return res.status(200).end()
+
+  const stage = BOOT_STAGES.has(body.stage) ? body.stage : 'html'
+  const ms = Number.isFinite(Number(body.ms)) ? Math.min(600000, Math.max(0, Math.round(Number(body.ms)))) : 0
+  const attempt = Number(body.attempt) === 2 ? 2 : 1
+  const conn = typeof body.conn === 'string' ? body.conn.slice(0, 20) : null
+  const ua = typeof body.ua === 'string' ? body.ua.slice(0, 300) : null
+  // Список недогруженных файлов: не больше двадцати, каждый — имя и мгновение.
+  const pending = Array.isArray(body.pending)
+    ? body.pending.slice(0, 20).map((r) => ({
+      name: typeof r?.name === 'string' ? r.name.slice(0, 200) : '',
+      ms: Number.isFinite(Number(r?.ms)) ? Math.round(Number(r.ms)) : 0,
+    }))
+    : []
+
+  try {
+    const db = createClient(SUPABASE_URL, serviceRoleKey)
+    await db.from('boot_beacons').insert({ stage, ms, attempt, conn, ua, pending })
+    // Уборка попутно, не чаще раза в сутки на процесс: маячки живут неделю, и
+    // заводить ради этого отдельный cron значило бы завести ещё одно место,
+    // которое может однажды перестать ходить.
+    if (Date.now() - bootSweptAt > 24 * 60 * 60 * 1000) {
+      bootSweptAt = Date.now()
+      db.rpc('boot_beacons_sweep').then(() => {}, () => {})
+    }
+  } catch {
+    // Записать не вышло — молчим: это ветка про сломанное, и падать ей нельзя.
+  }
+  return res.status(200).end()
+}
+
 export default async function handler(req, res) {
   // Развилка ДО всего остального. Ветка штрих-кода опознаётся ТОЛЬКО по
   // query-параметру: существующие вызовы тренерского каталога — это POST на
@@ -1250,6 +1379,11 @@ export default async function handler(req, res) {
   // Счётчик воронки. Тоже до проверки метода и токена: ветка публичная по
   // построению — у гостя, ради которого она заведена, токена нет.
   if (req.query?.action === 'funnel') return handleFunnel(req, res)
+  // Маячок невзлетевшей загрузки. Адрес у него БЕЗ строки запроса (/api/boot,
+  // реврайт в vercel.json и server.mjs): его шлёт sendBeacon со страницы, у
+  // которой ничего не поднялось, и чем короче и стабильнее адрес, тем меньше
+  // поводов ему не доехать.
+  if (req.query?.action === 'boot') return handleBoot(req, res)
 
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')

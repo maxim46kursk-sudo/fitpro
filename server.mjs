@@ -302,8 +302,15 @@ async function serveStatic(req, res, distDir, urlPath) {
  */
 function matchRewrite(pathname) {
   const m = /^\/api\/motion-health\/(.+)$/.exec(pathname)
-  if (!m) return null
-  return { name: 'set-exercise', query: { action: 'motion-health', key: decodeURIComponent(m[1]) } }
+  if (m) return { name: 'set-exercise', query: { action: 'motion-health', key: decodeURIComponent(m[1]) } }
+  /**
+   * Маячок невзлетевшей загрузки. Адрес без строки запроса намеренно: его шлёт
+   * sendBeacon со страницы, у которой не поднялось НИЧЕГО, и чем короче и
+   * неизменнее адрес, тем меньше поводов маячку не доехать. Ветка в
+   * set-exercise.js о реврайте не знает — ей приходит обычный ?action=boot.
+   */
+  if (pathname === '/api/boot') return { name: 'set-exercise', query: { action: 'boot' } }
+  return null
 }
 
 export function createRequestHandler({ apiDir, distDir }) {

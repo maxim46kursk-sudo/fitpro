@@ -14,4 +14,22 @@ export const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY || 'eyJhbGciOiJIUz
 export const SUPABASE_AUTH_STORAGE_KEY = 'fitpro-auth'
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { storageKey: SUPABASE_AUTH_STORAGE_KEY },
+  global: {
+    /**
+     * МЕТКА `data` ДЛЯ СТОРОЖА ЗАГРУЗКИ (index.html).
+     *
+     * Ставится на ПЕРВОМ ответе базы — любом: сторожу важно не что именно
+     * ответили, а что канал живой. Приложение, которое смонтировалось и молча
+     * ждёт базу, для человека выглядит так же, как не запустившееся, и
+     * различать их надо здесь.
+     *
+     * Обёртка вокруг fetch, а не подписка: у supabase-js нет события «первый
+     * ответ», а весь его обмен идёт через эту функцию — значит она и есть то
+     * единственное место, мимо которого не пройти.
+     */
+    fetch: (...args) => globalThis.fetch(...args).then((res) => {
+      globalThis.__bootStage?.('data')
+      return res
+    }),
+  },
 })

@@ -27,6 +27,32 @@
       Telegram поменяет SDK; за это же мы получаем предсказуемость версии.
     -->
     <script src="/telegram-web-app.js"></script>
+    <!--
+      МЕТКИ ЗАГРУЗКИ — САМОЕ ПЕРВОЕ, ЧТО ВЫПОЛНЯЕТСЯ НА СТРАНИЦЕ.
+
+      Белый экран воспроизводится редко и не у нас: человек его видит, закрывает
+      вкладку — и не остаётся ничего. Ни ошибки, ни строчки в журнале, потому что
+      журнал живёт внутри приложения, а приложение в этот заход НЕ ЗАПУСТИЛОСЬ.
+      Рассказать о падении может только то, что работает до бандла, — вот этот
+      код.
+
+      Четыре стадии, и каждая отмечается тем, кто до неё дошёл:
+        html   — разбор страницы начался (ставится здесь);
+        bundle — код приложения загрузился и выполняется (src/main.jsx);
+        react  — приложение смонтировалось и что-то нарисовало (src/main.jsx);
+        data   — пришёл первый ответ базы (src/supabase.js).
+      Разница между ними и есть диагноз: встали на 'html' — не приехал бандл;
+      на 'bundle' — упал код; на 'react' — молчит база.
+    -->
+    <script>
+      window.__boot = { t0: Date.now(), stage: 'html' }
+      window.__bootStage = function (name) {
+        try {
+          window.__boot.stage = name
+          window.__boot['t_' + name] = Date.now() - window.__boot.t0
+        } catch (e) {}
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
@@ -100,6 +126,123 @@
             'justify-content:center;text-align:center;padding:24px">' +
             'Приложение обновилось.<br>Закройте вкладку и откройте FitPro заново.</div>'
         }, ЖДЁМ)
+      })()
+    </script>
+
+    <!--
+      СТОРОЖ ЗАГРУЗКИ И ЭКРАН ВМЕСТО БЕЛОГО.
+
+      Здесь, а не в приложении, и по той же причине, что и метки выше: если
+      бандл не поднялся, рисовать и отправлять больше нечем.
+
+      ТРИ СРОКА, И КАЖДЫЙ ЗНАЧИТ СВОЁ:
+        8 с  — первый маячок. Не «человеку плохо», а «мы обязаны знать»: на
+               медленной связи приложение ещё может доехать, и мешать ему нельзя;
+        10 с — экран для человека. К этой секунде ожидание перестаёт быть
+               ожиданием и становится белым экраном;
+        20 с — второй маячок, если так и не поднялось. Он отличает «доехало на
+               двенадцатой секунде» от «не доехало вовсе», а это разные беды.
+
+      sendBeacon, А НЕ fetch: человек с белым экраном закрывает вкладку, и
+      обычный запрос браузер в этот момент отменяет. sendBeacon браузер обязан
+      доставить и после закрытия — ради этого он и существует.
+
+      МАЯЧОК НИЧЕГО НЕ ЖДЁТ И НИЧЕГО НЕ ЛОМАЕТ: любая ошибка внутри проглатывается.
+      Диагностика, из-за которой приложение падает, хуже отсутствия диагностики.
+    -->
+    <script>
+      (function () {
+        var МАЯЧОК = '/api/boot'
+        var ПЕРВЫЙ = 8000
+        var ЭКРАН = 10000
+        var ВТОРОЙ = 20000
+
+        function поднялось() {
+          return window.__boot && (window.__boot.stage === 'react' || window.__boot.stage === 'data')
+        }
+
+        /** Файлы, которые к этой секунде так и не догрузились. */
+        function недогружено() {
+          var out = []
+          try {
+            var list = performance.getEntriesByType('resource') || []
+            for (var i = 0; i < list.length && out.length < 20; i++) {
+              var r = list[i]
+              // duration 0 у незавершённых и у взятых из кэша; кэш отсекаем по
+              // transferSize, а responseEnd 0 значит «ответ не пришёл вовсе»
+              if (r.responseEnd === 0 || (r.duration === 0 && r.transferSize === 0 && r.decodedBodySize === 0)) {
+                out.push({ name: String(r.name).slice(-120), ms: Math.round(r.startTime) })
+              }
+            }
+          } catch (e) {}
+          return out
+        }
+
+        function послать(попытка) {
+          try {
+            var b = window.__boot || { t0: Date.now(), stage: 'html' }
+            var c = navigator.connection || {}
+            var тело = JSON.stringify({
+              stage: b.stage,
+              ms: Date.now() - b.t0,
+              attempt: попытка,
+              conn: c.effectiveType || null,
+              ua: String(navigator.userAgent || '').slice(0, 300),
+              pending: недогружено()
+            })
+            // Blob с типом: без него sendBeacon шлёт text/plain, и разбор тела
+            // на стороне сервера зависел бы от догадки о формате.
+            var ok = false
+            if (navigator.sendBeacon) {
+              ok = navigator.sendBeacon(МАЯЧОК, new Blob([тело], { type: 'application/json' }))
+            }
+            if (!ok) {
+              // Совсем старый браузер: пробуем обычным запросом, тоже молча.
+              fetch(МАЯЧОК, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: тело, keepalive: true }).catch(function () {})
+            }
+          } catch (e) {}
+        }
+
+        setTimeout(function () { if (!поднялось()) послать(1) }, ПЕРВЫЙ)
+        setTimeout(function () { if (!поднялось()) послать(2) }, ВТОРОЙ)
+
+        /**
+         * ЭКРАН ВМЕСТО БЕЛОГО. Рисуется руками, без React и без стилей из
+         * сборки: к этой секунде ни того, ни другого может не быть.
+         *
+         * «Обновить» — самое частое, что помогает (протухший кэш, сорвавшийся
+         * файл). «Написать тренеру» — на случай, когда не помогает: человек,
+         * заплативший за поток, должен иметь дверь к живому, а не упереться в
+         * текст.
+         */
+        setTimeout(function () {
+          if (поднялось()) return
+          var root = document.getElementById('root')
+          if (root && root.childElementCount > 0) return
+          if (document.getElementById('boot-fail')) return
+          var d = document.createElement('div')
+          d.id = 'boot-fail'
+          d.setAttribute('data-testid', 'boot-fail')
+          d.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0b0b0d;color:#fff;' +
+            'font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;' +
+            'display:flex;flex-direction:column;align-items:center;justify-content:center;' +
+            'text-align:center;padding:24px;gap:14px'
+          d.innerHTML =
+            '<div style="font-size:19px;font-weight:800">Приложение не загрузилось</div>' +
+            '<div style="color:#a9adb8;max-width:320px">Проверь соединение и попробуй ещё раз. ' +
+            'Если не помогает — напиши, разберёмся.</div>' +
+            '<button id="boot-retry" style="min-width:220px;min-height:52px;border:0;border-radius:14px;' +
+            'background:#7c7af0;color:#fff;font-size:16px;font-weight:700;cursor:pointer">Обновить</button>' +
+            '<a id="boot-help" href="https://t.me/maxim_fitpro_bot" style="min-width:220px;min-height:52px;' +
+            'display:flex;align-items:center;justify-content:center;border-radius:14px;' +
+            'border:1px solid rgba(255,255,255,.2);color:#fff;text-decoration:none;font-weight:700">' +
+            'Написать тренеру</a>'
+          document.body.appendChild(d)
+          var btn = document.getElementById('boot-retry')
+          // Метка времени в адресе: промежуточный кэш обязан отдать страницу
+          // заново, иначе «Обновить» вернёт ту же несобранную страницу.
+          if (btn) btn.onclick = function () { location.replace(location.pathname + '?v=' + Date.now()) }
+        }, ЭКРАН)
       })()
     </script>
   </body>

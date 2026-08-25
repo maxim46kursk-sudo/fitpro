@@ -4,6 +4,10 @@
     {
       "source": "/api/motion-health/:key",
       "destination": "/api/set-exercise?action=motion-health&key=:key"
+    },
+    {
+      "source": "/api/boot",
+      "destination": "/api/set-exercise?action=boot"
     }
   ],
   "headers": [
