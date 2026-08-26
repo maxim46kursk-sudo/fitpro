@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CameraView from './components/CameraView.jsx'
 import CalibrationScreen from './screens/CalibrationScreen.jsx'
 import WorkoutScreen from './screens/WorkoutScreen.jsx'
@@ -26,6 +26,7 @@ import {
   loadNutritionFacts,
   loadStandings,
 } from '../challengeSeason.js'
+import { browserOf, cameraBlockedByBrowser } from './device/browserEnv.js'
 import { useCamera } from './pose/useCamera.js'
 import { usePoseLandmarker } from './pose/usePoseLandmarker.js'
 import { useLandscapeBlock } from './device/useOrientation.js'
@@ -39,7 +40,7 @@ import { noteScreen } from './debug/errorReporter.js'
 import { recordFrame } from './debug/recorder.js'
 import { isCalibrating, subscribeCalibration } from './debug/calibrationMode.js'
 import { openMotion } from './lifecycle.js'
-import { configureLogShipper } from './debug/logShipper.js'
+import { configureLogShipper, resetLogShipper } from './debug/logShipper.js'
 import { configureSync, flushPush, hydrate, noteLoadFailed, onSyncHealth, push, resetSync, startSync, stopSync, syncHealth } from './sync.js'
 import { KEYS, readRaw, useMemoryStorage, writeRaw } from './storage.js'
 import { attemptsFor, challengeTotal, submitAttempt } from './game/day.js'
@@ -132,6 +133,44 @@ export default function MotionApp({ onExit, day, tier, paused = false, log = nul
    */
   const [ready, setReady] = useState(!sync)
 
+  /**
+   * ЖУРНАЛ ОТКРЫВАЕТСЯ ЗДЕСЬ — ДО ЧТЕНИЯ ПРОГРЕССА, А НЕ ПОСЛЕ.
+   *
+   * Раньше и приёмник, и сброс журнала жили в MotionAppInner, а он монтируется
+   * только когда прогресс уже прочитан. Из-за этого все события `sync.*`
+   * пропадали дважды: писались в буфер, у которого ещё не было приёмника
+   * (`enabled === false`, отправку никто не заводил), а следом тот буфер
+   * вычищал `resetLogShipper()` при монтировании начинки. За семь дней прода
+   * это дало ровно ноль строк синхронизации — включая штатную `sync.ready`,
+   * которая обязана быть в КАЖДОЙ сессии. Молчание читалось как «потерь нет»,
+   * хотя означало «сигнала нет».
+   *
+   * ПОЧЕМУ НЕ ЭФФЕКТОМ. Эффекты ребёнка в React выполняются РАНЬШЕ эффектов
+   * родителя. У гостя `sync` нет, `ready` истинно с первого рендера, и
+   * MotionAppInner монтируется в том же коммите — то есть его `openMotion`
+   * успел бы записать `session.start` до того, как этот эффект вообще
+   * запустится, и сброс снёс бы уже её. Единственный момент, гарантированно
+   * предшествующий всему, — первый рендер родителя.
+   *
+   * Порядок внутри значим: сначала приёмник, потом сброс. `resetLogShipper`
+   * пересчитывает признак включённости и уважает заданный приёмник, а обратный
+   * порядок оставил бы отправку выключенной (см. detectEnabled).
+   */
+  const журналОткрыт = useRef(false)
+  if (!журналОткрыт.current) {
+    журналОткрыт.current = true
+    if (log) configureLogShipper(log)
+    resetLogShipper()
+  }
+  useEffect(() => {
+    const unconfigure = log ? configureLogShipper(log) : null
+    return () => {
+      // последнее слово раздела — до снятия приёмника, иначе слать будет некуда
+      flush()
+      unconfigure?.()
+    }
+    // приёмник задаётся хозяином один раз на всё время жизни раздела
+  }, [])
 
   useEffect(() => {
     if (!sync) return undefined
@@ -630,6 +669,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
     setRoomVisit((n) => n + 1)
     setScreen('challenge')
   }, [])
+
   const [needsTap, setNeedsTap] = useState(false)
 
   /**
@@ -739,15 +779,18 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
    * порознь они расходятся молча.
    */
   useEffect(() => {
-    // Приёмник настраивается до открытия: сама настройка и включает отправку
-    // (см. configureLogShipper), а сброс состояния на открытии её уважает.
-    const unconfigure = log ? configureLogShipper(log) : null
-    const close = openMotion()
-    return () => {
-      close()
-      unconfigure?.()
-    }
-    // журнал задаётся хозяином один раз на всё время жизни раздела
+    /**
+     * ЖУРНАЛ ЗДЕСЬ БОЛЬШЕ НЕ ТРОГАЕМ. И приёмник, и новая сессия журнала
+     * заводятся выше, в MotionApp, ДО чтения прогресса, — иначе события
+     * `sync.*` стирались бы этим самым вызовом (см. там же и lifecycle.js).
+     *
+     * Остальные сбросы остаются: они про состояние игры, а игра начинается
+     * именно здесь. Заодно перезапуск после падения (ErrorBoundary пересобирает
+     * начинку) теперь сохраняет журнал вместе с записью самого падения, а не
+     * начинает с чистого листа ровно там, где читать его и надо.
+     */
+    const close = openMotion({ resetLog: false })
+    return close
   }, [])
 
   /**
@@ -755,8 +798,43 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
    * него не сужает поиск вообще — экранов восемь, и падать может любой.
    */
   useEffect(() => {
-    noteScreen(calibrating ? 'calibration-mode' : blockMovement ? `block:${blockMovement}` : screen)
+    const имя = calibrating ? 'calibration-mode' : blockMovement ? `block:${blockMovement}` : screen
+    noteScreen(имя)
+    /**
+     * ЭКРАН — И В СНИМОК СОСТОЯНИЯ ТОЖЕ. Это не украшение, это исправление
+     * прямой лжи в журнале.
+     *
+     * `snapshotOf` берёт `screen` из диагностической шины, а туда его писали
+     * ровно два места — SessionScreen и StrengthBlock, то есть только уже
+     * начатая тренировка. На всех прочих экранах в снимке оставалось начальное
+     * значение шины, `'calibration'`, — и человек, полчаса читавший страницу
+     * челленджа, выглядел в журнале как человек, полчаса стоящий на калибровке
+     * с мёртвой камерой. Именно на этом сгорел разбор 58 сессий в августе:
+     * искали поломку камеры там, где камеру не спрашивали вовсе.
+     */
+    pushLive({ screen: имя })
   }, [screen, calibrating, blockMovement])
+
+  /**
+   * ПОЧЕМУ КАМЕРЫ НЕТ, КОГДА ЕЁ НЕ ПРОСИЛИ. Отсутствие `camera.ready` читается
+   * как поломка — и читалось: сессии на экране челленджа неотличимы в журнале
+   * от сессий с зависшим getUserMedia, потому что обе молчат одинаково.
+   *
+   * Теперь молчит только одна. Строка пишется на ПЕРЕХОД (камеру отпустили или
+   * снова спрашиваем), а не каждый рендер, иначе снимков в буфере станет вдвое.
+   */
+  const cameraOffRef = useRef(null)
+  useEffect(() => {
+    const почему = paused
+      ? 'пауза'
+      : screen === 'challenge' || screen === 'standings'
+        ? `экран:${screen}`
+        : null
+    if (cameraOffRef.current === почему) return
+    cameraOffRef.current = почему
+    if (почему) logEvent('camera.off', { почему })
+    else logEvent('camera.on', {})
+  }, [paused, screen])
 
   // Звук нельзя запустить без жеста пользователя, а кнопок в сценарии нет —
   // ловим первое касание где угодно и разблокируем аудио им.
@@ -795,8 +873,17 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
 
   // Первая запись в лог: по ней сразу видно устройство и экран.
   useEffect(() => {
+    /**
+     * РАЗБОР БРАУЗЕРА — ЗДЕСЬ, А НЕ ПРИ ЧТЕНИИ ЖУРНАЛА. Строка user agent в
+     * логе была и раньше, но разбирать её приходилось руками и задним числом:
+     * вопрос «сколько из этих сессий — встроенный браузер» стоил перебора
+     * тысячи строк. Ответ считает клиент, один раз, и кладёт рядом.
+     */
+    const b = browserOf()
     logEvent('session.start', {
       ua: navigator.userAgent,
+      браузер: b.name,
+      webview: b.inApp,
       screen: `${window.innerWidth}x${window.innerHeight}@${window.devicePixelRatio}`,
       secure: window.isSecureContext,
       shipping: isShipping(),
@@ -902,6 +989,13 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
   const inChallenge = screen === 'challenge' && !calibrating && !blockMovement
   /** Таблица потока — такой же текстовый экран без камеры, как и челлендж. */
   const inStandings = screen === 'standings' && !calibrating && !blockMovement
+  /**
+   * Строка user agent за время жизни раздела не меняется — считаем один раз.
+   * Заодно это делает признак пригодным для гашения остальных экранов ниже:
+   * заставка «Включаю камеру…» поверх объяснения «камеры здесь не будет» —
+   * это ровно тот молчащий экран, ради которого всё и переделывалось.
+   */
+  const webviewBlocked = useMemo(() => cameraBlockedByBrowser(), [])
 
   return (
     <div className="mt-root">
@@ -912,9 +1006,23 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
         showSkeleton={!blockingError}
       />
 
-      {blockingError && !inRoom && !inChallenge && !inStandings && (
+      {/**
+        * ВСТРОЕННЫЙ БРАУЗЕР — ПРЕДУПРЕЖДЕНИЕ ДО КАЛИБРОВКИ, А НЕ ПОСЛЕ.
+        *
+        * Стоит выше экрана ошибки и выше калибровки намеренно: ждать здесь
+        * десять секунд молчания камеры незачем — ответ известен заранее.
+        *
+        * Экраны челленджа и таблицы пропускаются: там камера не нужна вовсе,
+        * и человек имеет полное право читать страницу из Instagram.
+        */}
+      {webviewBlocked && !inRoom && !inChallenge && !inStandings && (
+        <InAppBrowserOverlay app={browserOf().app} onExit={onExit} />
+      )}
+
+      {blockingError && !webviewBlocked && !inRoom && !inChallenge && !inStandings && (
         <ErrorOverlay
           code={blockingError}
+          onExit={onExit}
           detail={poseError ? pose.errorDetail : null}
           /**
            * Раньше ошибка модели чинилась `location.reload()`. Внутри FitPro это
@@ -927,7 +1035,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
         />
       )}
 
-      {!blockingError && booting && !inRoom && !inChallenge && !inStandings && (
+      {!blockingError && !webviewBlocked && booting && !inRoom && !inChallenge && !inStandings && (
         <BootOverlay
           cameraReady={camera.status === 'ready'}
           modelReady={pose.status === 'ready'}
@@ -1298,6 +1406,20 @@ const ERROR_TEXT = {
     text: 'Камера работает только по защищённому соединению (https) или на localhost. Открой страницу по https.',
     retry: null,
   },
+  /**
+   * КАМЕРА НЕ ОТВЕТИЛА. Текст говорит две вещи, потому что причин ровно две, и
+   * человек не обязан знать, какая из них его: либо он не ответил на системный
+   * вопрос (тогда поможет «попробовать снова»), либо он во встроенном браузере,
+   * где вопроса не будет вовсе (тогда поможет только другой браузер).
+   *
+   * Второй случай экран разбирает сам и подставляет свой текст со ссылкой —
+   * см. ErrorOverlay ниже. Этот остаётся для всех остальных.
+   */
+  CAMERA_TIMEOUT: {
+    title: 'Камера не ответила',
+    text: 'Прошло десять секунд, а камера так и не включилась. Если браузер спрашивал разрешение — дай его и нажми «Попробовать снова». Если ничего не спрашивал, открой страницу в Safari или Chrome.',
+    retry: 'Попробовать снова',
+  },
   MODEL_NETWORK_FAILED: {
     title: 'Не скачалась модель',
     text: 'Нужен интернет: при первом запуске качается около 8 МБ. На медленной сети это может занять минуту — попробуй ещё раз или подключись к Wi-Fi.',
@@ -1316,13 +1438,114 @@ const ERROR_TEXT = {
 }
 
 /**
+ * ССЫЛКА НА СТРАНИЦУ — В БУФЕР ОБМЕНА.
+ *
+ * Открыть внешний браузер за человека нельзя: встроенный webview именно этого
+ * и не даёт. Единственное, что мы можем сделать, — избавить его от переписывания
+ * адреса руками, а дальше он вставит ссылку сам.
+ *
+ * Два пути, потому что `navigator.clipboard` есть не везде: во встроенных
+ * браузерах он то отсутствует, то отказывает без видимой причины. Запасной —
+ * старое `execCommand('copy')` через скрытое поле; он некрасив, но работает
+ * там, где не работает первый, а это ровно наш случай.
+ */
+async function копироватьСсылку(текст) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(текст)
+      return true
+    }
+  } catch { /* нет прав или нет API — пробуем запасным путём */ }
+  try {
+    const поле = document.createElement('textarea')
+    поле.value = текст
+    поле.setAttribute('readonly', '')
+    поле.style.position = 'fixed'
+    поле.style.opacity = '0'
+    document.body.appendChild(поле)
+    поле.select()
+    const ок = document.execCommand('copy')
+    document.body.removeChild(поле)
+    return ок
+  } catch {
+    return false
+  }
+}
+
+/**
+ * ЭКРАН ВСТРОЕННОГО БРАУЗЕРА.
+ *
+ * Показывается ДО калибровки, а не после неудачи: внутри Instagram и подобных
+ * на iOS камеры не будет в принципе, и проводить человека через экран
+ * калибровки, чтобы там ничего не произошло, — это потратить его время на
+ * заведомо пустой ход.
+ *
+ * ЧЕСТНО ПРО МАСШТАБ: в журнале за месяц такой случай ровно один из 131 сессии.
+ * Экран заведён не потому, что это массовая беда, а потому, что для того
+ * одного человека альтернатива — чёрный экран без объяснений, и стоит он нам
+ * пятидесяти строк.
+ */
+function InAppBrowserOverlay({ app, onExit }) {
+  const [скопировано, setСкопировано] = useState(false)
+  const адрес = typeof window === 'undefined' ? '' : window.location.href
+
+  return (
+    <div className="mt-blocker mt-blocker--solid">
+      <div className="mt-blocker__card">
+        <div className="mt-blocker__title">Здесь камера не работает</div>
+        <div className="mt-blocker__text">
+          {app
+            ? `Страница открыта во встроенном браузере ${app}. Он не даёт доступа к камере, поэтому тренировка не запустится.`
+            : 'Страница открыта во встроенном браузере приложения. Он не даёт доступа к камере, поэтому тренировка не запустится.'}
+          {' '}Открой её в Safari или Chrome — там всё работает.
+        </div>
+        <div className="mt-blocker__text">
+          Нажми «Скопировать ссылку», открой Safari или Chrome и вставь её в адресную строку.
+          {app === 'Instagram' && ' Можно и проще: «…» в правом верхнем углу → «Открыть в браузере».'}
+        </div>
+        <button
+          className="mt-button"
+          onClick={async () => {
+            const ок = await копироватьСсылку(адрес)
+            setСкопировано(ок)
+            logEvent('webview.copy-link', { app: app || null, ок })
+          }}>
+          {скопировано ? 'Ссылка скопирована' : 'Скопировать ссылку'}
+        </button>
+        {/**
+          * Адрес показан и текстом: если оба способа копирования отказали (а во
+          * встроенных браузерах отказывают оба), переписать его глазами — это
+          * последнее, что человеку остаётся, и отнимать у него эту возможность
+          * нельзя.
+          */}
+        <div className="mt-blocker__detail">{адрес}</div>
+        {onExit && (
+          <button className="mt-button mt-button--ghost" onClick={onExit}>
+            Назад
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
  * Экран блокирующей ошибки.
  *
  * Кнопки без обработчика здесь больше нет. Раньше её запасным действием был
  * `location.reload()`, то есть модуль чинил себя перезагрузкой хозяина; теперь
  * нечего предложить — значит кнопки нет, и это честнее неработающей.
  */
-function ErrorOverlay({ code, detail, onRetry }) {
+function ErrorOverlay({ code, detail, onRetry, onExit }) {
+  /**
+   * МОЛЧАНИЕ КАМЕРЫ ВО ВСТРОЕННОМ БРАУЗЕРЕ — это не «попробуй ещё раз», это
+   * «здесь не получится». Общий текст с кнопкой повтора отправил бы человека
+   * жать её до бесконечности, потому что ответа не будет никогда.
+   */
+  if (code === 'CAMERA_TIMEOUT' && cameraBlockedByBrowser()) {
+    return <InAppBrowserOverlay app={browserOf().app} onExit={onExit} />
+  }
+
   const info = ERROR_TEXT[code] || {
     title: 'Что-то пошло не так',
     text: 'Попробуй ещё раз или вернись позже.',
