@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800;900&display=swap">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'Golos Text',sans-serif;
+  background:#111114;
+  padding:56px 44px;
+  display:flex;gap:44px;align-items:flex-start;
+}
+.wrap{display:flex;flex-direction:column;gap:16px}
+.cap{font-size:19px;font-weight:700;color:#9D96FF;letter-spacing:.02em;padding-left:4px}
+.cap span{color:rgba(235,235,245,.42);font-weight:500}
+
+.ph{
+  width:390px;height:780px;border-radius:38px;overflow:hidden;
+  background:#0b0b0d;color:#fff;position:relative;
+  border:1px solid rgba(255,255,255,.10);
+  display:flex;flex-direction:column;
+}
+.glow{position:absolute;top:-260px;left:50%;transform:translateX(-50%);
+  width:640px;height:640px;border-radius:50%;
+  background:radial-gradient(circle,rgba(124,122,240,.30) 0%,rgba(11,11,13,0) 68%)}
+.in{position:relative;padding:34px 26px;flex:1;display:flex;flex-direction:column}
+
+/* результат */
+.res{
+  background:#1c1c1e;border:1px solid rgba(255,255,255,.09);
+  border-radius:22px;padding:20px 22px;text-align:center;
+}
+.res .lab{font-size:13px;font-weight:600;letter-spacing:.10em;text-transform:uppercase;color:rgba(235,235,245,.42)}
+.res .big{font-size:46px;font-weight:900;letter-spacing:-.03em;margin-top:6px;
+  background:linear-gradient(180deg,#9D96FF,#7C7AF0);-webkit-background-clip:text;background-clip:text;color:transparent}
+.res .sub{font-size:15px;font-weight:600;color:rgba(235,235,245,.62);margin-top:4px}
+
+h2{font-size:31px;font-weight:900;letter-spacing:-.03em;line-height:1.2}
+p{font-size:17px;line-height:1.45;color:rgba(235,235,245,.62);font-weight:500}
+p b{color:#fff;font-weight:700}
+
+/* пальцы */
+.thumbs{display:flex;gap:18px;justify-content:center}
+.tb{
+  width:128px;height:128px;border-radius:34px;
+  display:flex;align-items:center;justify-content:center;font-size:58px;
+}
+.up{background:linear-gradient(180deg,#9D96FF,#7C7AF0);box-shadow:0 12px 30px rgba(124,122,240,.42)}
+.down{background:#1c1c1e;border:1px solid rgba(255,255,255,.12)}
+
+.btn{
+  border-radius:18px;padding:19px;text-align:center;
+  font-size:18px;font-weight:800;letter-spacing:.01em;
+}
+.pri{background:linear-gradient(180deg,#9D96FF,#7C7AF0);box-shadow:0 10px 26px rgba(124,122,240,.4)}
+.sec{background:#1c1c1e;border:1px solid rgba(255,255,255,.12);color:rgba(235,235,245,.72)}
+.ghost{text-align:center;font-size:15px;font-weight:600;color:rgba(235,235,245,.38);padding:6px}
+
+.tag{
+  align-self:flex-start;font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+  color:#9D96FF;border:1px solid rgba(157,150,255,.38);background:rgba(157,150,255,.10);
+  border-radius:99px;padding:8px 14px;
+}
+.row{display:flex;gap:10px;align-items:flex-start;font-size:16px;line-height:1.4;
+  color:rgba(235,235,245,.72);font-weight:500}
+.row b{color:#fff;font-weight:700}
+.dot{width:7px;height:7px;border-radius:50%;background:#9D96FF;margin-top:8px;flex:none}
+.sp{flex:1}
+.g14{display:flex;flex-direction:column;gap:14px}
+.g10{display:flex;flex-direction:column;gap:10px}
+.g22{display:flex;flex-direction:column;gap:22px}
+</style>
+</head>
+<body>
+
+<!-- 1. вопрос -->
+<div class="wrap">
+  <div class="cap">1 — нажал крестик <span>· выход из игры</span></div>
+  <div class="ph"><div class="glow"></div><div class="in g22">
+    <div class="res">
+      <div class="lab">твой результат</div>
+      <div class="big">4 700</div>
+      <div class="sub">47 мишеней · 6 минут</div>
+    </div>
+    <div class="sp"></div>
+    <h2 style="text-align:center">Как тебе игра?</h2>
+    <div class="thumbs">
+      <div class="tb up">👍</div>
+      <div class="tb down">👎</div>
+    </div>
+    <div class="sp"></div>
+  </div></div>
+</div>
+
+<!-- 2. палец вверх -->
+<div class="wrap">
+  <div class="cap">2 — палец вверх <span>· знакомим с челленджем</span></div>
+  <div class="ph"><div class="glow"></div><div class="in g22">
+    <div class="tag">Старт 10 сентября</div>
+    <h2>Тогда смотри,<br>что дальше</h2>
+    <p>Тридцать дней подряд. Каждый день — семь таких боёв и дневник питания. Каждый день тяжелее вчерашнего.</p>
+    <div class="g14">
+      <div class="row"><div class="dot"></div><div><b>Призовой фонд</b> — половина всех билетов, делится между тремя лучшими</div></div>
+      <div class="row"><div class="dot"></div><div><b>Победитель</b> получает личную работу со мной: разбор и программа</div></div>
+      <div class="row"><div class="dot"></div><div>Считает камера, подделать нельзя</div></div>
+    </div>
+    <div class="sp"></div>
+    <div class="g10">
+      <div class="btn pri">Участвовать — 2990 ₽</div>
+      <div class="ghost">Подробные правила ниже</div>
+    </div>
+  </div></div>
+</div>
+
+<!-- 3. палец вниз -->
+<div class="wrap">
+  <div class="cap">3 — палец вниз <span>· отпускаем по-человечески</span></div>
+  <div class="ph"><div class="glow"></div><div class="in g22">
+    <div class="sp"></div>
+    <h2>Жаль.</h2>
+    <p>Но смотри: <b>47 мишеней с первого раза</b>, не зная ни одного движения. Это нормальный первый заход — тело схватывает быстро, обычно к третьему дню.</p>
+    <p>Первые дни в игре бесплатные. Заходи, когда будет настроение.</p>
+    <div class="sp"></div>
+    <div class="g10">
+      <div class="btn pri">Сохранить результат</div>
+      <div class="btn sec">Закрыть</div>
+    </div>
+  </div></div>
+</div>
+
+</body>
+</html>
