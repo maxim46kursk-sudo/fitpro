@@ -582,6 +582,41 @@ describe('меню тренировки', () => {
     expect(onExit).toHaveBeenCalled()
   })
 
+  /**
+   * КРЕСТИК — КОРОТКИЙ ПУТЬ К ТОМУ ЖЕ ВЫХОДУ. Раньше выйти можно было только
+   * через «⋯» -> «Выйти»: два нажатия посреди захода. Проверяем, что крестик
+   * даёт РОВНО тот же вопрос, а не свою отдельную дорогу, — иначе два выхода
+   * начнут расходиться, и разойдутся они молча.
+   */
+  it('крестик спрашивает то же, что пункт «Выйти» в меню', () => {
+    const onExit = vi.fn()
+    render(<SessionScreen subscribe={noopSubscribe} tier="pro" onExit={onExit} />)
+
+    // меню открывать не надо — крестик виден сразу
+    expect(screen.getByTestId('session-exit-button')).toBeTruthy()
+    act(() => {
+      screen.getByTestId('session-exit-button').click()
+    })
+
+    expect(screen.getByTestId('exit-choice')).toBeTruthy()
+    expect(onExit).not.toHaveBeenCalled()
+
+    act(() => {
+      screen.getByTestId('exit-save').click()
+    })
+    expect(onExit).toHaveBeenCalled()
+  })
+
+  /** Крестик — добавка, а не замена: меню и все его пункты на месте. */
+  it('меню «⋯» крестик не заменяет', () => {
+    render(<SessionScreen subscribe={noopSubscribe} tier="pro" onExit={() => {}} />)
+    expect(screen.getByTestId('session-menu-button')).toBeTruthy()
+    act(() => {
+      screen.getByTestId('session-menu-button').click()
+    })
+    expect(screen.getByTestId('menu-exit')).toBeTruthy()
+  })
+
   it('«отмена» в вопросе о выходе возвращает в тренировку', () => {
     const onExit = vi.fn()
     render(<SessionScreen subscribe={noopSubscribe} tier="pro" onExit={onExit} />)

@@ -2743,6 +2743,39 @@
 
 /* --- меню тренировки: постоянная кнопка и четыре действия за ней --- */
 
+/*
+ * КРЕСТИК ВЫХОДА — зеркало кнопки «⋯» в том же ряду.
+ *
+ * Ряд полосы круга (.mt-sprog) держит по 56 пикселей отступа с обеих сторон:
+ * справа под «⋯», слева до сих пор пустовало. Крестик встаёт ровно в это
+ * пустое место, поэтому «КРУГ N из 7» по центру не сдвигается ни на пиксель, а
+ * «⋯» вообще не знает о его появлении — обе кнопки позиционированы от своих
+ * краёв, а не потоком.
+ *
+ * Размеры, рамка, фон и цвет повторяют .mt-menu__button намеренно: две кнопки
+ * одного ряда, разъехавшись хоть на пиксель, читаются как случайность вёрстки.
+ */
+.mt-exit__button {
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  left: calc(10px + env(safe-area-inset-left, 0px));
+  z-index: 6;
+  width: 44px;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(8, 12, 22, 0.55);
+  color: #cfe3ff;
+  /* На пиксель меньше «⋯»: у крестика нет разрядки, и в одном кегле он выглядит
+     крупнее соседа. Здесь важно не совпадение чисел, а совпадение на глаз. */
+  font: 700 17px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+}
+
 .mt-menu__button {
   position: absolute;
   top: calc(10px + env(safe-area-inset-top, 0px));
