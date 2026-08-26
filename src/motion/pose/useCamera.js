@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { cameraEnv } from '../device/browserEnv.js'
 import { logEvent } from '../debug/logShipper.js'
 import { KEYS, readRaw, remove, writeRaw } from '../storage.js'
 
 /**
  * Доступ к камере. Возвращает поток, параметры трека и список камер устройства.
  * Коды ошибок: INSECURE_CONTEXT | PERMISSION_DENIED | NO_CAMERA | CAMERA_FAILED
+ *              | CAMERA_TIMEOUT
  *
  * ВАЖНО про constraints: здесь НЕ запрашивается ни aspectRatio, ни width/height.
  * Любой запрос соотношения заставляет браузер кропать кадр под него, а кроп по
@@ -34,6 +36,25 @@ const MIN_WIDTH = 480
  * и остаётся ручной выбор из диагностической панели.
  */
 const SUSPICIOUS_LABEL = /tele|telephoto|depth|infrared|\bir\b|monochrome|macro/i
+
+/**
+ * СКОЛЬКО ЖДЁМ ОТВЕТА ОТ getUserMedia, ПРЕЖДЕ ЧЕМ СЧИТАТЬ, ЧТО ЕГО НЕ БУДЕТ.
+ *
+ * Обещание камеры не обязано разрешаться вообще. Внутри встроенного браузера
+ * (Instagram и подобные на iOS) оно не отвечает ни успехом, ни отказом —
+ * навсегда. Прежний код в этом случае оставлял `status === 'requesting'`, то
+ * есть экран калибровки без картинки, без ошибки и без единой строки в
+ * журнале; самая долгая такая сессия в проде висела 54 минуты.
+ *
+ * Десять секунд — это заведомо больше любого честного ответа (разрешение уже
+ * выдано — доли секунды; спрашивают впервые — столько, сколько человек читает
+ * системный вопрос) и заведомо меньше терпения человека перед мёртвым экраном.
+ *
+ * ВАЖНО: истёкшее ожидание НЕ отменяет запрос. Человек мог просто думать над
+ * системным вопросом; ответит — камера поднимется и экран сменится сам
+ * (см. ниже: `then` и `catch` продолжают работать после срабатывания часов).
+ */
+const CAMERA_TIMEOUT_MS = 10000
 
 export function useCamera({ enabled = true, facingMode = 'user' } = {}) {
   const [stream, setStream] = useState(null)
@@ -65,14 +86,43 @@ export function useCamera({ enabled = true, facingMode = 'user' } = {}) {
 
     let cancelled = false
 
+    /**
+     * ОТКАЗ ДО ЗАПРОСА ТОЖЕ ПИШЕТСЯ В ЖУРНАЛ. Раньше эта ветка молчала: код
+     * ошибки выставлялся, экран показывался, а в логе не оставалось НИЧЕГО —
+     * ни `camera.ready`, ни `camera.error`. То есть сессия, где камеры не было
+     * по самой очевидной причине, выглядела точно так же, как зависшая, и
+     * отличить их при разборе было нечем.
+     */
     // getUserMedia существует только в secure context (https или localhost).
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      logEvent('camera.error', { name: 'INSECURE_CONTEXT', ...cameraEnv() })
       setStatus('error')
       setErrorCode('INSECURE_CONTEXT')
       return undefined
     }
 
     setStatus('requesting')
+
+    /**
+     * Часы молчания. Снимаются любым исходом запроса — и успехом, и отказом, —
+     * поэтому выстрелить могут только там, где не случилось ни того, ни другого.
+     */
+    let settled = false
+    const watchdog = setTimeout(() => {
+      if (cancelled || settled) return
+      logEvent('camera.timeout', { ждали: CAMERA_TIMEOUT_MS, ...cameraEnv() })
+      setStatus('error')
+      setErrorCode('CAMERA_TIMEOUT')
+    }, CAMERA_TIMEOUT_MS)
+    /**
+     * Ответ пришёл — часы больше не нужны. Отдельной функцией, потому что
+     * снимать их надо в трёх местах (успех, отказ, размонтирование), и
+     * забытое четвёртое место стоило бы ложной ошибки на живой камере.
+     */
+    const settle = () => {
+      settled = true
+      clearTimeout(watchdog)
+    }
 
     const constraints = {
       audio: false,
@@ -84,6 +134,7 @@ export function useCamera({ enabled = true, facingMode = 'user' } = {}) {
     navigator.mediaDevices
       .getUserMedia(constraints)
       .then(async (mediaStream) => {
+        settle()
         if (cancelled) {
           stopStream(mediaStream)
           return
@@ -107,6 +158,13 @@ export function useCamera({ enabled = true, facingMode = 'user' } = {}) {
           const better = pickBetterFrontCamera(track, list)
           if (better) {
             stopStream(mediaStream)
+            /**
+             * Переключение камеры — тоже причина, по которой `camera.ready` в
+             * этом заходе не появится: поток отпущен, и всё начнётся заново с
+             * другим deviceId. Без этой строки промежуток между двумя запросами
+             * выглядел в журнале провалом в никуда.
+             */
+            logEvent('camera.switch', { почему: 'подозрительная фронталка' })
             setDeviceId(better)
             return
           }
@@ -140,23 +198,37 @@ export function useCamera({ enabled = true, facingMode = 'user' } = {}) {
           })
         }
         setInfo(described)
+        /**
+         * ОТВЕТ ПОСЛЕ ИСТЁКШИХ ЧАСОВ ОТМЕНЯЕТ ИХ ПРИГОВОР. Человек думал над
+         * системным вопросом дольше десяти секунд и всё-таки разрешил —
+         * оставить его при этом на экране «камера не ответила» значило бы
+         * соврать ровно в тот момент, когда всё заработало.
+         */
+        setErrorCode(null)
         setStatus('ready')
       })
       .catch((error) => {
+        settle()
         if (cancelled) return
         // Сохранённая камера могла исчезнуть — откатываемся на facingMode.
         if (deviceId) {
+          /**
+           * Тоже бывшая немая ветка: заход кончался без единой строки, а
+           * следующий начинался как будто на пустом месте.
+           */
+          logEvent('camera.retry-default', { name: error?.name })
           writeStoredDeviceId(null)
           setDeviceId(null)
           return
         }
-        logEvent('camera.error', { name: error?.name, message: error?.message })
+        logEvent('camera.error', { name: error?.name, message: error?.message, ...cameraEnv() })
         setStatus('error')
         setErrorCode(mapCameraError(error))
       })
 
     return () => {
       cancelled = true
+      settle()
       stopStream(streamRef.current)
       streamRef.current = null
       setStream(null)

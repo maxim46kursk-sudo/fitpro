@@ -57,7 +57,7 @@ describe('не участник: цена, правила и вступлени�
 
   it('даты нет — так и написано, вместо пустого места', () => {
     render(<ChallengeScreen state={{ season: { ...SEASON, starts_on: null }, entry: null }} />)
-    expect(screen.getByTestId('challenge-tag').textContent).toContain('дата будет объявлена')
+    expect(screen.getByTestId('challenge-tag').textContent).toContain('будет объявлена')
   })
 
   it('правила — раздел этой же страницы, а не отдельный экран', () => {
@@ -246,7 +246,14 @@ describe('гость: та же страница, аккаунт по нажат
 
     expect(screen.getByTestId('challenge-price').textContent).toContain('990')
     expect(screen.getByTestId('challenge-join').textContent).toContain('Участвовать')
-    expect(screen.getByTestId('challenge-hero-join')).toBeTruthy()
+    /**
+     * КНОПКИ С ЦЕНОЙ НА ПЕРВОМ ЭКРАНЕ БОЛЬШЕ НЕТ — она там и стояла
+     * (`challenge-hero-join`). Страница перестроена: сначала человек играет,
+     * цену узнаёт после. Ниже по странице цена осталась вся целиком, что и
+     * проверяют две строки выше.
+     */
+    expect(screen.queryByTestId('challenge-hero-join')).toBeNull()
+    expect(screen.getByTestId('challenge-play').textContent).toBe('Играть')
     // отдельной кнопки «создать аккаунт» на странице больше нет
     expect(screen.queryByTestId('challenge-signup')).toBeNull()
     expect(screen.queryByTestId('challenge-signup-end')).toBeNull()

@@ -44,8 +44,24 @@ import { resetLiveTargets } from './debug/liveTargets.js'
  * @returns {() => void} закрыть раздел. Идемпотентно: второй вызов ничего не
  *   делает — React в StrictMode зовёт cleanup дважды, и падать на этом нельзя.
  */
-export function openMotion() {
-  resetLogShipper()
+/**
+ * @param {object} [options]
+ * @param {boolean} [options.resetLog] заводить ли журналу новую сессию.
+ *
+ * ЗАЧЕМ ЭТО СТАЛО НАСТРОЙКОЙ. Раздел открывается раньше, чем монтируется его
+ * начинка: сначала MotionApp читает прогресс с сервера («Загружаю прогресс…»),
+ * и только потом появляется MotionAppInner, который зовёт `openMotion`. Всё,
+ * что журнал записал за время чтения прогресса — а это ровно события `sync.*`,
+ * — прежний безусловный `resetLogShipper()` стирал начисто. Отсюда семь дней
+ * без единой строки синхронизации: не «потерь не было», а буфер, который
+ * вычищали за миг до первой отправки.
+ *
+ * Теперь журнал открывает MotionApp, до чтения прогресса, а начинка его больше
+ * не сбрасывает. Прочие сбросы остались здесь: они про состояние игры, а игра
+ * начинается именно тут.
+ */
+export function openMotion({ resetLog = true } = {}) {
+  if (resetLog) resetLogShipper()
   resetErrorReporter()
   resetDiagnostics()
   resetRecorder()

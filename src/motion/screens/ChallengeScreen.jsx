@@ -139,6 +139,18 @@ export default function ChallengeScreen({
   standingsRows = null,
   onStartDay = null,
   onResume = null,
+  /**
+   * «ИГРАТЬ» С ПЕРВОГО ЭКРАНА — обычный бесплатный день гостем. Ни отдельного
+   * режима, ни укороченной версии: человек играет ровно то же, что и все,
+   * потому что показать надо именно продукт, а не его демонстрационный огрызок.
+   */
+  onPlay = null,
+  /**
+   * Вернулись после игры с пальцем вверх — открыть страницу сразу на тёплом
+   * блоке. Меняется от захода к заходу, поэтому не начальное состояние, а
+   * ключ: один и тот же человек может сыграть дважды.
+   */
+  warm = 0,
   onOpenDiary = null,
   onOpenMyData = null,
   syncBroken = false,
@@ -191,6 +203,7 @@ export default function ChallengeScreen({
   const viewRef = useRef(null)
   const endRef = useRef(null)
   const rulesRef = useRef(null)
+  const warmRef = useRef(null)
 
   /**
    * ЛИПКАЯ КНОПКА ПОЯВЛЯЕТСЯ ПОСЛЕ ПЕРВОГО ЭКРАНА И ПРЯЧЕТСЯ В КОНЦЕ. На герое
@@ -267,6 +280,36 @@ export default function ChallengeScreen({
     const top = target.getBoundingClientRect().top - view.getBoundingClientRect().top + view.scrollTop
     view.scrollTo({ top: Math.max(0, top - 12), behavior: 'smooth' })
   }
+
+  /**
+   * ВЕРНУЛСЯ ПОСЛЕ ИГРЫ С ПАЛЬЦЕМ ВВЕРХ — открываем тёплый блок сразу.
+   *
+   * Без `behavior: 'smooth'` намеренно: человек не листал сюда сам, он тут
+   * оказался, и плавная прокрутка через весь первый экран показала бы ему
+   * дорогу, которой он не шёл. Экран должен просто открыться нужным местом.
+   *
+   * Ждём кадра: страница монтируется вместе с блоком, и до раскладки его
+   * координата ещё нулевая.
+   */
+  useEffect(() => {
+    // `entry`, а не `readOnly`: тот объявлен ниже по файлу, и до него отсюда
+    // не дотянуться. Значение то же самое — участнику продавать нечего.
+    if (!warm || entry) return undefined
+    const id = requestAnimationFrame(() => {
+      const view = viewRef.current
+      const target = warmRef.current
+      if (!view || !target) return
+      const top = target.getBoundingClientRect().top - view.getBoundingClientRect().top + view.scrollTop
+      /**
+       * Отступ больше обычных двенадцати пикселей: сверху висит закреплённый
+       * крестик 40×40, и плашка «Старт 10 сентября» — она левая и первая —
+       * встала бы ровно под ним. Человек, попавший сюда сразу после игры, начал
+       * бы чтение с закрытого угла.
+       */
+      view.scrollTo({ top: Math.max(0, top - 76) })
+    })
+    return () => cancelAnimationFrame(id)
+  }, [warm, entry])
 
   const join = async () => {
     if (busy || !agreed || !onJoin) return
@@ -425,34 +468,137 @@ export default function ChallengeScreen({
     <div className="mt-screen mt-ch" data-testid="challenge-screen">
       <div className="mt-ch__view" ref={viewRef}>
 
-        {/* ═══ ГЕРОЙ ═══ */}
-        <div className="mt-ch__hero">
+        {/*
+          ═══ ГЕРОЙ: СНАЧАЛА ИГРАЕТ, ПОТОМ УЗНАЁТ ЦЕНУ ═══
+
+          ЦЕНЫ НА ЭТОМ ЭКРАНЕ НЕТ НИГДЕ — ни в кнопке, ни в плашке, ни сноской
+          внизу. Это не оформление, а весь смысл перестройки: человек приходит
+          из поста, ничего про Motion не знает, и первое, что он должен узнать,
+          — каково это. Цифра до опыта отвечает на вопрос, которого он ещё не
+          задал, и отвечает единственным способом, каким на неё можно ответить
+          вслепую, — «дорого».
+
+          Всё, что было на прежнем первом экране (цена, «Участвовать», «Разовый
+          вход в поток»), никуда не делось: оно ниже по странице, там же, где
+          правила и согласие, — и в тёплом блоке сразу после игры.
+
+          ЭКРАН ДЕРЖИТСЯ В ОДИН РОСТ ТЕЛЕФОНА (100svh, см. motion.css):
+          прокрутка на первом экране означала бы, что кнопку «Играть» надо
+          искать, а её должно быть видно сразу.
+        */}
+        <div className="mt-ch__hero mt-ch__hero--play">
           <div className="mt-ch__heroGlow" aria-hidden="true" />
           <div className="mt-ch__heroIn">
             <div className="mt-ch__tag" data-testid="challenge-tag">
-              {season?.title || 'Поток 1'}{startDate ? ` · старт ${startDate}` : ' · дата будет объявлена'}
+              {startDate ? `Старт ${startDate}` : 'Дата старта будет объявлена'}
             </div>
-            <h1 className="mt-ch__big">
-              30<br />ДНЕЙ
-              <small>Челлендж FitPro Motion</small>
+            <h1 className="mt-ch__playBig" data-testid="challenge-hero-title">
+              30 дней.<small>Челлендж FitPro Motion</small>
             </h1>
             <p className="mt-ch__heroP">
-              Двадцать минут в день перед камерой телефона. <b>Без зала, без гантелей, без
-              абонемента.</b> Камера считает каждое движение сама.
+              20 минут в день перед камерой телефона. <b>Без зала, без гантелей, без
+              абонемента.</b> Только ты, 2 квадратных метра и телефон.
             </p>
-            <div className="mt-ch__heroCta">
-              {readOnly ? null : (
-                <button type="button" className="mt-ch__btn" data-testid="challenge-hero-join" onClick={() => scrollTo(endRef)}>
-                  Участвовать — {priceLabel}
-                </button>
-              )}
-              <button type="button" className="mt-ch__btn mt-ch__btn--line" data-testid="challenge-to-rules" onClick={() => scrollTo(rulesRef)}>
-                Сначала правила
-              </button>
+
+            {/*
+              ВИДЕО ВМЕСТО ОПИСАНИЯ. Объяснить словами, что происходит на
+              экране во время боя, нельзя — это движение. Четырнадцать секунд
+              без звука отвечают на «что я вообще буду делать» быстрее любого
+              абзаца.
+
+              playsInline обязателен: без него iOS открывает ролик во весь
+              экран поверх страницы, то есть первый экран лендинга подменяется
+              плеером с крестиком. muted обязателен вместе с autoPlay — со
+              звуком автозапуск запрещён во всех браузерах, и видео просто не
+              пойдёт. poster — на те секунды, пока файл ещё едет.
+            */}
+            <div className="mt-ch__playVideo">
+              <video
+                data-testid="challenge-video"
+                src="/challenge-motion.mp4"
+                poster="/challenge-motion.jpg"
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="metadata"
+                aria-label="Как выглядит бой в Motion"
+              />
             </div>
-            <p className="mt-ch__heroNote">Разовый вход в поток. Не подписка.</p>
+
+            {/* Призы — двумя строками. Подробный расклад долей ниже по странице. */}
+            <div className="mt-ch__playPrizes" data-testid="challenge-hero-prizes">
+              <div className="mt-ch__playRow">
+                <span className="mt-ch__playDot" aria-hidden="true" />
+                <span><b>Призовой фонд</b> — половина всех билетов, делится между тремя лучшими</span>
+              </div>
+              <div className="mt-ch__playRow">
+                <span className="mt-ch__playDot" aria-hidden="true" />
+                <span><b>Победитель</b> получает личную работу с тренером</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="mt-ch__btn mt-ch__playBtn"
+              data-testid="challenge-play"
+              onClick={() => {
+                ступень('play', { гость: !!guest })
+                onPlay?.()
+              }}
+            >
+              Играть
+            </button>
           </div>
         </div>
+
+        {/*
+          ═══ ТЁПЛЫЙ БЛОК — экран 2 макета ═══
+
+          Сюда возвращает палец вверх после игры, и возвращает ПРЯМО СЮДА, а не
+          на верх страницы: человек только что играл, ему понравилось, и
+          заставлять его в этот момент листать десять экранов до цены — значит
+          потерять его ровно на пике интереса.
+
+          Блок стоит на самой странице, а не всплывашкой поверх неё, намеренно:
+          закрыв всплывашку, человек оказался бы на первом экране, то есть там
+          же, откуда уходил играть, и предложение снова пришлось бы искать.
+        */}
+        {!readOnly && (
+          <section className="mt-ch__warm" ref={warmRef} data-testid="challenge-warm">
+            <div className="mt-ch__tag">
+              {startDate ? `Старт ${startDate}` : 'Дата старта будет объявлена'}
+            </div>
+            <h2 className="mt-ch__warmH2">Тогда смотри,<br />что дальше</h2>
+            <p className="mt-ch__warmP">
+              Тридцать дней подряд. Каждый день — семь таких боёв и дневник питания.
+              Каждый день тяжелее вчерашнего.
+            </p>
+            <div className="mt-ch__playPrizes">
+              <div className="mt-ch__playRow">
+                <span className="mt-ch__playDot" aria-hidden="true" />
+                <span><b>Призовой фонд</b> — половина всех билетов, делится между тремя лучшими</span>
+              </div>
+              <div className="mt-ch__playRow">
+                <span className="mt-ch__playDot" aria-hidden="true" />
+                <span><b>Победитель</b> получает личную работу со мной: разбор и программа</span>
+              </div>
+              <div className="mt-ch__playRow">
+                <span className="mt-ch__playDot" aria-hidden="true" />
+                <span>Считает камера, подделать нельзя</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="mt-ch__btn mt-ch__warmBtn"
+              data-testid="challenge-warm-join"
+              onClick={() => scrollTo(endRef)}
+            >
+              Участвовать — {priceLabel}
+            </button>
+            <div className="mt-ch__warmGhost">Подробные правила ниже</div>
+          </section>
+        )}
 
         {/* ═══ ЗАЧЕМ ═══ */}
         <section>

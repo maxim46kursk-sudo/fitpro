@@ -4747,3 +4747,339 @@
   line-height: 1.45;
   color: rgba(235, 235, 245, 0.38);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ВЫХОД ИЗ ПРОБНОЙ ИГРЫ (PlayExitScreen) и ТЁПЛЫЙ БЛОК НА ЛЕНДИНГЕ.
+
+   Вёрстка перенесена из docs/challenge-exit-maket.html один в один: размеры,
+   радиусы и отступы оттуда. Цвета — из src/theme.js (BG, SURF, HAIR, TXT,
+   TXT2, PUR, ACCENT2, SHADOW_PRIMARY), а не из макета: в макете они записаны
+   числами, и разойтись с остальным приложением им ничего не мешает.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.mt-px {
+  position: absolute;
+  inset: 0;
+  z-index: 44;
+  background: #0b0b0d;           /* BG */
+  color: #fff;                   /* TXT */
+  overflow: hidden;
+}
+
+/* Свечение из макета: .glow — круг радиального градиента над первым экраном. */
+.mt-px__glow {
+  position: absolute;
+  top: -260px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 640px;
+  height: 640px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(124, 122, 240, 0.3) 0%, rgba(11, 11, 13, 0) 68%);
+  pointer-events: none;
+}
+
+.mt-px__in {
+  position: relative;
+  height: 100%;
+  padding: calc(34px + env(safe-area-inset-top, 0px)) 26px calc(34px + env(safe-area-inset-bottom, 0px));
+  max-width: 430px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;                     /* .g22 */
+}
+
+/* Распорка из макета (.sp): прижимает содержимое к центру и к низу. */
+.mt-px__sp { flex: 1; }
+
+/* ── карточка результата (.res) ── */
+.mt-px__res {
+  background: #1c1c1e;                        /* SURF */
+  border: 1px solid rgba(255, 255, 255, 0.09); /* SEP */
+  border-radius: 22px;
+  padding: 20px 22px;
+  text-align: center;
+}
+
+.mt-px__resLab {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(235, 235, 245, 0.42);
+}
+
+.mt-px__resBig {
+  font-size: 46px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  margin-top: 6px;
+  background: linear-gradient(180deg, #9d96ff, #7c7af0);  /* GRADIENT_PRIMARY */
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.mt-px__resSub {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(235, 235, 245, 0.62);          /* TXT2 */
+  margin-top: 4px;
+}
+
+/* ── заголовки и текст ── */
+.mt-px__h2 {
+  font-size: 31px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.mt-px__h2--mid { text-align: center; }
+
+.mt-px__p {
+  font-size: 17px;
+  line-height: 1.45;
+  color: rgba(235, 235, 245, 0.62);
+  font-weight: 500;
+  margin: 0;
+}
+
+.mt-px__p b { color: #fff; font-weight: 700; }
+
+/* ── пальцы (.thumbs / .tb) ── */
+.mt-px__thumbs {
+  display: flex;
+  gap: 18px;
+  justify-content: center;
+}
+
+.mt-px__tb {
+  width: 128px;
+  height: 128px;
+  border-radius: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 58px;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  /* эмодзи не должно подцветиться градиентным текстом соседей */
+  color: #fff;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mt-px__tb--up {
+  background: linear-gradient(180deg, #9d96ff, #7c7af0);
+  box-shadow: 0 12px 30px rgba(124, 122, 240, 0.42);
+}
+
+.mt-px__tb--down {
+  background: #1c1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.12);   /* HAIR */
+}
+
+.mt-px__tb:active { transform: scale(0.97); }
+
+/*
+ * На узком экране (SE, 320 точек) два квадрата по 128 с зазором 18 не влезают
+ * в 26+26 полей: 300 против 268. Ужимаем оба, а не прячем зазор — кнопка,
+ * упирающаяся в край, читается как обрезанная.
+ */
+@media (max-width: 359px) {
+  .mt-px__tb { width: 108px; height: 108px; border-radius: 30px; font-size: 50px; }
+}
+
+/* ── кнопки (.btn / .pri / .sec) ── */
+.mt-px__g10 { display: flex; flex-direction: column; gap: 10px; }
+
+.mt-px__btn {
+  border-radius: 18px;
+  padding: 19px;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  border: 0;
+  width: 100%;
+  cursor: pointer;
+  color: #fff;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mt-px__btn--pri {
+  background: linear-gradient(180deg, #9d96ff, #7c7af0);
+  box-shadow: 0 10px 26px rgba(124, 122, 240, 0.4);   /* SHADOW_PRIMARY */
+}
+
+.mt-px__btn--sec {
+  background: #1c1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(235, 235, 245, 0.72);
+}
+
+.mt-px__btn:active { transform: scale(0.99); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ПЕРВЫЙ ЭКРАН ЛЕНДИНГА: «сначала играет, потом узнаёт цену».
+
+   Требование, задающее всю раскладку: экран помещается в один рост телефона
+   без прокрутки. Значит высота задана (100svh), а гибкая часть ровно одна —
+   видео: текст, призы и кнопка нужны целиком, видео можно и подрезать.
+
+   svh, а не vh: на iOS `100vh` считает высоту БЕЗ адресной строки, и первый
+   экран уезжает под неё ровно на её высоту — то есть кнопку «Играть», которая
+   стоит последней, не видно. Запасное правило на vh оставлено ниже для
+   браузеров постарше.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.mt-ch__hero--play {
+  height: 100vh;
+  height: 100svh;
+  min-height: 560px;
+  padding: 0;
+}
+
+.mt-ch__hero--play .mt-ch__heroIn {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* сверху место под крестик, снизу — под домашнюю полосу iPhone */
+  padding: calc(64px + env(safe-area-inset-top, 0px)) 22px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+
+.mt-ch__hero--play .mt-ch__tag { align-self: flex-start; flex: none; }
+
+.mt-ch__playBig {
+  flex: none;
+  margin: 2px 0 0;
+  font-weight: 900;
+  font-size: 34px;
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+  color: #fff;
+}
+
+.mt-ch__playBig small {
+  display: block;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+  color: #9d96ff;      /* ACCENT2 */
+  margin-top: 6px;
+}
+
+.mt-ch__hero--play .mt-ch__heroP {
+  flex: none;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+/*
+ * ВИДЕО — ЕДИНСТВЕННАЯ ГИБКАЯ ЧАСТЬ ЭКРАНА.
+ *
+ * min-height: 0 обязателен: без него flex-элемент не сжимается ниже своего
+ * содержимого, и на невысоком телефоне ролик выдавил бы кнопку «Играть» за
+ * нижний край — то есть ровно то, ради чего экран и делался в один рост.
+ */
+.mt-ch__playVideo {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-radius: 22px;
+  overflow: hidden;
+  background: #1c1c1e;                          /* SURF — пока постер не пришёл */
+  border: 1px solid rgba(255, 255, 255, 0.09);  /* SEP */
+}
+
+/*
+ * cover, а не contain: ролик снят вертикально, и подрезать его по краям
+ * безопаснее, чем оставить чёрные поля — поля читаются как «видео сломалось».
+ */
+.mt-ch__playVideo video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mt-ch__playPrizes {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mt-ch__playRow {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 14px;
+  line-height: 1.35;
+  color: rgba(235, 235, 245, 0.72);
+  font-weight: 500;
+}
+
+.mt-ch__playRow b { color: #fff; font-weight: 700; }
+
+.mt-ch__playDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #9d96ff;
+  margin-top: 6px;
+  flex: none;
+}
+
+.mt-ch__playBtn {
+  flex: none;
+  margin-top: 2px;
+  font-size: 19px;
+  padding: 18px;
+}
+
+/* ── тёплый блок после игры (экран 2 макета) ── */
+
+.mt-ch__warm {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  align-items: flex-start;
+  /*
+   * scroll-margin — на случай прокрутки браузером, а не нашим кодом: без него
+   * заголовок блока уехал бы под закреплённый крестик.
+   */
+  scroll-margin-top: 64px;
+}
+
+.mt-ch__warmH2 {
+  margin: 0;
+  font-size: 31px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  color: #fff;
+}
+
+.mt-ch__warmP {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.45;
+  color: rgba(235, 235, 245, 0.62);
+  font-weight: 500;
+}
+
+.mt-ch__warmBtn { width: 100%; }
+
+.mt-ch__warmGhost {
+  align-self: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(235, 235, 245, 0.38);
+  padding: 2px;
+}
