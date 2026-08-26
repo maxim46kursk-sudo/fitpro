@@ -7,6 +7,8 @@ import { verifySignature, PLAN_PRICE, CHALLENGE_ITEM } from './_prodamus.js'
 // Какой поток человеку — общее правило на клиент и обе платёжные ручки.
 import { resolveSeasonFor } from './_challengeSeason.js'
 import { ступеньСервера } from './_challengeLog.js'
+// Продажа билета — событие, о котором владелец узнаёт немедленно, а не из сводки.
+import { сообщитьОбОплате } from './_challengeSale.js'
 
 // Вебхук уведомлений Продамуса. Тело подписано, поэтому НЕ даём Vercel его
 // разобрать — подпись считается по точной сырой форме, любой репарсинг
@@ -376,6 +378,20 @@ export default async function handler(req, res) {
       userId,
       поток: enrollChallenge.seasonId,
       номер: participantNo,
+    })
+    /**
+     * И СРАЗУ ВЛАДЕЛЬЦУ В TELEGRAM. Строго здесь: сообщение про участника №N
+     * имеет смысл, только когда участник №N уже есть. Ветки выше, где билет
+     * оплачен, а зачислить не вышло, кричат своим путём — через reportError.
+     *
+     * Сбой отправки ответ кассе не меняет (см. _challengeSale.js): Продамус
+     * ждёт «OK» об оплате, а не об уведомлении.
+     */
+    await сообщитьОбОплате(supabaseAdmin, {
+      поток: enrollChallenge.seasonId,
+      номер: participantNo,
+      сумма: sumNum,
+      userId,
     })
     return res.status(200).send('OK')
   }

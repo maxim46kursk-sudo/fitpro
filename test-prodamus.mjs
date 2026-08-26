@@ -178,6 +178,12 @@ test('сумма и состав заказа не зависят от source', 
 process.env.PRODAMUS_SECRET_KEY = SECRET
 process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-service-role-key'
 process.env.VITE_SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://api.fitproapp.ru'
+// Владелец и бот — ради сообщения о продаже. Владелец задан переменной, а не
+// поиском по роли: иначе им оказался бы сам покупатель (мир отдаёт на любой
+// запрос profiles одну и ту же строку).
+process.env.TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || 'test-bot-token'
+process.env.TRAINER_USER_ID = '33333333-3333-4333-8333-333333333333'
+const OWNER_CHAT = '777000'
 
 // Динамический импорт — модуль читает адрес базы на загрузке, а переменные
 // окружения выставлены строчкой выше.
@@ -213,6 +219,10 @@ const makeWorld = (over = {}) => ({
   planWrites: [],     // PATCH profiles — начисление тарифа
   enrollCalls: [],
   errors: [],
+  telegram: [],       // тексты, ушедшие владельцу
+  // Ступень «касса открыта» этого человека — из неё сообщение берёт источник.
+  // null — ступени нет (оплата мимо нашей ссылки).
+  payStart: { s: 'instagram', m: 'post' },
   ...over,
 })
 
@@ -263,7 +273,22 @@ async function callWebhook(world, { sum, tag, userId = USER, orderId = null }) {
       return jsonResponse([{}])
     }
     if (p.startsWith('/rest/v1/error_log')) { world.errors.push(JSON.parse(opts.body)); return jsonResponse([{ id: 1 }]) }
-    if (p.startsWith('/auth/v1/')) return jsonResponse({ user: { id: userId } })
+    // Журнал воронки: сюда пишутся серверные ступени и отсюда же читается
+    // метка источника. Записи мир не хранит — на вопрос отвечает payStart.
+    if (p.startsWith('/rest/v1/motion_log')) {
+      if (method !== 'GET') return jsonResponse([{}])
+      if (!world.payStart) return jsonResponse([])
+      const строка = `2026-08-24T11:59:00.000Z [challenge.pay-start] ${JSON.stringify({ uid: userId, ...world.payStart })}`
+      return jsonResponse([{ payload: { lines: [строка] } }])
+    }
+    if (u.host === 'api.telegram.org') {
+      if (world.telegramFails) return jsonResponse({ ok: false, description: 'chat not found' }, 400)
+      world.telegram.push(JSON.parse(opts.body).text)
+      return jsonResponse({ ok: true })
+    }
+    if (p.startsWith('/auth/v1/')) {
+      return jsonResponse({ user: { id: userId, user_metadata: { telegram_id: OWNER_CHAT } } })
+    }
     return jsonResponse([])
   }
 
@@ -459,6 +484,67 @@ await testAsync('билет без открытого сезона: платёж
   assert.equal(world.paymentRows[0].status, 'no_open_season', 'платёж виден в журнале')
   assert.equal(world.paymentRows[0].plan, 'challenge')
   assert.equal(world.errors.length > 0, true, 'про деньги, которые некуда зачислить, обязаны узнать сразу')
+})
+
+console.log('\nprodamus: об оплате челленджа владелец узнаёт сразу')
+
+await testAsync('успешная оплата → сообщение с номером участника, суммой и источником', async () => {
+  const world = makeWorld()
+  await callWebhook(world, { sum: 2990, tag: 'challenge' })
+  assert.equal(world.telegram.length, 1, 'ровно одно сообщение на одну продажу')
+  const текст = world.telegram[0]
+  assert.match(текст, /участник №1/, 'номер участника — главное в сообщении')
+  assert.match(текст, /2990/, 'сумма')
+  assert.match(текст, /instagram[/]post/, 'источник из ступени «касса открыта»')
+  assert.match(текст, /поток 1/, 'без потока номер участника не читается')
+})
+
+await testAsync('в сообщение не попадают ни имя, ни идентификатор человека', async () => {
+  // То же ограничение, что у журнала ошибок: текст уходит во внешний сервис.
+  const world = makeWorld({ profileName: 'Пётр Петров' })
+  await callWebhook(world, { sum: 2990, tag: 'challenge' })
+  const текст = world.telegram[0] || ''
+  assert.equal(/Пётр|Петров/.test(текст), false, 'имени в сообщении быть не должно')
+  assert.equal(текст.includes(USER), false, 'и идентификатора человека тоже')
+})
+
+await testAsync('без метки в воронке источник «прямой», а сообщение всё равно уходит', async () => {
+  const world = makeWorld({ payStart: null })
+  await callWebhook(world, { sum: 2990, tag: 'challenge' })
+  assert.equal(world.telegram.length, 1)
+  assert.match(world.telegram[0], /источник: прямой/)
+})
+
+await testAsync('повтор того же уведомления второго сообщения не даёт', async () => {
+  // Иначе ретрай Продамуса выглядел бы второй продажей.
+  const world = makeWorld()
+  await callWebhook(world, { sum: 2990, tag: 'challenge', orderId: '48999010' })
+  await callWebhook(world, { sum: 2990, tag: 'challenge', orderId: '48999010' })
+  assert.equal(world.telegram.length, 1)
+})
+
+await testAsync('тариф ПРОФИТ за те же 2990 сообщения не рождает', async () => {
+  // Канал заведён под продажи челленджа: тарифы в него не сыплются.
+  const world = makeWorld()
+  await callWebhook(world, { sum: 2990, tag: null })
+  assert.equal(world.planWrites.length, 1, 'тариф при этом начислен')
+  assert.equal(world.telegram.length, 0)
+})
+
+await testAsync('оплаченный билет без потока: сообщения о продаже нет', async () => {
+  // Продажи не случилось — участника нет. Про эти деньги кричит reportError.
+  const world = makeWorld({ seasons: [] })
+  await callWebhook(world, { sum: 2990, tag: 'challenge' })
+  assert.equal(world.entries.length, 0)
+  assert.equal(world.telegram.length, 0)
+})
+
+await testAsync('Telegram отказал — зачисление и ответ кассе не пострадали', async () => {
+  const world = makeWorld({ telegramFails: true })
+  const res = await callWebhook(world, { sum: 2990, tag: 'challenge' })
+  assert.equal(res.statusCode, 200, 'Продамус ждёт OK об оплате, а не об уведомлении')
+  assert.equal(world.entries.length, 1, 'участник зачислен')
+  assert.equal(world.telegram.length, 0, 'сообщение не ушло — и это всё, что случилось')
 })
 
 console.log(`\n${failed ? '✗' : '✓'} prodamus: ${passed} прошло, ${failed} упало\n`)

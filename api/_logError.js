@@ -99,16 +99,33 @@ async function seenRecently(admin, context, exceptId) {
   return (data?.length || 0) > 0
 }
 
+/**
+ * ЧАТ ВЛАДЕЛЬЦА В TELEGRAM — один на все срочные сообщения сервера.
+ *
+ * Экспортируется, потому что тревоги — не единственное, о чём владелец обязан
+ * узнать немедленно: оплаченный билет челленджа тоже (api/_challengeSale.js).
+ * Копировать эту пару шагов третий раз незачем — обе половины (кто владелец и
+ * где его чат) уже здесь, а этот файл, в отличие от ручек, импортируется
+ * свободно: он с подчёркиванием и своего `export const config` не несёт.
+ *
+ * null — «отправить некуда»: тренер не определился или Telegram у него не
+ * привязан. Это не ошибка и кричать о ней некуда, звать всё равно было бы
+ * некого.
+ */
+export async function ownerChatId(admin) {
+  const trainerId = await resolveTrainerId(admin)
+  if (!trainerId) return null
+  const { data: userData } = await admin.auth.admin.getUserById(trainerId)
+  return extractChatId(userData?.user) || null
+}
+
 async function notifyTrainer(admin, { context, message, insertedId }) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN
   if (!botToken) return false
 
   if (await seenRecently(admin, context, insertedId)) return false
 
-  const trainerId = await resolveTrainerId(admin)
-  if (!trainerId) return false
-  const { data: userData } = await admin.auth.admin.getUserById(trainerId)
-  const chatId = extractChatId(userData?.user)
+  const chatId = await ownerChatId(admin)
   if (!chatId) return false
 
   // В сообщении только context и обрезанный message. Ни user_id, ни details,
