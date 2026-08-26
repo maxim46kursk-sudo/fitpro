@@ -505,6 +505,55 @@ if (has('--preview')) {
       return out
     })
     for (const b of bad) problems.push(`${size.name}: ${b}`)
+
+    /**
+     * ДВА ПРАВИЛА ПЕРВОГО ЭКРАНА — на живой сборке, а не только в vitest.
+     *
+     *   1) ЦЕНЫ НА НЁМ НЕТ НИГДЕ. Она приезжает из строки сезона и просачивается
+     *      обратно любой правкой героя; поймать это глазами нельзя — «2 990 ₽»
+     *      мелким шрифтом в углу выглядит безобидно и убивает весь смысл
+     *      перестройки: человек узнаёт цену раньше, чем что-либо про продукт.
+     *   2) ОН ПОМЕЩАЕТСЯ БЕЗ ПРОКРУТКИ. Кнопка «Играть» стоит последней, и
+     *      уехав за нижний край она перестаёт существовать: искать её никто не
+     *      будет. Проверяется на 360×640 — самом низком живом телефоне.
+     */
+    const герой = await page.evaluate(() => {
+      const el = document.querySelector('.mt-ch__hero--play')
+      if (!el) return { нет: true }
+      const кнопка = document.querySelector('[data-testid="challenge-play"]')
+      return {
+        текст: el.textContent,
+        низКнопки: кнопка ? kнопкаНиз(кнопка) : null,
+        экран: window.innerHeight,
+      }
+      function kнопкаНиз(b) { return Math.round(b.getBoundingClientRect().bottom) }
+    })
+    if (герой.нет) {
+      problems.push(`${size.name}: первого экрана «Играть» нет вовсе`)
+    } else {
+      const цена = /₽|руб|\d\s?990|Участвовать|стоимость/i.exec(герой.текст)
+      if (цена) problems.push(`${size.name}: ЦЕНА НА ПЕРВОМ ЭКРАНЕ — «${цена[0]}»`)
+      if (герой.низКнопки > герой.экран) {
+        problems.push(`${size.name}: кнопка «Играть» ниже экрана на ${герой.низКнопки - герой.экран}px`)
+      }
+      say(`  первый экран: цены нет, кнопка «Играть» на ${герой.низКнопки} при экране ${герой.экран}`)
+    }
+    await page.evaluate(() => document.querySelector('.mt-ch__view').scrollTo({ top: 0 }))
+    await wait(150)
+    await page.screenshot({ path: `${PREVIEW_OUT}/00-первый-экран-${size.name}.png` })
+
+    /**
+     * ТЁПЛЫЙ БЛОК — тот, куда возвращает палец вверх после игры. Снимается
+     * отдельно: человек попадает в него сразу, минуя первый экран, и увидеть
+     * его надо ровно так, как он его увидит.
+     */
+    if (size.name === '390x844') {
+      await page.locator('[data-testid="challenge-warm"]').scrollIntoViewIfNeeded()
+      await wait(200)
+      await page.screenshot({ path: `${PREVIEW_OUT}/01-тёплый-блок.png` })
+      await page.evaluate(() => document.querySelector('.mt-ch__view').scrollTo({ top: 0 }))
+      await wait(150)
+    }
     say('')
     say(`${size.name}: проблем ${bad.length}`)
     for (const b of bad) say(`  ${b}`)

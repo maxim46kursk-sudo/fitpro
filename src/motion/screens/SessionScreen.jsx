@@ -50,7 +50,7 @@ import { useWakeLock } from '../device/useWakeLock.js'
  *   прогресс участника не прочитался с сервера, и записать заход означало бы
  *   разойтись с общей таблицей, по которой считаются призы (см. index.jsx).
  */
-export default function SessionScreen({ subscribe, videoRef = null, tier, day = 1, onExit, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, resume = null, onRestartCamera = null, scored = true }) {
+export default function SessionScreen({ subscribe, videoRef = null, tier, day = 1, onExit, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, resume = null, onRestartCamera = null, scored = true, onRound = null }) {
   /**
    * ЭКРАН НЕ ГАСНЕТ ВСЮ СЕССИЮ, а не только в бою.
    *
@@ -120,6 +120,14 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
    */
   const runs = useRef(resume ? Math.max(1, Number(resume.runs) || 1) + 1 : 1)
   const submitted = useRef(false)
+  /**
+   * КОГДА ЗАХОД НАЧАЛСЯ. Нужно ровно одному потребителю — экрану выхода из
+   * пробной игры, который показывает человеку его время («47 мишеней · 6
+   * минут»). Часы стенные (Date.now), а не performance: заход переживает уход
+   * со страницы и возврат, а performance.now в фоне на телефоне идёт не так,
+   * как идёт время у человека.
+   */
+  const открытоВ = useRef(Date.now())
   /** Что ответил зачёт дня. Ref, а не состояние: пишется один раз, до отрисовки. */
   const attemptRef = useRef(null)
   const startedAt = useRef(null)
@@ -298,10 +306,27 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
     }
   }, [])
 
+  /**
+   * ЧТО ЧЕЛОВЕК НАБРАЛ — наружу, вместе с выходом.
+   *
+   * Прежде `onExit` звался пустым, и снаружи о заходе не было известно ничего:
+   * экран выхода из пробной игры показал бы нули вместо результата, то есть
+   * сказал бы только что двигавшемуся человеку «ты ничего не сделал». Числа
+   * берутся из тех же `totals`, что уходят в зачёт, — разойтись им нечем.
+   *
+   * Прежние вызывающие аргумент просто игнорируют.
+   */
+  const итог = () => ({
+    score: totals.current.score,
+    hits: totals.current.hits,
+    seconds: Math.max(0, Math.round((Date.now() - открытоВ.current) / 1000)),
+  })
+
   /** Выход из тренировки любым путём: попытка закрывается, потом уходим. */
   const exitSession = () => {
+    const снимок = итог()
     closeAttempt('exit')
-    onExit?.()
+    onExit?.(снимок)
   }
 
   /**
@@ -318,6 +343,7 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
    */
   const discardSession = () => {
     if (submitted.current) return
+    const снимок = итог()
     submitted.current = true
     dropPending()
     dropSession()
@@ -330,7 +356,12 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
       score: totals.current.score,
       guest,
     })
-    onExit?.()
+    /**
+     * Итог отдаётся и здесь, хотя запись выброшена: человек отказался
+     * СОХРАНЯТЬ заход, а не отказался его делать. Показать ему на выходе его
+     * же цифры — не то же самое, что записать их себе.
+     */
+    onExit?.(снимок)
   }
 
   /**
@@ -435,6 +466,19 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
   }, [index, phase.kind, phase.durationMs, paused])
 
   /**
+   * НАЧАЛСЯ БОЙ — ступень воронки пробной игры.
+   *
+   * Отдельным эффектом, а не внутри отрисовки: фаза «бой» держится минуту и
+   * перерисовывается каждый кадр вместе с очками, и отметка из тела рендера
+   * ушла бы шестьдесят раз в секунду. Дедуп воронки её бы съел, но платить за
+   * это чтением sessionStorage на каждом кадре незачем.
+   */
+  useEffect(() => {
+    if (phase.kind === 'fight') onRound?.('start')
+    // намеренно только по смене фазы: onRound снаружи стабилен
+  }, [index, phase.kind, onRound])
+
+  /**
    * ГДЕ ЧЕЛОВЕК НАХОДИТСЯ — одной строкой и в отчёт об ошибке, и в снимок
    * состояния.
    *
@@ -498,6 +542,8 @@ export default function SessionScreen({ subscribe, videoRef = null, tier, day = 
       score: result.score ?? 0,
     })
     logEvent('session.fight', { cycle: phase.cycle, cleared: result.cleared, score: result.score })
+    // Круг доигран до конца — ступень воронки пробной игры (см. index.jsx).
+    onRound?.('end')
     advance()
   }
 

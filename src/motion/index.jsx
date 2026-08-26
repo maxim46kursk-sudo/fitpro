@@ -15,6 +15,8 @@ import { DEFAULT_TIER } from './game/levels.js'
 import { needsPersonalSetup } from './game/personal.js'
 import { DAYS, currentDay, forcedDay, setStreamStart, streamPhase } from './game/challenge.js'
 import ChallengeScreen from './screens/ChallengeScreen.jsx'
+import PlayExitScreen from './screens/PlayExitScreen.jsx'
+import { ступень } from './challengeFunnel.js'
 import StandingsScreen from './screens/StandingsScreen.jsx'
 import {
   CHALLENGE_PRICE,
@@ -670,6 +672,47 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
     setScreen('challenge')
   }, [])
 
+  /**
+   * ═══ ПРОБНАЯ ИГРА С ЛЕНДИНГА ═══
+   *
+   * Страница челленджа перестроена: цены на первом экране нет, там кнопка
+   * «Играть». Она ведёт в ОБЫЧНЫЙ бесплатный день гостем — никакого отдельного
+   * режима не заводится, — но выход из такого захода устроен иначе: человек
+   * пришёл из поста, ничего про Motion не знал, и крестик здесь единственная
+   * точка, где с ним можно поговорить (см. PlayExitScreen).
+   *
+   * Ref, а не состояние: признак читают обработчики выхода, живущие дольше
+   * одного рендера, и лишняя перерисовка игры ради него не нужна.
+   */
+  const проба = useRef(false)
+  /** Результат пробного захода для экрана выхода. null — экрана нет. */
+  const [пробаИтог, setПробаИтог] = useState(null)
+  /**
+   * Счётчик возвратов «палец вверх». Меняется — страница челленджа открывается
+   * сразу на тёплом блоке; числом, а не флагом, потому что сыграть можно дважды.
+   */
+  const [тепло, setТепло] = useState(0)
+
+  /**
+   * Ступень пробной воронки. Ходит через тот же challengeFunnel, что и весь
+   * лендинг: одна отметка на визит, дедуп внутри.
+   */
+  const пробаШаг = useCallback((шаг) => {
+    if (!проба.current) return
+    ступень(шаг, { гость: !!guest })
+  }, [guest])
+
+  /**
+   * ВЫЙТИ ИЗ ПРОБНОГО ЗАХОДА. Заход уже закрыт сессией — здесь только показ:
+   * экран вопроса вместо молчаливого возврата на страницу.
+   *
+   * Итог может не прийти вовсе (старый вызывающий, пустой заход) — тогда
+   * экран покажется без блока с цифрами, а не с нулями.
+   */
+  const закончитьПробу = useCallback((итог) => {
+    проба.current = false
+    setПробаИтог(итог && итог.score > 0 ? итог : { score: 0, hits: 0, seconds: 0 })
+  }, [])
   const [needsTap, setNeedsTap] = useState(false)
 
   /**
@@ -823,6 +866,17 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
    * Теперь молчит только одна. Строка пишется на ПЕРЕХОД (камеру отпустили или
    * снова спрашиваем), а не каждый рендер, иначе снимков в буфере станет вдвое.
    */
+  /**
+   * КАМЕРА ПОДНЯЛАСЬ — ступень пробной воронки.
+   *
+   * Именно здесь стоит первый настоящий порог дорожки: между «нажал Играть» и
+   * «увидел себя» лежат разрешение на камеру и встроенный браузер, в котором
+   * его не спросят вовсе. Без отметки эти два отвала неотличимы от «передумал».
+   */
+  useEffect(() => {
+    if (camera.status === 'ready') пробаШаг('camera')
+  }, [camera.status, пробаШаг])
+
   const cameraOffRef = useRef(null)
   useEffect(() => {
     const почему = paused
@@ -1104,6 +1158,22 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
             setScreen('levels')
           }}
           /**
+           * «ИГРАТЬ» С ПЕРВОГО ЭКРАНА — обычная дорога гостя, та же, что при
+           * входе в раздел с главной: постоять в кадре -> выбор уровня -> бой.
+           * Ни отдельного режима, ни укороченной игры: показывать надо продукт.
+           *
+           * Отличие ровно одно и оно снаружи игры — крестик на выходе ведёт не
+           * назад, а на экран разговора (см. `проба`).
+           */
+          onPlay={() => {
+            проба.current = true
+            challengeBack.current = 'challenge'
+            levelsBack.current = 'calibration'
+            setRunId((n) => n + 1)
+            setScreen('calibration')
+          }}
+          warm={тепло}
+          /**
            * ПРОДОЛЖИТЬ НЕЗАКРЫТЫЙ ЗАХОД — сразу в сессию, минуя выбор уровня:
            * уровень у начатой сессии уже есть, и спрашивать его заново значило
            * бы дать сменить его в середине дня.
@@ -1183,6 +1253,8 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
             // Самый первый раз — «Настройка под себя»: игра должна узнать личную
             // амплитуду ДО челленджа, а не в первом же раунде на скорости.
             // Дальше человека сюда не перехватывают, кнопка есть на выборе уровня.
+            // Ступень пробной воронки: человек достоял в кадре и ушёл дальше.
+            пробаШаг('calibrated')
             if (!gameMode) return setScreen('workout')
             setScreen(needsPersonalSetup() ? 'setup' : 'levels')
           }}
@@ -1274,7 +1346,21 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
             onGuestProgress={reportGuestProgress}
             resume={resume}
             onRestartCamera={restartPipeline}
-            onExit={() => {
+            /** Ступени пробной воронки: начался первый бой и он же доигран. */
+            onRound={(что) => пробаШаг(что === 'start' ? 'round-start' : 'round-end')}
+            onExit={(итог) => {
+              /**
+               * ПРОБНЫЙ ЗАХОД УХОДИТ НЕ НА ВЫБОР УРОВНЯ, А НА РАЗГОВОР.
+               *
+               * Обычный заход (участник, свой день) выходит как выходил: у него
+               * на кону призы, и подменять ему выход вопросом «как тебе игра?»
+               * нельзя. Развилка ровно здесь и только по признаку пробы.
+               */
+              if (проба.current) {
+                setResume(null)
+                закончитьПробу(итог)
+                return
+              }
               setResume(null)
               setRunId((n) => n + 1)
               // день мог только что закрыться завершённой сессией — перечитываем
@@ -1327,6 +1413,46 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
           onExit={() => {
             setStats(null)
             setScreen('calibration')
+          }}
+        />
+      )}
+
+      {/**
+        * ═══ ВЫХОД ИЗ ПРОБНОЙ ИГРЫ ═══
+        *
+        * Лежит ПОВЕРХ всего и не зависит от `screen`: заход уже закрыт, экраны
+        * под ним неважны, а перевести человека куда-то до его ответа нельзя —
+        * иначе он увидит мелькнувший выбор уровня вместо вопроса.
+        */}
+      {пробаИтог && (
+        <PlayExitScreen
+          итог={пробаИтог}
+          цена={membership?.season?.price_rub ?? CHALLENGE_PRICE}
+          старт={membership?.season?.starts_on ?? null}
+          /**
+           * ПАЛЕЦ ВВЕРХ — на страницу челленджа, сразу в тёплый блок. Не на
+           * первый экран: человек только что оттуда ушёл играть, и вернуть его
+           * туда же значит стереть всё, что между этим произошло.
+           */
+          onЧеллендж={() => {
+            setПробаИтог(null)
+            setТепло((n) => n + 1)
+            setScreen('challenge')
+          }}
+          /**
+           * «СОХРАНИТЬ РЕЗУЛЬТАТ» — в регистрацию, тем же путём, что и везде:
+           * форму заводит хозяин, раздел своей не рисует. Заход у гостя уже
+           * записан попыткой, и буфер переезда подхватит его при входе.
+           */
+          onСохранить={() => {
+            setПробаИтог(null)
+            onGuestValue?.('challenge', пробаИтог?.score ?? 0)
+          }}
+          /** «Закрыть» — наружу, как обычный крестик раздела. */
+          onЗакрыть={() => {
+            setПробаИтог(null)
+            setScreen('challenge')
+            onExit?.()
           }}
         />
       )}
