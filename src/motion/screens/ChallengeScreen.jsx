@@ -3,7 +3,7 @@ import { MIN_ENTRIES, MIN_MEALS, dayScore, streamScore } from '../../challengeNu
 import { DAYS, streamDay, streamPhase } from '../game/challenge.js'
 import StreamRoom from './StreamRoom.jsx'
 import { bump } from '../../funnel.js'
-import { ступень } from '../challengeFunnel.js'
+import { ПОРОГИ, глубина, ступень } from '../challengeFunnel.js'
 
 /**
  * ЧЕЛЛЕНДЖ — ОДНА ДЛИННАЯ СТРАНИЦА, по которой человек решает, платить ли.
@@ -215,6 +215,30 @@ export default function ChallengeScreen({
        */
       if (end && view.scrollTop + view.clientHeight > end.offsetTop) {
         ступень('scroll', { гость: !!guest })
+      }
+      /**
+       * ГЛУБИНА: четверть, половина, три четверти страницы.
+       *
+       * Между «открыл» и «долистал до цены» лежит весь лендинг, и где именно
+       * внутри него люди уходят, двумя отметками не видно. Считается ДОЛЯ
+       * УВИДЕННОГО — низ окна к полной высоте свитка, а не положение полосы
+       * прокрутки: человек, докрутивший до упора, увидел сто процентов, а не
+       * столько, сколько показал бы scrollTop.
+       *
+       * Пороги проверяются все сразу, а не только ближайший: прыжок по кнопке
+       * «Участвовать» переносит через несколько за раз, и считать при этом одну
+       * четверть значило бы терять остальные. Повторы гасит сама отметка — она
+       * ставится один раз за визит на каждый порог (см. challengeFunnel.js).
+       *
+       * Пока крутить нечего (`scrollHeight` равен окну — контент ещё не
+       * разложился или страница короче экрана), не считаем ничего: иначе первый
+       * же вызов записал бы всем троим порогам «дошёл», не спросив человека.
+       */
+      if (view.scrollHeight > view.clientHeight) {
+        const доля = ((view.scrollTop + view.clientHeight) / view.scrollHeight) * 100
+        for (const порог of ПОРОГИ) {
+          if (доля >= порог) глубина(порог, { гость: !!guest })
+        }
       }
     }
     view.addEventListener('scroll', onScroll, { passive: true })

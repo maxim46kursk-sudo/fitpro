@@ -21,13 +21,14 @@ let ступень
 let vid
 let источник
 let забытьВизит
+let глубина
 
 beforeEach(async () => {
   события.length = 0
   localStorage.clear()
   sessionStorage.clear()
   vi.resetModules()
-  ;({ ступень, vid, источник, забытьВизит } = await import('./challengeFunnel.js'))
+  ;({ ступень, vid, источник, забытьВизит, глубина } = await import('./challengeFunnel.js'))
 })
 
 afterEach(() => {
@@ -102,5 +103,45 @@ describe('сломанное хранилище лендинг не роняет
     expect(события).toHaveLength(1)
     // личности нет — и это честнее, чем выдумать её
     expect(события[0].данные.vid).toBe('нет-хранилища')
+  })
+})
+
+describe('глубина прокрутки', () => {
+  it('каждый порог засчитывается один раз, а пороги друг другу не мешают', () => {
+    expect(глубина(25)).toBe(true)
+    expect(глубина(25)).toBe(false)
+    expect(глубина(50)).toBe(true)
+    expect(глубина(75)).toBe(true)
+    expect(события.map((e) => e.тег)).toEqual(['challenge.depth', 'challenge.depth', 'challenge.depth'])
+    expect(события.map((e) => e.данные.гл)).toEqual([25, 50, 75])
+  })
+
+  it('порог не путается со ступенью того же визита', () => {
+    ступень('scroll')
+    expect(глубина(25)).toBe(true)
+    expect(события).toHaveLength(2)
+  })
+
+  it('новый визит считает глубину заново', () => {
+    глубина(50)
+    забытьВизит()
+    expect(глубина(50)).toBe(true)
+  })
+})
+
+describe('секунды с открытия страницы', () => {
+  it('едут в каждом событии воронки — и в open, и в отметке глубины', () => {
+    ступень('open')
+    глубина(25)
+    for (const e of события) expect(typeof e.данные.сек).toBe('number')
+  })
+
+  it('растут: отметка позже открытия — значит и число больше', () => {
+    const шаги = [10, 4000]
+    vi.spyOn(performance, 'now').mockImplementation(() => шаги.shift() ?? 4000)
+    ступень('open')
+    глубина(50)
+    expect(события[0].данные.сек).toBe(0)
+    expect(события[1].данные.сек).toBe(4)
   })
 })
