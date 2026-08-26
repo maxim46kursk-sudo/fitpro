@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import CameraView from './components/CameraView.jsx'
 import CalibrationScreen from './screens/CalibrationScreen.jsx'
 import WorkoutScreen from './screens/WorkoutScreen.jsx'
@@ -28,7 +28,7 @@ import {
   loadNutritionFacts,
   loadStandings,
 } from '../challengeSeason.js'
-import { browserOf, cameraBlockedByBrowser } from './device/browserEnv.js'
+import { browserOf } from './device/browserEnv.js'
 import { useCamera } from './pose/useCamera.js'
 import { usePoseLandmarker } from './pose/usePoseLandmarker.js'
 import { useLandscapeBlock } from './device/useOrientation.js'
@@ -1043,13 +1043,6 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
   const inChallenge = screen === 'challenge' && !calibrating && !blockMovement
   /** Таблица потока — такой же текстовый экран без камеры, как и челлендж. */
   const inStandings = screen === 'standings' && !calibrating && !blockMovement
-  /**
-   * Строка user agent за время жизни раздела не меняется — считаем один раз.
-   * Заодно это делает признак пригодным для гашения остальных экранов ниже:
-   * заставка «Включаю камеру…» поверх объяснения «камеры здесь не будет» —
-   * это ровно тот молчащий экран, ради которого всё и переделывалось.
-   */
-  const webviewBlocked = useMemo(() => cameraBlockedByBrowser(), [])
 
   return (
     <div className="mt-root">
@@ -1060,20 +1053,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
         showSkeleton={!blockingError}
       />
 
-      {/**
-        * ВСТРОЕННЫЙ БРАУЗЕР — ПРЕДУПРЕЖДЕНИЕ ДО КАЛИБРОВКИ, А НЕ ПОСЛЕ.
-        *
-        * Стоит выше экрана ошибки и выше калибровки намеренно: ждать здесь
-        * десять секунд молчания камеры незачем — ответ известен заранее.
-        *
-        * Экраны челленджа и таблицы пропускаются: там камера не нужна вовсе,
-        * и человек имеет полное право читать страницу из Instagram.
-        */}
-      {webviewBlocked && !inRoom && !inChallenge && !inStandings && (
-        <InAppBrowserOverlay app={browserOf().app} onExit={onExit} />
-      )}
-
-      {blockingError && !webviewBlocked && !inRoom && !inChallenge && !inStandings && (
+      {blockingError && !inRoom && !inChallenge && !inStandings && (
         <ErrorOverlay
           code={blockingError}
           onExit={onExit}
@@ -1089,7 +1069,7 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
         />
       )}
 
-      {!blockingError && !webviewBlocked && booting && !inRoom && !inChallenge && !inStandings && (
+      {!blockingError && booting && !inRoom && !inChallenge && !inStandings && (
         <BootOverlay
           cameraReady={camera.status === 'ready'}
           modelReady={pose.status === 'ready'}
@@ -1662,13 +1642,34 @@ function InAppBrowserOverlay({ app, onExit }) {
  * `location.reload()`, то есть модуль чинил себя перезагрузкой хозяина; теперь
  * нечего предложить — значит кнопки нет, и это честнее неработающей.
  */
+/**
+ * ОТКАЗЫ ИМЕННО КАМЕРЫ. Коды модели (MODEL_*) сюда не входят: встроенный
+ * браузер к ним отношения не имеет, и предлагать из-за них открыть Safari
+ * значило бы отправить человека лечить не то.
+ */
+const ОТКАЗ_КАМЕРЫ = new Set([
+  'CAMERA_TIMEOUT',
+  'PERMISSION_DENIED',
+  'NO_CAMERA',
+  'CAMERA_FAILED',
+  'INSECURE_CONTEXT',
+])
+
 function ErrorOverlay({ code, detail, onRetry, onExit }) {
   /**
-   * МОЛЧАНИЕ КАМЕРЫ ВО ВСТРОЕННОМ БРАУЗЕРЕ — это не «попробуй ещё раз», это
-   * «здесь не получится». Общий текст с кнопкой повтора отправил бы человека
-   * жать её до бесконечности, потому что ответа не будет никогда.
+   * ВСТРОЕННЫЙ БРАУЗЕР — ОБЪЯСНЕНИЕ ПОСЛЕ ОТКАЗА, А НЕ ВМЕСТО ПОПЫТКИ.
+   *
+   * Раньше этот экран показывался ДО запроса камеры, по одной строке user
+   * agent. Это была ошибка: эвристика ошибается, а цена ошибки — человек с
+   * работающей камерой, которому сказали «здесь не получится» и не дали даже
+   * попробовать. Камеру теперь спрашиваем у всех одинаково.
+   *
+   * Сюда попадаем, только когда камера ОТКАЗАЛА по-настоящему: молчала десять
+   * секунд (CAMERA_TIMEOUT) или ответила отказом. И только во встроенном
+   * браузере: там общий текст с кнопкой «попробовать снова» отправил бы
+   * человека жать её до бесконечности, потому что ответа не будет никогда.
    */
-  if (code === 'CAMERA_TIMEOUT' && cameraBlockedByBrowser()) {
+  if (ОТКАЗ_КАМЕРЫ.has(code) && browserOf().inApp) {
     return <InAppBrowserOverlay app={browserOf().app} onExit={onExit} />
   }
 
