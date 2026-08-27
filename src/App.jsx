@@ -215,7 +215,7 @@ const takeReturn = () => {
   }catch{return null}
 }
 
-function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null, onOpenMyData = null }) {
+function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null, onOpenMyData = null, onAppNav = null }) {
   /**
    * Адаптер собирается ОДИН раз на человека. Новый объект на каждый рендер
    * означал бы новую загрузку прогресса на каждый рендер — то есть заставку,
@@ -277,6 +277,7 @@ function MotionOverlay({ onExit, userId, guest = false, onGuestValue = null, onG
           onFillNorm={onFillNorm}
           onOpenDiary={onOpenDiary}
           onOpenMyData={onOpenMyData}
+          onAppNav={onAppNav}
         />
       </Suspense>
     </div>,
