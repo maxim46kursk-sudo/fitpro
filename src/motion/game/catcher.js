@@ -56,6 +56,7 @@
  */
 
 import { LM } from '../pose/landmarks.js'
+import { checkFrame, createGateState, isPointOk } from '../pose/frameGate.js'
 
 /** Части тела, которые может назвать мишень. Больше их не будет: четыре слова. */
 export const PART = {
@@ -416,7 +417,12 @@ export function partSpots(landmarks, part) {
     // у стопы точек две — голеностоп и носок (см. PART_EXTRA_POINTS)
     for (const index of pointsOf(part, side)) {
       const point = landmarks[index]
-      if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
+      /**
+       * Точка идёт в зачёт, только если она ВИДНА: isPointOk — тот же разбор,
+       * что у гейта кадра (visibility плюс координата в кадре). Конечность,
+       * достроенная моделью за краем кадра, мишень больше не закрывает.
+       */
+      if (point && Number.isFinite(point.x) && Number.isFinite(point.y) && isPointOk(point, index)) {
         // index — чтобы сравнивать замер с прошлым по ТОЙ ЖЕ точке тела:
         // пропала одна из точек, и позиции в массиве уже не совпадают
         out.push({ side, index, x: point.x, y: point.y })
@@ -713,6 +719,13 @@ export function createCatcher(options = {}) {
   /** Где были точки этой части на прошлом замере и когда — для отрезка. */
   let prevSpots = null
   let prevAt = null
+  /**
+   * ГЕЙТ КАДРА — ТОТ ЖЕ, ЧТО У ПРИСЕДА. Ловец судил по голым координатам:
+   * «часть тела дошла до мишени» проверялось независимо от того, видно эту
+   * часть в кадре или модель её достроила. Мишень на колене засчитывалась
+   * выдуманным коленом.
+   */
+  const gate = createGateState(config)
   let seeking = null
   let count = 0
 
@@ -807,7 +820,21 @@ export function createCatcher(options = {}) {
      */
     update(now, landmarks, { allowSpawn = true } = {}) {
       const events = []
-      const body = readCatchBody(landmarks)
+      const g = gate.update(checkFrame(landmarks, config), now)
+      /**
+       * КАДР НЕГОДЕН — НЕ СУДИМ И НЕ СПАВНИМ.
+       *
+       * Не судим: мишень нельзя закрыть конечностью, которой в кадре нет.
+       * Не спавним: мишень вешается на точку тела, и повесить её на выдуманное
+       * колено значит поставить человеку задачу, которую он не может ни
+       * выполнить, ни увидеть.
+       *
+       * Тело при этом объявляется невидимым (`body = null`) — ниже по коду это
+       * уже разобранный случай: кадр идёт в окно как промах, а `prevSpots`
+       * сбрасывается, чтобы отрезок не построился через разрыв.
+       */
+      const body = g.usable ? readCatchBody(landmarks) : null
+      if (!g.usable) allowSpawn = false
 
       if (target) {
         if (body) {

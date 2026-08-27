@@ -14,6 +14,7 @@
  */
 
 import { createSquatTracker } from '../exercises/squat.js'
+import { checkFrame, createGateState } from '../pose/frameGate.js'
 import { DEFAULT_JUMP, readVertical, createJumpWatcher } from './vertical.js'
 import { DEFAULT_LUNGE, readLegs, createLegWatchers } from './legs.js'
 import { DEFAULT_MOVES, moveMetric, readMoves, createMoveWatchers } from './moves.js'
@@ -167,6 +168,94 @@ function createAttempts(type) {
  * @returns {{update: Function, reset: Function, attempts: Function, flush: Function}}
  */
 export function createRepCounter(type, config = {}) {
+  /**
+   * ГЕЙТ КАДРА — ТОТ ЖЕ, ЧТО У ПРИСЕДА, И ЗДЕСЬ ЕГО ДО СИХ ПОР НЕ БЫЛО.
+   *
+   * Присед (`barrier`) считает createSquatTracker, а он спрашивает checkFrame
+   * сам. Остальные шесть движений — выпад, звезда, прыжок и прочие — судились
+   * по голым координатам: MediaPipe отдаёт все 33 точки всегда и достраивает
+   * те, что вне кадра, поэтому таз и колени «есть» и тогда, когда в кадре одни
+   * плечи. По журналу за месяц это 135 повторов из 184.
+   *
+   * Ничего нового не заводим: тот же checkFrame, тот же createGateState, те же
+   * пороги. Кадр без таза и коленей до детектора не доходит и повтором не
+   * становится.
+   *
+   * ПРИСЕД НЕ ОБОРАЧИВАЕМ. У него гейт уже внутри трекера, и второй снаружи
+   * означал бы двое ворот с раздельным состоянием: внешние глотали бы кадр, а
+   * внутренние не видели бы разрыва и не успевали бы уйти в паузу.
+   */
+  const счётчик = собратьСчётчик(type, config)
+  if (type === 'barrier') return счётчик
+
+  const gate = createGateState(config)
+  let усыпить = false
+  /** Метки годных кадров за последнюю секунду — из них и считается частота. */
+  const кадры = []
+  let частота = null
+
+  return {
+    ...счётчик,
+    /**
+     * Частота дописывается ЗДЕСЬ, а не внутри счётчика: счётчик про движение, а
+     * не про камеру, и знать о кадрах ему незачем. У приседа частота уже своя,
+     * посчитанная по самому повтору (см. squat.js), — её не трогаем.
+     */
+    attempts() {
+      return счётчик.attempts().map((a) => (a.fps === undefined ? { ...a, fps: частота } : a))
+    },
+    flush() {
+      return счётчик.flush().map((a) => (a.fps === undefined ? { ...a, fps: частота } : a))
+    },
+    update(clockMs, frame = {}) {
+      const check = checkFrame(frame.landmarks, config)
+      const g = gate.update(check, clockMs)
+      /** Что показал гейт на последнем кадре — для журнала повтора. */
+      this.gate = g
+      this.check = check
+
+      /**
+       * Пауза — человек ушёл или встал не так. Детектор надо сбросить целиком:
+       * иначе фаза, начатая до ухода, встретится с фазой после возврата и
+       * сложится в повтор, которого не было.
+       */
+      if (g.paused) {
+        if (!усыпить) {
+          усыпить = true
+          счётчик.reset()
+        }
+        return 0
+      }
+      усыпить = false
+
+      // Кадр негоден, но пауза ещё не набежала: кадр пропускаем, накопленное
+      // не трогаем — ровно как в приседе (см. squat.js).
+      if (!g.usable) return 0
+
+      /**
+       * ЧАСТОТА ГОДНЫХ КАДРОВ — по последней секунде.
+       *
+       * Присед кладёт в повтор своё число измерений сам (см. squat.js), а у
+       * остальных движений повтор — это мгновенное событие, и «измерений
+       * внутри» у него нет. Общее у обоих одно: на какой частоте судили. Без
+       * неё зачёт на пяти кадрах в секунду и на тридцати неразличимы в журнале.
+       */
+      кадры.push(clockMs)
+      while (кадры.length && clockMs - кадры[0] > 1000) кадры.shift()
+      частота = кадры.length > 1 ? кадры.length : null
+
+      return счётчик.update(clockMs, frame)
+    },
+    reset() {
+      gate.reset()
+      усыпить = false
+      счётчик.reset()
+    },
+  }
+}
+
+/** Сам счётчик, без ворот. Обёртку ставит createRepCounter выше. */
+function собратьСчётчик(type, config = {}) {
   let attempts = createAttempts(type)
   const shared = {
     attempts: () => attempts.take(),
@@ -197,6 +286,10 @@ export function createRepCounter(type, config = {}) {
           amp: event.amplitude,
           // по колену мерили или по тазу — от этого зависит вся трактовка
           mode: event.fallback ? 'таз' : 'колено',
+          // сколько измерений легло в повтор и какая при этом была частота:
+          // повтор из двух кадров и повтор из четырнадцати выглядели одинаково
+          samples: event.samples ?? null,
+          fps: event.fps ?? null,
           why: event.reason ?? null,
         })
         /**

@@ -211,7 +211,18 @@ export const DEFAULT_HEEL = {
 
 const visible = (point, minVisibility = MIN_VISIBILITY) => {
   if (!point || typeof point.y !== 'number') return false
-  return point.visibility == null || point.visibility >= minVisibility
+  /**
+   * ТОЧКЕ БЕЗ visibility НЕ ВЕРИМ.
+   *
+   * Здесь стояло `point.visibility == null || ...` — то есть страховка,
+   * открывавшаяся при сомнении: точка без поля видимости считалась видимой.
+   * MediaPipe отдаёт все 33 точки ВСЕГДА и достраивает те, что вне кадра, —
+   * значит таз, колени и стопы «есть» и тогда, когда в кадре одни плечи. На
+   * выдуманных координатах судить нельзя: именно так присед становился выпадом.
+   *
+   * Теперь наоборот: нет числа — нет доверия.
+   */
+  return typeof point.visibility === 'number' && point.visibility >= minVisibility
 }
 
 const EMPTY = () => ({

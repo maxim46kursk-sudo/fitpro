@@ -76,6 +76,17 @@ const live = emptyLive()
  * кадры, зависания, ошибки захвата, худшую задержку и среднюю частоту. Все они
  * уже считались, просто никуда не писались.
  */
+/** Худшая видимость среди точек кадра. null — точек нет вовсе. */
+function worstVisibility(points) {
+  if (!Array.isArray(points) || !points.length) return null
+  let worst = null
+  for (const p of points) {
+    if (typeof p?.visibility !== 'number') continue
+    if (worst == null || p.visibility < worst) worst = p.visibility
+  }
+  return worst == null ? null : Math.round(worst * 100) / 100
+}
+
 export function snapshotOf() {
   const l = live
   const perf = l.perf ?? {}
@@ -120,6 +131,21 @@ export function snapshotOf() {
     grabErrors: perf.grabErrors,
     latencyMax: round1(perf.latencyMax),
     fpsAvg: round1(perf.fpsAvg),
+    /**
+     * ЧТО СУДЬЯ ВИДЕЛ — а не только что он засчитал.
+     *
+     * Разбор жалобы «повторы идут, а в кадре одни плечи» упёрся ровно в это:
+     * событие повтора говорило метрику и порог, снимок говорил fps и экран, и
+     * ни одна строка не говорила, какие точки были видны. Проверить жалобу по
+     * телеметрии было нечем — пришлось читать код.
+     *
+     * `missing` — каких из шести точек приседа не хватило (имена, а не индексы:
+     * «бедро L» читается, «23» нет). `vis` — худшая видимость среди тех, что
+     * есть: одно число, по которому сразу видно, судили по уверенным точкам или
+     * по краю порога.
+     */
+    missing: (l.missing ?? []).map(nameOf),
+    vis: worstVisibility(l.points),
     // без этого поля жалоба «не слышно отсчёта» неразличима: тумблер выключен
     // или контекст так и остался suspended
     audio: getAudioState(),

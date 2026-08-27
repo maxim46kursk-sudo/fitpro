@@ -171,7 +171,8 @@ export default function PersonalSetupScreen({ subscribe, onDone, onExit }) {
       angle: out.paused ? null : out.angle,
     }
 
-    const done = counter.update(timestamp, pose)
+    // точки кадра — чтобы калибровка проверяла кадр тем же гейтом, что и судейство
+    const done = counter.update(timestamp, pose, landmarks)
     if (!done) return
 
     setReps([...counter.reps])

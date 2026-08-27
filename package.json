@@ -18,6 +18,7 @@
     "check:csp": "node tools/csp-check.mjs",
     "motion:profile": "node tools/motion-persona/prod-stats.mjs --days 60",
     "test:motion-session": "node tools/motion-persona/run.mjs",
+    "test:motion-negatives": "node tools/motion-persona/negatives.mjs",
     "shots:challenge": "node scripts/challenge-shots.mjs",
     "prepare": "node scripts/install-hooks.mjs"
   },

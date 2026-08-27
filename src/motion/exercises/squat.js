@@ -132,6 +132,16 @@ export function createSquatTracker(overrides = {}) {
    * об этом нельзя: в логе видно, в панели видно, голос подсказывает.
    */
   let bottomTouches = 0
+  /**
+   * СКОЛЬКО НАСТОЯЩИХ ИЗМЕРЕНИЙ ЛЕГЛО В ЭТОТ ПОВТОР.
+   *
+   * Защиты цикла у нас только временные: minCycleMs и minRepIntervalMs. На
+   * пяти кадрах в секунду два кадра дают 400 мс и проходят обе — то есть
+   * повтор может собраться из двух точек, между которыми полсекунды пустоты.
+   * Отбраковывать по этому числу НЕЛЬЗЯ, пока не видно, сколько таких повторов
+   * в поле: сперва считаем и пишем, решаем потом.
+   */
+  let cycleSamples = 0
   let belowBottom = false
 
   // --- база для резервного режима по тазу ---
@@ -248,6 +258,7 @@ export function createSquatTracker(overrides = {}) {
     cycleFallback = false
     bottomTouches = 0
     belowBottom = false
+    cycleSamples = 0
   }
 
   function dropFrame(missingPoints, timestamp) {
@@ -294,6 +305,8 @@ export function createSquatTracker(overrides = {}) {
       missing = check.missing
       rawAngle = raw
       angle = smoother.push(raw)
+      // кадр годен и измерен — он и есть «настоящее измерение» этого повтора
+      if (inCycle) cycleSamples += 1
 
       if (g.mode === MODE.KNEE) captureStanding(landmarks, angle)
 
@@ -372,6 +385,7 @@ export function createSquatTracker(overrides = {}) {
           extrema = 0
           swingDir = -1
           swingExtreme = angle
+          cycleSamples = 1
           cycleLowConfidence = check.lowConfidence.length > 0
           cycleFallback = g.mode === MODE.HIP_FALLBACK
           state = STATE.DOWN
@@ -434,6 +448,23 @@ export function createSquatTracker(overrides = {}) {
             durationMs,
             extrema,
             bottomTouches,
+            /**
+             * СКОЛЬКО ИЗМЕРЕНИЙ ВНУТРИ ПОВТОРА И КАКАЯ ПРИ ЭТОМ БЫЛА ЧАСТОТА.
+             *
+             * Пара, без которой не разобрать «повтор из двух кадров»: 2 при
+             * 5 кадрах в секунду и 14 при 30 — это разного качества зачёты, а
+             * в журнале они до сих пор выглядели одинаково.
+             *
+             * Частота считается ПО САМОМУ ПОВТОРУ, а не берётся общая по
+             * сессии: судили этот повтор ровно те кадры, что в него попали.
+             * Один кадр в цикле частоты не даёт — тогда null, а не выдуманное
+             * число.
+             */
+            samples: cycleSamples,
+            fps:
+              cycleSamples > 1 && durationMs > 0
+                ? Math.round(((cycleSamples - 1) / durationMs) * 1000)
+                : null,
             lowConfidence: cycleLowConfidence,
             fallback: cycleFallback,
           }

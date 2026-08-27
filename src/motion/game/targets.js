@@ -37,6 +37,7 @@
 
 import { PART_LABEL } from './catcher.js'
 import { SHOW_WAIT_MAX_MS } from '../pose/frameSync.js'
+import { isPointOk } from '../pose/frameGate.js'
 
 /** Цвет по зоне тела — тот же язык, что и у прежних слоёв. */
 export const ZONE_COLOR = {
@@ -152,9 +153,18 @@ const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })
 export function readBody(landmarks, fit) {
   if (!landmarks || landmarks.length < 29 || !fit || !(fit.dw > 0)) return null
   // x зеркальный: человек видит себя в отражении
+  /**
+   * ТОЧКА БЕРЁТСЯ, ТОЛЬКО ЕСЛИ ОНА ВИДНА.
+   *
+   * Раскладка мишеней и скелета строилась по любой точке с числовыми
+   * координатами — а MediaPipe отдаёт координаты всегда, достраивая то, чего в
+   * кадре нет. Мишень садилась на выдуманное колено, и человек получал задачу,
+   * которой не видел. isPointOk — тот же разбор, что у гейта кадра.
+   */
   const at = (index) => {
     const point = landmarks[index]
     if (!point || typeof point.x !== 'number') return null
+    if (!isPointOk(point, index)) return null
     return { x: fit.ox + (1 - point.x) * fit.dw, y: fit.oy + point.y * fit.dh }
   }
 

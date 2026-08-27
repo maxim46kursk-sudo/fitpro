@@ -27,6 +27,7 @@
  */
 
 import { DEFAULT_ROUND } from './engine.js'
+import { checkFrame, createGateState } from '../pose/frameGate.js'
 import { FLOOR_SHARE } from './personal.js'
 import { punchValue } from './strike.js'
 import { createJumpWatcher } from './vertical.js'
@@ -204,6 +205,8 @@ export function describeBar(movement, bar, thresholds = {}) {
  * @param {{thresholds?: object, refractoryMs?: number}} [options]
  */
 export function createAmplitudeCounter(movement, options = {}) {
+  /** Ворота кадра — те же, что у приседа и силового блока. */
+  const gate = createGateState(options.thresholds ?? {})
   const bar = setupBarOf(movement, options.thresholds)
   /** Ниже этого повтор считается законченным и разрешается следующий. */
   const exit = bar * 0.6
@@ -334,7 +337,30 @@ export function createAmplitudeCounter(movement, options = {}) {
      * @param {object} pose признаки кадра — те же, что получает движок
      * @returns {{rep: number, peak: number}|null} повтор, если он только что закрылся
      */
-    update(nowMs, pose) {
+    /**
+     * @param {number} nowMs
+     * @param {object} pose признаки кадра — те же, что получает движок
+     * @param {Array} [landmarks] точки кадра. Есть — калибровка проверяет кадр
+     *   гейтом, тем же, что судит повторы. Нет — прежнее поведение (разбор
+     *   записей кормит счётчик готовыми признаками, кадра там уже нет).
+     */
+    update(nowMs, pose, landmarks) {
+      /**
+       * ГЕЙТ КАДРА НА КАЛИБРОВКЕ. Личная планка снимается ровно теми же
+       * точками, которыми потом судят, — и снималась она без единой проверки
+       * кадра. Планка, снятая с достроенных таза и коленей, дальше становится
+       * порогом на весь челлендж: одна плохая калибровка портит все повторы
+       * после неё, и никакой гейт в судействе этого уже не исправит.
+       */
+      if (landmarks) {
+        const g = gate.update(checkFrame(landmarks, options.thresholds ?? {}), nowMs)
+        this.gate = g
+        if (!g.usable) {
+          this.value = null
+          this.drop = null
+          return null
+        }
+      }
       const value = pose ? metricOf(nowMs, pose) : null
       this.value = Number.isFinite(value) ? value : null
       // просадка таза копится только у выпада — у остальных мера одна
