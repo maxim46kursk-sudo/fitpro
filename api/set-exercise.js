@@ -1017,6 +1017,238 @@ function времяОтметки(карта, кто, сек) {
   else if (число !== null && число < было) карта.set(кто, число)
 }
 
+/**
+ * ═══ КОМАНДЫ БОТА В ТЕЛЕГРАМЕ (?action=tg) ═══
+ *
+ * ЗАЧЕМ. Сводка по бете жила в ручке наблюдателя: адрес с секретом, ответ
+ * JSON'ом. Открыть такое с телефона и что-то в нём разглядеть нельзя, поэтому
+ * цифры смотрели, только когда о них спрашивали. Владелец должен уметь
+ * спросить сам и в том месте, где он и так получает тревоги.
+ *
+ * ЦИФРЫ СЧИТАЕТ ТА ЖЕ ФУНКЦИЯ. `собратьСводку` одна на оба потребителя (см. её
+ * заголовок). Второй счёт означал бы два ответа на один вопрос, расходящиеся
+ * молча по мере правок.
+ *
+ * НОВЫХ ФАЙЛОВ В api/ НЕ ЗАВОДИТСЯ: на тарифе исчерпан лимит функций, и ветка
+ * живёт внутри существующей ручки — ровно так же, как это уже сделано с
+ * журналом Motion и сводкой наблюдателя.
+ *
+ * ОТВЕЧАЕМ ТОЛЬКО СВОЕМУ ЧАТУ. Адрес вебхука знает Телеграм, но адрес — это не
+ * пропуск: в него постучится любой, кто его добудет. Единственный, кому здесь
+ * отвечают, — чат из TG_ALERT_CHAT, тот же, куда уходят тревоги. Любой другой
+ * получает тихий 200 и ни одной буквы в ответ: молчание не подсказывает, что
+ * адрес угадан верно.
+ *
+ * ВСЕГДА 200 ПОСЛЕ ПРОВЕРКИ СЕКРЕТА. Телеграм повторяет доставку на любой
+ * не-2xx, и одна ошибка внутри превратилась бы в бесконечный поток повторов
+ * одного и того же сообщения.
+ */
+
+/** Потолок сообщения. У Телеграма 4096; берём с запасом на служебные строки. */
+const TG_TEXT_MAX = 4000
+
+/** Число или прочерк: пустое место в сводке читается хуже, чем явный прочерк. */
+const ч = (v) => (v === null || v === undefined ? '—' : String(v))
+
+/** Одна ступень воронки строкой: «play 44 (34% от open)». */
+function ступеньСтрокой(ст) {
+  if (!ст) return null
+  const доля = ст.доля ? ` (${ст.доля} от ${ст.от})` : ''
+  return `${ст.ступень} ${ст.людей}${доля}`
+}
+
+/** Ступени в заданном порядке, пропуская те, которых в окне не было. */
+function дорожка(воронка, шаги) {
+  const карта = new Map((воронка?.ступени ?? []).map((с) => [с.ступень, с]))
+  return шаги
+    .map((ш) => ступеньСтрокой(карта.get(ш)))
+    .filter(Boolean)
+    .join('\n  ')
+}
+
+/** Блок одного окна: воронки, глубина, источники, ошибки, маячки. */
+function окноТекстом(имя, о) {
+  if (!о) return `${имя}: данных нет`
+  const строки = [`── ${имя} ──`]
+  строки.push(`журнал: записей ${ч(о.motion_log?.записей)}, событий ${ч(о.motion_log?.событий)}`)
+
+  const чтение = дорожка(о.воронка, ['open', 'scroll', 'join-click', 'auth', 'pay-start', 'paid'])
+  if (чтение) строки.push(`чтение:\n  ${чтение}`)
+
+  const игра = дорожка(о.воронка, ['play', 'camera', 'calibrated', 'round-start', 'round-end'])
+  if (игра) строки.push(`игра:\n  ${игра}`)
+
+  const глубина = (о.воронка?.глубина ?? [])
+    .map((г) => `${г.до} ${г.людей}${г.медиана_сек === null || г.медиана_сек === undefined ? '' : ` (${г.медиана_сек}с)`}`)
+    .join(', ')
+  if (глубина) строки.push(`глубина: ${глубина}`)
+
+  const источники = Object.entries(о.воронка?.по_источникам ?? {})
+    .map(([метка, шаги]) => `${метка} ${шаги?.open ?? 0}/${шаги?.paid ?? 0}`)
+    .join(', ')
+  if (источники) строки.push(`источники (открыли/оплатили): ${источники}`)
+
+  строки.push(`попытки: ${ч(о.motion_attempts?.попыток)} у ${ч(о.motion_attempts?.уникальных_людей)} чел.`)
+  строки.push(`ошибки: ${ч(о.error_log?.записей)}`)
+  const м = о.boot_beacons
+  строки.push(`маячки незагрузки: ${ч(typeof м === 'object' && м ? м.записей ?? м.всего ?? JSON.stringify(м) : м)}`)
+  return строки.join('\n')
+}
+
+/**
+ * ПОСЛЕДНИЕ ПОВТОРЫ И СНИМКИ — это НЕ второй счёт сводки, а другой вопрос: не
+ * «сколько», а «по каким кадрам судили». Поля samples, fps, vis и missing
+ * появились после разбора жалобы «повторы идут, а в кадре одни плечи»; пока по
+ * ним не набралось поля, отбраковывать по ним нельзя — только смотреть.
+ */
+async function последниеПовторы(db) {
+  const { data, error } = await db
+    .from('motion_log')
+    .select('payload')
+    .gte('at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+    .order('at', { ascending: false })
+    .limit(400)
+  if (error) throw new Error(`motion_log: ${error.message}`)
+
+  const повторы = []
+  const снимки = []
+  for (const строка of data ?? []) {
+    for (const l of строка.payload?.lines ?? []) {
+      const s = String(l)
+      if (повторы.length < 12 && s.includes('[block.attempt]')) повторы.push(s)
+      if (снимки.length < 12 && s.includes('[snapshot]')) снимки.push(s)
+    }
+  }
+  return { повторы, снимки }
+}
+
+/** Значение поля из хвоста строки лога. null — поля в строке нет. */
+function поле(строка, имя) {
+  const re = new RegExp(`"${имя}":(null|true|false|-?[0-9.]+|"[^"]*"|\\[[^\\]]*\\])`)
+  const m = String(строка).match(re)
+  return m ? m[1].replace(/"/g, '') : null
+}
+
+async function handleTelegram(req, res) {
+  const ожидается = process.env.TG_WEBHOOK_KEY
+  const дано = req.query?.key
+  if (!ожидается || Array.isArray(дано) || !секретСовпал(дано, ожидается)) {
+    return res.status(404).end()
+  }
+  if (req.method !== 'POST') return res.status(404).end()
+
+  try {
+    const msg = req.body?.message ?? req.body?.edited_message
+    const chat = String(msg?.chat?.id ?? '')
+    const свой = String(process.env.TG_ALERT_CHAT ?? '')
+    // Чужой чат — тихо и без единой буквы в ответ.
+    if (!свой || !chat || chat !== свой) return res.status(200).end()
+
+    const слово = String(msg?.text ?? '')
+      .trim()
+      .split(/\s+/)[0]
+      .toLowerCase()
+      .replace(/@.*$/, '')
+
+    /**
+     * Латинские двойники к кириллическим командам: меню команд Телеграма
+     * (setMyCommands) кириллицу не принимает, а набрать руками можно любую.
+     * Пусть работают обе — это ничего не стоит и снимает вопрос «почему меню
+     * команд пустое».
+     */
+    const КОМАНДЫ = {
+      '/сводка': 'сводка',
+      '/summary': 'сводка',
+      '/час': 'час',
+      '/hour': 'час',
+      '/игра': 'игра',
+      '/game': 'игра',
+      '/help': 'help',
+      '/start': 'help',
+    }
+    const что = КОМАНДЫ[слово]
+    if (!что) return res.status(200).end()
+
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!serviceRoleKey) {
+      await ответить(свой, 'Сервер не настроен: нет служебного ключа базы.')
+      return res.status(200).end()
+    }
+    const db = createClient(SUPABASE_URL, serviceRoleKey)
+
+    let текст
+    if (что === 'help') {
+      текст = [
+        'Команды:',
+        '/сводка — за сутки и за час: воронки, глубина, источники, попытки, ошибки, маячки',
+        '/час — то же, только за час',
+        '/игра — стадии игры и поля судейства последних повторов',
+        '/help — это сообщение',
+        '',
+        'Латиницей то же: /summary /hour /game',
+      ].join('\n')
+    } else if (что === 'игра') {
+      const [сводка, свежее] = await Promise.all([собратьСводку(db), последниеПовторы(db)])
+      const строки = ['── стадии игры (сутки) ──']
+      const дор = дорожка(сводка.сутки?.воронка, [
+        'play', 'camera', 'calibrated', 'round-start', 'round-end', 'up', 'down', 'save',
+      ])
+      строки.push(дор ? `  ${дор}` : '  ступеней не было')
+
+      строки.push('', '── последние повторы ──')
+      if (!свежее.повторы.length) строки.push('за сутки повторов не было')
+      for (const п of свежее.повторы.slice(0, 8)) {
+        строки.push(
+          `${поле(п, 'movement') ?? '?'} ok=${ч(поле(п, 'ok'))} samples=${ч(поле(п, 'samples'))} fps=${ч(поле(п, 'fps'))} metric=${ч(поле(п, 'metric'))}`,
+        )
+      }
+
+      строки.push('', '── что видел судья ──')
+      if (!свежее.снимки.length) строки.push('за сутки снимков не было')
+      for (const с of свежее.снимки.slice(0, 6)) {
+        строки.push(
+          `${поле(с, 'screen') ?? '?'} fps=${ч(поле(с, 'fps'))} vis=${ч(поле(с, 'vis'))} missing=${ч(поле(с, 'missing'))}`,
+        )
+      }
+      текст = строки.join('\n')
+    } else {
+      const сводка = await собратьСводку(db)
+      текст =
+        что === 'час'
+          ? окноТекстом('за час', сводка.час)
+          : [окноТекстом('за сутки', сводка.сутки), '', окноТекстом('за час', сводка.час)].join('\n')
+    }
+
+    await ответить(свой, текст)
+    return res.status(200).end()
+  } catch (e) {
+    reportError('api:set-exercise:tg', ['команда бота не отработала:', e], { message: e?.message, status: 500 })
+    return res.status(200).end()
+  }
+}
+
+/**
+ * Ответ в чат ТЕМ ЖЕ БОТОМ, что шлёт тревоги: токен один (TG_ALERT_TOKEN), и
+ * заводить второй незачем — владелец разговаривает с одним ботом.
+ *
+ * Тревоги это не задевает: у них своя функция `тревога` со своим глушителем
+ * повторов, и она сюда не заходит. Здесь глушителя нет намеренно — человек
+ * спросил и ждёт ответа, а не уведомления.
+ */
+async function ответить(chat, текст) {
+  const token = process.env.TG_ALERT_TOKEN
+  if (!token) return
+  await egressFetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: String(chat),
+      text: String(текст).slice(0, TG_TEXT_MAX),
+      disable_web_page_preview: true,
+    }),
+  }).catch(() => {})
+}
+
 async function handleMotionHealth(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
@@ -1043,7 +1275,30 @@ async function handleMotionHealth(req, res) {
   }
   const db = createClient(SUPABASE_URL, serviceRoleKey)
 
-  const сейчас = Date.now()
+  try {
+    return res.status(200).json(await собратьСводку(db))
+  } catch (e) {
+    reportError('api:set-exercise:motion-health', ['сводка не собралась:', e], { message: e?.message, status: 500 })
+    return res.status(500).json({ error: 'Сводка недоступна' })
+  }
+}
+
+/**
+ * СБОРКА ЦИФР СВОДКИ — ОДНА НА ВСЕХ, КТО ИХ СПРАШИВАЕТ.
+ *
+ * Потребителей теперь двое: ручка наблюдателя (?action=motion-health) и команда
+ * бота в Телеграме (?action=tg). Второй счёт для второго потребителя означал бы
+ * ровно то, чего в наблюдении быть не должно, — два ответа на один вопрос,
+ * расходящиеся молча по мере правок. Источник правды один, и он здесь.
+ *
+ * Всё, что ниже, раньше жило closure'ами внутри обработчика. Ничего не
+ * пересчитано и не переписано — только вынесено, чтобы у него появился второй
+ * вызывающий.
+ *
+ * @param {object} db клиент Supabase со служебным ключом
+ * @param {number} [сейчас] точка отсчёта окон
+ */
+export async function собратьСводку(db, сейчас = Date.now()) {
   const окна = {
     час: new Date(сейчас - 60 * 60 * 1000).toISOString(),
     сутки: new Date(сейчас - 24 * 60 * 60 * 1000).toISOString(),
@@ -1403,29 +1658,24 @@ async function handleMotionHealth(req, res) {
     }
   }
 
-  try {
-    const [час, сутки, последнееLog, последнееAtt, последнееErr, funnel] = await Promise.all([
-      окно(окна.час),
-      окно(окна.сутки),
-      последняя('motion_log', 'at'),
-      последняя('motion_attempts', 'at'),
-      последняя('error_log', 'created_at'),
-      воронка(),
-    ])
-    return res.status(200).json({
-      снято: new Date(сейчас).toISOString(),
-      час,
-      сутки,
-      последняя_запись: {
-        motion_log: последнееLog,
-        motion_attempts: последнееAtt,
-        error_log: последнееErr,
-      },
-      funnel,
-    })
-  } catch (e) {
-    reportError('api:set-exercise:motion-health', ['сводка не собралась:', e], { message: e?.message, status: 500 })
-    return res.status(500).json({ error: 'Сводка недоступна' })
+  const [час, сутки, последнееLog, последнееAtt, последнееErr, funnel] = await Promise.all([
+    окно(окна.час),
+    окно(окна.сутки),
+    последняя('motion_log', 'at'),
+    последняя('motion_attempts', 'at'),
+    последняя('error_log', 'created_at'),
+    воронка(),
+  ])
+  return {
+    снято: new Date(сейчас).toISOString(),
+    час,
+    сутки,
+    последняя_запись: {
+      motion_log: последнееLog,
+      motion_attempts: последнееAtt,
+      error_log: последнееErr,
+    },
+    funnel,
   }
 }
 
@@ -1705,6 +1955,7 @@ export default async function handler(req, res) {
   // ключу наблюдателя, и 401 «требуется авторизация» ей не подходит — см.
   // порядок веток в шапке файла.
   if (req.query?.action === 'motion-health') return handleMotionHealth(req, res)
+  if (req.query?.action === 'tg') return handleTelegram(req, res)
   // Счётчик воронки. Тоже до проверки метода и токена: ветка публичная по
   // построению — у гостя, ради которого она заведена, токена нет.
   if (req.query?.action === 'funnel') return handleFunnel(req, res)

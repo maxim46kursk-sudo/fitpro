@@ -11,6 +11,7 @@
  * Что делает:
  *   /api/<имя>                → api/<имя>.js, вызванный по-верселевски;
  *   /api/motion-health/<ключ> → реврайт в set-exercise?action=motion-health;
+ *   /api/tg/<секрет>          → реврайт в set-exercise?action=tg (команды бота);
  *   всё остальное             → статика из dist/ с заголовками кэша.
  *
  * Чего НЕ делает: не сжимает (это Caddy), не занимается TLS (это Caddy), не
@@ -428,6 +429,17 @@ function matchRewrite(pathname) {
    * set-exercise.js о реврайте не знает — ей приходит обычный ?action=boot.
    */
   if (pathname === '/api/boot') return { name: 'set-exercise', query: { action: 'boot' } }
+  /**
+   * Вебхук Телеграм-бота: /api/tg/<секрет>.
+   *
+   * Секрет едет ПУТЁМ, а не строкой запроса, по той же причине, что и у
+   * наблюдателя: адрес вебхука прописывается у Телеграма один раз через
+   * setWebhook, и чем он короче и неизменнее, тем меньше поводов сломаться.
+   * Ветка в set-exercise.js о реврайте не знает — ей приходит обычный
+   * ?action=tg&key=...
+   */
+  const tg = /^\/api\/tg\/(.+)$/.exec(pathname)
+  if (tg) return { name: 'set-exercise', query: { action: 'tg', key: decodeURIComponent(tg[1]) } }
   return null
 }
 
