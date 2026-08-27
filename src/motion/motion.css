@@ -3289,14 +3289,6 @@
   margin-bottom: 0;
 }
 
-.mt-ch__stepN {
-  font-weight: 800;
-  font-size: 12.5px;
-  letter-spacing: 0.08em;
-  color: #9d96ff;
-  margin-bottom: 8px;
-}
-
 /* Снимок в полный рост телефона: 9:17 — та пропорция, в которой он и снят. */
 /*
  * СНИМОК ПОКАЗЫВАЕТСЯ ЦЕЛИКОМ, В СВОЕЙ ПРОПОРЦИИ.
@@ -3827,7 +3819,7 @@
 }
 
 .mt-ch__final:has(+ .mt-ch__nav) {
-  padding-bottom: 18px !important;
+  padding-bottom: 14px !important;
 }
 
 .mt-ch__pricebox {
@@ -5274,51 +5266,36 @@
 .mt-ch__back:active { opacity: 0.6; }
 
 /*
- * ШАГИ «КАК ЭТО РАБОТАЕТ» — НОМЕР СЛЕВА, ТЕКСТ СПРАВА.
- * У первых двух шагов картинок больше нет (их показывает ролик на первом
- * экране), и прежняя раскладка «номер строкой, под ним заголовок» оставляла
- * три почти пустых блока подряд. Два столбца собирают их плотно.
+ * ШАГИ «КАК ЭТО РАБОТАЕТ» — ОДНОЙ КОЛОНКОЙ ВО ВСЮ ШИРИНУ.
+ *
+ * Здесь стояли две колонки: номер слева, текст справа. Колонка номера держала
+ * ширину по самой длинной подписи и растягивалась на всю высоту шага — рядом с
+ * коротким абзацем оставалась пустая чёрная полоса в его рост. Номера убраны
+ * совсем: шагов три, они идут сверху вниз, и порядок виден без них.
+ *
+ * Разделяет шаги только отступ. Фиксированных колонок в этой секции нет.
  */
 .mt-ch__step {
-  display: flex;
-  gap: 14px;
-  align-items: flex-start;
-  margin: 0 0 22px;
+  margin: 0 0 26px;
 }
 
-/*
- * Ширина — ПО САМОЙ ДЛИННОЙ ПОДПИСИ, а не 44 пикселя на глаз: в 44 не влезало
- * «ОТРАБОТАЙ», подпись переносилась и лезла на заголовок шага. min-content
- * берёт ширину самого длинного слова, а nowrap не даёт его разорвать.
- */
-.mt-ch__stepN {
-  flex: none;
-  width: min-content;
-  min-width: 44px;
-  white-space: nowrap;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.mt-ch__step:last-child {
+  margin-bottom: 0;
+}
+
+.mt-ch__step > p {
+  margin: 6px 0 0;
+}
+
+/* Заголовок шага крупнее и жирнее текста: без номера отличать их больше нечем. */
+.mt-ch__stepT {
   margin: 0;
-}
-
-.mt-ch__stepN b {
-  font-weight: 900;
-  font-size: 22px;
-  line-height: 1;
-  letter-spacing: -0.02em;
-  color: #9d96ff;
-}
-
-.mt-ch__stepN span {
+  font-size: 19px;
+  line-height: 1.25;
   font-weight: 800;
-  font-size: 9.5px;
-  letter-spacing: 0.08em;
-  color: rgba(157, 150, 255, 0.62);
+  letter-spacing: -0.02em;
+  color: #fff;
 }
-
-.mt-ch__stepBody { min-width: 0; }
-.mt-ch__stepBody .mt-ch__h3 { margin-top: 0; }
 
 /*
  * ПРАВИЛА ПОД КНОПКОЙ. Раскрытый текст оставлен ровно тем, чем был, — меняется
@@ -5371,7 +5348,9 @@
  */
 .mt-ch__nav {
   display: flex;
-  margin: 30px 0 0;
+  /* Меню начинается сразу за текстом: свой отступ ему не нужен, поле снизу
+     у секции над ним уже снято (см. .mt-ch__final:has(+ .mt-ch__nav)). */
+  margin: 0;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(20, 20, 22, 0.86);
 }
