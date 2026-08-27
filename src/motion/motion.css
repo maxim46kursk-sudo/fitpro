@@ -5207,10 +5207,16 @@
   padding: 0 15px 0 11px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 999px;
-  background: rgba(11, 13, 18, 0.62);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  color: rgba(235, 235, 245, 0.72);
+  /*
+   * ПЛОТНЕЕ ОБЫЧНОГО УГЛА, и это не вкусовщина: под кнопкой ПРОЕЗЖАЕТ ТЕКСТ
+   * длинной страницы. При 0.62 сквозь неё читался номер шага «01» — то есть
+   * кнопка мешала читать ровно то, мимо чего человек её и проматывает. Ровно
+   * по этой причине плотный фон стоял и у прежнего крестика.
+   */
+  background: rgba(11, 13, 18, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: rgba(235, 235, 245, 0.78);
   font: 600 15px/1 inherit;
   font-family: inherit;
   cursor: pointer;
