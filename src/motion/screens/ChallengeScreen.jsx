@@ -3,6 +3,7 @@ import { MIN_ENTRIES, MIN_MEALS, dayScore, streamScore } from '../../challengeNu
 import { DAYS, streamDay, streamPhase } from '../game/challenge.js'
 import StreamRoom from './StreamRoom.jsx'
 import { bump } from '../../funnel.js'
+import { GlassIcon } from '../../glassIcons.jsx'
 import { ПОРОГИ, глубина, ступень } from '../challengeFunnel.js'
 
 /**
@@ -50,6 +51,22 @@ export const PRIZES = [
 ]
 
 const PRIZES_TOTAL = PRIZES.reduce((sum, p) => sum + p.value, 0)
+
+/**
+ * Пункты нижнего меню — те же четыре, что у приложения (NAV_MOBILE в App.jsx),
+ * в том же порядке. «Клиенты» сюда не идут: это тренерский пункт, а страницу
+ * читает гость.
+ *
+ * Список повторён, а не импортирован: App.jsx его не экспортирует, а тянуть
+ * хозяина внутрь src/motion нельзя — папку надо уметь копировать целиком.
+ * Значки при этом настоящие и общие (GlassIcon), новых не заводится.
+ */
+const APP_NAV = [
+  { id: 'workouts', ic: 'dumbbell', label: 'Тренировки' },
+  { id: 'nutrition', ic: 'food', label: 'Питание' },
+  { id: 'library', ic: 'book', label: 'Упражнения' },
+  { id: 'progress', ic: 'notebook', label: 'Прогресс' },
+]
 
 const MONTHS = [
   'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
@@ -153,6 +170,11 @@ export default function ChallengeScreen({
   warm = 0,
   onOpenDiary = null,
   onOpenMyData = null,
+  /**
+   * Уйти в раздел приложения из нижнего меню. Даёт хозяин: страница не знает ни
+   * про его навигацию, ни про то, что раздел Motion надо перед этим закрыть.
+   */
+  onAppNav = null,
   syncBroken = false,
   pushFailed = false,
   greet = false,
@@ -173,6 +195,8 @@ export default function ChallengeScreen({
   const today = streamDay(season?.starts_on)
 
   const [agreed, setAgreed] = useState(false)
+  /** Раскрыт ли полный текст правил. Закрыт по умолчанию — см. секцию правил. */
+  const [rulesText, setRulesText] = useState(false)
   const [busy, setBusy] = useState(false)
 
   /**
@@ -204,6 +228,8 @@ export default function ChallengeScreen({
   const endRef = useRef(null)
   const rulesRef = useRef(null)
   const warmRef = useRef(null)
+  /** Кнопка «Участвовать» из блока входа — по ней прячется липкая полоса. */
+  const joinRef = useRef(null)
 
   /**
    * ЛИПКАЯ КНОПКА ПОЯВЛЯЕТСЯ ПОСЛЕ ПЕРВОГО ЭКРАНА И ПРЯЧЕТСЯ В КОНЦЕ. На герое
@@ -216,7 +242,20 @@ export default function ChallengeScreen({
     const onScroll = () => {
       const past = view.scrollTop > 420
       const end = endRef.current
-      const atEnd = end ? view.scrollTop + view.clientHeight > end.offsetTop + 120 : false
+      /**
+       * ПОЛОСА ПРЯЧЕТСЯ, ПОКА ВИДНА САМА КНОПКА «УЧАСТВОВАТЬ».
+       *
+       * Здесь стояло «доехали до верха блока плюс сто двадцать пикселей» — то
+       * есть догадка о том, где кнопка находится. Догадка не сходилась: блок
+       * высокий, полоса уезжала раньше кнопки и вставала ровно поверх строки
+       * под ней. Теперь спрашиваем не блок, а саму кнопку: видно её в окне —
+       * полоса не нужна, второй такой же кнопки на экране быть не должно.
+       */
+      const join = joinRef.current
+      const кнопкаВидна = join
+        ? join.getBoundingClientRect().top < view.getBoundingClientRect().bottom
+        : false
+      const atEnd = кнопкаВидна || (end ? view.scrollTop + view.clientHeight > end.offsetTop + 120 : false)
       setBarOn(past && !atEnd)
       /**
        * Ступень 2: долистал до цены. «Цена» — это последний блок, тот самый, где
@@ -646,23 +685,17 @@ export default function ChallengeScreen({
           <h2 className="mt-ch__h2">Три вещи<br />каждый день</h2>
 
           <Step
-            n="01 — ПОСТАВЬ"
+            n="01" word="ПОСТАВЬ"
             title="Телефон на пол, ты — в двух метрах"
             text="Камера видит тебя целиком и подсвечивает силуэт, когда встал правильно. Больше настраивать нечего."
-            image="/challenge/shot-calibration.webp"
-            alt="Экран калибровки: силуэт человека загорелся зелёным"
-            caption="Экран калибровки: силуэт загорелся — можно начинать"
           />
           <Step
-            n="02 — ОТРАБОТАЙ"
+            n="02" word="ОТРАБОТАЙ"
             title="20 минут: силовая и бой"
             text="Семь кругов. В каждом полминуты силового движения и пара минут боя — к тебе летят мишени, ты выбиваешь их руками и ногами. Счёт идёт сразу, на экране."
-            image="/challenge/shot-fight.webp"
-            alt="Экран боя: мишень в воздухе, счёт и таймер круга"
-            caption="Бой: мишень в воздухе, счёт и таймер круга"
           />
           <Step
-            n="03 — ЗАПИШИ"
+            n="03" word="ЗАПИШИ"
             title="Что съел за день"
             text="Поиск по базе, штрих-код с упаковки или руками. Норму приложение считает по твоим данным — попадать в неё и есть задача."
             image="/challenge/shot-diary.webp"
@@ -734,28 +767,6 @@ export default function ChallengeScreen({
           </p>
         </section>
 
-        <div className="mt-ch__sep" />
-
-        {/* ═══ ЧИСЛА ═══ */}
-        <section>
-          <p className="mt-ch__kicker">Коротко</p>
-          <div className="mt-ch__nums">
-            {[
-              ['30', 'дней, одинаковых у всех'],
-              ['~20 мин', 'на один день'],
-              ['3', 'захода в день, в зачёт лучший'],
-              ['0 ₽', 'на зал и снаряды'],
-            ].map(([v, l]) => (
-              <div className="mt-ch__num" key={l}>
-                <div className="mt-ch__numV">{v}</div>
-                <div className="mt-ch__numL">{l}</div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <div className="mt-ch__sep" />
-
         {/* ═══ ЧТО ВХОДИТ ═══ */}
         <section>
           <p className="mt-ch__kicker">Что входит в билет</p>
@@ -813,6 +824,37 @@ export default function ChallengeScreen({
         <section ref={rulesRef} data-testid="challenge-rules">
           <p className="mt-ch__kicker">Правила · читать до конца</p>
           <h2 className="mt-ch__h2">Как всё<br />считается</h2>
+
+          {/*
+            ПРАВИЛА ПОД КНОПКОЙ, А НЕ ПРОСТЫНЁЙ.
+            Текст остался ДОСЛОВНО и целиком — сокращать правила, под которыми
+            берут согласие, нельзя ни на строку. Изменилось одно: он больше не
+            лежит поперёк дороги у того, кто до правил ещё не дошёл. Кому надо —
+            открывает и читает всё; порядок «сначала согласие в базу, потом
+            оплата» и галочка внизу не тронуты.
+
+            ОТКРЫВАЛ ИЛИ НЕТ — В ЖУРНАЛ. Без этой отметки нельзя отличить
+            «правила прочитали и согласились» от «согласились не глядя», а это
+            ровно тот вопрос, который задают, когда спорят о призах.
+          */}
+          <button
+            type="button"
+            className="mt-ch__rulesOpen"
+            data-testid="challenge-rules-open"
+            aria-expanded={rulesText}
+            onClick={() => {
+              const станет = !rulesText
+              setRulesText(станет)
+              if (станет) ступень('rules-open', { гость: !!guest })
+            }}
+          >
+            <span className="mt-ch__rulesOpenT">Правила игры</span>
+            <span className="mt-ch__rulesOpenS">Зачёт, питание, попытки, призы — подробно</span>
+            <span className="mt-ch__rulesOpenC" aria-hidden="true">{rulesText ? '−' : '+'}</span>
+          </button>
+
+          {rulesText && (
+            <div className="mt-ch__rulesText" data-testid="challenge-rules-text">
 
           <div className="mt-ch__rule">
             <h3 className="mt-ch__h3">Что сделать до старта</h3>
@@ -959,6 +1001,8 @@ export default function ChallengeScreen({
               дней, а их никаким дневником не подделать.
             </p>
           </div>
+            </div>
+          )}
         </section>
 
         <div className="mt-ch__sep" />
@@ -1042,6 +1086,7 @@ export default function ChallengeScreen({
           <button
             type="button"
             className="mt-ch__btn"
+            ref={joinRef}
             data-testid="challenge-join"
             disabled={!agreed || busy || (!guest && !season)}
             onClick={guest
@@ -1080,6 +1125,34 @@ export default function ChallengeScreen({
           </>
           )}
         </section>
+
+        {/*
+          МЕНЮ ПРИЛОЖЕНИЯ — ГОСТЮ, В САМОМ НИЗУ.
+          Человек, пришедший по прямой ссылке, видел только эту страницу: ни
+          одной двери в остальное приложение из неё не было, кроме выхода
+          наружу. Дочитал до конца — либо платит, либо уходит совсем; третьего
+          мы ему не предлагали.
+
+          Ни текста, ни подводки: это меню, а не ещё один блок продажи. Пункты и
+          значки те же, что в нижнем меню приложения, значки — тот же GlassIcon.
+
+          ОПЛАТИВШЕМУ НЕ ПОКАЗЫВАЕТСЯ: у него своя комната и своё меню.
+        */}
+        {!readOnly && onAppNav && (
+          <nav className="mt-ch__nav" data-testid="challenge-app-nav">
+            {APP_NAV.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                data-testid={`challenge-nav-${item.id}`}
+                onClick={() => onAppNav(item.id)}
+              >
+                <GlassIcon name={item.ic} size={34} />
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </nav>
+        )}
       </div>
 
       {/**
@@ -1104,12 +1177,33 @@ export default function ChallengeScreen({
 
       {/* У участника крестик возвращает в КОМНАТУ, а не закрывает раздел: он
           пришёл сюда из неё и туда же должен вернуться. */}
-      <button
-        className="mt-corner mt-corner--left mt-ch__close"
-        data-testid="challenge-rules-back"
-        onClick={readOnly ? () => setRulesOpen(false) : onExit}
-        aria-label="Назад"
-      >✕</button>
+      {/*
+        НАЗАД — СЛОВОМ, А НЕ ЗНАЧКОМ, И ВИДНА ВСЮ ДОРОГУ.
+        Крестик читается как «закрыть насовсем» и висел только вверху: стоило
+        пролистать первый экран, и выйти было нечем — человек уходил закрытием
+        вкладки. Кнопка со словом липкая, доступна на любой высоте страницы.
+        Ведёт ровно туда же, куда вёл крестик (onExit -> closeMotion в App.jsx).
+
+        У УЧАСТНИКА В КОМНАТЕ ОСТАЁТСЯ КРЕСТИК: он пришёл перечитать правила, и
+        «назад» у него значит вернуться в комнату, а не выйти из раздела.
+      */}
+      {readOnly ? (
+        <button
+          className="mt-corner mt-corner--left mt-ch__close"
+          data-testid="challenge-rules-back"
+          onClick={() => setRulesOpen(false)}
+          aria-label="Назад"
+        >✕</button>
+      ) : (
+        <button
+          type="button"
+          className="mt-ch__back"
+          data-testid="challenge-rules-back"
+          onClick={onExit}
+        >
+          <span aria-hidden="true">‹</span> Назад
+        </button>
+      )}
     </div>
   )
 }
@@ -1176,13 +1270,23 @@ function dayOfStream(startsOn) {
 }
 
 /** Шаг «как это работает»: номер, заголовок, текст и снимок экрана. */
-function Step({ n, title, text, image, alt, caption }) {
+/**
+ * Шаг «как это работает»: номер слева, текст справа.
+ *
+ * КАРТИНКА НЕОБЯЗАТЕЛЬНА. У первых двух шагов её больше нет: и калибровку, и
+ * бой человек уже видел — ролик на первом экране показывает ровно это, причём
+ * в движении. Два статичных снимка того же самого только удлиняли страницу.
+ * У третьего шага картинка осталась: дневник питания в ролике не показан.
+ */
+function Step({ n, word, title, text, image = null, alt, caption }) {
   return (
     <div className="mt-ch__step">
-      <div className="mt-ch__stepN">{n}</div>
-      <h3 className="mt-ch__h3">{title}</h3>
-      <p>{text}</p>
-      <Shot image={image} alt={alt} caption={caption} />
+      <div className="mt-ch__stepN"><b>{n}</b><span>{word}</span></div>
+      <div className="mt-ch__stepBody">
+        <h3 className="mt-ch__h3">{title}</h3>
+        <p>{text}</p>
+        {image && <Shot image={image} alt={alt} caption={caption} />}
+      </div>
     </div>
   )
 }

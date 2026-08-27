@@ -12416,6 +12416,13 @@ export default function App() {
           onFillNorm={openFoodGoals}
           onOpenDiary={openFoodDiary}
           onOpenMyData={openMyData}
+          /**
+           * НИЖНЕЕ МЕНЮ НА СТРАНИЦЕ ЧЕЛЛЕНДЖА. Пришедший по прямой ссылке
+           * видел только её: дверей в остальное приложение из неё не было
+           * вовсе. Раздел закрывается ПЕРЕД переходом — иначе выбранный экран
+           * открылся бы под оверлеем Motion, то есть в невидимое место.
+           */
+          onAppNav={(id)=>{closeMotion();handleNav(id)}}
           userId={user?.id}
           guest={guestMode}
           onGuestValue={handleGuestValue}

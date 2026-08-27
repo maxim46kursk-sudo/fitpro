@@ -153,6 +153,79 @@ describe('тёплый блок после игры', () => {
   })
 })
 
+describe('продающая страница: выход и меню', () => {
+  const УЧАСТНИК = { id: 7, participant_no: 1, display_name: 'Пётр', paid_at: '2026-08-20T10:00:00Z' }
+
+  it('у гостя «Назад» словом, у участника — крестик', () => {
+    const onExit = vi.fn()
+    render(<ChallengeScreen state={{ season: SEASON, entry: null }} guest onExit={onExit} />)
+    const назад = screen.getByTestId('challenge-rules-back')
+    expect(назад.textContent).toContain('Назад')
+    expect(назад.className).toContain('mt-ch__back')
+
+    fireEvent.click(назад)
+    expect(onExit).toHaveBeenCalledTimes(1)
+
+    /**
+     * У участника — прежний крестик. Ветка «участник до старта» рисует свой, и
+     * метки на нём нет; проверяем по существу: кнопки «Назад» словом там не
+     * появилось, а крестик на месте.
+     */
+    cleanup()
+    render(<ChallengeScreen state={{ season: SEASON, entry: УЧАСТНИК }} />)
+    expect(document.querySelector('.mt-ch__back')).toBeNull()
+    expect(document.querySelector('.mt-corner--left')?.textContent).toBe('✕')
+  })
+
+  /**
+   * Меню — та самая дверь в остальное приложение, которой на странице не было.
+   * Оплатившему оно не нужно: у него своя комната и своё меню.
+   */
+  it('гость видит меню приложения, участник — нет', () => {
+    const onAppNav = vi.fn()
+    render(<ChallengeScreen state={{ season: SEASON, entry: null }} guest onAppNav={onAppNav} />)
+    const меню = screen.getByTestId('challenge-app-nav')
+    for (const [id, подпись] of [
+      ['workouts', 'Тренировки'], ['nutrition', 'Питание'],
+      ['library', 'Упражнения'], ['progress', 'Прогресс'],
+    ]) {
+      expect(screen.getByTestId(`challenge-nav-${id}`).textContent).toContain(подпись)
+    }
+    expect(меню.querySelectorAll('button')).toHaveLength(4)
+
+    fireEvent.click(screen.getByTestId('challenge-nav-nutrition'))
+    expect(onAppNav).toHaveBeenCalledWith('nutrition')
+
+    cleanup()
+    render(<ChallengeScreen state={{ season: SEASON, entry: УЧАСТНИК }} onAppNav={onAppNav} />)
+    expect(screen.queryByTestId('challenge-app-nav')).toBeNull()
+  })
+
+  it('секции «Числа» на странице больше нет', () => {
+    render(<ChallengeScreen state={{ season: SEASON, entry: null }} guest />)
+    const текст = document.body.textContent
+    expect(текст).not.toContain('дней, одинаковых у всех')
+    expect(текст).not.toContain('захода в день, в зачёт лучший')
+  })
+
+  it('у шагов 01 и 02 картинок нет, у 03 — есть', () => {
+    render(<ChallengeScreen state={{ season: SEASON, entry: null }} guest />)
+    const шаги = [...document.querySelectorAll('.mt-ch__step')]
+    expect(шаги).toHaveLength(3)
+    expect(шаги[0].textContent).toContain('Телефон на пол, ты — в двух метрах')
+    expect(шаги[0].querySelector('img')).toBeNull()
+    expect(шаги[1].textContent).toContain('20 минут: силовая и бой')
+    expect(шаги[1].querySelector('img')).toBeNull()
+    expect(шаги[2].querySelector('img')?.getAttribute('src')).toBe('/challenge/shot-diary.webp')
+  })
+
+  it('открытие правил отмечается в воронке', () => {
+    render(<ChallengeScreen state={{ season: SEASON, entry: null }} guest />)
+    fireEvent.click(screen.getByTestId('challenge-rules-open'))
+    expect(getShippedText()).toContain('[challenge.rules-open]')
+  })
+})
+
 describe('выход из пробной игры', () => {
   const ИТОГ = { score: 4700, hits: 47, seconds: 360 }
 

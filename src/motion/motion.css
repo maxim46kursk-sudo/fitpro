@@ -3298,10 +3298,18 @@
 }
 
 /* Снимок в полный рост телефона: 9:17 — та пропорция, в которой он и снят. */
+/*
+ * СНИМОК ПОКАЗЫВАЕТСЯ ЦЕЛИКОМ, В СВОЕЙ ПРОПОРЦИИ.
+ *
+ * Здесь стояли жёсткие 9:17 и object-fit: cover — пропорция телефона целиком,
+ * под которую снимки и делались. Снимки заменили на обрезанные (720×600 —
+ * три места таблицы, 616×570 — одна карточка «Итого за день»), и прежняя
+ * рамка стала резать их насмерть: от карточки в 9:17 остаётся вертикальная
+ * полоска посередине. Теперь высоту задаёт сама картинка.
+ */
 .mt-ch__shot {
   position: relative;
   width: 100%;
-  aspect-ratio: 9 / 17;
   border-radius: 20px;
   overflow: hidden;
   background: #1c1c1e;
@@ -3310,12 +3318,9 @@
 }
 
 .mt-ch__shot img {
-  position: absolute;
-  inset: 0;
+  display: block;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center top;
+  height: auto;
 }
 
 .mt-ch__shotCap {
@@ -5178,6 +5183,164 @@
   margin-top: 6px;
   flex: none;
 }
+
+/*
+ * КНОПКА «НАЗАД» — ЛИПКАЯ, НА ВСЮ ДОРОГУ.
+ *
+ * fixed, а не absolute: свиток страницы уезжает под ней, и кнопка обязана
+ * оставаться на месте — иначе она снова была бы доступна только на первом
+ * экране, ровно как крестик до неё.
+ *
+ * Подложка полупрозрачная с размытием: под кнопкой проезжает то тёмный фон, то
+ * светлый снимок экрана, и сплошная заливка выглядела бы заплаткой на одном из
+ * них. Высота 38 — палец попадает, взгляд не цепляет.
+ */
+.mt-ch__back {
+  position: fixed;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  left: calc(10px + env(safe-area-inset-left, 0px));
+  z-index: 46;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 38px;
+  padding: 0 15px 0 11px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(11, 13, 18, 0.62);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: rgba(235, 235, 245, 0.72);
+  font: 600 15px/1 inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.mt-ch__back span {
+  font-size: 20px;
+  line-height: 1;
+  margin-top: -2px;
+}
+
+.mt-ch__back:active { transform: scale(0.97); }
+
+/*
+ * ШАГИ «КАК ЭТО РАБОТАЕТ» — НОМЕР СЛЕВА, ТЕКСТ СПРАВА.
+ * У первых двух шагов картинок больше нет (их показывает ролик на первом
+ * экране), и прежняя раскладка «номер строкой, под ним заголовок» оставляла
+ * три почти пустых блока подряд. Два столбца собирают их плотно.
+ */
+.mt-ch__step {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin: 0 0 22px;
+}
+
+.mt-ch__stepN {
+  flex: none;
+  width: 44px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+
+.mt-ch__stepN b {
+  font-weight: 900;
+  font-size: 22px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: #9d96ff;
+}
+
+.mt-ch__stepN span {
+  font-weight: 800;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: rgba(157, 150, 255, 0.62);
+}
+
+.mt-ch__stepBody { min-width: 0; }
+.mt-ch__stepBody .mt-ch__h3 { margin-top: 0; }
+
+/*
+ * ПРАВИЛА ПОД КНОПКОЙ. Раскрытый текст оставлен ровно тем, чем был, — меняется
+ * только то, лежит он поперёк дороги или ждёт нажатия.
+ */
+.mt-ch__rulesOpen {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 2px 12px;
+  width: 100%;
+  text-align: left;
+  padding: 16px 18px;
+  border: 1px solid rgba(157, 150, 255, 0.3);
+  border-radius: 16px;
+  background: rgba(157, 150, 255, 0.08);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.mt-ch__rulesOpenT {
+  grid-column: 1;
+  font-weight: 800;
+  font-size: 17px;
+  color: #fff;
+}
+
+.mt-ch__rulesOpenS {
+  grid-column: 1;
+  font-size: 13px;
+  line-height: 1.35;
+  color: rgba(235, 235, 245, 0.58);
+}
+
+.mt-ch__rulesOpenC {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  font-size: 26px;
+  font-weight: 300;
+  color: #9d96ff;
+  line-height: 1;
+}
+
+.mt-ch__rulesText { margin-top: 18px; }
+
+/*
+ * НИЖНЕЕ МЕНЮ ПРИЛОЖЕНИЯ НА СТРАНИЦЕ. Повторяет вид настоящего меню внизу
+ * экрана (App.jsx): та же высота ряда, те же значки, тот же кегль подписи.
+ * Не липкое: это конец страницы, а не панель поверх неё.
+ */
+.mt-ch__nav {
+  display: flex;
+  margin: 30px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(20, 20, 22, 0.86);
+}
+
+.mt-ch__nav button {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 12px 2px calc(12px + env(safe-area-inset-bottom, 0px));
+  border: 0;
+  background: none;
+  cursor: pointer;
+  min-height: unset;
+}
+
+.mt-ch__nav button span {
+  font-size: 11px;
+  font-weight: 400;
+  color: rgba(235, 235, 245, 0.42);
+}
+
+.mt-ch__nav button:active { transform: scale(0.97); }
 
 /* ── тёплый блок после игры (экран 2 макета) ── */
 

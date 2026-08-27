@@ -60,10 +60,23 @@ describe('не участник: цена, правила и вступлени�
     expect(screen.getByTestId('challenge-tag').textContent).toContain('будет объявлена')
   })
 
-  it('правила — раздел этой же страницы, а не отдельный экран', () => {
+  /**
+   * ПРАВИЛА ТЕПЕРЬ ПОД КНОПКОЙ, НО ЦЕЛИКОМ И НА ЭТОЙ ЖЕ СТРАНИЦЕ.
+   *
+   * Проверка стала строже, а не мягче: раньше она смотрела, что текст есть в
+   * разметке; теперь ещё и что до него можно добраться одним нажатием и что
+   * при этом он не сократился ни на абзац. Сокращать правила, под которыми
+   * берут согласие, нельзя — вот это здесь и стережётся.
+   */
+  it('правила открываются кнопкой и приходят целиком', () => {
     render(<ChallengeScreen state={{ season: SEASON, entry: null }} />)
 
-    const rules = screen.getByTestId('challenge-rules').textContent
+    // до нажатия текста нет — он не лежит поперёк дороги
+    expect(screen.queryByTestId('challenge-rules-text')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('challenge-rules-open'))
+
+    const rules = screen.getByTestId('challenge-rules-text').textContent
     expect(rules).toContain('Норма замораживается в день старта')
     expect(rules).toContain('В первый день потока играется первый день')
     expect(rules).toContain('Дневник питания — на твоей совести')

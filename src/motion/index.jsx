@@ -97,7 +97,7 @@ import './motion.css'
  *   остальное (камера, калибровка, уровни) на этом пути не нужно и не должно
  *   стоять между ним и ответом.
  */
-export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null, onOpenMyData = null } = {}) {
+export default function MotionApp({ onExit, day, tier, paused = false, log = null, sync = null, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null, onOpenMyData = null, onAppNav = null } = {}) {
   /**
    * ГОСТЬ ПИШЕТ В ПАМЯТЬ, А НЕ НА УСТРОЙСТВО — и решается это здесь, раньше
    * всего остального.
@@ -308,6 +308,7 @@ export default function MotionApp({ onExit, day, tier, paused = false, log = nul
         onFillNorm={onFillNorm}
         onOpenDiary={onOpenDiary}
         onOpenMyData={onOpenMyData}
+        onAppNav={onAppNav}
       />
     </ErrorBoundary>
   )
@@ -369,7 +370,7 @@ function readBlockMode() {
   }
 }
 
-function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null, onOpenMyData = null }) {
+function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, guest = false, onGuestValue = null, onGuestOffer = null, onGuestProgress = null, guestMotion = null, onGuestMotionApplied = null, startScreen = null, onFillNorm = null, onOpenDiary = null, onOpenMyData = null, onAppNav = null }) {
   // calibration | setup | levels | room | challenge | workout | result
   // выбор уровня и настройка под себя — только в игре
   const [screen, setScreen] = useState(startScreen === 'challenge' ? 'challenge' : 'calibration')
@@ -1161,6 +1162,8 @@ function MotionAppInner({ onExit, dayOverride, tierOverride, paused, log, sync, 
           onResume={startSession}
           onOpenDiary={() => onOpenDiary?.()}
           onOpenMyData={() => onOpenMyData?.()}
+          /** Нижнее меню на продающей странице: уводит в разделы хозяина. */
+          onAppNav={onAppNav}
           /**
            * ВСТУПЛЕНИЕ ОДНОЙ ДОРОГОЙ: сперва фиксируем согласие В БАЗЕ, и
            * только если оно записалось — открываем оплату. Обратный порядок
