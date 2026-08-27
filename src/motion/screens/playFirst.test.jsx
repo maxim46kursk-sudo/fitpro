@@ -48,30 +48,48 @@ function первыйЭкран() {
 }
 
 describe('первый экран страницы челленджа', () => {
-  it('цены нет НИГДЕ: ни числом, ни рублём, ни словом', () => {
+  /**
+   * ЗАПРЕЩЕНА ЦЕНА, А НЕ РУБЛЬ.
+   *
+   * Прежний сторож ловил любое «₽» и любое «руб» — и был прав, пока на первом
+   * экране не было ни одной суммы. Теперь там намеренно стоит призовая:
+   * «Призов на 59 970 ₽» — это не то, что человек платит, а то, что он может
+   * выиграть, и убирать её ради буквы правила значит выкинуть главный довод.
+   *
+   * Сторож сузился до того, что и охранялся: СКОЛЬКО ПЛАТИТЬ. Цена билета,
+   * слово «Участвовать» и всё, что зовёт к кассе, на первом экране по-прежнему
+   * запрещены.
+   */
+  it('цены билета нет: ни числом, ни словом (призовая сумма — можно)', () => {
     render(<ChallengeScreen state={{ season: SEASON, entry: null }} guest />)
     const текст = первыйЭкран()
 
     expect(текст).not.toContain('2990')
     expect(текст).not.toContain('2 990')
-    expect(текст).not.toMatch(/₽|руб/i)
-    expect(текст).not.toMatch(/цена|стоит|стоимость|оплат|Участвовать/i)
+    expect(текст).not.toMatch(/Участвовать|цена|стоимость/i)
+
+    // а призовая сумма обязана быть — ради неё сторож и сужался
+    expect(текст).toMatch(/59\s?970/)
   })
 
   it('всё, что положено, на месте и в нужном порядке', () => {
     render(<ChallengeScreen state={{ season: SEASON, entry: null }} guest />)
 
-    expect(screen.getByTestId('challenge-tag').textContent).toBe('Старт 10 сентября')
-    expect(screen.getByTestId('challenge-hero-title').textContent).toContain('30 дней.')
-    expect(screen.getByTestId('challenge-hero-title').textContent).toContain('Челлендж FitPro Motion')
+    // дата ушла с плашки сверху под кнопку — метка осталась на ней же
+    expect(screen.getByTestId('challenge-tag').textContent).toContain('10 сентября')
+    expect(screen.getByTestId('challenge-tag').textContent).toContain('Без регистрации')
+    const заголовок = screen.getByTestId('challenge-hero-title').textContent
+    expect(заголовок).toContain('Игра, которая')
+    expect(заголовок).toContain('заставляет')
+    expect(заголовок).toContain('тренироваться')
 
     const текст = первыйЭкран()
     expect(текст).toContain('20 минут в день перед камерой телефона')
     expect(текст).toContain('Без зала, без гантелей, без абонемента')
     expect(текст).toContain('Только ты, 2 квадратных метра и телефон')
     expect(текст).toContain('половина всех билетов')
-    expect(текст).toContain('личную работу с тренером')
-    expect(screen.getByTestId('challenge-play').textContent).toBe('Играть')
+    expect(текст).toContain('личная работа с тренером')
+    expect(screen.getByTestId('challenge-play').textContent).toBe('Играть — бесплатно')
   })
 
   /**

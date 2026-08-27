@@ -4973,7 +4973,7 @@
 .mt-ch__hero--play {
   height: 100vh;
   height: 100svh;
-  min-height: 560px;
+  min-height: 480px;
   padding: 0;
 }
 
@@ -4981,68 +4981,152 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   /* сверху место под крестик, снизу — под домашнюю полосу iPhone */
-  padding: calc(64px + env(safe-area-inset-top, 0px)) 22px calc(16px + env(safe-area-inset-bottom, 0px));
-}
-
-.mt-ch__hero--play .mt-ch__tag { align-self: flex-start; flex: none; }
-
-.mt-ch__playBig {
-  flex: none;
-  margin: 2px 0 0;
-  font-weight: 900;
-  font-size: 34px;
-  line-height: 1.1;
-  letter-spacing: -0.04em;
-  color: #fff;
-}
-
-.mt-ch__playBig small {
-  display: block;
-  font-size: 19px;
-  letter-spacing: -0.02em;
-  font-weight: 700;
-  color: #9d96ff;      /* ACCENT2 */
-  margin-top: 6px;
-}
-
-.mt-ch__hero--play .mt-ch__heroP {
-  flex: none;
-  margin: 0;
-  font-size: 15px;
-  line-height: 1.45;
+  padding: calc(58px + env(safe-area-inset-top, 0px)) 22px calc(14px + env(safe-area-inset-bottom, 0px));
 }
 
 /*
- * ВИДЕО — ЕДИНСТВЕННАЯ ГИБКАЯ ЧАСТЬ ЭКРАНА.
+ * КРЕСТИК ПРИГЛУШЁН. На первом экране он самый яркий элемент после кнопки, а
+ * зовёт ровно к обратному — уйти. Остаётся контур: нажать по-прежнему легко,
+ * но взгляд он больше не перехватывает.
+ */
+.mt-ch__hero--play ~ .mt-ch__close,
+.mt-ch__close {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.22);
+  color: rgba(235, 235, 245, 0.55);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/*
+ * ЗАГОЛОВОК — ГЛАВНОЕ НА ЭКРАНЕ, три строки в одну мысль. Размер тянется за
+ * шириной телефона: на 320 точках фиксированные 34px переносят «заставляет» на
+ * четвёртую строку и ломают ритм.
+ */
+.mt-ch__playBig {
+  flex: none;
+  margin: 0;
+  font-weight: 900;
+  font-size: clamp(27px, 8.4vw, 36px);
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+  color: #fff;
+}
+
+.mt-ch__playBig em {
+  font-style: normal;
+  color: #9d96ff;             /* ACCENT2 */
+}
+
+.mt-ch__playSub {
+  flex: none;
+  margin: 0;
+  font-size: clamp(14px, 4vw, 16px);
+  line-height: 1.35;
+  font-weight: 600;
+  color: rgba(235, 235, 245, 0.78);
+}
+
+.mt-ch__playSub em {
+  font-style: normal;
+  font-weight: 800;
+  color: #9d96ff;
+  white-space: nowrap;
+}
+
+/*
+ * ТРИ СТРОКИ ПРО УСЛОВИЯ. Цвет поднят с #8F8E9D до #D3D1E4: прежний давал
+ * контраст 3.3:1 — на солнце, то есть ровно там, где человек и открывает
+ * ссылку из поста, такой текст не читается вовсе.
+ */
+.mt-ch__hero--play .mt-ch__heroP {
+  flex: none;
+  margin: 0;
+  font-size: clamp(13px, 3.7vw, 15px);
+  line-height: 1.4;
+  color: #d3d1e4;
+}
+
+.mt-ch__hero--play .mt-ch__heroP b {
+  color: #fff;
+  font-weight: 700;
+}
+
+/*
+ * ВИДЕО — ЕДИНСТВЕННАЯ ГИБКАЯ ЧАСТЬ ЭКРАНА И ЕДИНСТВЕННАЯ, КОТОРУЮ МОЖНО
+ * УМЕНЬШАТЬ. Всё остальное нужно целиком: заголовок, условия, приз, кнопка.
  *
- * min-height: 0 обязателен: без него flex-элемент не сжимается ниже своего
- * содержимого, и на невысоком телефоне ролик выдавил бы кнопку «Играть» за
- * нижний край — то есть ровно то, ради чего экран и делался в один рост.
+ * ЦЕЛИКОМ, А НЕ КАДРИРОВАННОЕ. Здесь стоял object-fit: cover на почти
+ * квадратном контейнере — вертикальный ролик 540×854 резался по краям, и у
+ * человека в кадре пропадали голова и ноги. Теперь ролик держит свою
+ * пропорцию и вписывается в остаток экрана: ширина считается от высоты, и
+ * подрезать нечего.
+ *
+ * min-height: 0 обязателен — без него flex-элемент не сжимается ниже
+ * содержимого, и на невысоком телефоне ролик выдавил бы кнопку за нижний край.
  */
 .mt-ch__playVideo {
   flex: 1 1 auto;
   min-height: 0;
-  border-radius: 22px;
-  overflow: hidden;
-  background: #1c1c1e;                          /* SURF — пока постер не пришёл */
-  border: 1px solid rgba(255, 255, 255, 0.09);  /* SEP */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mt-ch__playVideo video {
+  display: block;
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  /* Пропорция исходника. Держит кадр целым, даже пока файл ещё едет. */
+  aspect-ratio: 540 / 854;
+  object-fit: contain;
+  border-radius: 20px;
+  background: #14141a;
+  border: 1px solid rgba(255, 255, 255, 0.09);
 }
 
 /*
- * cover, а не contain: ролик снят вертикально, и подрезать его по краям
- * безопаснее, чем оставить чёрные поля — поля читаются как «видео сломалось».
+ * ПОЛОСКА ПРИЗА. Одна строка вместо прежних двух пунктов: на первом экране
+ * место дороже подробностей, а расклад фонда всё равно ниже по странице.
  */
-.mt-ch__playVideo video {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.mt-ch__playPrize {
+  flex: none;
+  font-size: clamp(12.5px, 3.5vw, 14px);
+  line-height: 1.35;
+  font-weight: 600;
+  color: #d3d1e4;
+  background: rgba(157, 150, 255, 0.1);
+  border: 1px solid rgba(157, 150, 255, 0.28);
+  border-radius: 14px;
+  padding: 9px 13px;
+  text-align: center;
 }
 
-.mt-ch__playPrizes {
+.mt-ch__playBtn {
   flex: none;
+  font-size: 19px;
+  padding: 17px;
+}
+
+/* Мелкая строка под кнопкой: снимает два возражения разом — «надо ли
+   регистрироваться» и «когда это вообще». */
+.mt-ch__playFine {
+  flex: none;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.3;
+  color: rgba(235, 235, 245, 0.42);
+}
+
+/*
+ * СПИСОК ПУНКТОВ С ТОЧКОЙ — используется ТЁПЛЫМ БЛОКОМ ниже по странице.
+ * С первого экрана он ушёл (там теперь одна полоска приза), но блок «Тогда
+ * смотри, что дальше» на нём держится, и трогать его в этой правке нельзя.
+ */
+.mt-ch__playPrizes {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -5067,13 +5151,6 @@
   background: #9d96ff;
   margin-top: 6px;
   flex: none;
-}
-
-.mt-ch__playBtn {
-  flex: none;
-  margin-top: 2px;
-  font-size: 19px;
-  padding: 18px;
 }
 
 /* ── тёплый блок после игры (экран 2 макета) ── */

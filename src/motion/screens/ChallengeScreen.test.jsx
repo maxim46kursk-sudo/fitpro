@@ -253,7 +253,7 @@ describe('гость: та же страница, аккаунт по нажат
      * проверяют две строки выше.
      */
     expect(screen.queryByTestId('challenge-hero-join')).toBeNull()
-    expect(screen.getByTestId('challenge-play').textContent).toBe('Играть')
+    expect(screen.getByTestId('challenge-play').textContent).toBe('Играть — бесплатно')
     // отдельной кнопки «создать аккаунт» на странице больше нет
     expect(screen.queryByTestId('challenge-signup')).toBeNull()
     expect(screen.queryByTestId('challenge-signup-end')).toBeNull()
