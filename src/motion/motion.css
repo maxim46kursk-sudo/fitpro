@@ -3817,8 +3817,17 @@
  * кнопку, ради которой он и прыгнул. Поле снизу делает такое невозможным при
  * любой скорости прокрутки.
  */
-.mt-ch__final {
+/*
+ * ПОЛЕ НУЖНО ТОЛЬКО ТАМ, ГДЕ ПОД НИМ КОНЕЦ СТРАНИЦЫ. Когда следом идёт меню
+ * приложения, липкой полосе перекрывать нечего — её место занимает меню, — а
+ * стопятьдесят пустых пикселей перед меню видно как чёрный провал.
+ */
+.mt-ch__final:last-child {
   padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+.mt-ch__final:has(+ .mt-ch__nav) {
+  padding-bottom: 18px !important;
 }
 
 .mt-ch__pricebox {
@@ -4988,7 +4997,8 @@
   flex-direction: column;
   gap: 10px;
   /* сверху место под крестик, снизу — под домашнюю полосу iPhone */
-  padding: calc(58px + env(safe-area-inset-top, 0px)) 22px calc(14px + env(safe-area-inset-bottom, 0px));
+  /* верхняя полоса «Назад» уже съела 52 — сверху остаётся только воздух */
+  padding: 10px 22px calc(14px + env(safe-area-inset-bottom, 0px));
 }
 
 /*
@@ -5142,7 +5152,7 @@
 @media (max-height: 720px) {
   .mt-ch__hero--play .mt-ch__heroIn {
     gap: 7px;
-    padding-top: calc(52px + env(safe-area-inset-top, 0px));
+    padding-top: 6px;
   }
   .mt-ch__playBig { font-size: clamp(23px, 7vw, 28px); }
   .mt-ch__playSub { font-size: 13px; line-height: 1.3; }
@@ -5185,50 +5195,70 @@
 }
 
 /*
- * КНОПКА «НАЗАД» — ЛИПКАЯ, НА ВСЮ ДОРОГУ.
+ * «НАЗАД» — ЗАКРЕПЛЁННАЯ ПОЛОСА, А НЕ ПЛАВАЮЩАЯ КНОПКА.
  *
- * fixed, а не absolute: свиток страницы уезжает под ней, и кнопка обязана
- * оставаться на месте — иначе она снова была бы доступна только на первом
- * экране, ровно как крестик до неё.
+ * Плавающая кнопка была полумерой: подложку ей ни при какой плотности не
+ * хватало, потому что под ней ПРОЕЗЖАЛ текст страницы — заголовки и номера
+ * шагов лезли из-под краёв, и на светлом снимке экрана она вдобавок читалась
+ * заплаткой. Лечится это не прозрачностью, а тем, что проезжать под ней
+ * перестаёт что бы то ни было: полоса во всю ширину, непрозрачная, а
+ * содержимое страницы начинается ПОД ней (см. отступ у .mt-ch__view ниже).
  *
- * Подложка полупрозрачная с размытием: под кнопкой проезжает то тёмный фон, то
- * светлый снимок экрана, и сплошная заливка выглядела бы заплаткой на одном из
- * них. Высота 38 — палец попадает, взгляд не цепляет.
+ * 52 пикселя и кегль 17: кнопка обязана читаться, а не теряться под крестиком
+ * встроенного браузера, который висит ровно в этом же углу.
  */
-.mt-ch__back {
+/*
+ * ПОД ПОЛОСОЙ НЕ ПРОЕЗЖАЕТ НИЧЕГО. Свиток начинается на её высоте, а первый
+ * экран ровно на неё же и укорачивается — иначе он остался бы в полный рост,
+ * съехал вниз и вытолкнул кнопку «Играть» за нижний край.
+ *
+ * Высота одна на оба правила и живёт переменной: разъехавшись, они дали бы
+ * либо текст под полосой, либо щель под ней.
+ */
+.mt-ch--bar { --backbar: calc(52px + env(safe-area-inset-top, 0px)); }
+.mt-ch--bar .mt-ch__view { padding-top: var(--backbar); }
+.mt-ch--bar .mt-ch__hero--play { height: calc(100svh - var(--backbar)); }
+
+.mt-ch__backBar {
   position: fixed;
-  top: calc(10px + env(safe-area-inset-top, 0px));
-  left: calc(10px + env(safe-area-inset-left, 0px));
+  top: 0;
+  left: 0;
+  right: 0;
   z-index: 46;
+  height: calc(52px + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
+  display: flex;
+  align-items: center;
+  background: rgba(11, 11, 13, 0.94);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.mt-ch__back {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  height: 38px;
-  padding: 0 15px 0 11px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
-  /*
-   * ПЛОТНЕЕ ОБЫЧНОГО УГЛА, и это не вкусовщина: под кнопкой ПРОЕЗЖАЕТ ТЕКСТ
-   * длинной страницы. При 0.62 сквозь неё читался номер шага «01» — то есть
-   * кнопка мешала читать ровно то, мимо чего человек её и проматывает. Ровно
-   * по этой причине плотный фон стоял и у прежнего крестика.
-   */
-  background: rgba(11, 13, 18, 0.92);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  color: rgba(235, 235, 245, 0.78);
-  font: 600 15px/1 inherit;
+  gap: 6px;
+  height: 100%;
+  padding: 0 18px 0 calc(14px + env(safe-area-inset-left, 0px));
+  border: 0;
+  background: none;
+  color: rgba(235, 235, 245, 0.86);
   font-family: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1;
   cursor: pointer;
+  min-height: unset;
 }
 
 .mt-ch__back span {
-  font-size: 20px;
+  font-size: 22px;
   line-height: 1;
   margin-top: -2px;
 }
 
-.mt-ch__back:active { transform: scale(0.97); }
+.mt-ch__back:active { opacity: 0.6; }
 
 /*
  * ШАГИ «КАК ЭТО РАБОТАЕТ» — НОМЕР СЛЕВА, ТЕКСТ СПРАВА.
@@ -5243,9 +5273,16 @@
   margin: 0 0 22px;
 }
 
+/*
+ * Ширина — ПО САМОЙ ДЛИННОЙ ПОДПИСИ, а не 44 пикселя на глаз: в 44 не влезало
+ * «ОТРАБОТАЙ», подпись переносилась и лезла на заголовок шага. min-content
+ * берёт ширину самого длинного слова, а nowrap не даёт его разорвать.
+ */
 .mt-ch__stepN {
   flex: none;
-  width: 44px;
+  width: min-content;
+  min-width: 44px;
+  white-space: nowrap;
   display: flex;
   flex-direction: column;
   gap: 2px;

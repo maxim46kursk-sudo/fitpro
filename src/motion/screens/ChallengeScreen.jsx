@@ -504,7 +504,10 @@ export default function ChallengeScreen({
   const priceLabel = money(price)
 
   return (
-    <div className="mt-screen mt-ch" data-testid="challenge-screen">
+    <div
+      className={`mt-screen mt-ch ${readOnly ? '' : 'mt-ch--bar'}`}
+      data-testid="challenge-screen"
+    >
       <div className="mt-ch__view" ref={viewRef}>
 
         {/*
@@ -1195,14 +1198,16 @@ export default function ChallengeScreen({
           aria-label="Назад"
         >✕</button>
       ) : (
-        <button
-          type="button"
-          className="mt-ch__back"
-          data-testid="challenge-rules-back"
-          onClick={onExit}
-        >
-          <span aria-hidden="true">‹</span> Назад
-        </button>
+        <div className="mt-ch__backBar">
+          <button
+            type="button"
+            className="mt-ch__back"
+            data-testid="challenge-rules-back"
+            onClick={onExit}
+          >
+            <span aria-hidden="true">‹</span> Назад
+          </button>
+        </div>
       )}
     </div>
   )
