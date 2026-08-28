@@ -405,9 +405,14 @@ const FOLDER_DESCRIPTIONS={
 }
 
 // Шаблоны программ = зашитые FOLDERS/PROGRAMS_MAP + program_templates из базы.
-// Раздаётся через контекст: { folders:[{key,label,context}] (по sort),
-// structures:{key→structure} }. Ключ key НЕ меняется никогда — за него держатся
-// profiles.program, префикс названий workouts, localStorage. На экран — label.
+// Раздаётся через контекст: { folders:[{key,title,subtitle,label,context}] (по
+// sort), structures:{key→structure} }. Ключ key НЕ меняется никогда — за него
+// держатся profiles.program, префикс названий workouts, localStorage.
+//
+// Название программы двухэтажное: title («Full body») крупно на карточке,
+// subtitle («румынская тяга») помельче — одной строкой длинное имя на карточку
+// не влезало. label — то же имя ОДНОЙ строкой (title + subtitle): им живут
+// заголовки экранов, модалки и промт ИИ-ассистента, там дробление не нужно.
 const TemplatesContext = createContext(mergeTemplates([]))
 
 // По образцу mergeCatalog: строка из базы перекрывает зашитое; hidden → папка
@@ -421,18 +426,27 @@ function mergeTemplates(rows) {
     seen.add(key)
     const r = byKey.get(key)
     if (r?.hidden) return
-    folders.push({ key, label: (r && r.display_name) || key, context: (r && r.context) || FOLDER_CTX_FALLBACK(key), sort: r ? r.sort : i,
+    folders.push({ key, ...folderTitle((r && r.display_name) || key, r && r.subtitle), context: (r && r.context) || FOLDER_CTX_FALLBACK(key), sort: r ? r.sort : i,
       icon: (r && r.icon) || FOLDER_ICONS[key] || '', description: (r && r.description) || FOLDER_DESCRIPTIONS[key] || '' })
     structures[key] = (r && Array.isArray(r.structure) && r.structure.length) ? r.structure : PROGRAMS_MAP[key]
   })
   for (const r of rows || []) {
     if (seen.has(r.key) || r.hidden) continue
-    folders.push({ key: r.key, label: r.display_name || r.key, context: r.context || 'zal', sort: r.sort ?? 0,
+    folders.push({ key: r.key, ...folderTitle(r.display_name || r.key, r.subtitle), context: r.context || 'zal', sort: r.sort ?? 0,
       icon: r.icon || '', description: r.description || '' })
     structures[r.key] = Array.isArray(r.structure) ? r.structure : []
   }
   folders.sort((a, b) => a.sort - b.sort)
-  return { folders: folders.map(({ key, label, context, sort, icon, description }) => ({ key, label, context, sort, icon, description })), structures }
+  return { folders: folders.map(({ key, title, subtitle, label, context, sort, icon, description }) => ({ key, title, subtitle, label, context, sort, icon, description })), structures }
+}
+
+// Две строки названия программы и они же одной строкой. Отдельной функцией,
+// потому что собирается в двух местах mergeTemplates (зашитые ключи и строки
+// базы) и правило склейки должно быть одно.
+function folderTitle(displayName, subtitle) {
+  const title = String(displayName || '').trim()
+  const sub = String(subtitle || '').trim()
+  return { title, subtitle: sub, label: sub ? `${title} ${sub}` : title }
 }
 
 // Сливает зашитый EXERCISES с записями catalog_exercises по имени:
@@ -4737,16 +4751,16 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       {/* ── Уровень 0: список папок ── */}
       {templateFolders.map(t=>{
         const folder=t.key
-        const slotsArr=folderSlots[folder]||[]
-        const totalEx=slotsArr.reduce((s,sl)=>s+sl.exercises.length,0)
-        const totalVids=slotsArr.reduce((s,sl)=>s+sl.exercises.filter(e=>e.videoId).length,0)
         const isSelected=selectedProgram===folder
         return (
           <HubCard key={folder}
             testId={`program-folder-${folder}`}
             icon={folderIcon(folder)}
-            title={t.label}
-            subtitle={`${slotsArr.length} тренировок · ${totalEx} упр.${totalVids>0?` · ${totalVids} видео`:''}`}
+            /* Под названием — вторая строка имени программы, а не сводка
+               «12 тренировок · 84 упр.»: сводка есть внутри программы, а на
+               карточке она отбирала место у самого имени. */
+            title={t.title}
+            subtitle={t.subtitle}
             selected={isSelected}
             checked={isSelected}
             onInfo={()=>setInfoFolder(folder)}
@@ -5552,6 +5566,10 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
   const [displayName,setDisplayName]=useState(initialDisplayName)
   const [context,setContext]=useState(initialContext==='dom'?'dom':'zal')
   const [sort,setSort]=useState(initialSort)
+  // Вторая строка названия: на карточке программы имя двухэтажное
+  // («Full body» / «румынская тяга»), в заголовках и промте ИИ — одной строкой
+  // (см. folderTitle в mergeTemplates).
+  const [subtitle,setSubtitle]=useState('')
   // Иконка и описание программы — колонки program_templates, а не код: новая
   // программа заводится тренером целиком отсюда, без правки App.jsx и выкладки.
   const [icon,setIcon]=useState('')
@@ -5572,13 +5590,14 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
   useEffect(()=>{
     if(isNew){setLoading(false);return}
     let cancelled=false
-    supabase.from('program_templates').select('display_name,context,sort,structure,icon,description').eq('key',templateKey).maybeSingle().then(({data,error})=>{
+    supabase.from('program_templates').select('display_name,subtitle,context,sort,structure,icon,description').eq('key',templateKey).maybeSingle().then(({data,error})=>{
       if(cancelled)return
       if(error){console.error('Шаблон: ошибка загрузки:',error);setLoadError(true);setLoading(false);return}
       skipDirtyRef.current=true
       setDisplayName(data?.display_name||'')
       setContext(data?.context==='dom'?'dom':'zal')
       if(typeof data?.sort==='number')setSort(data.sort)
+      setSubtitle(typeof data?.subtitle==='string'?data.subtitle:'')
       setIcon(typeof data?.icon==='string'?data.icon:'')
       setDescription(typeof data?.description==='string'?data.description:'')
       const raw=Array.isArray(data?.structure)?data.structure:[]
@@ -5596,7 +5615,7 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
   useEffect(()=>{
     if(skipDirtyRef.current){skipDirtyRef.current=false;return}
     dirtyRef.current=true;setPubState('idle')
-  },[displayName,context,icon,description,slots])
+  },[displayName,subtitle,context,icon,description,slots])
 
   const addSlot=()=>setSlots(s=>{const n=[...s,{exercises:[]}];setOpenSlot(n.length-1);return n})
   const removeSlot=async si=>{
@@ -5637,7 +5656,7 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
       const token=await authToken()
       const res=await fetch('/api/set-exercise',{
         method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
-        body:JSON.stringify({action:'save_template',key:templateKey,display_name:displayName,context,sort,icon,description,structure,hidden:false}),
+        body:JSON.stringify({action:'save_template',key:templateKey,display_name:displayName,subtitle,context,sort,icon,description,structure,hidden:false}),
       })
       const body=await res.json().catch(()=>null)
       if(!res.ok||!body?.ok){flashErr(body?.error||'Не удалось опубликовать');setPubState('error');return}
@@ -5683,15 +5702,18 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
         ):(<>
           <div style={{ marginBottom:12 }}>
             <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Название программы</div>
-            {/* Не input, а textarea: перенос строки внутри названия — это
-                деление на главное и уточнение («Full body» / «болгарские
-                выпады»), карточка программы рисует вторую строку помельче
-                (см. HubCard). Везде, кроме карточки, перенос схлопывается в
-                пробел, как обычный HTML. */}
-            <textarea value={displayName} onChange={e=>setDisplayName(e.target.value)} maxLength={100} rows={2} placeholder={templateKey}
-              style={{ width:'100%', padding:'9px 12px', fontSize:14, fontWeight:600, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT, resize:'vertical', fontFamily:'inherit' }}
+            <input value={displayName} onChange={e=>setDisplayName(e.target.value)} maxLength={100} placeholder={templateKey}
+              style={{ width:'100%', padding:'9px 12px', fontSize:14, fontWeight:600, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
               onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
-            <div style={{ fontSize:10, color:TXT3, marginTop:3 }}>Ключ «{templateKey}» не меняется — переименование только для экрана. Перенос строки: первая строка на карточке крупная, вторая помельче.</div>
+            <div style={{ fontSize:10, color:TXT3, marginTop:3 }}>Ключ «{templateKey}» не меняется — переименование только для экрана.</div>
+          </div>
+          {/* Вторая строка названия — на карточке помельче под первой. */}
+          <div style={{ marginBottom:12 }}>
+            <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Вторая строка названия</div>
+            <input value={subtitle} onChange={e=>setSubtitle(e.target.value)} maxLength={60} placeholder="например: румынская тяга"
+              style={{ width:'100%', padding:'9px 12px', fontSize:14, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
+              onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
+            <div style={{ fontSize:10, color:TXT3, marginTop:3 }}>На карточке — помельче под названием. Пусто — карточка покажет одно название.</div>
           </div>
           {/* Иконка программы: набор PROGRAM_ICONS из programs.js, выбранная подсвечена. */}
           <div style={{ marginBottom:12 }}>
@@ -10711,7 +10733,7 @@ export default function App() {
   const templatesRetryRef=useRef(null)
   const loadTemplates=(attempt=0)=>{
     if(templatesRetryRef.current){clearTimeout(templatesRetryRef.current);templatesRetryRef.current=null}
-    supabase.from('program_templates').select('key,display_name,sort,context,structure,hidden,icon,description').then(({data,error})=>{
+    supabase.from('program_templates').select('key,display_name,subtitle,sort,context,structure,hidden,icon,description').then(({data,error})=>{
       if(error||data==null){
         console.error('Шаблоны: ошибка загрузки program_templates'+(error?`: ${error.message||error}`:' — пустой ответ'))
         const DELAYS=[1500,4000,9000]

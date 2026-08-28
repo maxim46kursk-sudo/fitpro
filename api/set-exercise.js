@@ -2203,12 +2203,16 @@ export default async function handler(req, res) {
     // иконок здесь НЕ дублируем: он у клиента (PROGRAM_ICONS в src/programs.js),
     // и неизвестное имя там гасится запасным вариантом. На сервере — только
     // форма строки, чтобы в базу не уехало произвольное значение.
+    // Вторая строка названия для карточки программы («Full body» / «румынская
+    // тяга»). Пусто → null: карточка тогда показывает одно название.
+    const subtitle = req.body?.subtitle != null ? (String(req.body.subtitle).trim().slice(0, 60) || null) : null
     const rawIcon = req.body?.icon != null ? String(req.body.icon).trim() : ''
     const icon = /^[a-z]{1,20}$/.test(rawIcon) ? rawIcon : null
     const description = req.body?.description != null ? (String(req.body.description).trim().slice(0, 300) || null) : null
     const { error } = await supabaseAdmin.from('program_templates').upsert({
       key,
       display_name: displayName,
+      subtitle,
       context,
       sort,
       icon,
