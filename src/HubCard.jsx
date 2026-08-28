@@ -69,8 +69,23 @@ export default function HubCard({
           </div>
         )}
         {/* Длинное название переносится на две строки и НЕ обрезается:
-            «Прогресс по упражнениям» на 320px в одну строку не помещается. */}
-        <div style={{ fontSize: 19, fontWeight: 700, color: TXT, textAlign: 'center', lineHeight: 1.25, overflowWrap: 'anywhere' }}>{title}</div>
+            «Прогресс по упражнениям» на 320px в одну строку не помещается.
+
+            Перенос строки В САМОМ названии — это уже не перенос по ширине, а
+            деление на главное и уточнение: «Full body» крупно, «болгарские
+            выпады» помельче. Так длинное имя программы читается с одного
+            взгляда, а задаётся это данными (display_name в program_templates),
+            без правки кода под каждую новую программу. Нет переноса — карточка
+            выглядит ровно как раньше. */}
+        {(() => {
+          const [head, ...rest] = String(title ?? '').split(/\r?\n/)
+          return (<>
+            <div style={{ fontSize: 19, fontWeight: 700, color: TXT, textAlign: 'center', lineHeight: 1.25, overflowWrap: 'anywhere' }}>{head}</div>
+            {rest.length > 0 && rest.join(' ').trim() && (
+              <div style={{ fontSize: 14, fontWeight: 700, color: TXT, textAlign: 'center', lineHeight: 1.3, marginTop: 2, overflowWrap: 'anywhere' }}>{rest.join(' ')}</div>
+            )}
+          </>)
+        })()}
         {subtitle && (
           <div style={{ fontSize: 13, color: TXT3, marginTop: 4, textAlign: 'center', lineHeight: 1.35, overflowWrap: 'anywhere' }}>{subtitle}</div>
         )}

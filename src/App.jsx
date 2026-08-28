@@ -658,8 +658,14 @@ function PlanLockModal({ title, text, onClose, onOpenPlans }) {
 }
 
 // Тексты гейтов — в одном месте, чтобы не расходились между точками блокировки.
-const LOCK_SLOTS = { title:'Тренировки 4–12 доступны в пакете БАЗА', text:'В СТАРТ открыты первые 3 тренировки в каждом шаблоне. БАЗА открывает все тренировки во всех четырёх шаблонах.' }
-const LOCK_EXERCISES = { title:'Прогресс по упражнениям доступен в пакете БАЗА', text:'Покажет динамику весов и повторений по каждому упражнению за любой период.' }
+// Называем ПРОФИТ, а не БАЗА: БАЗА снята с продажи (plans.js, hidden:true),
+// купить её сейчас нельзя, и предлагать человеку несуществующий пакет — тупик.
+// Порог доступа при этом остаётся SLOTS_MIN_LEVEL=1: у купивших БАЗУ раньше
+// доступ сохраняется, меняется только то, что мы предлагаем купить.
+// «Программа», а не «шаблон»: программы теперь заводятся данными, и их уже не
+// четыре — обещать «все четыре» было бы неправдой.
+const LOCK_SLOTS = { title:'Тренировки 4–12 доступны в пакете ПРОФИТ', text:'В СТАРТ открыты первые 3 тренировки в каждой программе. ПРОФИТ открывает все тренировки во всех программах.' }
+const LOCK_EXERCISES = { title:'Прогресс по упражнениям доступен в пакете ПРОФИТ', text:'Покажет динамику весов и повторений по каждому упражнению за любой период.' }
 // Со скольки слотов начинается платная часть шаблона и какой уровень нужен.
 const FREE_SLOTS = 3
 const SLOTS_MIN_LEVEL = 1
@@ -2327,7 +2333,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     const maxSort=templateFolders.reduce((m,f)=>Math.max(m,typeof f.sort==='number'?f.sort:0),-1)
     setTemplateEditor({key,isNew:true,initialDisplayName:name.slice(0,100),initialContext:'zal',initialSort:maxSort+1})
   }
-  // Подсказка «нужен пакет БАЗА» — показывается модалкой поверх списка слотов.
+  // Подсказка «нужен платный пакет» — показывается модалкой поверх списка слотов.
   const [showSlotLock,setShowSlotLock]=useState(false)
   // Заперт ли слот: платная часть шаблона начинается с FREE_SLOTS+1.
   const isSlotLocked=slotNum=>accessLevel<SLOTS_MIN_LEVEL&&slotNum>FREE_SLOTS
@@ -4486,7 +4492,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   <div style={{ textAlign:'center', paddingTop:6 }}>
                     <div style={{ fontSize:16, fontWeight:700, color:TXT, marginBottom:4 }}>{slot.title}</div>
                     <div style={{ fontSize:12, color:TXT3 }}>
-                      {locked?'Доступно в пакете БАЗА':(ec===0?'Нет упражнений':`${ec} упр.${vc>0?` · ${vc} видео`:''}`)}
+                      {locked?'Доступно в пакете ПРОФИТ':(ec===0?'Нет упражнений':`${ec} упр.${vc>0?` · ${vc} видео`:''}`)}
                     </div>
                     {completions.length>0&&(
                       <div style={{ fontSize:11.5, color:'#16a34a', fontWeight:600, marginTop:5, display:'flex', alignItems:'center', gap:4 }}>
@@ -5677,10 +5683,15 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
         ):(<>
           <div style={{ marginBottom:12 }}>
             <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Название программы</div>
-            <input value={displayName} onChange={e=>setDisplayName(e.target.value)} maxLength={100} placeholder={templateKey}
-              style={{ width:'100%', padding:'9px 12px', fontSize:14, fontWeight:600, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
+            {/* Не input, а textarea: перенос строки внутри названия — это
+                деление на главное и уточнение («Full body» / «болгарские
+                выпады»), карточка программы рисует вторую строку помельче
+                (см. HubCard). Везде, кроме карточки, перенос схлопывается в
+                пробел, как обычный HTML. */}
+            <textarea value={displayName} onChange={e=>setDisplayName(e.target.value)} maxLength={100} rows={2} placeholder={templateKey}
+              style={{ width:'100%', padding:'9px 12px', fontSize:14, fontWeight:600, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT, resize:'vertical', fontFamily:'inherit' }}
               onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
-            <div style={{ fontSize:10, color:TXT3, marginTop:3 }}>Ключ «{templateKey}» не меняется — переименование только для экрана.</div>
+            <div style={{ fontSize:10, color:TXT3, marginTop:3 }}>Ключ «{templateKey}» не меняется — переименование только для экрана. Перенос строки: первая строка на карточке крупная, вторая помельче.</div>
           </div>
           {/* Иконка программы: набор PROGRAM_ICONS из programs.js, выбранная подсвечена. */}
           <div style={{ marginBottom:12 }}>
@@ -7376,7 +7387,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           testId={`diary-section-${f.key}`}
           icon={f.ic}
           title={f.label}
-          subtitle={locked?'Доступно в пакете БАЗА':f.sub}
+          subtitle={locked?'Доступно в пакете ПРОФИТ':f.sub}
           locked={locked}
           onClick={()=>{if(locked){setShowExLock(true);return}if(f.key==='exercises'){setExPeriod('all');setExCustomFrom('');setExCustomTo('')}setSection(f.key)}} />
         )
@@ -10720,7 +10731,7 @@ export default function App() {
   // шаблонов, что и список папок (label по key). Сентинел «программа тренера»
   // → человекочитаемая строка. Не выбрана (пусто) → null (в промте прежний
   // запасной вариант). Для ИИ-ассистента, чтобы он называл программу как на экране.
-  const programLabelOf=key=>!key?null:(key===TRAINER_PROGRAM_KEY?'Персональная программа от тренера':((templatesValue.folders.find(f=>f.key===key)||{}).label||key))
+  const programLabelOf=key=>!key?null:(key===TRAINER_PROGRAM_KEY?'Персональная программа от тренера':String((templatesValue.folders.find(f=>f.key===key)||{}).label||key).replace(/\s+/g,' ').trim())
   const [userRole,setUserRole]=useState(()=>localStorage.getItem('fitpro_role')||'client')
   // Согласие на обработку ПДн (152-ФЗ). consentLoaded — «ответ из базы получен»,
   // до него приложение не рендерим вообще, иначе на секунду мелькнёт контент
