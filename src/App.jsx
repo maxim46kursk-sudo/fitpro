@@ -6,7 +6,7 @@ import { clearDraft as clearTrainerDraft, draftForClient } from './trainerDraft.
 import { supabase, SUPABASE_AUTH_STORAGE_KEY, SUPABASE_URL, SUPABASE_KEY } from './supabase.js'
 import { resolveAuthOutcome, AUTH_OUTCOME } from './authState.js'
 import { logError } from './logError'
-import { FOLDERS, PROGRAMS_MAP, EXERCISES, isOneSidedExercise, countCompletedProgramSlots, isProgramFullyCompleted } from './programs.js'
+import { FOLDERS, PROGRAMS_MAP, PROGRAM_ICONS, EXERCISES, isOneSidedExercise, countCompletedProgramSlots, isProgramFullyCompleted } from './programs.js'
 import { oneRepMax, weightForReps, roundToPlate, percentTable, plateStep } from './oneRepMax.js'
 // Движок прогрессии (1ПМ) — врезан в кнопку "▶ Начать тренировку" внутри
 // слота шаблонной программы (WorkoutsView), см. подробный комментарий там.
@@ -390,6 +390,20 @@ const CatalogContext = createContext({ exercises: EXERCISES, reloadCatalog: () =
 // Контекст выбора видео по папке шаблона (зал/дом).
 const FOLDER_CTX_FALLBACK = key => key === 'Домашние тренировки' ? 'dom' : 'zal'
 
+// Иконка и описание программы живут в базе (program_templates.icon/description):
+// программ будет много, каждая добавляется данными, без правки кода и выкладки.
+// Эти два словаря — ЗАПАСНОЙ вариант для первых четырёх зашитых программ, если
+// в их строке базы колонки пустые (или базы нет вовсе). Стоят здесь, а не рядом
+// с остальными константами ниже: mergeTemplates читает их и вызывается на
+// загрузке модуля (TemplatesContext), до инициализации нижней части файла.
+const FOLDER_ICONS={'Full Body':'dumbbell','Сплит':'lightning','Похудение':'runner','Домашние тренировки':'house'}
+const FOLDER_DESCRIPTIONS={
+  'Full Body':'Тренировка на всё тело',
+  'Сплит':'Тренировка, разделённая по группам мышц (например пн — грудь и трицепс)',
+  'Похудение':'Силовые + функциональные тренировки',
+  'Домашние тренировки':'Тренировки дома с минимальным оборудованием (резинки и т.п.)',
+}
+
 // Шаблоны программ = зашитые FOLDERS/PROGRAMS_MAP + program_templates из базы.
 // Раздаётся через контекст: { folders:[{key,label,context}] (по sort),
 // structures:{key→structure} }. Ключ key НЕ меняется никогда — за него держатся
@@ -407,16 +421,18 @@ function mergeTemplates(rows) {
     seen.add(key)
     const r = byKey.get(key)
     if (r?.hidden) return
-    folders.push({ key, label: (r && r.display_name) || key, context: (r && r.context) || FOLDER_CTX_FALLBACK(key), sort: r ? r.sort : i })
+    folders.push({ key, label: (r && r.display_name) || key, context: (r && r.context) || FOLDER_CTX_FALLBACK(key), sort: r ? r.sort : i,
+      icon: (r && r.icon) || FOLDER_ICONS[key] || '', description: (r && r.description) || FOLDER_DESCRIPTIONS[key] || '' })
     structures[key] = (r && Array.isArray(r.structure) && r.structure.length) ? r.structure : PROGRAMS_MAP[key]
   })
   for (const r of rows || []) {
     if (seen.has(r.key) || r.hidden) continue
-    folders.push({ key: r.key, label: r.display_name || r.key, context: r.context || 'zal', sort: r.sort ?? 0 })
+    folders.push({ key: r.key, label: r.display_name || r.key, context: r.context || 'zal', sort: r.sort ?? 0,
+      icon: r.icon || '', description: r.description || '' })
     structures[r.key] = Array.isArray(r.structure) ? r.structure : []
   }
   folders.sort((a, b) => a.sort - b.sort)
-  return { folders: folders.map(({ key, label, context, sort }) => ({ key, label, context, sort })), structures }
+  return { folders: folders.map(({ key, label, context, sort, icon, description }) => ({ key, label, context, sort, icon, description })), structures }
 }
 
 // Сливает зашитый EXERCISES с записями catalog_exercises по имени:
@@ -2219,24 +2235,11 @@ async function idbDelete(id){
   })
 }
 
-const FOLDER_ICONS={'Full Body':'dumbbell','Сплит':'lightning','Похудение':'runner','Домашние тренировки':'house'}
-// Иконка папки: у новых программ ключа в FOLDER_ICONS нет → дефолт, чтобы список
-// не падал на отсутствующей иконке.
-const folderIcon=key=>FOLDER_ICONS[key]||'dumbbell'
 // slugify ключа новой программы (латиница/цифры/дефис) — зеркало slugify в
 // api/create-video-upload. Ключ создаётся один раз и НЕ меняется (переименование
 // идёт через display_name).
 const KEY_TRANSLIT={ а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'e',ж:'zh',з:'z',и:'i',й:'y',к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'h',ц:'ts',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya' }
 const slugifyKey=s=>((s||'').toLowerCase().split('').map(c=>KEY_TRANSLIT[c]??c).join('').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').replace(/-+/g,'-'))||'program'
-// Описания программ для карточки-инфо ("?" на карточке в списке программ) —
-// словарь, а не хардкод в разметке, чтобы новые программы (обещано 7+)
-// добавлялись одной строкой здесь, без правки самого рендера.
-const FOLDER_DESCRIPTIONS={
-  'Full Body':'Тренировка на всё тело',
-  'Сплит':'Тренировка, разделённая по группам мышц (например пн — грудь и трицепс)',
-  'Похудение':'Силовые + функциональные тренировки',
-  'Домашние тренировки':'Тренировки дома с минимальным оборудованием (резинки и т.п.)',
-}
 const SLOT_COUNT=12
 const SUPERSET_COLORS={'A':PUR,'B':TEA,'C':COR,'D':BLU}
 // Сентинел для profiles.program, когда выбрана программа тренера, а не
@@ -2297,6 +2300,11 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const { folders: templateFolders, structures: templateStructures, reload: reloadTemplates } = useContext(TemplatesContext)
   const folderKeys = templateFolders.map(f=>f.key)
   const folderLabel = key => (templateFolders.find(t=>t.key===key)||{}).label || key
+  // Иконка и описание программы — из program_templates (mergeTemplates уже
+  // подставил запасной вариант зашитым ключам). Имени иконки нет в наборе
+  // (опечатка в базе, иконку выпилили) → 'dumbbell', чтобы список не падал.
+  const folderIcon = key => { const n=(templateFolders.find(t=>t.key===key)||{}).icon; return PROGRAM_ICONS.includes(n)?n:'dumbbell' }
+  const folderDescription = key => (templateFolders.find(t=>t.key===key)||{}).description || ''
   // Редактор шаблона (тренер): {key,isNew,initialDisplayName,initialContext,initialSort} | null
   const [templateEditor,setTemplateEditor]=useState(null)
   // После публикации: перечитать шаблоны (метки/label/контекст/новые папки) и
@@ -4770,7 +4778,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           <div onClick={e=>e.stopPropagation()} style={{ background:SURF, borderRadius:16, padding:'22px 20px', maxWidth:340, width:'100%', boxSizing:'border-box' }}>
             <div style={{ display:'flex',justifyContent:'center',marginBottom:8 }}><GlassIcon name={folderIcon(infoFolder)} size={42} /></div>
             <div style={{ fontSize:17, fontWeight:700, color:TXT, textAlign:'center', marginBottom:8 }}>{folderLabel(infoFolder)}</div>
-            <div style={{ fontSize:13, color:TXT3, textAlign:'center', lineHeight:1.5, marginBottom:18 }}>{FOLDER_DESCRIPTIONS[infoFolder]||''}</div>
+            <div style={{ fontSize:13, color:TXT3, textAlign:'center', lineHeight:1.5, marginBottom:18 }}>{folderDescription(infoFolder)}</div>
             <button onClick={()=>selectProgram(infoFolder)}
               style={{ width:'100%', padding:'13px', borderRadius:12, border:'none', background:selectedProgram===infoFolder?SURF2:PUR, color:selectedProgram===infoFolder?TXT3:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', marginBottom:8, display:'flex', alignItems:'center', justifyContent:'center', gap:7 }}>
               {selectedProgram===infoFolder&&<GlassIcon name="check" size={17} />}{selectedProgram===infoFolder?'Эта программа выбрана':'Тренироваться по этой программе'}
@@ -5538,6 +5546,10 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
   const [displayName,setDisplayName]=useState(initialDisplayName)
   const [context,setContext]=useState(initialContext==='dom'?'dom':'zal')
   const [sort,setSort]=useState(initialSort)
+  // Иконка и описание программы — колонки program_templates, а не код: новая
+  // программа заводится тренером целиком отсюда, без правки App.jsx и выкладки.
+  const [icon,setIcon]=useState('')
+  const [description,setDescription]=useState('')
   // Слоты: [{exercises:[{name,sets:[{reps,kg}]}]}]. sets — разобранные подходы
   // (как в ProgramEditor), склеиваем в строку при публикации.
   const [slots,setSlots]=useState(isNew?[{exercises:[]}]:[])
@@ -5554,13 +5566,15 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
   useEffect(()=>{
     if(isNew){setLoading(false);return}
     let cancelled=false
-    supabase.from('program_templates').select('display_name,context,sort,structure').eq('key',templateKey).maybeSingle().then(({data,error})=>{
+    supabase.from('program_templates').select('display_name,context,sort,structure,icon,description').eq('key',templateKey).maybeSingle().then(({data,error})=>{
       if(cancelled)return
       if(error){console.error('Шаблон: ошибка загрузки:',error);setLoadError(true);setLoading(false);return}
       skipDirtyRef.current=true
       setDisplayName(data?.display_name||'')
       setContext(data?.context==='dom'?'dom':'zal')
       if(typeof data?.sort==='number')setSort(data.sort)
+      setIcon(typeof data?.icon==='string'?data.icon:'')
+      setDescription(typeof data?.description==='string'?data.description:'')
       const raw=Array.isArray(data?.structure)?data.structure:[]
       setSlots(raw.map(slot=>({
         exercises:(Array.isArray(slot)?slot:[]).map(ex=>{
@@ -5576,7 +5590,7 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
   useEffect(()=>{
     if(skipDirtyRef.current){skipDirtyRef.current=false;return}
     dirtyRef.current=true;setPubState('idle')
-  },[displayName,context,slots])
+  },[displayName,context,icon,description,slots])
 
   const addSlot=()=>setSlots(s=>{const n=[...s,{exercises:[]}];setOpenSlot(n.length-1);return n})
   const removeSlot=async si=>{
@@ -5617,7 +5631,7 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
       const token=await authToken()
       const res=await fetch('/api/set-exercise',{
         method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
-        body:JSON.stringify({action:'save_template',key:templateKey,display_name:displayName,context,sort,structure,hidden:false}),
+        body:JSON.stringify({action:'save_template',key:templateKey,display_name:displayName,context,sort,icon,description,structure,hidden:false}),
       })
       const body=await res.json().catch(()=>null)
       if(!res.ok||!body?.ok){flashErr(body?.error||'Не удалось опубликовать');setPubState('error');return}
@@ -5667,6 +5681,28 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
               style={{ width:'100%', padding:'9px 12px', fontSize:14, fontWeight:600, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
               onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
             <div style={{ fontSize:10, color:TXT3, marginTop:3 }}>Ключ «{templateKey}» не меняется — переименование только для экрана.</div>
+          </div>
+          {/* Иконка программы: набор PROGRAM_ICONS из programs.js, выбранная подсвечена. */}
+          <div style={{ marginBottom:12 }}>
+            <div style={{ fontSize:11, color:TXT3, marginBottom:6 }}>Иконка программы</div>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+              {PROGRAM_ICONS.map(n=>(
+                <button key={n} onClick={()=>setIcon(n)} title={n}
+                  style={{ width:44, height:44, borderRadius:12, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', padding:0, minHeight:'unset',
+                    border:`1.5px solid ${icon===n?PUR:HAIR}`, background:icon===n?'#EEEDFE':'transparent' }}>
+                  <GlassIcon name={n} size={26} />
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* Описание — текст карточки-инфо («?» в списке программ). */}
+          <div style={{ marginBottom:12 }}>
+            <div style={{ fontSize:11, color:TXT3, marginBottom:4 }}>Описание программы</div>
+            <textarea value={description} onChange={e=>setDescription(e.target.value)} maxLength={300} rows={3}
+              placeholder="Одна-две фразы: для кого программа и на что упор"
+              style={{ width:'100%', padding:'9px 12px', fontSize:13, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT, resize:'vertical', fontFamily:'inherit' }}
+              onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
+            <div style={{ fontSize:10, color:TXT3, marginTop:3 }}>Показывается в карточке «?» в списке программ. {description.length}/300</div>
           </div>
           <div style={{ display:'flex', gap:8, marginBottom:12 }}>
             {[['zal','Зал'],['dom','Дом']].map(([v,l])=>(
@@ -10664,7 +10700,7 @@ export default function App() {
   const templatesRetryRef=useRef(null)
   const loadTemplates=(attempt=0)=>{
     if(templatesRetryRef.current){clearTimeout(templatesRetryRef.current);templatesRetryRef.current=null}
-    supabase.from('program_templates').select('key,display_name,sort,context,structure,hidden').then(({data,error})=>{
+    supabase.from('program_templates').select('key,display_name,sort,context,structure,hidden,icon,description').then(({data,error})=>{
       if(error||data==null){
         console.error('Шаблоны: ошибка загрузки program_templates'+(error?`: ${error.message||error}`:' — пустой ответ'))
         const DELAYS=[1500,4000,9000]
