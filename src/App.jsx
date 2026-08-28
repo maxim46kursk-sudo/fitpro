@@ -2404,6 +2404,32 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     })
   },[])
 
+  /**
+   * ПАПКИ ИЗ БАЗЫ ДОГОНЯЮТ folderSlots.
+   *
+   * folderSlots собирается ДВАЖДЫ и оба раза на старте: в useState и в эффекте
+   * загрузки из localStorage. Шаблоны из program_templates приезжают позже —
+   * значит программы, заведённые данными (а теперь так заводятся все новые),
+   * в folderSlots не попадали вовсе, и тап по такой папке падал на
+   * folderSlots[key].map: undefined.map — это чёрный экран на весь экран.
+   * Список папок при этом рисовался правильно, из templateFolders, поэтому
+   * снаружи выглядело как «карточка есть, а внутри пусто».
+   *
+   * Добавляем ТОЛЬКО недостающие ключи и не трогаем уже собранные: в них лежат
+   * загруженные тренером видео (videoId/videoUrl) и переименованные слоты,
+   * пересборка целиком их бы стёрла. Ждём slotsReady: эффект-загрузчик
+   * заканчивается setFolderSlots(loaded) и иначе затёр бы добавленное.
+   */
+  const folderKeysSig=JSON.stringify(folderKeys)
+  useEffect(()=>{
+    if(!slotsReady)return
+    setFolderSlots(prev=>{
+      const missing=folderKeys.filter(k=>!prev[k])
+      if(!missing.length)return prev
+      return {...prev,...makeDefaultFolderSlots(missing,templateStructures)}
+    })
+  },[folderKeysSig,slotsReady])
+
   // Сохраняем метаданные (без videoUrl) при изменении
   useEffect(()=>{
     if(!slotsReady)return
@@ -4481,7 +4507,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             </div>
           </div>
           <div style={{ flex:1, overflowY:'auto', padding:'14px 16px 32px' }}>
-            {folderSlots[openFolder].map(slot=>{
+            {(folderSlots[openFolder]||[]).map(slot=>{
               const ec=slot.exercises.length
               const vc=slot.exercises.filter(e=>e.videoId).length
               // Отметка выполнения — по записям workouts с именем этого
