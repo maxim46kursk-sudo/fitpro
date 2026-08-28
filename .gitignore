@@ -86,3 +86,8 @@ relay-key.txt
 .dev.vars
 .wrangler
 tools/egress-worker/.wrangler
+
+# Рисованные ролики к упражнениям (Workout Guide, CC BY-SA 4.0) — архив и
+# распаковка. Файлы уезжают в бакеты Supabase, в репозитории им делать нечего.
+assets-exercise-anim.zip
+assets-exercise-anim/
