@@ -427,17 +427,50 @@ function mergeTemplates(rows) {
     const r = byKey.get(key)
     if (r?.hidden) return
     folders.push({ key, ...folderTitle((r && r.display_name) || key, r && r.subtitle), context: (r && r.context) || FOLDER_CTX_FALLBACK(key), sort: r ? r.sort : i,
-      icon: (r && r.icon) || FOLDER_ICONS[key] || '', description: (r && r.description) || FOLDER_DESCRIPTIONS[key] || '' })
+      groupKey: (r && r.group_key) || '', icon: (r && r.icon) || FOLDER_ICONS[key] || '', description: (r && r.description) || FOLDER_DESCRIPTIONS[key] || '' })
     structures[key] = (r && Array.isArray(r.structure) && r.structure.length) ? r.structure : PROGRAMS_MAP[key]
   })
   for (const r of rows || []) {
     if (seen.has(r.key) || r.hidden) continue
     folders.push({ key: r.key, ...folderTitle(r.display_name || r.key, r.subtitle), context: r.context || 'zal', sort: r.sort ?? 0,
-      icon: r.icon || '', description: r.description || '' })
+      groupKey: r.group_key || '', icon: r.icon || '', description: r.description || '' })
     structures[r.key] = Array.isArray(r.structure) ? r.structure : []
   }
   folders.sort((a, b) => a.sort - b.sort)
-  return { folders: folders.map(({ key, title, subtitle, label, context, sort, icon, description }) => ({ key, title, subtitle, label, context, sort, icon, description })), structures }
+  const flat = folders.map(({ key, title, subtitle, label, context, sort, icon, description, groupKey }) => ({ key, title, subtitle, label, context, sort, icon, description, groupKey }))
+  // folders — для списка программ (группы одной карточкой), all — плоский
+  // список по одной записи на КЛЮЧ шаблона. Всё, что работает по ключу
+  // (слоты, заголовок открытой программы, контекст видео, подпись для ИИ),
+  // берёт запись из all: вариант группы там есть, а в folders его нет.
+  return { folders: groupFolders(flat), all: flat, structures }
+}
+
+// Программы с одинаковым group_key показываются ОДНОЙ карточкой, уровень
+// выбирается переключателем внутри: двумя карточками «Масса · новичок» и
+// «Масса · средний уровень» читались как две разные программы.
+//
+// Ключ группы — ключ ПЕРВОГО варианта, своего не выдумываем: за ключи держатся
+// profiles.program и названия тренировок в workouts. Склейка идёт по уже
+// отсортированному списку, поэтому варианты идут по sort.
+function groupFolders(list) {
+  const out = []
+  const byGroup = new Map()
+  for (const f of list) {
+    if (!f.groupKey) { out.push({ ...f, variants: [] }); continue }
+    const g = byGroup.get(f.groupKey)
+    const variant = { key: f.key, label: f.subtitle || f.title }
+    if (!g) {
+      const head = { ...f, variants: [variant] }
+      byGroup.set(f.groupKey, head)
+      out.push(head)
+      continue
+    }
+    g.variants.push(variant)
+  }
+  // Вторая строка карточки группы — перечисление уровней («новичок, средний
+  // уровень»), а не подзаголовок первого варианта.
+  for (const g of byGroup.values()) g.subtitle = g.variants.map(v => v.label).filter(Boolean).join(', ')
+  return out
 }
 
 // Две строки названия программы и они же одной строкой. Отдельной функцией,
@@ -2317,14 +2350,19 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   // Шаблоны программ — из базы (program_templates) с запасным вариантом из кода.
   // folderKeys — КЛЮЧИ (profiles.program, префиксы workouts держатся за них),
   // folderLabel — как показать ключ на экране.
-  const { folders: templateFolders, structures: templateStructures, reload: reloadTemplates } = useContext(TemplatesContext)
-  const folderKeys = templateFolders.map(f=>f.key)
-  const folderLabel = key => (templateFolders.find(t=>t.key===key)||{}).label || key
+  // templateFolders — карточки списка (группа = одна карточка), templateAll —
+  // по записи на КЛЮЧ шаблона. По ключу работает всё остальное: слоты, заголовок
+  // открытой программы, контекст видео. Вариант группы есть только в templateAll.
+  const { folders: templateFolders, all: templateAll, structures: templateStructures, reload: reloadTemplates } = useContext(TemplatesContext)
+  const folderKeys = templateAll.map(f=>f.key)
+  const folderLabel = key => (templateAll.find(t=>t.key===key)||{}).label || key
   // Иконка и описание программы — из program_templates (mergeTemplates уже
   // подставил запасной вариант зашитым ключам). Имени иконки нет в наборе
   // (опечатка в базе, иконку выпилили) → 'dumbbell', чтобы список не падал.
-  const folderIcon = key => { const n=(templateFolders.find(t=>t.key===key)||{}).icon; return PROGRAM_ICONS.includes(n)?n:'dumbbell' }
-  const folderDescription = key => (templateFolders.find(t=>t.key===key)||{}).description || ''
+  const folderIcon = key => { const n=(templateAll.find(t=>t.key===key)||{}).icon; return PROGRAM_ICONS.includes(n)?n:'dumbbell' }
+  const folderDescription = key => (templateAll.find(t=>t.key===key)||{}).description || ''
+  // Карточка группы, в которую входит ключ (или сама программа, если группы нет).
+  const folderGroup = key => templateFolders.find(g=>g.key===key||(g.variants||[]).some(v=>v.key===key))
   // Редактор шаблона (тренер): {key,isNew,initialDisplayName,initialContext,initialSort} | null
   const [templateEditor,setTemplateEditor]=useState(null)
   // После публикации: перечитать шаблоны (метки/label/контекст/новые папки) и
@@ -2344,7 +2382,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     if(!name)return
     let key=slugifyKey(name), n=2
     while(folderKeys.includes(key)){key=`${slugifyKey(name)}-${n++}`}
-    const maxSort=templateFolders.reduce((m,f)=>Math.max(m,typeof f.sort==='number'?f.sort:0),-1)
+    const maxSort=templateAll.reduce((m,f)=>Math.max(m,typeof f.sort==='number'?f.sort:0),-1)
     setTemplateEditor({key,isNew:true,initialDisplayName:name.slice(0,100),initialContext:'zal',initialSort:maxSort+1})
   }
   // Подсказка «нужен платный пакет» — показывается модалкой поверх списка слотов.
@@ -2455,7 +2493,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const isTrainer=userRole==='trainer'
   const [videoPickerFor,setVideoPickerFor]=useState(null) // имя упражнения или null
   // Контекст видео по папке: домашние → 'dom', остальные шаблоны → 'zal'.
-  const folderToContext=folder=>(templateFolders.find(t=>t.key===folder)||{}).context||FOLDER_CTX_FALLBACK(folder)
+  const folderToContext=folder=>(templateAll.find(t=>t.key===folder)||{}).context||FOLDER_CTX_FALLBACK(folder)
   // Контекст активной тренировки — запоминаем в момент запуска: на экране
   // активной тренировки папки уже нет под рукой. null = общий ролик (тренерская
   // программа / возобновление без известной папки).
@@ -4507,6 +4545,19 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             </div>
           </div>
           <div style={{ flex:1, overflowY:'auto', padding:'14px 16px 32px' }}>
+            {/* Уровни программы одной группы: переключатель меняет openFolder на
+                ключ выбранного шаблона, дальше всё (слоты, отметки о
+                прохождении, названия тренировок, выбор программы клиентом)
+                работает по этому ключу, как у любой обычной программы. */}
+            {(folderGroup(openFolder)?.variants||[]).length>1&&(
+              <div style={{ display:'flex', gap:6, marginBottom:12, background:SURF, borderRadius:12, padding:4 }}>
+                {folderGroup(openFolder).variants.map(v=>(
+                  <button key={v.key} data-testid={`program-variant-${v.key}`} onClick={()=>setOpenFolder(v.key)}
+                    style={{ flex:1, padding:'9px 6px', fontSize:13, fontWeight:700, borderRadius:9, cursor:'pointer', border:'none', minHeight:'unset',
+                      background:openFolder===v.key?PUR:'transparent', color:openFolder===v.key?'#fff':TXT3 }}>{v.label}</button>
+                ))}
+              </div>
+            )}
             {(folderSlots[openFolder]||[]).map(slot=>{
               const ec=slot.exercises.length
               const vc=slot.exercises.filter(e=>e.videoId).length
@@ -4777,7 +4828,9 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       {/* ── Уровень 0: список папок ── */}
       {templateFolders.map(t=>{
         const folder=t.key
-        const isSelected=selectedProgram===folder
+        // У группы карточка одна, а выбрать клиент мог любой её уровень —
+        // иначе галочка пропадала бы, стоило переключиться на «средний».
+        const isSelected=selectedProgram===folder||(t.variants||[]).some(v=>v.key===selectedProgram)
         return (
           <HubCard key={folder}
             testId={`program-folder-${folder}`}
@@ -5580,6 +5633,14 @@ const EQ_TIPS={
   'Гиря':'Работай от бедра, держи спину нейтральной на протяжении всего движения.',
 }
 
+// Контексты шаблона — какой ролик показывать упражнениям ВНУТРИ программы:
+// зал, дом или рисованные ролики ('ris', мужские программы «Масса»). Список
+// один на редактор и на нормализацию: пока проверка была написана как
+// «dom → dom, иначе zal», любой новый контекст молча сбрасывался в зал при
+// первом же сохранении шаблона.
+const TEMPLATE_CONTEXTS=[['zal','Зал'],['dom','Дом'],['ris','рисунки']]
+const normTemplateContext=v=>TEMPLATE_CONTEXTS.some(([k])=>k===v)?v:'zal'
+
 // Редактор шаблона программы (ТОЛЬКО тренер). Переиспользует вёрстку карточки
 // упражнения из ProgramEditor (сетка КГ/ПОВТ, «+ Подход», «+ Упражнение», пикер,
 // тоннаж). Формат подходов у шаблонов и программ клиента одинаков —
@@ -5590,12 +5651,16 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
   const [loading,setLoading]=useState(!isNew)
   const [loadError,setLoadError]=useState(false)
   const [displayName,setDisplayName]=useState(initialDisplayName)
-  const [context,setContext]=useState(initialContext==='dom'?'dom':'zal')
+  const [context,setContext]=useState(normTemplateContext(initialContext))
   const [sort,setSort]=useState(initialSort)
   // Вторая строка названия: на карточке программы имя двухэтажное
   // («Full body» / «румынская тяга»), в заголовках и промте ИИ — одной строкой
   // (см. folderTitle в mergeTemplates).
   const [subtitle,setSubtitle]=useState('')
+  // Группа программ (program_templates.group_key) — только показываем: в
+  // редакторе её не меняют, а знать, что правишь один уровень из нескольких,
+  // тренеру нужно. save_template колонку не передаёт и не затирает.
+  const [groupKey,setGroupKey]=useState('')
   // Иконка и описание программы — колонки program_templates, а не код: новая
   // программа заводится тренером целиком отсюда, без правки App.jsx и выкладки.
   const [icon,setIcon]=useState('')
@@ -5616,14 +5681,15 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
   useEffect(()=>{
     if(isNew){setLoading(false);return}
     let cancelled=false
-    supabase.from('program_templates').select('display_name,subtitle,context,sort,structure,icon,description').eq('key',templateKey).maybeSingle().then(({data,error})=>{
+    supabase.from('program_templates').select('display_name,subtitle,context,sort,structure,icon,description,group_key').eq('key',templateKey).maybeSingle().then(({data,error})=>{
       if(cancelled)return
       if(error){console.error('Шаблон: ошибка загрузки:',error);setLoadError(true);setLoading(false);return}
       skipDirtyRef.current=true
       setDisplayName(data?.display_name||'')
-      setContext(data?.context==='dom'?'dom':'zal')
+      setContext(normTemplateContext(data?.context))
       if(typeof data?.sort==='number')setSort(data.sort)
       setSubtitle(typeof data?.subtitle==='string'?data.subtitle:'')
+      setGroupKey(typeof data?.group_key==='string'?data.group_key:'')
       setIcon(typeof data?.icon==='string'?data.icon:'')
       setDescription(typeof data?.description==='string'?data.description:'')
       const raw=Array.isArray(data?.structure)?data.structure:[]
@@ -5739,7 +5805,7 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
             <input value={subtitle} onChange={e=>setSubtitle(e.target.value)} maxLength={60} placeholder="например: румынская тяга"
               style={{ width:'100%', padding:'9px 12px', fontSize:14, borderRadius:9, border:`1.5px solid ${HAIR}`, boxSizing:'border-box', outline:'none', color:TXT }}
               onFocus={e=>e.target.style.borderColor=PUR} onBlur={e=>e.target.style.borderColor=HAIR} />
-            <div style={{ fontSize:10, color:TXT3, marginTop:3 }}>На карточке — помельче под названием. Пусто — карточка покажет одно название.</div>
+            <div style={{ fontSize:10, color:TXT3, marginTop:3 }}>На карточке — помельче под названием. Пусто — карточка покажет одно название.{groupKey?` Группа «${groupKey}»: в списке программ уровни идут одной карточкой, эта строка — подпись уровня.`:''}</div>
           </div>
           {/* Иконка программы: набор PROGRAM_ICONS из programs.js, выбранная подсвечена. */}
           <div style={{ marginBottom:12 }}>
@@ -5764,7 +5830,7 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
             <div style={{ fontSize:10, color:TXT3, marginTop:3 }}>Показывается в карточке «?» в списке программ. {description.length}/300</div>
           </div>
           <div style={{ display:'flex', gap:8, marginBottom:12 }}>
-            {[['zal','Зал'],['dom','Дом']].map(([v,l])=>(
+            {TEMPLATE_CONTEXTS.map(([v,l])=>(
               <button key={v} onClick={()=>setContext(v)} style={{ flex:1, padding:'9px', fontSize:13, fontWeight:600, borderRadius:9, cursor:'pointer', border:`1px solid ${context===v?PUR:HAIR}`, background:context===v?'#EEEDFE':'transparent', color:context===v?'#3C3489':TXT3 }}>{l}</button>
             ))}
           </div>
@@ -10759,7 +10825,7 @@ export default function App() {
   const templatesRetryRef=useRef(null)
   const loadTemplates=(attempt=0)=>{
     if(templatesRetryRef.current){clearTimeout(templatesRetryRef.current);templatesRetryRef.current=null}
-    supabase.from('program_templates').select('key,display_name,subtitle,sort,context,structure,hidden,icon,description').then(({data,error})=>{
+    supabase.from('program_templates').select('key,display_name,subtitle,sort,context,structure,hidden,icon,description,group_key').then(({data,error})=>{
       if(error||data==null){
         console.error('Шаблоны: ошибка загрузки program_templates'+(error?`: ${error.message||error}`:' — пустой ответ'))
         const DELAYS=[1500,4000,9000]
@@ -10779,7 +10845,7 @@ export default function App() {
   // шаблонов, что и список папок (label по key). Сентинел «программа тренера»
   // → человекочитаемая строка. Не выбрана (пусто) → null (в промте прежний
   // запасной вариант). Для ИИ-ассистента, чтобы он называл программу как на экране.
-  const programLabelOf=key=>!key?null:(key===TRAINER_PROGRAM_KEY?'Персональная программа от тренера':String((templatesValue.folders.find(f=>f.key===key)||{}).label||key).replace(/\s+/g,' ').trim())
+  const programLabelOf=key=>!key?null:(key===TRAINER_PROGRAM_KEY?'Персональная программа от тренера':String((templatesValue.all.find(f=>f.key===key)||{}).label||key).replace(/\s+/g,' ').trim())
   const [userRole,setUserRole]=useState(()=>localStorage.getItem('fitpro_role')||'client')
   // Согласие на обработку ПДн (152-ФЗ). consentLoaded — «ответ из базы получен»,
   // до него приложение не рендерим вообще, иначе на секунду мелькнёт контент

@@ -2194,7 +2194,11 @@ export default async function handler(req, res) {
       structure.push(slot)
     }
     const displayName = req.body?.display_name != null ? (String(req.body.display_name).trim().slice(0, 100) || null) : null
-    const context = ['zal', 'dom'].includes(req.body?.context) ? req.body.context : 'zal'
+    // Контекст программы — какой ролик показывать её упражнениям: 'zal', 'dom'
+    // или 'ris' (рисованные ролики мужских программ). У 'ris' смысл тот же, что
+    // у остальных: внутри такой программы у упражнения берётся рисунок, а в
+    // библиотеке и других программах остаётся снятый тренером ролик.
+    const context = ['zal', 'dom', 'ris'].includes(req.body?.context) ? req.body.context : 'zal'
     const sortParsed = parseInt(req.body?.sort, 10)
     const sort = Number.isFinite(sortParsed) ? sortParsed : 0
     // Иконка и описание программы. Раньше жили в коде (FOLDER_ICONS /
