@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createTracker, sanitizeProps, isKnownEvent, EVENT_NAMES, MAX_STR, MAX_BATCH } from './track.js'
+import { createTracker, sanitizeProps, isKnownEvent, setAuth, EVENT_NAMES, MAX_STR, MAX_BATCH } from './track.js'
 
 // Фейки вместо браузера: память — обычные объекты, отправка — массив, время и
 // таймеры — под нашим контролем. Модуль про поведение людей, а не про сеть,
@@ -151,5 +151,30 @@ describe('журнал событий: форма записи', () => {
   it('известность имени проверяется отдельной функцией', () => {
     expect(isKnownEvent('workout_finish')).toBe(true)
     expect(isKnownEvent('workout_finished')).toBe(false)
+  })
+})
+
+describe('журнал событий: личность через заголовок, а не куку', () => {
+  it('setAuth принимает функцию и молча игнорирует мусор', () => {
+    expect(() => setAuth(() => 'tok')).not.toThrow()
+    expect(() => setAuth('строка')).not.toThrow()
+    expect(() => setAuth(null)).not.toThrow()
+  })
+
+  it('падение геттера токена не роняет отправку', () => {
+    const h = harness()
+    setAuth(() => { throw new Error('сессия протухла') })
+    expect(() => { h.tr.track('app_open'); h.tick() }).not.toThrow()
+    expect(h.all().length).toBe(1)
+    setAuth(null)
+  })
+
+  it('в самом событии токена нет — личность ставит сервер', () => {
+    const h = harness()
+    h.tr.track('workout_start', { key: 'massa', slot: 1 })
+    h.tick()
+    const e = h.all()[0]
+    expect(Object.keys(e)).toEqual(['name', 'ts', 'anon', 'sess', 'path', 'props'])
+    expect(JSON.stringify(e)).not.toMatch(/token|Bearer|authorization/i)
   })
 })

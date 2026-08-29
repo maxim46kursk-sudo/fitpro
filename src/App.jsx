@@ -12,7 +12,7 @@ import { logError } from './logError'
 // идёт пачкой и «бросил-забыл». Поэтому его можно ставить прямо в обработчики
 // и эффекты, не думая про await, порядок и сбои сети. flush() досылает
 // накопленное при уходе со страницы.
-import { track, flush as flushEvents } from './track.js'
+import { track, flush as flushEvents, setAuth as setEventsAuth } from './track.js'
 import { FOLDERS, PROGRAMS_MAP, PROGRAM_ICONS, EXERCISES, EXERCISE_TYPE, isOneSidedExercise, countCompletedProgramSlots, isProgramFullyCompleted } from './programs.js'
 import { oneRepMax, weightForReps, roundToPlate, percentTable, plateStep } from './oneRepMax.js'
 // Движок прогрессии (1ПМ) — врезан в кнопку "▶ Начать тренировку" внутри
@@ -316,28 +316,6 @@ import './App.css'
  */
 const evPath=()=>{ try{ return window.location.pathname }catch{ return null } }
 
-/**
- * СЕССИЯ ДЛЯ ПАЧКИ СОБЫТИЙ — ЗАЧЕМ ЗДЕСЬ COOKIE.
- *
- * Приёмник берёт личность только из подписанного токена и никогда из тела
- * запроса (см. eventsUserId в api/set-exercise.js). Обычные ручки получают его
- * заголовком Authorization, но пачку событий шлёт sendBeacon — единственный
- * способ, переживающий уход со страницы, — а заголовков он не умеет вовсе.
- * Остаётся cookie: свой origin, Path=/api, SameSite=Lax.
- *
- * Ничего нового этим не раскрывается: тот же токен и так лежит в localStorage
- * этой вкладки, а ходит cookie только на наш же /api. Обновляется вместе с
- * сессией (applySession зовётся и на входе, и на продлении токена), стирается
- * на выходе — иначе следующий человек за этим телефоном считался бы прежним.
- */
-const setEventsCookie=(token)=>{
-  try{
-    const secure=window.location.protocol==='https:'?'; Secure':''
-    document.cookie=token
-      ?`fitpro_ev=${encodeURIComponent(token)}; Path=/api; Max-Age=3600; SameSite=Lax${secure}`
-      :`fitpro_ev=; Path=/api; Max-Age=0; SameSite=Lax${secure}`
-  }catch{ /* cookie запрещены — событие просто станет гостевым */ }
-}
 
 // Палитра переехала в src/theme.js — она нужна не только App.jsx, но и
 // вынесенным экранам, которые раньше держали её копии. Значения при переносе
@@ -10906,6 +10884,8 @@ export default function App() {
   // один раз с пустыми зависимостями и иначе видели бы authError навсегда false.
   const authErrorRef=useRef(false)
   useEffect(()=>{authErrorRef.current=authError},[authError])
+  /** Текущий access token — только для заголовка пачки событий, см. applySession. */
+  const evTokenRef=useRef(null)
   // Взводится событием PASSWORD_RECOVERY из onAuthStateChange (переход по
   // ссылке "Восстановление пароля" из письма) — пока true, показываем
   // ResetPasswordView вместо обычного входа/приложения, см. ниже.
@@ -11524,8 +11504,13 @@ export default function App() {
     }
     // После возможной чистки выше — иначе clearFitproData() стёр бы и сам этот ключ.
     if(incomingId)localStorage.setItem('fitpro_owner_uid',incomingId)
-    // Токен для пачки событий — рядом с сессией, см. setEventsCookie выше.
-    setEventsCookie(session?.access_token??null)
+    /**
+     * Личность для журнала событий. Не строка, а ГЕТТЕР: токен меняется на
+     * входе, на продлении и на выходе, а пачка уходит позже — со строкой
+     * журнал носил бы тот токен, что был на момент подписки.
+     */
+    evTokenRef.current=session?.access_token??null
+    setEventsAuth(session?()=>evTokenRef.current:null)
     setUser(mergeUserWithProfile(session?.user??null))
   }
 
@@ -12059,6 +12044,11 @@ export default function App() {
     // к константе в src/supabase.js.
     localStorage.removeItem(SUPABASE_AUTH_STORAGE_KEY)
     clearFitproData()
+    // Журнал забывает личность СРАЗУ, не дожидаясь SIGNED_OUT: signOut ниже
+    // best-effort, и при сетевом сбое события с этой вкладки уехали бы под
+    // уже вышедшим человеком.
+    evTokenRef.current=null
+    setEventsAuth(null)
     supabase.auth.signOut({ scope: 'local' }).catch(err => console.warn('signOut (best-effort, не блокирует выход):', err))
   }
 
@@ -12075,6 +12065,11 @@ export default function App() {
     Object.keys(localStorage).filter(k=>k.startsWith('sb-')).forEach(k=>localStorage.removeItem(k))
     localStorage.removeItem(SUPABASE_AUTH_STORAGE_KEY)
     clearFitproData()
+    // Журнал забывает личность СРАЗУ, не дожидаясь SIGNED_OUT: signOut ниже
+    // best-effort, и при сетевом сбое события с этой вкладки уехали бы под
+    // уже вышедшим человеком.
+    evTokenRef.current=null
+    setEventsAuth(null)
     supabase.auth.signOut({ scope: 'local' }).catch(err => console.warn('signOut после удаления аккаунта (best-effort):', err))
   }
 

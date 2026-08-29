@@ -1995,26 +1995,20 @@ const evCut = (v, max) => {
 }
 
 /**
- * КТО ЭТО БЫЛ — ТОЛЬКО ИЗ ПОДПИСАННОГО ТОКЕНА.
+ * КТО ЭТО БЫЛ — ТОЛЬКО ИЗ ЗАГОЛОВКА Authorization.
  *
- * Два места, откуда токен может приехать, и оба — сессия, а не тело запроса:
- *  • заголовок Authorization — обычный путь всех ручек этого файла;
- *  • cookie fitpro_ev — путь пачки событий. sendBeacon переживает уход со
- *    страницы (ради этого он и взят), но заголовков не умеет вовсе, а уход со
- *    страницы — как раз тот момент, ради которого журнал и заводился. Cookie
- *    ставит App.jsx рядом с сессией: свой origin, Path=/api, SameSite=Lax.
+ * Ни тела запроса, ни cookie: тело — чужой ввод, а cookie браузер прикладывал
+ * бы ко ВСЕМ запросам к /api и стала бы постоянным носителем доступа там, где
+ * его раньше не было. Ради счётчика посещений это плохой размен. Клиент шлёт
+ * пачку обычным fetch с keepalive (см. src/track.js) — он переживает уход со
+ * страницы не хуже sendBeacon, но заголовки умеет.
  *
  * Токен не разбираем «на глаз» — спрашиваем у Supabase, чей он. Не ответила
  * или токен протух — считаем гостем и пишем null: событие важнее личности.
  */
 async function eventsUserId(req) {
-  let token = null
   const auth = String(req.headers?.authorization || '')
-  if (auth.startsWith('Bearer ')) token = auth.slice(7).trim()
-  if (!token) {
-    const m = /(?:^|;\s*)fitpro_ev=([^;]+)/.exec(String(req.headers?.cookie || ''))
-    if (m) { try { token = decodeURIComponent(m[1]) } catch { token = m[1] } }
-  }
+  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : ''
   if (!token) return null
   try {
     const { data, error } = await supabase.auth.getUser(token)

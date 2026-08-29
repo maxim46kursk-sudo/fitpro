@@ -156,6 +156,22 @@ export function createTracker({ post, store, sess, now = Date.now, schedule }) {
   return { track, flush, pending: () => queue.length }
 }
 
+/**
+ * Как приложение сообщает журналу, кто сейчас вошёл.
+ *
+ * Токен НЕ хранится здесь и не кладётся ни в какую cookie: cookie
+ * прикладывалась бы браузером ко всем запросам к /api и стала бы постоянным
+ * носителем доступа там, где его раньше не было. Ради счётчика посещений это
+ * плохой размен. Вместо неё — обычный заголовок и fetch с keepalive: он, как и
+ * sendBeacon, переживает уход со страницы (ограничение там 64 КБ на тело, у
+ * нас пачка в пару килобайт), но заголовки умеет.
+ *
+ * Передаётся функция, а не строка: токен меняется при входе и выходе, и
+ * журнал должен видеть текущий, а не тот, что был на момент загрузки.
+ */
+let authGetter = null
+export function setAuth(fn) { authGetter = typeof fn === 'function' ? fn : null }
+
 /** Ленивый одиночка на браузерных глобалях. Всё в try — счётчик не имеет права уронить приложение. */
 let singleton = null
 function browserTracker() {
@@ -170,15 +186,16 @@ function browserTracker() {
     schedule: (fn, ms) => { const t = setTimeout(fn, ms); return () => clearTimeout(t) },
     post: body => {
       try {
-        const json = JSON.stringify(body)
-        // sendBeacon переживает уход со страницы; fetch — запасной вариант
-        if (globalThis.navigator?.sendBeacon) {
-          const ok = navigator.sendBeacon(ENDPOINT, new Blob([json], { type: 'application/json' }))
-          if (ok) return
-        }
+        const headers = { 'Content-Type': 'application/json' }
+        let token = null
+        try { token = authGetter ? authGetter() : null } catch { token = null }
+        if (token) headers.Authorization = `Bearer ${token}`
         fetch(ENDPOINT, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: json, keepalive: true,
+          method: 'POST', headers,
+          body: JSON.stringify(body),
+          keepalive: true,
+          // Журнал не читает ответ и не должен таскать никаких кук
+          credentials: 'omit',
         }).catch(() => {})
       } catch { /* молчим */ }
     },
