@@ -18,6 +18,11 @@ import { logServerError, reportError } from './_logError.js'
 // на мост (см. api/_egress.js), на Vercel остаются как есть — там оба API
 // доступны напрямую. Файл с подчёркиванием — не serverless-функция.
 import { egressFetch } from './_egress.js'
+// Список событий журнала и барьер на личные данные — ОДИН на клиент и сервер
+// (src/track.js). Файл чистый: браузерных зависимостей у него нет, глобали он
+// трогает только внутри своих функций, поэтому импортируется сюда как есть.
+// Держать здесь вторую копию списка нельзя: она разъедется в первый же день.
+import { EVENT_NAMES, sanitizeProps } from '../src/track.js'
 
 // Набор колонок карточки, который отдаём клиенту. source в списке обязателен:
 // от него зависит и решение сервера (идти ли за обновлением в OFF), и пометка
@@ -50,6 +55,10 @@ const CARD_COLUMNS = 'barcode,name,brand,kcal100,p100,c100,f100,source'
 //                             сверки ключа дело не дошло бы никогда. У неё,
 //                             как и у barcode, свой метод и своя логика
 //                             доступа — значит и место то же.
+//      ?action=events       — POST, БЕЗ авторизации, та же группа: журнал
+//                             событий приложения (src/track.js). Личность,
+//                             если она есть, берётся из сессии; у гостя её
+//                             нет по построению, и это половина воронки.
 //   2. ?action=save-product — POST, нужен токен, роль НЕ проверяется. Стоит
 //                             после авторизации, но ВЫШЕ проверки роли: это
 //                             ручка обычного пользователя, а не тренера.
@@ -1940,6 +1949,151 @@ async function handleBoot(req, res) {
   return res.status(200).end()
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// ВЕТКА ЖУРНАЛА СОБЫТИЙ: POST /api/set-exercise?action=events
+//
+// Приёмник своей продуктовой аналитики: клиент — src/track.js, таблица и
+// чтение тренером — sql/2026-08-29_app_events.sql. Наружу не уходит ничего,
+// пишем в свою таблицу своим service_role.
+//
+// ПУБЛИЧНАЯ ПО ПОСТРОЕНИЮ. Гость — половина воронки, и главный вопрос («люди
+// заходят — где именно уходят») задан именно про него. Требуй ветка токен —
+// верх воронки не записывался бы вовсе, ровно как было у motion-log до
+// появления гостевой ветки выше. Защита та же, что у остальных публичных
+// ручек: лимит по адресу и жёсткая проверка каждого поля.
+//
+// КЛИЕНТ СЕРВЕРУ НЕ УКАЗ. Всё, что приехало, — чужой ввод:
+//  • имя события сверяем со списком EVENT_NAMES; незнакомое молча отбрасываем;
+//  • props прогоняем через sanitizeProps ЕЩЁ РАЗ. Барьер на личные данные
+//    обязан стоять и здесь: на клиенте его обходит правка кода в консоли, а
+//    платит за это таблица, куда свободный текст человека класть нельзя;
+//  • длины режем сами;
+//  • ЛИЧНОСТЬ БЕРЁМ ИЗ СЕССИИ И НИКОГДА ИЗ ТЕЛА. Нет сессии — null, это гость.
+//
+// ОТВЕТ ВСЕГДА 204 И ПУСТОЙ: это счётчик, а не API. Ни «принято 12 из 40», ни
+// «неизвестное имя» — отвечать нечего, а sendBeacon ответа и не читает.
+// Единственное исключение — 429 ограничителя: он отвечает сам.
+// ══════════════════════════════════════════════════════════════════════════
+
+const EVENT_KNOWN = new Set(EVENT_NAMES)
+/** Ровно столько, сколько шлёт клиент (MAX_BATCH в src/track.js). */
+const EVENTS_MAX = 40
+const EVENT_PATH_MAX = 60
+const EVENT_ID_MAX = 64
+/**
+ * Насколько метке времени клиента позволено разойтись с нашей. Метка нужна
+ * клиентская: пачка уходит с задержкой, и порядок шагов внутри захода известен
+ * только там. Но часы на телефоне врут и переводятся руками, поэтому всё, что
+ * дальше суток от «сейчас», заменяем серверным временем, а не верим на слово.
+ */
+const EVENT_TS_SLACK_MS = 24 * 60 * 60 * 1000
+
+const evCut = (v, max) => {
+  if (typeof v !== 'string') return null
+  const s = v.trim()
+  return s ? s.slice(0, max) : null
+}
+
+/**
+ * КТО ЭТО БЫЛ — ТОЛЬКО ИЗ ПОДПИСАННОГО ТОКЕНА.
+ *
+ * Два места, откуда токен может приехать, и оба — сессия, а не тело запроса:
+ *  • заголовок Authorization — обычный путь всех ручек этого файла;
+ *  • cookie fitpro_ev — путь пачки событий. sendBeacon переживает уход со
+ *    страницы (ради этого он и взят), но заголовков не умеет вовсе, а уход со
+ *    страницы — как раз тот момент, ради которого журнал и заводился. Cookie
+ *    ставит App.jsx рядом с сессией: свой origin, Path=/api, SameSite=Lax.
+ *
+ * Токен не разбираем «на глаз» — спрашиваем у Supabase, чей он. Не ответила
+ * или токен протух — считаем гостем и пишем null: событие важнее личности.
+ */
+async function eventsUserId(req) {
+  let token = null
+  const auth = String(req.headers?.authorization || '')
+  if (auth.startsWith('Bearer ')) token = auth.slice(7).trim()
+  if (!token) {
+    const m = /(?:^|;\s*)fitpro_ev=([^;]+)/.exec(String(req.headers?.cookie || ''))
+    if (m) { try { token = decodeURIComponent(m[1]) } catch { token = m[1] } }
+  }
+  if (!token) return null
+  try {
+    const { data, error } = await supabase.auth.getUser(token)
+    if (error) return null
+    return data?.user?.id ?? null
+  } catch {
+    return null
+  }
+}
+
+async function handleEvents(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+  if (req.method !== 'POST') return res.status(204).end()
+
+  /**
+   * ПО АДРЕСУ, как у воронки и лендинговой ветки: личности тут по построению
+   * может не быть. Триста в минуту — тот же потолок, и здесь он с большим
+   * запасом: события уходят ПАЧКАМИ до сорока штук раз в четыре секунды, то
+   * есть живой человек тратит за визит десятки запросов, а не сотни.
+   *
+   * ЧЕМ ПЛАТИМ: с одного адреса можно насыпать 300×40 строк в минуту. Считать
+   * лимит защитой от накрутки нельзя (как и у воронки) — цифры журнала это
+   * оценка поведения, а не учёт денег. Деньги считаются по payments.
+   */
+  if (!rateLimit(req, res, { name: 'events', limit: 300 })) return
+
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!serviceRoleKey) return res.status(204).end()
+
+  /**
+   * ТЕЛО РАЗБИРАЕМ САМИ — та же осторожность, что у маячка загрузки:
+   * sendBeacon шлёт Blob, и разобранный за нас req.body бывает не всегда.
+   */
+  let body = req.body
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body) } catch { body = null }
+  }
+  const incoming = Array.isArray(body?.events) ? body.events.slice(0, EVENTS_MAX) : []
+  if (!incoming.length) return res.status(204).end()
+
+  const userId = await eventsUserId(req)
+  const nowMs = Date.now()
+
+  const rows = []
+  for (const e of incoming) {
+    if (!e || typeof e !== 'object') continue
+    // Незнакомое имя — молча мимо. Список один на клиент и сервер (src/track.js).
+    if (typeof e.name !== 'string' || !EVENT_KNOWN.has(e.name)) continue
+    // session_id — единственное обязательное поле строки: по нему собирается
+    // весь заход. Нет его — строка бесполезна, записывать нечего.
+    const sessionId = evCut(e.sess, EVENT_ID_MAX)
+    if (!sessionId) continue
+    const tsMs = Date.parse(e.ts)
+    const ts = Number.isFinite(tsMs) && Math.abs(tsMs - nowMs) < EVENT_TS_SLACK_MS
+      ? new Date(tsMs).toISOString()
+      : new Date(nowMs).toISOString()
+    rows.push({
+      user_id: userId,
+      anon_id: evCut(e.anon, EVENT_ID_MAX),
+      session_id: sessionId,
+      ts,
+      name: e.name,
+      path: evCut(e.path, EVENT_PATH_MAX),
+      props: sanitizeProps(e.props),
+    })
+  }
+  if (!rows.length) return res.status(204).end()
+
+  try {
+    const db = createClient(SUPABASE_URL, serviceRoleKey)
+    await db.from('app_events').insert(rows)
+  } catch {
+    // Журнал сломался — приложение работает. Молчим, как и все счётчики здесь.
+  }
+  return res.status(204).end()
+}
+
 export default async function handler(req, res) {
   // Развилка ДО всего остального. Ветка штрих-кода опознаётся ТОЛЬКО по
   // query-параметру: существующие вызовы тренерского каталога — это POST на
@@ -1964,6 +2118,10 @@ export default async function handler(req, res) {
   // которой ничего не поднялось, и чем короче и стабильнее адрес, тем меньше
   // поводов ему не доехать.
   if (req.query?.action === 'boot') return handleBoot(req, res)
+  // Журнал событий приложения. Тоже до проверки метода и токена: ветка
+  // публичная по построению — половина воронки это гость, у которого токена
+  // нет и не будет.
+  if (req.query?.action === 'events') return handleEvents(req, res)
   /**
    * Гость, пишущий воронку лендинга. Отличаем по отсутствию токена: у вошедшего
    * человека тот же журнал идёт обычной веткой ниже, со своим user_id, — то

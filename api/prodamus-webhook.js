@@ -465,6 +465,38 @@ export default async function handler(req, res) {
     return res.status(200).send('OK')
   }
 
+  /**
+   * ОПЛАТУ В ЖУРНАЛ СОБЫТИЙ ПИШЕТ КАССА, А НЕ БРАУЗЕР.
+   *
+   * Остальные события воронки (paywall, plans_open, plan_click, pay_start)
+   * ставит клиент — там он единственный, кто знает, что человек сделал. А вот
+   * `pay_done` с клиента не пишется намеренно: браузер знает только то, что
+   * человека увели на страницу оплаты, и обратно он может не вернуться вовсе
+   * (закрыл вкладку, платил с другого устройства, оплата не прошла). Событие
+   * ставится ЗДЕСЬ — там, где деньги действительно зачислены и пакет продлён,
+   * то есть последний шаг воронки означает ровно то, что написано.
+   *
+   * session_id колонка обязательная, а никакой вкладки у вебхука нет — кладём
+   * номер платежа: в app_sessions такая «сессия» честно выглядит одним шагом
+   * от кассы, а не примазывается к чужому заходу.
+   *
+   * Не удалось записать — молчим и НЕ трогаем ответ: деньги начислены, платёж
+   * в журнале payments, и падать из-за строки аналитики этой ручке нельзя.
+   */
+  try {
+    const { error: evErr } = await supabaseAdmin.from('app_events').insert({
+      user_id: userId,
+      anon_id: null,
+      session_id: `prodamus:${orderNum || dedupKey || 'нет'}`.slice(0, 64),
+      name: 'pay_done',
+      path: null,
+      props: { plan: accruePlan.plan },
+    })
+    if (evErr) console.error('Prodamus webhook: событие pay_done не записано:', evErr)
+  } catch (e) {
+    console.error('Prodamus webhook: событие pay_done не записано:', e)
+  }
+
   if (updateFields.coach_id) {
     if (updated?.coach_id === updateFields.coach_id) {
       console.log(`Prodamus webhook: ${userId} привязан к тренеру ${updateFields.coach_id}`)

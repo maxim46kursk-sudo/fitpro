@@ -6,6 +6,13 @@ import { clearDraft as clearTrainerDraft, draftForClient } from './trainerDraft.
 import { supabase, SUPABASE_AUTH_STORAGE_KEY, SUPABASE_URL, SUPABASE_KEY } from './supabase.js'
 import { resolveAuthOutcome, AUTH_OUTCOME } from './authState.js'
 import { logError } from './logError'
+// Журнал событий приложения (src/track.js, приёмник — api/set-exercise.js
+// ?action=events). ГЛАВНОЕ ПРО ВЫЗОВЫ НИЖЕ: track() ничего не ждёт, ничего не
+// возвращает по делу и никогда не бросает — внутри у него всё в try, а отправка
+// идёт пачкой и «бросил-забыл». Поэтому его можно ставить прямо в обработчики
+// и эффекты, не думая про await, порядок и сбои сети. flush() досылает
+// накопленное при уходе со страницы.
+import { track, flush as flushEvents } from './track.js'
 import { FOLDERS, PROGRAMS_MAP, PROGRAM_ICONS, EXERCISES, EXERCISE_TYPE, isOneSidedExercise, countCompletedProgramSlots, isProgramFullyCompleted } from './programs.js'
 import { oneRepMax, weightForReps, roundToPlate, percentTable, plateStep } from './oneRepMax.js'
 // Движок прогрессии (1ПМ) — врезан в кнопку "▶ Начать тренировку" внутри
@@ -28,6 +35,7 @@ import { VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, ef
 import { clampNum } from './nutrition.js'
 import FoodDiary, { OPEN_GOALS_EVENT } from './FoodDiary.jsx'
 import HubCard from './HubCard.jsx'
+
 // Участие в потоке челленджа: прочитанное живёт в памяти модуля, и выход из
 // аккаунта обязан его забыть (см. performLogout).
 import { resetChallengeState } from './challengeSeason.js'
@@ -300,6 +308,36 @@ import { useCloseOnOutsideTap, askConfirm } from './uiCompat.js'
 // видит и попасть в него не может.
 import ConstructorView from './ConstructorView.jsx'
 import './App.css'
+
+/**
+ * Экран для строки журнала событий. ТОЛЬКО pathname: в строке запроса и в
+ * хвосте после решётки ездят токены (ссылка восстановления пароля от Supabase,
+ * ?access=<токен> для входа по приглашению), и класть их в аналитику нельзя.
+ */
+const evPath=()=>{ try{ return window.location.pathname }catch{ return null } }
+
+/**
+ * СЕССИЯ ДЛЯ ПАЧКИ СОБЫТИЙ — ЗАЧЕМ ЗДЕСЬ COOKIE.
+ *
+ * Приёмник берёт личность только из подписанного токена и никогда из тела
+ * запроса (см. eventsUserId в api/set-exercise.js). Обычные ручки получают его
+ * заголовком Authorization, но пачку событий шлёт sendBeacon — единственный
+ * способ, переживающий уход со страницы, — а заголовков он не умеет вовсе.
+ * Остаётся cookie: свой origin, Path=/api, SameSite=Lax.
+ *
+ * Ничего нового этим не раскрывается: тот же токен и так лежит в localStorage
+ * этой вкладки, а ходит cookie только на наш же /api. Обновляется вместе с
+ * сессией (applySession зовётся и на входе, и на продлении токена), стирается
+ * на выходе — иначе следующий человек за этим телефоном считался бы прежним.
+ */
+const setEventsCookie=(token)=>{
+  try{
+    const secure=window.location.protocol==='https:'?'; Secure':''
+    document.cookie=token
+      ?`fitpro_ev=${encodeURIComponent(token)}; Path=/api; Max-Age=3600; SameSite=Lax${secure}`
+      :`fitpro_ev=; Path=/api; Max-Age=0; SameSite=Lax${secure}`
+  }catch{ /* cookie запрещены — событие просто станет гостевым */ }
+}
 
 // Палитра переехала в src/theme.js — она нужна не только App.jsx, но и
 // вынесенным экранам, которые раньше держали её копии. Значения при переносе
@@ -929,7 +967,7 @@ function ClientsView({ setSC, setNav, userId }) {
   // Тост ошибки записи/удаления клиента — тот же паттерн, что showFoodSaveError
   // в DiaryView, своя копия т.к. компонент отдельный.
   const [showClientSaveError,setShowClientSaveError]=useState(false)
-  const flashClientSaveError=()=>{setShowClientSaveError(true);setTimeout(()=>setShowClientSaveError(false),3500)}
+  const flashClientSaveError=()=>{track('error_shown',{kind:'client_save'},evPath());setShowClientSaveError(true);setTimeout(()=>setShowClientSaveError(false),3500)}
 
   // ── Ссылка-приглашение тренера ───────────────────────────────────────────
   // startapp прилетает клиенту как start_param и разбирается в App
@@ -2359,7 +2397,7 @@ const waveCapKg=name=>WAVE_BIG_LIFTS.includes(name)?2.5:((EXERCISE_TYPE[name]||'
 // приходит отдельно, в accessLevel.
 // accessLevel — уровень пакета: тренировки 4–12 в шаблонах требуют БАЗУ (1),
 // в СТАРТ (0) открыты только первые FREE_SLOTS.
-function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, hasTrainer, coachSubExpired = false, accessLevel = 0, openPlans, exerciseVideos = {}, userRole = 'client', setExerciseVideos, onOpenConstructor, onOpenMotion, onOpenChallenge, guest = false }) {
+function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, onWorkoutUpdate, editTarget, onClearEdit, onWorkoutMeta, pendingAction, onClearPendingAction, userId, historyVersion, onMinimize, hasTrainer, coachSubExpired = false, accessLevel = 0, openPlans, exerciseVideos = {}, userRole = 'client', setExerciseVideos, onOpenConstructor, onOpenMotion, onOpenChallenge, guest = false, visible = false }) {
   const { exercises: catalogExercises } = useContext(CatalogContext)
   // Шаблоны программ — из базы (program_templates) с запасным вариантом из кода.
   // folderKeys — КЛЮЧИ (profiles.program, префиксы workouts держатся за них),
@@ -2417,6 +2455,25 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   useCloseOnOutsideTap(exMenuRef,openExMenu!=null?()=>setOpenExMenu(null):null)
   const [folderSlots,setFolderSlots]=useState(()=>makeDefaultFolderSlots(folderKeys,templateStructures))
   const [playVideo,setPlayVideo]=useState(null)
+  /**
+   * ЖУРНАЛ СОБЫТИЙ РАЗДЕЛА. Все три отметки — эффектами на состояние, а не в
+   * обработчиках: путей к каждому из этих состояний по несколько (карточка,
+   * переключатель уровня, возврат из завершённой программы), и в обработчиках
+   * половина бы потерялась.
+   *
+   * `visible` тут обязателен: раздел смонтирован всегда (см. renderMain в App —
+   * иначе не пережила бы свёрнутая тренировка), и без него «список программ
+   * открыт» писалось бы каждому, кто просто запустил приложение.
+   */
+  useEffect(()=>{ if(visible&&!openFolder&&step===null)track('programs_open',null,evPath()) },[visible,openFolder,step])
+  useEffect(()=>{ if(openFolder)track('program_open',{key:openFolder},evPath()) },[openFolder])
+  useEffect(()=>{ if(playVideo)track('video_play',null,evPath()) },[playVideo])
+  /**
+   * Что за тренировка идёт — для отметок о завершении и уходе. Держим отдельно
+   * от слота: к моменту «завершить» openFolder/currentSlot уже могут быть
+   * сброшены, а знать, ЧТО именно человек закончил, нужно именно тогда.
+   */
+  const [evWorkout,setEvWorkout]=useState(null)
   const [editingSlotTitle,setEditingSlotTitle]=useState(null) // {id,title}
   const [editingExercise,setEditingExercise]=useState(null)   // {slotId,exId,name,sets}
   const [slotsReady,setSlotsReady]=useState(false)
@@ -2808,6 +2865,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
      * этот этап не обещал.
      */
     if(!userId){
+      track('program_pick',{key:folder},evPath())
       setSelectedProgram(folder)
       setInfoFolder(null)
       return{ok:true}
@@ -2815,10 +2873,12 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     const{error}=await supabase.from('profiles').update({program:folder}).eq('id',userId)
     if(error){
       console.error('Ошибка сохранения выбранной программы:',error)
+      track('error_shown',{kind:'program_save'},evPath())
       setShowProgramSaveError(true)
       setTimeout(()=>setShowProgramSaveError(false),3500)
       return{ok:false}
     }
+    track('program_pick',{key:folder},evPath())
     setSelectedProgram(folder)
     setInfoFolder(null)
     return{ok:true}
@@ -3187,6 +3247,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         ?await onWorkoutUpdate(editTarget.histIdx,updated)
         :await onWorkoutComplete(updated)
       if(!ok){
+        track('error_shown',{kind:'workout_save'},evPath())
         setShowSaveError(true)
         setTimeout(()=>setShowSaveError(false),3500)
         return
@@ -3200,6 +3261,14 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         setStartedFromPlanId(null)
       }
       if(!(isEditMode&&editTarget)){
+        // Отметка ПОСЛЕ подтверждённой записи, а не по нажатию «Завершить»:
+        // выше есть выход по неудачному сохранению, и считать его завершением
+        // значило бы врать себе в самом важном месте воронки.
+        track('workout_finish',{
+          ...(evWorkout||{}),
+          sets:wExercises.reduce((n,ex)=>n+ex.sets.length,0),
+        },evPath())
+        setEvWorkout(null)
         setShowFinishToast(true)
         setTimeout(()=>setShowFinishToast(false),2500)
       }
@@ -3323,9 +3392,15 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     // "принять программу" и "сменить программу", отложенный старт после
     // конфликта с активной тренировкой). Поставь проверку выше — часть путей
     // осталась бы открытой.
-    if(isSlotLocked(currentSlot.slotNum)){setOpenSlotId(null);setShowSlotLock(true);return}
+    if(isSlotLocked(currentSlot.slotNum)){
+      track('slot_locked',{key:openFolder,slot:currentSlot.slotNum},evPath())
+      track('paywall',{where:'slots'},evPath())
+      setOpenSlotId(null);setShowSlotLock(true);return
+    }
     const exs=currentSlot.exercises.filter(e=>e.name)
     if(exs.length===0)return
+    setEvWorkout({key:openFolder,slot:currentSlot.slotNum})
+    track('workout_start',{key:openFolder,slot:currentSlot.slotNum},evPath())
     setWName(`${openFolder} — тренировка ${currentSlot.slotNum}`)
     // Движок прогрессии (1ПМ, workoutPrompt.js) — та же математика,
     // что использует test-progression-personas.js. ПОВТОРЕНИЯ
@@ -3510,6 +3585,10 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     })
     // Имя уезжает в дневник как есть (workouts.name, см. handleWorkoutComplete)
     // — по нему потом видно, что тренировка была из программы тренера.
+    // В журнале такая тренировка идёт под ключом 'coach': своего шаблона и
+    // номера слота у неё нет, а считать её вместе с программами надо.
+    setEvWorkout({key:'coach'})
+    track('workout_start',{key:'coach'},evPath())
     setWName(`Программа от тренера · ${workout.name||'Тренировка'}`)
     setWExercises(builtExercises)
     setWMode('start')
@@ -3725,7 +3804,13 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               <div style={{ fontSize:12, color:TXT3, marginBottom:18, textAlign:'center', lineHeight:1.5 }}>Можно свернуть — тренировка продолжится в фоне, ничего не потеряется.</div>
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                 <button onClick={minimizeWorkout} style={{ padding:'11px', borderRadius:10, border:'none', background:wColor, color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer' }}>Свернуть</button>
-                <button onClick={exitWorkout} style={{ padding:'11px', borderRadius:10, border:`1px solid ${HAIR}`, background:'none', color:'#ef4444', fontSize:14, fontWeight:600, cursor:'pointer' }}>Выйти без сохранения</button>
+                <button onClick={()=>{
+                  // Именно здесь, а не в exitWorkout: тот же exitWorkout зовётся
+                  // и в конце успешного сохранения, и уход считался бы дважды.
+                  track('workout_quit',{...(evWorkout||{})},evPath())
+                  setEvWorkout(null)
+                  exitWorkout()
+                }} style={{ padding:'11px', borderRadius:10, border:`1px solid ${HAIR}`, background:'none', color:'#ef4444', fontSize:14, fontWeight:600, cursor:'pointer' }}>Выйти без сохранения</button>
                 <button onClick={()=>setShowExitConfirm(false)} style={{ padding:'9px', borderRadius:10, border:'none', background:'none', color:TXT3, fontSize:13, cursor:'pointer' }}>Отмена</button>
               </div>
             </div>
@@ -4084,7 +4169,11 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                   {[1,2,3,4,5].map(n=>(
                                     <div key={n} style={{ display:'flex', flexDirection:'column', alignItems:'center' }}>
                                       <button
-                                        onClick={()=>setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,rating:s.rating===n?'':n}:s)}:x))}
+                                        onClick={()=>{
+                                          // Снятие оценки повторным нажатием событием не считаем.
+                                          if(set.rating!==n)track('rating_set',{value:n},evPath())
+                                          setWExercises(p=>p.map((x,i)=>i===ei?{...x,sets:x.sets.map((s,j)=>j===si?{...s,rating:s.rating===n?'':n}:s)}:x))
+                                        }}
                                         title={n===1?'1 — совсем легко':n===5?'5 — на пределе':String(n)}
                                         style={{ width:44, height:44, borderRadius:12, cursor:'pointer', padding:0,
                                           background:set.rating===n?PUR:SURF2,
@@ -4622,7 +4711,15 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
               const locked=isSlotLocked(slot.slotNum)
               return (
                 <div key={slot.id} data-testid={`program-slot-${slot.slotNum}`} style={{ background:SURF, borderRadius:20, boxShadow:'0 1px 4px rgba(0,0,0,0.07)', marginBottom:10, display:'flex', flexDirection:'column', alignItems:'center', padding:'16px 16px 14px', cursor:'pointer', position:'relative', opacity:locked?0.55:1 }}
-                  onClick={()=>{if(locked){setShowSlotLock(true);return}setOpenSlotId(slot.id)}}>
+                  onClick={()=>{
+                    if(locked){
+                      track('slot_locked',{key:openFolder,slot:slot.slotNum},evPath())
+                      track('paywall',{where:'slots'},evPath())
+                      setShowSlotLock(true);return
+                    }
+                    track('slot_open',{key:openFolder,slot:slot.slotNum},evPath())
+                    setOpenSlotId(slot.id)
+                  }}>
                   <div style={{ position:'absolute', top:14, left:14, width:36, height:36, borderRadius:'50%', background:locked?SURF2:(ec>0?PUR:SURF2), display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:locked?TXT3:(ec>0?'#fff':TXT3) }}>
                     {slot.slotNum}
                   </div>
@@ -5453,7 +5550,7 @@ function NutritionView({ userId }){
   // Тост ошибки записи — тот же паттерн, что showFoodSaveError в DiaryView,
   // своя копия т.к. компонент отдельный.
   const [showLogSaveError,setShowLogSaveError]=useState(false)
-  const flashLogSaveError=()=>{setShowLogSaveError(true);setTimeout(()=>setShowLogSaveError(false),3500)}
+  const flashLogSaveError=()=>{track('error_shown',{kind:'nutrition_save'},evPath());setShowLogSaveError(true);setTimeout(()=>setShowLogSaveError(false),3500)}
 
   const applyToFoodDiary=async(day,date)=>{
     const newEntries=day.meals.map((meal,i)=>({
@@ -5721,7 +5818,7 @@ function TemplateEditor({ templateKey, isNew=false, initialDisplayName='', initi
   const [publishing,setPublishing]=useState(false)
   const [pubState,setPubState]=useState('idle')
   const [toast,setToast]=useState('')
-  const flashErr=m=>{setToast(m);setTimeout(()=>setToast(''),3500)}
+  const flashErr=m=>{track('error_shown',{kind:'template'},evPath());setToast(m);setTimeout(()=>setToast(''),3500)}
   const dirtyRef=useRef(false)
   const skipDirtyRef=useRef(true)
 
@@ -5971,7 +6068,7 @@ function VideoPicker({ exerciseName, exerciseVideos = {}, setExerciseVideos, onC
   const [uploading,setUploading]=useState(false)  // фаза sign→upload→enqueue
   const [uploadMsg,setUploadMsg]=useState('')
   const [videoToast,setVideoToast]=useState('')
-  const flashVideoErr=msg=>{setVideoToast(msg);setTimeout(()=>setVideoToast(''),3500)}
+  const flashVideoErr=msg=>{track('error_shown',{kind:'video'},evPath());setVideoToast(msg);setTimeout(()=>setVideoToast(''),3500)}
   const fileInputRef=useRef(null)
   // Контекст, к которому применяются назначение/снятие/загрузка: общий/зал/дом.
   const [ctx,setCtx]=useState('default')
@@ -6176,11 +6273,12 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
   const [query,setQuery]=useState('')
   // Свой попап плеера (тот же вид, что в WorkoutsView — компонент отдельный).
   const [playVideo,setPlayVideo]=useState(null)
+  useEffect(()=>{ if(playVideo)track('video_play',null,evPath()) },[playVideo])
   const isTrainer=userRole==='trainer'
   // Редактор видео (только тренер): открывает вынесенный VideoPicker.
   const [videoPickerFor,setVideoPickerFor]=useState(null) // имя упражнения или null
   const [videoToast,setVideoToast]=useState('')
-  const flashVideoErr=msg=>{setVideoToast(msg);setTimeout(()=>setVideoToast(''),3500)}
+  const flashVideoErr=msg=>{track('error_shown',{kind:'video'},evPath());setVideoToast(msg);setTimeout(()=>setVideoToast(''),3500)}
   const [busy,setBusy]=useState(false)
   // Редактор блока «Техника» (только тренер).
   const [techEdit,setTechEdit]=useState(false)
@@ -6725,7 +6823,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   // здесь: у FoodDiary свой такой же, они друг другу не мешают — это разные
   // компоненты со своими порталами.
   const [showFoodSaveError,setShowFoodSaveError]=useState(false)
-  const flashFoodSaveError=()=>{setShowFoodSaveError(true);setTimeout(()=>setShowFoodSaveError(false),3500)}
+  const flashFoodSaveError=()=>{track('error_shown',{kind:'food_save'},evPath());setShowFoodSaveError(true);setTimeout(()=>setShowFoodSaveError(false),3500)}
 
   // ── СЕКЦИЯ: Общий тоннаж
   if(section==='tonnage'){
@@ -7550,7 +7648,11 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           title={f.label}
           subtitle={locked?'Доступно в пакете ПРОФИТ':f.sub}
           locked={locked}
-          onClick={()=>{if(locked){setShowExLock(true);return}if(f.key==='exercises'){setExPeriod('all');setExCustomFrom('');setExCustomTo('')}setSection(f.key)}} />
+          onClick={()=>{
+            if(locked){track('paywall',{where:'exercises'},evPath());setShowExLock(true);return}
+            if(f.key==='exercises'){setExPeriod('all');setExCustomFrom('');setExCustomTo('')}
+            setSection(f.key)
+          }} />
         )
       })}
       {showExLock&&createPortal(
@@ -8632,7 +8734,7 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
   const [aiStyle,setAiStyle]=useState('act')
   // Тост ошибки записи настроек — тот же паттерн, что showFoodSaveError и т.п.
   const [showSettingsSaveError,setShowSettingsSaveError]=useState(false)
-  const flashSettingsSaveError=()=>{setShowSettingsSaveError(true);setTimeout(()=>setShowSettingsSaveError(false),3500)}
+  const flashSettingsSaveError=()=>{track('error_shown',{kind:'settings_save'},evPath());setShowSettingsSaveError(true);setTimeout(()=>setShowSettingsSaveError(false),3500)}
 
   useEffect(()=>{
     if(!user?.id)return
@@ -9230,7 +9332,16 @@ function PlansView({ user, onClose, hideBack, onChanged, guest, onCreateAccount 
   // Выбранная пилюля тарифа. По умолчанию ПРОФИТ — он же «Хит».
   const [selectedKey,setSelectedKey]=useState('profit')
 
-  const flash=(text,isError)=>{setMsg(text);setMsgError(!!isError);setTimeout(()=>setMsg(''),5000)}
+  const flash=(text,isError)=>{
+    if(isError)track('error_shown',{kind:'plans'},evPath())
+    setMsg(text);setMsgError(!!isError);setTimeout(()=>setMsg(''),5000)
+  }
+
+  /**
+   * Экран тарифов открыт. Ставится на монтировании, а не в openPlans в App:
+   * сюда ведут четыре разные кнопки, и половина отметок потерялась бы.
+   */
+  useEffect(()=>{ track('plans_open',null,evPath()) },[])
 
   const loadProfile=async()=>{
     // Человека нет — грузить нечего. Именно снять заставку, а не просто выйти:
@@ -9323,6 +9434,10 @@ function PlansView({ user, onClose, hideBack, onChanged, guest, onCreateAccount 
   // order_id/customer_extra выписывает бэкенд по токену пользователя.
   const pay=async(plan)=>{
     if(payBusy)return
+    // Ушёл на оплату — не «оплатил». Подтверждение платежа ставит касса, с
+    // сервера (pay_done в api/prodamus-webhook.js): браузер знает только то,
+    // что человека увели на страницу Продамуса, а вернуться он может и ни с чем.
+    track('pay_start',{plan:plan.key},evPath())
     // Внутри Telegram ничего заранее открывать не нужно: tg.openLink() под
     // ограничение user-gesture не подпадает и спокойно работает после await.
     const inTelegram=!!window.Telegram?.WebApp?.initData
@@ -9466,7 +9581,7 @@ function PlansView({ user, onClose, hideBack, onChanged, guest, onCreateAccount 
           {planTabs.map(tab=>{
             const on=tab.key===selectedKey
             return (
-              <button key={tab.key} onClick={()=>setSelectedKey(tab.key)} style={{
+              <button key={tab.key} onClick={()=>{track('plan_click',{plan:tab.key},evPath());setSelectedKey(tab.key)}} style={{
                 flexShrink:0,whiteSpace:'nowrap',padding:'9px 15px',borderRadius:22,
                 border:`1px solid ${on?'transparent':HAIR}`,
                 background:on?`linear-gradient(180deg, ${ACCENT2}, ${PUR})`:SURF,
@@ -9871,7 +9986,7 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
   // Тост ошибки записи — тот же паттерн, что showFoodSaveError/showClientSaveError,
   // своя копия т.к. компонент отдельный.
   const [showProfileSaveError,setShowProfileSaveError]=useState(false)
-  const flashProfileSaveError=()=>{setShowProfileSaveError(true);setTimeout(()=>setShowProfileSaveError(false),3500)}
+  const flashProfileSaveError=()=>{track('error_shown',{kind:'profile_save'},evPath());setShowProfileSaveError(true);setTimeout(()=>setShowProfileSaveError(false),3500)}
   const [showGoalPicker,setShowGoalPicker]=useState(false)
   const [customGoal,setCustomGoal]=useState('')
   const [typedText,setTypedText]=useState('')
@@ -10822,6 +10937,7 @@ export default function App() {
         // законный результат (в базе может не быть ни одного видео), не ретраим.
         if(error||data==null){
           console.error('Карта видео: ошибка загрузки exercise_videos'+(error?`: ${error.message||error}`:' — пустой ответ'))
+          track('load_fail',{what:'videos'},evPath())
           if(attempt<DELAYS.length) timer=setTimeout(()=>load(attempt+1),DELAYS[attempt])
           return
         }
@@ -10851,6 +10967,7 @@ export default function App() {
     supabase.from('catalog_exercises').select('name,muscle_group,equipment,type,hidden,technique,display_name').then(({data,error})=>{
       if(error||data==null){
         console.error('Каталог: ошибка загрузки catalog_exercises'+(error?`: ${error.message||error}`:' — пустой ответ'))
+        track('load_fail',{what:'catalog'},evPath())
         const DELAYS=[1500,4000,9000]
         if(attempt<DELAYS.length) catalogRetryRef.current=setTimeout(()=>loadCatalog(attempt+1),DELAYS[attempt])
         return
@@ -10875,6 +10992,7 @@ export default function App() {
     supabase.from('program_templates').select('key,display_name,subtitle,sort,context,structure,hidden,icon,description,group_key').then(({data,error})=>{
       if(error||data==null){
         console.error('Шаблоны: ошибка загрузки program_templates'+(error?`: ${error.message||error}`:' — пустой ответ'))
+        track('load_fail',{what:'templates'},evPath())
         const DELAYS=[1500,4000,9000]
         if(attempt<DELAYS.length) templatesRetryRef.current=setTimeout(()=>loadTemplates(attempt+1),DELAYS[attempt])
         return
@@ -11084,6 +11202,35 @@ export default function App() {
     else if(nav==='nutrition')bump('try_diary')
   },[guestMode,nav])
 
+  /**
+   * ЖУРНАЛ СОБЫТИЙ: заход и смена экрана.
+   *
+   * Заход считается ПОСЛЕ того, как сессия разрешилась, — иначе роль была бы
+   * неизвестна и всякий вошедший считался бы гостем на первом кадре. Само
+   * событие пишется раз в сутки на человека (DAILY в src/track.js), поэтому
+   * повторные срабатывания эффекта ничего не портят; а вот гость, который тут
+   * же завёл аккаунт, честно даст обе отметки — это и есть верх воронки.
+   */
+  useEffect(()=>{
+    if(authLoading)return
+    track(user?'app_open':'app_open_guest',null,evPath())
+  },[authLoading,user])
+
+  /** Смена экрана. Имя — тот же идентификатор, что у нижнего меню. */
+  useEffect(()=>{ track('screen',{name:nav},evPath()) },[nav])
+
+  /**
+   * Уход со страницы — досылаем накопленное. Без этого терялся бы хвост
+   * захода, то есть ровно то место, где человек ушёл: пачка ждёт четыре
+   * секунды, а вкладку закрывают быстрее. pagehide, а не unload: он
+   * единственный срабатывает на iOS.
+   */
+  useEffect(()=>{
+    const fn=()=>flushEvents()
+    window.addEventListener('pagehide',fn)
+    return()=>window.removeEventListener('pagehide',fn)
+  },[])
+
   const [isTelegram,setIsTelegram]=useState(false)
   // Авто-вход внутри Telegram (см. эффект ниже) — пока идёт попытка, вместо
   // LandingPage показываем "Входим…"; при неудаче тихо откатываемся на
@@ -11242,7 +11389,10 @@ export default function App() {
   const pendingInviteRef=useRef(null)
   // Тост о применении приглашения — тот же паттерн, что showFoodSaveError.
   const [inviteToast,setInviteToast]=useState(null)   // {text,color}
-  const flashInvite=(text,color)=>{setInviteToast({text,color});setTimeout(()=>setInviteToast(null),4000)}
+  const flashInvite=(text,color)=>{
+    if(color===DANGER)track('error_shown',{kind:'invite'},evPath())
+    setInviteToast({text,color});setTimeout(()=>setInviteToast(null),4000)
+  }
   // Перечитать профиль после привязки — тем же приёмом, что historyReloadToken.
   const [profileReloadToken,setProfileReloadToken]=useState(0)
 
@@ -11374,6 +11524,8 @@ export default function App() {
     }
     // После возможной чистки выше — иначе clearFitproData() стёр бы и сам этот ключ.
     if(incomingId)localStorage.setItem('fitpro_owner_uid',incomingId)
+    // Токен для пачки событий — рядом с сессией, см. setEventsCookie выше.
+    setEventsCookie(session?.access_token??null)
     setUser(mergeUserWithProfile(session?.user??null))
   }
 
@@ -12324,7 +12476,7 @@ export default function App() {
   const renderMain=()=>(
     <>
       <div data-testid="screen-workouts" style={{ display: nav==='workouts' ? 'block' : 'none' }}>
-        <WorkoutsView customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} hasTrainer={hasCoach} coachSubExpired={coachSubExpired} accessLevel={access.level} openPlans={openPlans} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} onOpenConstructor={openConstructor} onOpenMotion={()=>openMotion()} onOpenChallenge={openChallenge} guest={guestMode} />
+        <WorkoutsView visible={nav==='workouts'} customExercises={customExercises} setCustomExercises={setCustomExercises} onWorkoutComplete={handleWorkoutComplete} onWorkoutUpdate={handleWorkoutUpdate} editTarget={editTarget} onClearEdit={()=>{setEditTarget(null);if(borrowedNavRef.current){borrowedNavRef.current=false;goBackNav()}}} onWorkoutMeta={setWorkoutMeta} pendingAction={pendingWorkoutAction} onClearPendingAction={()=>setPendingWorkoutAction(null)} userId={user?.id} historyVersion={historyVersion} onMinimize={goBackNav} hasTrainer={hasCoach} coachSubExpired={coachSubExpired} accessLevel={access.level} openPlans={openPlans} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} onOpenConstructor={openConstructor} onOpenMotion={()=>openMotion()} onOpenChallenge={openChallenge} guest={guestMode} />
       </div>
       {nav!=='workouts'&&renderOther()}
     </>
