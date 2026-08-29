@@ -6,11 +6,16 @@ import { clearDraft as clearTrainerDraft, draftForClient } from './trainerDraft.
 import { supabase, SUPABASE_AUTH_STORAGE_KEY, SUPABASE_URL, SUPABASE_KEY } from './supabase.js'
 import { resolveAuthOutcome, AUTH_OUTCOME } from './authState.js'
 import { logError } from './logError'
-import { FOLDERS, PROGRAMS_MAP, PROGRAM_ICONS, EXERCISES, isOneSidedExercise, countCompletedProgramSlots, isProgramFullyCompleted } from './programs.js'
+import { FOLDERS, PROGRAMS_MAP, PROGRAM_ICONS, EXERCISES, EXERCISE_TYPE, isOneSidedExercise, countCompletedProgramSlots, isProgramFullyCompleted } from './programs.js'
 import { oneRepMax, weightForReps, roundToPlate, percentTable, plateStep } from './oneRepMax.js'
 // Движок прогрессии (1ПМ) — врезан в кнопку "▶ Начать тренировку" внутри
 // слота шаблонной программы (WorkoutsView), см. подробный комментарий там.
 import { buildExerciseAggregates, computeTemplateScale, parseTemplateSets, computeProgressSteps, computeBandTarget, UNRATED_STOP_AFTER } from './workoutPrompt.js'
+// Второй, волновой движок прогрессии (wavePlan.js) — пока в РЕЖИМЕ СРАВНЕНИЯ:
+// считается рядом с нынешним на тех же данных, но клиенту не достаётся ни
+// килограмма. Результат уходит одной строкой в консоль тренеру, см.
+// runStartSlotWorkout в WorkoutsView.
+import { buildWavePlan } from './wavePlan.js'
 import { MAX_TELEGRAM_URL, MAX_EMAIL, BOT_USERNAME, realEmail, telegramChatIdOf } from './config.js'
 import { Ic } from './icons.jsx'
 import { GlassDefs, GlassIcon } from './glassIcons'
@@ -2340,6 +2345,15 @@ const makeDefaultFolderSlots=(folders=FOLDERS,programsMap=PROGRAMS_MAP)=>{
   const o={}; folders.forEach(f=>{o[f]=makeDefaultSlots(f,programsMap)}); return o
 }
 
+// Потолок роста рабочего максимума за ОДНУ тренировку (capKg волнового
+// движка, wavePlan.js). Тяжёлые базовые движения растут крупнее прочих:
+// присед, становая и жим ногами — 2.5 кг, остальные многосуставные — 1.25,
+// изолирующие — 1. Тип берётся из EXERCISE_TYPE (programs.js); незнакомое имя
+// (своё упражнение клиента) считается многосуставным — то же допущение, что
+// и в buildExerciseAggregates.
+const WAVE_BIG_LIFTS=['Приседания','Становая тяга','Жим ногами']
+const waveCapKg=name=>WAVE_BIG_LIFTS.includes(name)?2.5:((EXERCISE_TYPE[name]||'compound')==='isolation'?1:1.25)
+
 // hasTrainer — «к клиенту прикреплён тренер» (profiles.coach_id). Раньше проп
 // назывался isPremium, что путало с пакетом ПРЕМИУМ: это разные вещи, подписка
 // приходит отдельно, в accessLevel.
@@ -3411,6 +3425,22 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         const kg=roundToPlate(rawKg,plateStep(rawKg))
         return{kg:String(kg),bandLevel:null,reps:String(ts.reps),recKg:String(kg),rating:'',fromTemplate:false}
       })
+      // РЕЖИМ СРАВНЕНИЯ волнового движка (wavePlan.js). Считается на тех же
+      // данных, что и нынешний движок выше — раскладка сегодняшнего слота
+      // (templateSets) и история упражнения (agg.sessions, от старых к новым),
+      // — но НИЧЕГО не применяет: parsedSets уже собраны и уходят клиенту как
+      // были. Признак missed в истории не заполняется, откат в сравнении не
+      // проверяем. Только тренеру (isTrainer) — клиенту эта отладка не нужна.
+      // Обёрнут в try: теневой расчёт не имеет права уронить запуск тренировки.
+      if(isTrainer){
+        try{
+          const wave=buildWavePlan({templateSets,sessions:agg?.sessions||[],capKg:waveCapKg(ex.name)})
+          if(wave){
+            const row=list=>list.map(v=>v==null||v===''?'—':v).join('/')
+            console.log(`[волна] ${ex.name} | шаблон ${row(templateSets.map(t=>t.reps))} | сейчас ${row(parsedSets.map(s=>s.kg))} | волна ${row(wave.sets.map(s=>s.kg))} | максимум ${wave.max?Math.round(wave.max*10)/10:'—'} | ступень ${wave.step}`)
+          }
+        }catch(e){console.warn('[волна] сравнение не посчиталось:',ex.name,e)}
+      }
       return{n:ex.name,m:'',eq:'',sets:parsedSets,done:false,progressNote,progressStopped:progressionStopped}
     })
     setWExercises(builtExercises)
