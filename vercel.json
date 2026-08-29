@@ -2,9 +2,16 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "git": {
     "deploymentEnabled": {
-      "main": false
+      "main": true
     }
   },
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "destination": "https://fitproapp.ru/$1",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/motion-health/:key",
