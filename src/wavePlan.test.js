@@ -4,9 +4,11 @@ import {
   RIR_BY_STEP, MAX_REPS_FOR_MEASURE,
 } from './wavePlan.js'
 
-// Числа здесь — те же, что в утверждённой методике: жим с максимумом 120 кг
-// на тяжёлой Силе даёт 87.5 / 92.5 / 97.5 / 97.5, а на лёгком Объёме — 67.5.
-// Если раскладка поедет, эти два теста поймают первыми.
+// Числа здесь — из утверждённой методики: у жима с максимумом 120 кг верхний
+// рабочий подход на тяжёлой Силе весит 97.5, а на лёгком Объёме 67.5.
+// Подводящие подходы движок не выдумывает: если у программы есть свои веса,
+// он сохраняет их соотношение и двигает лестницу целиком (см. тест про
+// лестницу), а если весов нет — строит её по запасу повторений.
 
 const heavySet = { kg: 97.5, reps: 6, rating: 4 } // ≈ 120 кг максимума
 const histOf = (...sets) => sets.map(s => ({ sets: [s] }))
@@ -73,20 +75,47 @@ describe('волновой движок: раскладка на сегодня'
     expect(p.sets.map(s => s.kg)).toEqual([40, 45])
   })
 
-  it('тяжёлая Сила при максимуме 120 даёт раскладку из методики', () => {
+  it('тяжёлая Сила при максимуме 120: верхний подход 97.5, подводящие легче', () => {
     const hist = histOf(heavySet)
     expect(Math.round(workingMax(hist, 1.25))).toBe(120)
     const p = buildWavePlan({ templateSets: [{ reps: 10 }, { reps: 8 }, { reps: 6 }, { reps: 6 }], sessions: hist, capKg: 1.25 })
     expect(p.step).toBe('heavy')
     expect(p.rir).toBe(RIR_BY_STEP.heavy)
-    expect(p.sets.map(s => s.kg)).toEqual([87.5, 92.5, 97.5, 97.5])
+    expect(p.sets.map(s => s.kg)).toEqual([85, 90, 97.5, 97.5])
   })
 
   it('лёгкий Объём от того же максимума даёт низ волны', () => {
     const p = buildWavePlan({ templateSets: [{ reps: 20 }, { reps: 20 }, { reps: 20 }, { reps: 20 }], sessions: histOf(heavySet), capKg: 1.25 })
     expect(p.step).toBe('light')
     expect(p.rir).toBe(4)
-    expect(p.sets.map(s => s.kg)).toEqual([67.5, 67.5, 67.5, 67.5])
+    // верхний подход — 67.5, подводящие ниже по лестнице запаса
+    expect(p.sets[p.sets.length - 1].kg).toBe(67.5)
+    expect(p.sets[0].kg).toBeLessThan(p.sets[3].kg)
+  })
+
+  it('лестница подводящих берётся из программы и двигается целиком', () => {
+    const tpl = [{ reps: 10, templateKg: 60 }, { reps: 8, templateKg: 70 },
+                 { reps: 6, templateKg: 80 }, { reps: 6, templateKg: 80 }]
+    const session = { sets: [{ kg: 60, reps: 10, rating: 3 }, { kg: 70, reps: 8, rating: 3 },
+                             { kg: 80, reps: 6, rating: 4 }, { kg: 80, reps: 6, rating: 4 }] }
+    const p = buildWavePlan({ templateSets: tpl, sessions: [session], capKg: 2.5 })
+    // человек сделал ровно это — движок и предлагает ровно это
+    expect(p.sets.map(s => s.kg)).toEqual([60, 70, 80, 80])
+    // стал сильнее — вверх едет вся лестница, форма сохраняется
+    const stronger = buildWavePlan({
+      templateSets: tpl,
+      sessions: [session, { sets: [{ kg: 85, reps: 6, rating: 3 }, { kg: 85, reps: 6, rating: 3 }] }],
+      capKg: 2.5,
+    })
+    expect(stronger.sets[3].kg).toBeGreaterThan(80)
+    expect(stronger.sets[0].kg).toBeGreaterThan(60)
+  })
+
+  it('подводящие подходы в замер максимума не идут', () => {
+    // лёгкий подводящий с честной оценкой «легко» не должен задирать максимум
+    const withWarmup = { sets: [{ kg: 60, reps: 10, rating: 1 }, { kg: 80, reps: 6, rating: 4 }, { kg: 80, reps: 6, rating: 4 }] }
+    const onlyWork = { sets: [{ kg: 80, reps: 6, rating: 4 }, { kg: 80, reps: 6, rating: 4 }] }
+    expect(workingMax([withWarmup], 2.5)).toBe(workingMax([onlyWork], 2.5))
   })
 
   it('повторения всегда из шаблона, не из истории', () => {

@@ -3437,7 +3437,13 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           const wave=buildWavePlan({templateSets,sessions:agg?.sessions||[],capKg:waveCapKg(ex.name)})
           if(wave){
             const row=list=>list.map(v=>v==null||v===''?'—':v).join('/')
-            console.log(`[волна] ${ex.name} | шаблон ${row(templateSets.map(t=>t.reps))} | сейчас ${row(parsedSets.map(s=>s.kg))} | волна ${row(wave.sets.map(s=>s.kg))} | максимум ${wave.max?Math.round(wave.max*10)/10:'—'} | ступень ${wave.step}`)
+            // Откуда взялась лестница подводящих: вес есть у ВСЕХ подходов
+            // шаблона — движок сохраняет их соотношение и двигает лестницу
+            // целиком; весов нет (вес тела, резина) — строит её по запасу
+            // повторений. Смешанный случай считается «по запасу»: соотношение
+            // брать не из чего, ровно так же его читает и templateRatios.
+            const ladder=templateSets.every(t=>t.templateKg!=null)?'из программы':'по запасу'
+            console.log(`[волна] ${ex.name} | шаблон ${row(templateSets.map(t=>t.reps))} | сейчас ${row(parsedSets.map(s=>s.kg))} | волна ${row(wave.sets.map(s=>s.kg))} | максимум ${wave.max?Math.round(wave.max*10)/10:'—'} | ступень ${wave.step} | лестница ${ladder}`)
           }
         }catch(e){console.warn('[волна] сравнение не посчиталось:',ex.name,e)}
       }

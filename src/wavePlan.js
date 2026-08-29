@@ -36,8 +36,21 @@ export const RIR_BY_RATING = { 5: 0, 4: 1, 3: 2, 2: 3, 1: 4 }
 // Нет оценки — считаем 3, как и в нынешнем движке.
 export const DEFAULT_RATING = 3
 
-// Запас, с которым работаем сегодня, по ступени цикла.
+// Запас, с которым работаем сегодня, по ступени цикла. Это запас РАБОЧИХ
+// подходов; подводящие идут легче, см. rirRamp.
 export const RIR_BY_STEP = { light: 4, medium: 2, heavy: 1 }
+
+// Сколько последних подходов считаются рабочими. То же структурное правило,
+// что и в buildExerciseAggregates нынешнего движка: подводящие впереди,
+// рабочие в конце. Держим одно число на оба движка, чтобы не разъехались.
+export const WORKING_SETS = 2
+
+// На сколько каждый шаг назад от рабочих подходов добавляет запаса, и потолок
+// добавки. Без этого все подходы получали бы один вес, и подводящий подход на
+// десять повторений оказывался бы тяжелее, чем нужно, — это и показал теневой
+// прогон на живой истории приседа.
+export const RAMP_STEP = 1
+export const RAMP_MAX = 3
 
 // Выше этого числа повторений подход в замер максимума не идёт (п.3 методики).
 export const MAX_REPS_FOR_MEASURE = 10
@@ -72,11 +85,14 @@ export function maxFromSet(set) {
   return oneRepMax(Math.abs(kg), reps + rirOfRating(set.rating))
 }
 
-// Максимум по одной тренировке — лучший из её подходов, годных к замеру.
+// Максимум по одной тренировке — лучший из её РАБОЧИХ подходов, годных к
+// замеру. Подводящие в замер не идут: они делаются далеко от отказа, оценка
+// на них если и стоит, то не про предел, и максимум по ним — выдумка.
 export function maxFromSession(session) {
-  const sets = (session && session.sets) || []
+  const all = (session && session.sets) || []
+  const working = all.length > WORKING_SETS ? all.slice(-WORKING_SETS) : all
   let best = 0
-  for (const s of sets) {
+  for (const s of working) {
     const m = maxFromSet(s)
     if (m > best) best = m
   }
@@ -112,6 +128,39 @@ export function missStreak(sessions) {
     n++
   }
   return n
+}
+
+// Лестница подводящих подходов.
+//
+// Первая версия давала всем подходам один запас — и подводящий подход на
+// десять повторений выходил почти как рабочий. Теневой прогон на живой истории
+// приседа это и показал. Правило теперь другое: движок считает вес ТОЛЬКО для
+// рабочих подходов, а лестницу подводящих берёт из самой программы — в каком
+// соотношении их написал тренер, в таком и оставляет, целиком двигая вверх или
+// вниз вместе с рабочим весом. «20-30-40-40» останется 20-30-40-40 по форме,
+// даже когда сорок превратятся в пятьдесят.
+//
+// Запасной вариант rirRamp ниже нужен там, где у программы весов нет вообще
+// (вес тела, резина): соотношение брать не из чего, поэтому лестница строится
+// по запасу.
+export function templateRatios(templateSets) {
+  const tpl = templateSets || []
+  if (!tpl.length) return null
+  const last = Math.abs(Number(tpl[tpl.length - 1].templateKg))
+  if (!last) return null
+  const ratios = tpl.map(s => Math.abs(Number(s.templateKg)) / last)
+  return ratios.every(r => r > 0 && Number.isFinite(r)) ? ratios : null
+}
+
+export function rirRamp(count, targetRir) {
+  const n = Number(count) || 0
+  if (n < 1) return []
+  const firstWorking = Math.max(0, n - WORKING_SETS)
+  return Array.from({ length: n }, (_, i) => {
+    if (i >= firstWorking) return targetRir
+    const back = firstWorking - i
+    return targetRir + Math.min(RAMP_MAX, back * RAMP_STEP)
+  })
 }
 
 // Ступень цикла из самой программы — по сумме повторений сегодняшней
@@ -165,8 +214,21 @@ export function buildWavePlan({ templateSets, sessions = [], capKg = DEFAULT_GRO
   const negative = tpl.some(s => Number(s.templateKg) < 0)
   const sign = negative ? -1 : 1
 
-  return {
-    coldStart: false, phase, step, rir, max, isDeload,
-    sets: tpl.map(s => ({ reps: Number(s.reps), kg: weightForSet(max, s.reps, rir, sign) })),
-  }
+  // Вес верхнего рабочего подхода — по его повторениям и запасу ступени.
+  const topReps = Number(tpl[tpl.length - 1].reps)
+  const topRaw = weightForReps(max, topReps + rir)
+  const ratios = templateRatios(tpl)
+
+  const sets = ratios
+    ? tpl.map((s, i) => {
+        const raw = topRaw * ratios[i]
+        return { reps: Number(s.reps), rir: i >= tpl.length - WORKING_SETS ? rir : null,
+                 kg: roundToPlate(raw, plateStep(raw)) * sign }
+      })
+    : (() => {
+        const ramp = rirRamp(tpl.length, rir)
+        return tpl.map((s, i) => ({ reps: Number(s.reps), rir: ramp[i], kg: weightForSet(max, s.reps, ramp[i], sign) }))
+      })()
+
+  return { coldStart: false, phase, step, rir, max, isDeload, sets }
 }
