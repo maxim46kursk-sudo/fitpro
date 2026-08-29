@@ -2456,19 +2456,6 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   const [folderSlots,setFolderSlots]=useState(()=>makeDefaultFolderSlots(folderKeys,templateStructures))
   const [playVideo,setPlayVideo]=useState(null)
   /**
-   * ЖУРНАЛ СОБЫТИЙ РАЗДЕЛА. Все три отметки — эффектами на состояние, а не в
-   * обработчиках: путей к каждому из этих состояний по несколько (карточка,
-   * переключатель уровня, возврат из завершённой программы), и в обработчиках
-   * половина бы потерялась.
-   *
-   * `visible` тут обязателен: раздел смонтирован всегда (см. renderMain в App —
-   * иначе не пережила бы свёрнутая тренировка), и без него «список программ
-   * открыт» писалось бы каждому, кто просто запустил приложение.
-   */
-  useEffect(()=>{ if(visible&&!openFolder&&step===null)track('programs_open',null,evPath()) },[visible,openFolder,step])
-  useEffect(()=>{ if(openFolder)track('program_open',{key:openFolder},evPath()) },[openFolder])
-  useEffect(()=>{ if(playVideo)track('video_play',null,evPath()) },[playVideo])
-  /**
    * Что за тренировка идёт — для отметок о завершении и уходе. Держим отдельно
    * от слота: к моменту «завершить» openFolder/currentSlot уже могут быть
    * сброшены, а знать, ЧТО именно человек закончил, нужно именно тогда.
@@ -2560,6 +2547,19 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   },[folderSlots,slotsReady,guest])
   const [menuOpen,setMenuOpen]=useState(false)
   const [step,setStep]=useState(null)
+  /**
+   * ЖУРНАЛ СОБЫТИЙ РАЗДЕЛА. Все три отметки — эффектами на состояние, а не в
+   * обработчиках: путей к каждому из этих состояний по несколько (карточка,
+   * переключатель уровня, возврат из завершённой программы), и в обработчиках
+   * половина бы потерялась.
+   *
+   * `visible` тут обязателен: раздел смонтирован всегда (см. renderMain в App —
+   * иначе не пережила бы свёрнутая тренировка), и без него «список программ
+   * открыт» писалось бы каждому, кто просто запустил приложение.
+   */
+  useEffect(()=>{ if(visible&&!openFolder&&step===null)track('programs_open',null,evPath()) },[visible,openFolder,step])
+  useEffect(()=>{ if(openFolder)track('program_open',{key:openFolder},evPath()) },[openFolder])
+  useEffect(()=>{ if(playVideo)track('video_play',null,evPath()) },[playVideo])
   // Редактор видео упражнения — тренеру, прямо из шаблонов/активной тренировки.
   const isTrainer=userRole==='trainer'
   const [videoPickerFor,setVideoPickerFor]=useState(null) // имя упражнения или null
