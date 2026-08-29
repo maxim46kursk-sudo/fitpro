@@ -2367,8 +2367,13 @@ const makeDefaultFolderSlots=(folders=FOLDERS,programsMap=PROGRAMS_MAP)=>{
 // изолирующие — 1. Тип берётся из EXERCISE_TYPE (programs.js); незнакомое имя
 // (своё упражнение клиента) считается многосуставным — то же допущение, что
 // и в buildExerciseAggregates.
+// Сопоставление ПО ВХОЖДЕНИЮ, а не по точному имени: в каталоге движения
+// записаны с уточнением снаряда — «Становая тяга сумо со штангой», «Жим ногами
+// в тренажёре», — и точное сравнение не срабатывало ни разу, роняя их потолок
+// до 1.25. Ложных совпадений здесь нет: «Жим ногами» не встречается в жимах
+// штанги, «Становая тяга» — в румынской (та начинается с другого слова).
 const WAVE_BIG_LIFTS=['Приседания','Становая тяга','Жим ногами']
-const waveCapKg=name=>WAVE_BIG_LIFTS.includes(name)?2.5:((EXERCISE_TYPE[name]||'compound')==='isolation'?1:1.25)
+const waveCapKg=name=>WAVE_BIG_LIFTS.some(big=>String(name||'').includes(big))?2.5:((EXERCISE_TYPE[name]||'compound')==='isolation'?1:1.25)
 
 // hasTrainer — «к клиенту прикреплён тренер» (profiles.coach_id). Раньше проп
 // назывался isPremium, что путало с пакетом ПРЕМИУМ: это разные вещи, подписка
@@ -2391,6 +2396,9 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
   // (опечатка в базе, иконку выпилили) → 'dumbbell', чтобы список не падал.
   const folderIcon = key => { const n=(templateAll.find(t=>t.key===key)||{}).icon; return PROGRAM_ICONS.includes(n)?n:'dumbbell' }
   const folderDescription = key => (templateAll.find(t=>t.key===key)||{}).description || ''
+  // Группа программы (program_templates.group_key, в mergeTemplates — groupKey).
+  // По ней решается, каким движком прогрессии считать веса, см. runStartSlotWorkout.
+  const folderGroupKey = key => (templateAll.find(t=>t.key===key)||{}).groupKey || ''
   // Карточка группы, в которую входит ключ (или сама программа, если группы нет).
   const folderGroup = key => templateFolders.find(g=>g.key===key||(g.variants||[]).some(v=>v.key===key))
   // Редактор шаблона (тренер): {key,isNew,initialDisplayName,initialContext,initialSort} | null
@@ -3408,6 +3416,18 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       }
       return'Держим нагрузку — прошлый раз был тяжёлым'
     }
+    /**
+     * КАКИМ ДВИЖКОМ СЧИТАТЬ ВЕСА.
+     *
+     * Волновой (wavePlan.js) включён ТОЛЬКО для группы «Масса» — на ней он и
+     * разрабатывался. Признак берётся из шаблона программы (group_key в
+     * program_templates), а не из списка ключей в коде: уровней в группе может
+     * стать больше, и новый обязан поехать на том же движке без правки кода.
+     *
+     * Все остальные программы остаются на computeTemplateScale — их поведение
+     * не меняется ни на килограмм.
+     */
+    const useWave=folderGroupKey(openFolder)==='massa'
     const builtExercises=exs.map(ex=>{
       const templateSets=parseTemplateSets(ex.sets)
       const agg=aggregates[ex.name]
@@ -3430,7 +3450,44 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       // подхода, для которого вообще посчиталась нагрузка.
       let progressNote=null
       let progressNoteSet=false
-      const parsedSets=templateSets.map(ts=>{
+      /**
+       * Волновой план по этому упражнению. Считается на тех же данных, что и
+       * нынешний движок: раскладка сегодняшнего слота и история упражнения
+       * (от старых к новым). Нужен в двух случаях — когда им действительно
+       * считаем («Масса») и когда просто сравниваем в консоли (тренеру, любая
+       * программа). В try: расчёт не имеет права уронить запуск тренировки.
+       */
+      let wave=null
+      if(useWave||isTrainer){
+        try{ wave=buildWavePlan({templateSets,sessions:agg?.sessions||[],capKg:waveCapKg(ex.name)}) }
+        catch(e){ console.warn('[волна] не посчиталась:',ex.name,e) }
+      }
+      /**
+       * Веса волны, разложенные обратно ПО ПОДХОДАМ ШАБЛОНА.
+       *
+       * buildWavePlan выбрасывает подходы без повторений, и его sets короче
+       * templateSets — брать plan.sets[i] по индексу шаблона напрямую нельзя,
+       * на первом же таком подходе веса разъедутся на один. Фильтр здесь
+       * повторяет тамошний дословно.
+       *
+       * null — движок не применяем: волна не посчиталась либо холодный старт
+       * (истории нет, рабочего максимума нет). Тогда всё идёт прежним путём:
+       * веса шаблона или старый движок. Никаких заглушек и нулей.
+       */
+      const waveKg=(()=>{
+        if(!useWave||!wave||wave.coldStart)return null
+        const out=new Array(templateSets.length).fill(null)
+        let j=0
+        for(let i=0;i<templateSets.length;i++){
+          const t=templateSets[i]
+          if(!(t&&Number(t.reps)>0))continue
+          const kg=wave.sets[j]?.kg
+          out[i]=Number.isFinite(kg)?kg:null
+          j++
+        }
+        return out
+      })()
+      const parsedSets=templateSets.map((ts,i)=>{
         // Резина или голые повторения без снаряда (вес тела) —
         // это НЕ кг-ось: своя прогрессия по шагам, а не по 1ПМ.
         if(ts.templateKg==null){
@@ -3457,6 +3514,42 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           const bandTarget=computeBandTarget(ts,agg.progressSteps)
           return{kg:'',bandLevel:bandTarget.bandLevel,reps:String(bandTarget.reps),recKg:'',rating:'',fromTemplate:false}
         }
+        /**
+         * ВЕС ОТ ВОЛНОВОГО ДВИЖКА — вместо computeTemplateScale.
+         *
+         * Сюда попадаем только у программ группы «Масса» и только когда план
+         * построен и не холодный (waveKg собран выше ровно на этих условиях).
+         * Волна считает вес каждого подхода от рабочего максимума и запаса
+         * повторений своей ступени, поэтому масштабировать шаблон уже нечем —
+         * лестница пришла целиком.
+         *
+         * Объяснение берём отсюда же, а не от старого движка: его текст
+         * («плановая прибавка», «прибавка больше обычной») описывает расчёт,
+         * которым этот вес НЕ считался, и рядом с числом волны был бы просто
+         * неправдой.
+         *
+         * Текст — по ступени цикла: волна задаёт не «больше/меньше, чем в
+         * прошлый раз», а сколько повторений оставить в запасе, и человеку
+         * нужно знать именно это (RIR_BY_STEP в wavePlan.js: light — 4,
+         * medium — 2, heavy — 1). Разгрузка старше ступени: когда вес снижен
+         * за недобранные повторения, объяснять надо это, а не запас.
+         * Неизвестная ступень читается как medium — ровно так же её берёт по
+         * умолчанию и сам движок.
+         */
+        if(waveKg&&waveKg[i]!=null){
+          if(!progressNoteSet){
+            progressNote=wave.isDeload
+              ?'Разгрузка: два раза не добрал повторения. Вес снижен, вернём на следующей.'
+              :wave.step==='light'
+              ?'Лёгкая тренировка цикла. Вес снижен намеренно — оставляй 4 повторения в запасе.'
+              :wave.step==='heavy'
+              ?'Тяжёлая тренировка. Оставь 1 повторение в запасе.'
+              :'Средняя нагрузка. Оставляй 2 повторения в запасе.'
+            progressNoteSet=true
+          }
+          const kg=waveKg[i]
+          return{kg:String(kg),bandLevel:null,reps:String(ts.reps),recKg:String(kg),rating:'',fromTemplate:false}
+        }
         // Холодный старт: по упражнению ещё нет истории, либо в шаблоне
         // нечего масштабировать (scale===null) — подставляем стартовый
         // ориентир тренера как есть (красная рамка в UI, как и раньше).
@@ -3478,17 +3571,15 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
         const kg=roundToPlate(rawKg,plateStep(rawKg))
         return{kg:String(kg),bandLevel:null,reps:String(ts.reps),recKg:String(kg),rating:'',fromTemplate:false}
       })
-      // РЕЖИМ СРАВНЕНИЯ волнового движка (wavePlan.js). Считается на тех же
-      // данных, что и нынешний движок выше — раскладка сегодняшнего слота
-      // (templateSets) и история упражнения (agg.sessions, от старых к новым),
-      // — но НИЧЕГО не применяет: parsedSets уже собраны и уходят клиенту как
-      // были. Признак missed в истории не заполняется, откат в сравнении не
-      // проверяем. Только тренеру (isTrainer) — клиенту эта отладка не нужна.
-      // Обёрнут в try: теневой расчёт не имеет права уронить запуск тренировки.
+      // СРАВНЕНИЕ в консоль — только тренеру, клиенту эта отладка не нужна.
+      // План уже посчитан выше; здесь его только показываем. У программ группы
+      // «Масса» веса им же и посчитаны, поэтому «сейчас» и «волна» совпадут —
+      // это и есть признак, что движок применён. У остальных программ волна
+      // по-прежнему ничего не применяет, и строка остаётся честным сравнением.
+      // Признак missed в истории не заполняется, откат в сравнении не проверяем.
       if(isTrainer){
         try{
           const waveSessions=agg?.sessions||[]
-          const wave=buildWavePlan({templateSets,sessions:waveSessions,capKg:waveCapKg(ex.name)})
           if(wave){
             const row=list=>list.map(v=>v==null||v===''?'—':v).join('/')
             // Откуда взялась лестница подводящих: вес есть у ВСЕХ подходов
