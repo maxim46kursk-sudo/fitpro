@@ -91,3 +91,8 @@ tools/egress-worker/.wrangler
 # распаковка. Файлы уезжают в бакеты Supabase, в репозитории им делать нечего.
 assets-exercise-anim.zip
 assets-exercise-anim/
+
+# Excel-отчёт прогрессии — его перезаписывает node test-progression-personas.js
+# на каждом прогоне. Это вывод теста, а не исходник: в рабочем дереве он мусорит,
+# в истории — шумит бинарными диффами.
+reports/progression-report.xlsx
