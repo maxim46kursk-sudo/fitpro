@@ -18,14 +18,11 @@ const PAYFORM_BASE = 'https://maximathlete.payform.ru/'
 // Адрес возврата после оплаты больше не константа — он зависит от того, откуда
 // человек платит (см. returnUrlFor/buildPaymentData в _prodamus.js).
 
-// БАЗА снята с продажи — ручка отказывает на прямой запрос plan:'base', иначе
-// пакет остаётся покупаемым в обход спрятанной пилюли на экране Тарифов.
-//
 // test50 — служебный тариф проверки оплаты. В списке покупаемых он есть, но
 // ниже стоит проверка роли: спрятанная пилюля на экране Тарифов от прямого
 // POST не защищает, а 50 ₽ за сутки ПРОФИТ — слишком дешёвый способ обойти
 // прайс. Отсюда правило: скрытие в интерфейсе — удобство, отказ здесь — защита.
-const PAID_PLANS = new Set(['profit', 'premium', 'test50'])
+const PAID_PLANS = new Set(['base', 'profit', 'premium', 'test50'])
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')

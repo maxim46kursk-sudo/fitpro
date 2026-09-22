@@ -726,16 +726,13 @@ function PlanLockModal({ title, text, onClose, onOpenPlans }) {
 }
 
 // Тексты гейтов — в одном месте, чтобы не расходились между точками блокировки.
-// Называем ПРОФИТ, а не БАЗА: БАЗА снята с продажи (plans.js, hidden:true),
-// купить её сейчас нельзя, и предлагать человеку несуществующий пакет — тупик.
-// Порог доступа при этом остаётся SLOTS_MIN_LEVEL=1: у купивших БАЗУ раньше
-// доступ сохраняется, меняется только то, что мы предлагаем купить.
+// Сент 2026: БАЗА снова в продаже, гейты уровня 1 называют её.
 // «Программа», а не «шаблон»: программы теперь заводятся данными, и их уже не
 // четыре — обещать «все четыре» было бы неправдой.
-const LOCK_SLOTS = { title:'Тренировки 4–12 доступны в пакете ПРОФИТ', text:'В СТАРТ открыты первые 3 тренировки в каждой программе. ПРОФИТ открывает все тренировки во всех программах.' }
-const LOCK_EXERCISES = { title:'Прогресс по упражнениям доступен в пакете ПРОФИТ', text:'Покажет динамику весов и повторений по каждому упражнению за любой период.' }
+const LOCK_SLOTS = { title:'Тренировки доступны с пакета БАЗА', text:'Пакет БАЗА открывает все тренировки во всех программах и прогресс по упражнениям.' }
+const LOCK_EXERCISES = { title:'Прогресс по упражнениям доступен с пакета БАЗА', text:'Покажет динамику весов и повторений по каждому упражнению за любой период.' }
 // Со скольки слотов начинается платная часть шаблона и какой уровень нужен.
-const FREE_SLOTS = 3
+const FREE_SLOTS = 0 // сент 2026: бесплатных тренировок в программах нет, всё с БАЗЫ
 const SLOTS_MIN_LEVEL = 1
 
 // Иконка карточки группы мышц. В наборе GlassIcon анатомии нет, поэтому связь
@@ -4209,7 +4206,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                   сворачивает Mini App (не закрывает — close() не зовём),
                                   тренировка в памяти переживает переход. Плейсхолдер
                                   <span/> у остальных держит колонку, чтобы ✕ не съехал. */}
-                              {hasTrainer?(
+                              {(hasTrainer||(accessLevel>=2&&userRole!=='trainer'))?(
                                 <button onClick={()=>{
                                   if(window.Telegram?.WebApp)window.Telegram.WebApp.openTelegramLink(MAX_TELEGRAM_URL)
                                   else window.open(MAX_TELEGRAM_URL,'_blank')
@@ -4796,7 +4793,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   <div style={{ textAlign:'center', paddingTop:6 }}>
                     <div style={{ fontSize:16, fontWeight:700, color:TXT, marginBottom:4 }}>{slot.title}</div>
                     <div style={{ fontSize:12, color:TXT3 }}>
-                      {locked?'Доступно в пакете ПРОФИТ':(ec===0?'Нет упражнений':`${ec} упр.${vc>0?` · ${vc} видео`:''}`)}
+                      {locked?'Доступно с пакета БАЗА':(ec===0?'Нет упражнений':`${ec} упр.${vc>0?` · ${vc} видео`:''}`)}
                     </div>
                     {completions.length>0&&(
                       <div style={{ fontSize:11.5, color:'#16a34a', fontWeight:600, marginTop:5, display:'flex', alignItems:'center', gap:4 }}>
@@ -5031,12 +5028,16 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
 
           Карточка открывает раздел СРАЗУ на экране челленджа — без камеры и без
           загрузки модели (см. startScreen в src/motion/index.jsx). */}
+      {/* Сент 2026: челлендж пока не актуален — карточку видит только тренер.
+          Прямая ссылка /challenge продолжает работать для уже купивших. */}
+      {userRole==='trainer'&&(
       <HubCard
         testId="program-folder-challenge"
         icon="trophy"
         title="Челлендж 30 дней"
         subtitle="Поток с общим стартом и призовым фондом"
         onClick={onOpenChallenge} />
+      )}
 
       {/* ── Уровень 0: список папок ── */}
       {templateFolders.map(t=>{
@@ -7715,7 +7716,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           testId={`diary-section-${f.key}`}
           icon={f.ic}
           title={f.label}
-          subtitle={locked?'Доступно в пакете ПРОФИТ':f.sub}
+          subtitle={locked?'Доступно с пакета БАЗА':f.sub}
           locked={locked}
           onClick={()=>{
             if(locked){track('paywall',{where:'exercises'},evPath());setShowExLock(true);return}
@@ -8732,7 +8733,7 @@ function AnalyticsView({ userRole }) {
 
         {/* Фильтр по пакету. */}
         <div style={{ display:'flex', gap:8, overflowX:'auto', marginBottom:12, paddingBottom:2 }}>
-          {pill('all','Все')}{pill('start','СТАРТ')}{pill('profit','ПРОФИТ')}{pill('premium','ПРЕМИУМ')}
+          {pill('all','Все')}{pill('start','СТАРТ')}{pill('base','БАЗА')}{pill('profit','ПРОФИТ')}{pill('premium','ПРЕМИУМ')}
         </div>
 
         {/* Поиск по имени и нику. */}

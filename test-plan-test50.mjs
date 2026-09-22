@@ -52,15 +52,15 @@ console.log('\n── Видимость: только тренеру ───�
 const keysFor = role => visiblePlans(role).map(p => p.key)
 
 assertEqual('обычный клиент (role=client) test50 НЕ видит', keysFor('client').includes('test50'), false)
-assertEqual('клиент тренера — та же роль client, тоже не видит', keysFor('client'), ['start', 'profit', 'premium'])
+assertEqual('клиент тренера — та же роль client, тоже не видит', keysFor('client'), ['start', 'base', 'profit', 'premium'])
 assertEqual('аноним без роли не видит', keysFor(undefined).includes('test50'), false)
 assertEqual('null-роль не видит', keysFor(null).includes('test50'), false)
 // Роль подделать в браузере можно, поэтому это удобство, а не защита, — но
 // список всё равно обязан быть правильным.
 assertEqual('тренер видит', keysFor('trainer').includes('test50'), true)
-assertEqual('у тренера порядок и состав пилюль', keysFor('trainer'), ['start', 'profit', 'premium', 'test50'])
+assertEqual('у тренера порядок и состав пилюль', keysFor('trainer'), ['start', 'base', 'profit', 'premium', 'test50'])
 // hidden и staff — разные признаки: снятый с продажи не показываем даже тренеру.
-assertEqual('снятая с продажи БАЗА не видна и тренеру', keysFor('trainer').includes('base'), false)
+assertEqual('БАЗА снова в продаже и видна', keysFor('client').includes('base'), true)
 
 console.log('\n── Карточка тарифа ────────────────────────────────────────────────')
 const t50 = planByKey('test50')
@@ -164,7 +164,7 @@ const payReq = (body, auth = 'Bearer t') => ({
   stubPay({ role: 'client' })
   await createPayment(payReq({ plan: 'base' }), res)
   restore()
-  assertEqual('снятая с продажи БАЗА по-прежнему отвергается', res.statusCode, 400)
+  assertEqual('БАЗА покупается', res.statusCode, 200)
 }
 {
   const res = mockRes()
