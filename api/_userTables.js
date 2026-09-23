@@ -58,6 +58,10 @@ export const USER_TABLES = [
   // одинаково. Соседний ai_usage в списке отсутствует — это давняя недоделка,
   // а не образец для подражания.
   { table: 'feature_usage',         column: 'user_id' },
+  // Чат клуба ZMClub (sql/2026-09-23_club_chat.sql): личные ссылки в группу и
+  // связка «пользователь → Telegram-id участника группы». ON DELETE CASCADE.
+  { table: 'club_chat_invites',     column: 'user_id' },
+  { table: 'club_chat_members',     column: 'user_id' },
   { table: 'planned_workouts',      column: 'user_id' },
   { table: 'chat_messages',         column: 'user_id' },
   { table: 'food_diary',            column: 'user_id' },

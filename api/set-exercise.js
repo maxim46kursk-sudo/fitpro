@@ -23,6 +23,7 @@ import { egressFetch } from './_egress.js'
 // трогает только внутри своих функций, поэтому импортируется сюда как есть.
 // Держать здесь вторую копию списка нельзя: она разъедется в первый же день.
 import { EVENT_NAMES, sanitizeProps } from '../src/track.js'
+import { clubUpdate } from './club-chat.js'
 
 // Набор колонок карточки, который отдаём клиенту. source в списке обязателен:
 // от него зависит и решение сервера (идти ли за обновлением в OFF), и пометка
@@ -1145,6 +1146,11 @@ async function handleTelegram(req, res) {
     return res.status(404).end()
   }
   if (req.method !== 'POST') return res.status(404).end()
+
+  // ZMClub: обновления про группу клуба (бота сделали админом, заявка на
+  // вступление) разбирает api/club-chat.js — если бот один и тот же, второй
+  // вебхук не нужен.
+  if (req.body?.my_chat_member || req.body?.chat_join_request) return clubUpdate(req.body, res)
 
   try {
     const msg = req.body?.message ?? req.body?.edited_message

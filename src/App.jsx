@@ -11525,6 +11525,38 @@ export default function App() {
   // бесконечный опрос сервера ничего не исправит — доступ подтянется при
   // следующем открытии приложения.
   const [chatSoonToast,setChatSoonToast]=useState(false)
+  const [chatLock,setChatLock]=useState(false)
+  /**
+   * ЧАТ КЛУБА. Не участник (или гость) — замок с «Вступить в клуб». Участник —
+   * сервер отдаёт ссылку: личную заявку в группу (бот одобрит сам) или, если
+   * человек уже там, ссылку на саму группу. Вкладку открываем синхронно, до
+   * await, — иначе Safari сочтёт её всплывающим окном (см. pay в PlansView).
+   */
+  const openClubChat=async()=>{
+    if(!user||access.level<SLOTS_MIN_LEVEL){track('paywall',{where:'chat'},evPath());setChatLock(true);return}
+    const inTelegram=!!window.Telegram?.WebApp?.initData
+    const w=inTelegram?null:window.open('about:blank','_blank')
+    try{
+      const{data:{session}}=await supabase.auth.getSession()
+      const res=await fetch('/api/club-chat?action=link',{method:'POST',headers:{Authorization:`Bearer ${session?.access_token||''}`}})
+      const body=await res.json().catch(()=>({}))
+      if(!res.ok||!body?.url){
+        try{w?.close()}catch{/* уже закрыта */}
+        if(body?.reason==='no_access'){setChatLock(true);return}
+        setChatSoonText(body?.error||'Не удалось открыть чат, попробуй ещё раз')
+        setChatSoonToast(true);setTimeout(()=>setChatSoonToast(false),3000)
+        return
+      }
+      if(inTelegram)window.Telegram.WebApp.openTelegramLink(body.url)
+      else if(w){try{w.opener=null}catch{/* */}w.location.replace(body.url)}
+      else window.location.assign(body.url)
+    }catch(e){
+      try{w?.close()}catch{/* */}
+      console.error('Чат клуба:',e)
+      setChatSoonText('Нет связи, попробуй ещё раз');setChatSoonToast(true);setTimeout(()=>setChatSoonToast(false),3000)
+    }
+  }
+  const [chatSoonText,setChatSoonText]=useState('Чат клуба скоро откроется')
   const [paidToast,setPaidToast]=useState(false)
   useEffect(()=>{
     const params=new URLSearchParams(window.location.search)
@@ -12324,8 +12356,8 @@ export default function App() {
   // плане" (см. isWorkoutForeground) — везде показывается плашка
   // свёрнутой тренировки с таймером.
   const handleNav=(id)=>{
-    // Кнопка «Чат» клуба пока не подключена: экрана нет, только подсказка.
-    if(id==='chat'){setChatSoonToast(true);setTimeout(()=>setChatSoonToast(false),2500);return}
+    // «Чат» — Телеграм-группа клуба (api/club-chat.js), своего экрана нет.
+    if(id==='chat'){openClubChat();return}
     setNav(id)
   }
 
@@ -12630,8 +12662,12 @@ export default function App() {
           background:SURF2, color:TXT, fontSize:13, fontWeight:700,
           boxShadow:'0 6px 20px rgba(0,0,0,0.28)',
         }}>
-          Чат клуба скоро откроется
+          {chatSoonText}
         </div>
+      )}
+      {chatLock&&(
+        <PlanLockModal title="Чат доступен участникам ZMClub" text="Общение с участниками клуба и разбор твоей техники от тренера по видео."
+          onClose={()=>setChatLock(false)} onOpenPlans={()=>{setChatLock(false);openPlans()}} />
       )}
       {inviteToast&&(
         <div style={{
