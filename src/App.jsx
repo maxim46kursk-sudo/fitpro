@@ -708,7 +708,7 @@ function PlanLockNotice({ title, text, onOpenPlans }) {
         width:'100%',maxWidth:280,padding:'13px',borderRadius:13,border:'none',
         background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',
         fontSize:15,fontWeight:700,cursor:'pointer',boxShadow:`0 8px 24px ${PUR}45`,
-      }}>Открыть тарифы</button>
+      }}>Вступить в клуб</button>
     </div>
   )
 }
@@ -737,6 +737,10 @@ function PlanLockModal({ title, text, onClose, onOpenPlans }) {
 // четыре — обещать «все четыре» было бы неправдой.
 const LOCK_SLOTS = { title:'Тренировки доступны участникам ZMClub', text:'Вступи в клуб — откроются все тренировки во всех программах, прогресс по упражнениям и видео-отчёты тренеру.' }
 const LOCK_EXERCISES = { title:'Прогресс по упражнениям доступен участникам ZMClub', text:'Покажет динамику весов и повторений по каждому упражнению за любой период.' }
+// ZMClub (сент 2026): закрыты для не-участников ещё три места.
+const LOCK_WORKOUTS = { title:'Мои тренировки доступны участникам ZMClub', text:'Журнал всех твоих тренировок: веса, подходы, тоннаж и история по дням.' }
+const LOCK_LIBRARY = { title:'Упражнения доступны участникам ZMClub', text:'Видео техники и разбор каждого упражнения по показаниям миографа.' }
+const LOCK_RATION = { title:'Остальные дни рациона — в ZMClub', text:'Первый день открыт, чтобы было видно, как устроен рацион. Все 7 дней каждого рациона открываются участникам клуба.' }
 // Со скольки слотов начинается платная часть шаблона и какой уровень нужен.
 const FREE_SLOTS = 0 // сент 2026: бесплатных тренировок в программах нет, всё с БАЗЫ
 const SLOTS_MIN_LEVEL = 1
@@ -5575,7 +5579,7 @@ const MEAL_ICONS={'Завтрак':'sunrise','Перекус':'food','Обед':
  * @param {(section: string) => void} [props.onGuestValue] позвать в момент,
  *   когда гость реально что-то записал — предложение решает App
  */
-function NutritionTab({ userId, guest = false, onGuestValue = null }){
+function NutritionTab({ userId, guest = false, onGuestValue = null, accessLevel = 0, openPlans }){
   const [tab,setTab]=useState('diary')
   // Тот же вид, что у переключателей внутри самого дневника (tabBtn в
   // FoodDiary.jsx) — вкладка не должна выглядеть как чужой экран.
@@ -5610,13 +5614,16 @@ function NutritionTab({ userId, guest = false, onGuestValue = null }){
       {/* У «Рационов» своей шапки нет, поэтому переключатель рисуем над ними. */}
       <div style={{ display: tab==='plans'?'block':'none' }}>
         <div style={{ background:SURF, borderBottom:`1px solid ${HAIR}`, padding:'14px 16px' }}>{switcher}</div>
-        <NutritionView userId={userId} />
+        <NutritionView userId={userId} accessLevel={accessLevel} openPlans={openPlans} />
       </div>
     </div>
   )
 }
 
-function NutritionView({ userId }){
+function NutritionView({ userId, accessLevel = 0, openPlans }){
+  // ZMClub: в каждом рационе открыт только первый день, остальные — участникам.
+  const rationLocked=accessLevel<SLOTS_MIN_LEVEL
+  const [showRationLock,setShowRationLock]=useState(false)
   const [openPlan,setOpenPlan]=useState(null)
   const [openDay,setOpenDay]=useState(null)
   const [logDate,setLogDate]=useState(()=>{const t=new Date();return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`})
@@ -5662,7 +5669,7 @@ function NutritionView({ userId }){
     setTimeout(()=>setLogDone(false),2500)
   }
 
-  if(openDay!==null&&openPlan!==null){
+  if(openDay!==null&&openPlan!==null&&!(rationLocked&&openDay>0)){
     const plan=NUTRITION_PLANS.find(p=>p.id===openPlan)
     const day=plan.days[openDay]
     return createPortal(
@@ -5786,9 +5793,11 @@ function NutritionView({ userId }){
           </div>
         </div>
         <div style={{ flex:1,overflowY:'auto',padding:'14px 16px 32px' }}>
-          {plan.days.map((day,di)=>(
-            <div key={di} style={{ background:SURF,borderRadius:13,boxShadow:'0 1px 4px rgba(0,0,0,0.07)',marginBottom:10,display:'flex',alignItems:'center',gap:12,padding:'14px 16px',cursor:'pointer' }}
-              onClick={()=>setOpenDay(di)}>
+          {plan.days.map((day,di)=>{
+            const dayLocked=rationLocked&&di>0
+            return (
+            <div key={di} style={{ background:SURF,borderRadius:13,boxShadow:'0 1px 4px rgba(0,0,0,0.07)',marginBottom:10,display:'flex',alignItems:'center',gap:12,padding:'14px 16px',cursor:'pointer',opacity:dayLocked?0.55:1 }}
+              onClick={()=>{if(dayLocked){track('paywall',{where:'ration'},evPath());setShowRationLock(true);return}setOpenDay(di)}}>
               <div style={{ flexShrink:0,width:46,height:46,borderRadius:12,background:TEA,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center' }}>
                 <span style={{ fontSize:11,fontWeight:700,color:'#fff',lineHeight:1 }}>{DAY_NAMES[di]}</span>
                 <span style={{ fontSize:16,fontWeight:800,color:'#fff',lineHeight:1.2 }}>{di+1}</span>
@@ -5803,10 +5812,15 @@ function NutritionView({ userId }){
                 <div style={{ fontSize:15,fontWeight:700,color:COR }}>{day.total.cal}</div>
                 <div style={{ fontSize:10,color:TXT3 }}>ккал</div>
               </div>
-              <span style={{ fontSize:20,color:TXT3 }}>›</span>
+              <span style={{ fontSize:dayLocked?15:20,color:TXT3 }}>{dayLocked?'🔒':'›'}</span>
             </div>
-          ))}
+            )
+          })}
         </div>
+        {showRationLock&&(
+          <PlanLockModal {...LOCK_RATION} onClose={()=>setShowRationLock(false)}
+            onOpenPlans={()=>{setShowRationLock(false);setOpenPlan(null);openPlans?.()}} />
+        )}
       </div>
     , document.body)
   }
@@ -6342,8 +6356,13 @@ function VideoPicker({ exerciseName, exerciseVideos = {}, setExerciseVideos, onC
 // workoutHistory — пропом из App по той же причине, что и в Dashboard выше:
 // рекорды по упражнениям считались из localStorage-кэша и не обновлялись после
 // того, как App догружал историю из Supabase.
-function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client', setExerciseVideos, workoutHistory = [] }) {
+function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client', setExerciseVideos, workoutHistory = [], accessLevel = 0, openPlans }) {
   const { exercises: catalogExercises, reloadCatalog } = useContext(CatalogContext)
+  // ZMClub: список групп и названия упражнений видны всем, а сами упражнения
+  // (видео, техника) — только участникам клуба. Тренер не упирается.
+  const libLocked=userRole!=='trainer'&&accessLevel<SLOTS_MIN_LEVEL
+  const [showLibLock,setShowLibLock]=useState(false)
+  const lockLib=()=>{track('paywall',{where:'library'},evPath());setShowLibLock(true)}
   const [filt,setFilt]=useState('Все')
   const [sel,setSel]=useState(null)
   const [query,setQuery]=useState('')
@@ -6721,12 +6740,12 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
         {fl.map((ex,i)=>{
           const vid=pickVideo(exerciseVideos,ex.n,null)
           return (
-          <Card key={i} onClick={()=>setSel(ex)} style={{ cursor:'pointer' }}>
+          <Card key={i} onClick={()=>libLocked?lockLib():setSel(ex)} style={{ cursor:'pointer' }}>
             <div style={{ display:'flex', alignItems:'center', gap:12 }}>
               {/* Превью видео — если есть в карте. Тап по нему открывает плеер,
                   а не карточку (stopPropagation). Нет видео — колонка не рисуется. */}
               {vid&&(
-                <button onClick={e=>{e.stopPropagation();setPlayVideo({url:vid.video_url,name:ex.label||ex.n})}}
+                <button onClick={e=>{e.stopPropagation();if(libLocked){lockLib();return}setPlayVideo({url:vid.video_url,name:ex.label||ex.n})}}
                   style={{ position:'relative', flexShrink:0, width:76, height:48, border:'none', padding:0, borderRadius:9, overflow:'hidden', cursor:'pointer', background:SURF2 }}>
                   <img src={vid.poster_url} alt={ex.n} loading="lazy" style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
                   <span style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -6738,6 +6757,7 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
                 <div style={{ fontSize:15, fontWeight:600, color:TXT }}>{ex.label||ex.n}{ex.custom&&<span style={{ marginLeft:6, fontSize:10, padding:'1px 6px', borderRadius:4, background:'#EEEDFE', color:PUR }}>моё</span>}</div>
                 <div style={{ fontSize:12, color:TXT3, marginTop:2 }}>{ex.m}{ex.eq?` · ${ex.eq}`:''}</div>
               </div>
+              {libLocked&&<span style={{ fontSize:14, opacity:.55, flexShrink:0 }}>🔒</span>}
             </div>
           </Card>
           )
@@ -6745,6 +6765,10 @@ function LibraryView({ customExercises, exerciseVideos = {}, userRole = 'client'
         {fl.length===0&&<div style={{ color:TXT3,fontSize:13,gridColumn:'1/-1',textAlign:'center',padding:'30px 0' }}>Ничего не найдено</div>}
       </div>
       )}
+      {showLibLock&&createPortal(
+        <PlanLockModal {...LOCK_LIBRARY} onClose={()=>setShowLibLock(false)}
+          onOpenPlans={()=>{setShowLibLock(false);openPlans?.()}} />,
+        document.body)}
     </div>
   )
 }
@@ -6757,6 +6781,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
   const { exercises: catalogExercises } = useContext(CatalogContext) // для labelOf (имена в истории — ключи)
   const exercisesLocked=!readOnly&&accessLevel<SLOTS_MIN_LEVEL
   const [showExLock,setShowExLock]=useState(false)
+  const [showWkLock,setShowWkLock]=useState(false)
   const [section, setSection] = useState(()=>initialSection??null)
   // Сообщаем родителю текущий подраздел — чтобы App мог его запомнить и вернуть
   // при повторном монтировании DiaryView после вынужденного перехода на другую
@@ -7268,6 +7293,16 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
 
   // ── СЕКЦИЯ: Мои тренировки (журнал)
   if(section==='workouts'){
+    // ZMClub: журнал тренировок — только участникам. Гейт и здесь, а не только
+    // на пункте меню: в секцию ведёт ещё и возврат из тренировки.
+    if(exercisesLocked) return createPortal(
+      <div style={{ position:'fixed',inset:0,background:BG,zIndex:1000,display:'flex',flexDirection:'column' }}>
+        <BackBtn label={sectionTitle('Мои тренировки')} onBack={()=>setSection(null)} />
+        <div style={{ flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:'24px 16px' }}>
+          <PlanLockNotice {...LOCK_WORKOUTS} onOpenPlans={()=>openPlans?.()} />
+        </div>
+      </div>
+    , document.body)
     const sorted=[...allWorkoutTons].reverse()
     const savePlanned=(pw)=>{
       if(readOnly)return
@@ -7716,7 +7751,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
       ):null}
       {FOLDERS_DIARY.map(f=>{
         // Заперт только "Прогресс по упражнениям"; соседние разделы бесплатны.
-        const locked=f.key==='exercises'&&exercisesLocked
+        const locked=(f.key==='exercises'||f.key==='workouts')&&exercisesLocked
         return (
         <HubCard key={f.key}
           testId={`diary-section-${f.key}`}
@@ -7725,7 +7760,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           subtitle={locked?'Доступно в ZMClub':f.sub}
           locked={locked}
           onClick={()=>{
-            if(locked){track('paywall',{where:'exercises'},evPath());setShowExLock(true);return}
+            if(locked){track('paywall',{where:f.key},evPath());(f.key==='workouts'?setShowWkLock:setShowExLock)(true);return}
             if(f.key==='exercises'){setExPeriod('all');setExCustomFrom('');setExCustomTo('')}
             setSection(f.key)
           }} />
@@ -7734,6 +7769,10 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
       {showExLock&&createPortal(
         <PlanLockModal {...LOCK_EXERCISES} onClose={()=>setShowExLock(false)}
           onOpenPlans={()=>{setShowExLock(false);openPlans?.()}} />,
+        document.body)}
+      {showWkLock&&createPortal(
+        <PlanLockModal {...LOCK_WORKOUTS} onClose={()=>setShowWkLock(false)}
+          onOpenPlans={()=>{setShowWkLock(false);openPlans?.()}} />,
         document.body)}
     </div>
   )
@@ -12524,8 +12563,8 @@ export default function App() {
         ? <Dashboard setNav={handleNav} setSC={setSC} isTrainer={true} userId={user?.id} workoutHistory={workoutHistory} />
         : null
       case 'clients':   return <ClientsView setSC={setSC} setNav={handleNav} userId={user?.id} />
-      case 'nutrition': return <NutritionTab userId={user?.id} guest={guestMode} onGuestValue={handleGuestValue} />
-      case 'library':   return <LibraryView customExercises={customExercises} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} workoutHistory={workoutHistory} />
+      case 'nutrition': return <NutritionTab userId={user?.id} guest={guestMode} onGuestValue={handleGuestValue} accessLevel={userRole==='trainer'?99:access.level} openPlans={openPlans} />
+      case 'library':   return <LibraryView customExercises={customExercises} exerciseVideos={exerciseVideos} userRole={userRole} setExerciseVideos={setExerciseVideos} workoutHistory={workoutHistory} accessLevel={access.level} openPlans={openPlans} />
       // Конструктор — только тренеру (этап 1 разморозки, см.
       // docs/CONSTRUCTOR_FROZEN.md). Проверка роли ровно та же, что у
       // тренерских экранов выше; клиенту здесь возвращается null, даже если он
