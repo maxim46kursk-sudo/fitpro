@@ -7939,6 +7939,43 @@ function WelcomeSheet({ onClose }) {
   )
 }
 
+/**
+ * ПОСЛЕ ОПЛАТЫ БЕЗ АККАУНТА: человек уже вошёл (аккаунт завёлся по почте из
+ * кассы), осталось задать пароль — чтобы войти с другого устройства — и имя.
+ * Можно пропустить: пароль потом задаётся через «Забыли пароль» по той же почте.
+ */
+function SetPasswordSheet({ user, email, synthetic, onDone }) {
+  const [name,setName]=useState('')
+  const [pwd,setPwd]=useState('')
+  const [busy,setBusy]=useState(false)
+  const [err,setErr]=useState('')
+  const save=async()=>{
+    if(pwd.length<6){setErr('Пароль — минимум 6 символов');return}
+    setBusy(true);setErr('')
+    const{error}=await supabase.auth.updateUser({password:pwd,data:name.trim()?{name:name.trim()}:undefined})
+    if(error){setBusy(false);setErr('Не удалось сохранить: '+error.message);return}
+    if(name.trim())await supabase.from('profiles').update({name:name.trim()}).eq('id',user.id)
+    setBusy(false);onDone()
+  }
+  const inp={width:'100%',boxSizing:'border-box',padding:'12px 13px',borderRadius:12,border:`1.5px solid ${HAIR}`,background:SURF2,color:TXT,fontSize:15,marginBottom:10}
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:3200, background:'rgba(0,0,0,0.78)', display:'flex', alignItems:'flex-end', justifyContent:'center' }}>
+      <div style={{ background:SURF, borderRadius:'20px 20px 0 0', width:'100%', maxWidth:460, padding:'22px 20px 30px', color:TXT }}>
+        <div style={{ fontSize:30, textAlign:'center', marginBottom:6 }}>🎉</div>
+        <div style={{ fontSize:19, fontWeight:800, textAlign:'center', marginBottom:6 }}>Добро пожаловать в ZMClub!</div>
+        <div style={{ fontSize:13.5, color:TXT2, textAlign:'center', lineHeight:1.5, marginBottom:16 }}>
+          Оплата прошла, клуб открыт.{!synthetic&&email?<> Твой логин — <b style={{color:TXT}}>{email}</b>.</>:null} Придумай пароль, чтобы входить с любого устройства.
+        </div>
+        <input value={name} onChange={e=>setName(e.target.value)} placeholder="Как тебя зовут" style={inp} />
+        <input value={pwd} onChange={e=>setPwd(e.target.value)} type="password" placeholder="Пароль (минимум 6 символов)" style={inp} onKeyDown={e=>e.key==='Enter'&&save()} />
+        {err&&<div style={{ fontSize:13, color:DANGER, marginBottom:10 }}>{err}</div>}
+        <button onClick={save} disabled={busy} style={{ width:'100%', padding:14, borderRadius:12, border:'none', background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', fontSize:15, fontWeight:800, cursor:'pointer', opacity:busy?0.6:1 }}>{busy?'Сохраняем…':'Сохранить и начать'}</button>
+        <button onClick={onDone} style={{ width:'100%', marginTop:8, padding:10, border:'none', background:'none', color:TXT3, fontSize:14, cursor:'pointer' }}>Позже</button>
+      </div>
+    </div>
+  )
+}
+
 function OfferSheet({ section, score, onCreate, onLater }) {
   const t = OFFER_TEXTS[section]
   if (!t) return null
@@ -9778,14 +9815,14 @@ function PlansView({ user, onClose, hideBack, onChanged, guest, onCreateAccount 
               background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',
               fontSize:15,fontWeight:800,cursor:'pointer',minHeight:'unset',
               boxShadow:`0 8px 24px ${PUR}45`,
-            }}>Создать аккаунт</button>
+            }}>{selectedPlan.key==='club'?`Оплатить · ${priceOf(selectedPlan)} ₽`:'Создать аккаунт'}</button>
           ):selectedPlan.level>0?(
             <button onClick={()=>pay(selectedPlan)} disabled={payBusy} style={{
               width:'100%',padding:'13px',borderRadius:12,border:'none',
               background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',
               fontSize:15,fontWeight:800,cursor:payBusy?'not-allowed':'pointer',minHeight:'unset',
               boxShadow:`0 8px 24px ${PUR}45`,opacity:payBusy?0.7:1,
-            }}>{payBusy?'Готовим оплату…':(selectedPlan.key==='club'?`Вступить в клуб · ${priceOf(selectedPlan)} ₽`:`Оформить ${selectedPlan.name} · ${priceOf(selectedPlan)} ₽`)}</button>
+            }}>{payBusy?'Готовим оплату…':(selectedPlan.key==='club'?`Оплатить · ${priceOf(selectedPlan)} ₽`:`Оформить ${selectedPlan.name} · ${priceOf(selectedPlan)} ₽`)}</button>
           ):null}
         </div>
 
@@ -11477,6 +11514,9 @@ export default function App() {
    * себе», а после конкретного момента.
    */
   const createAccountFromPlans=()=>{
+    // ZMClub: клуб гость оплачивает сразу, без анкеты — аккаунт заведётся сам
+    // по почте из кассы (см. startClubPayment).
+    if(!user){setShowSettingsView(false);setSettingsSubPage(null);startClubPayment();return}
     try{sessionStorage.setItem('fitpro_offer_src','plans')}catch{/* приватный режим */}
     // ZMClub: после входа сразу вернуть человека к оплате — он шёл вступать.
     try{sessionStorage.setItem('zmclub_pay_after_auth','1')}catch{/* приватный режим */}
@@ -11614,6 +11654,85 @@ export default function App() {
       setTimeout(()=>setPaidToast(false),12000),
     ]
     return()=>timers.forEach(clearTimeout)
+  },[])
+
+  /**
+   * ОПЛАТА КЛУБА В ОДНО НАЖАТИЕ (ZMClub, сент 2026).
+   *
+   * Решившегося человека не заставляем сначала заводить аккаунт: касса
+   * открывается сразу. Гостю сервер выдаёт секретный номер заказа — он живёт
+   * здесь, в localStorage, — а аккаунт вебхук заводит сам по почте, которую
+   * человек ввёл в кассе. Вернувшись, приложение по номеру заказа входит в этот
+   * аккаунт само (api/guest-order.js) и предлагает только задать пароль.
+   * Касса открывается в ЭТОЙ ЖЕ вкладке: так не мешают блокировщики окон, а
+   * номер заказа гарантированно ждёт в том же браузере.
+   */
+  const PENDING_ORDER_KEY='zmclub_pending_order'
+  const [payOpening,setPayOpening]=useState(false)
+  const startClubPayment=async()=>{
+    if(payOpening)return
+    setPayOpening(true)
+    try{
+      const headers={'Content-Type':'application/json'}
+      if(user){
+        const{data:{session}}=await supabase.auth.getSession()
+        if(session?.access_token)headers.Authorization=`Bearer ${session.access_token}`
+      }
+      track('pay_start',{plan:'club',guest:!user},evPath())
+      const inTelegram=!!window.Telegram?.WebApp?.initData
+      const res=await fetch('/api/create-payment',{method:'POST',headers,body:JSON.stringify({plan:'club',source:inTelegram?'telegram':'web'})})
+      const body=await res.json().catch(()=>({}))
+      if(!res.ok||!body?.url)throw new Error(body?.error||`сервер ответил ${res.status}`)
+      if(body.order){try{localStorage.setItem(PENDING_ORDER_KEY,JSON.stringify({order:body.order,at:Date.now()}))}catch{/* приватный режим */}}
+      if(inTelegram)window.Telegram.WebApp.openLink(body.url)
+      else window.location.assign(body.url)
+    }catch(e){
+      console.error('Оплата клуба:',e)
+      setChatSoonText(`Не удалось открыть оплату: ${e.message}`);setChatSoonToast(true);setTimeout(()=>setChatSoonToast(false),4000)
+    }finally{
+      setPayOpening(false)
+    }
+  }
+
+  // Вернулся из кассы гостем — входим в заведённый по оплате аккаунт.
+  // phase: wait | existing | claimed | timeout ; null — ничего не показываем.
+  const [guestPay,setGuestPay]=useState(null)
+  const [pwdSheet,setPwdSheet]=useState(null) // {email, synthetic} — «задай пароль» после входа
+  useEffect(()=>{
+    let pending=null
+    try{pending=JSON.parse(localStorage.getItem(PENDING_ORDER_KEY)||'null')}catch{pending=null}
+    if(!pending?.order)return
+    if(Date.now()-(pending.at||0)>7*864e5){try{localStorage.removeItem(PENDING_ORDER_KEY)}catch{/* */}return}
+    // Свежий заказ (вернулся из кассы только что) — показываем ожидание.
+    // Старый — тихо проверяем один раз: вдруг оплата прошла, а вернуться не вышло.
+    const fresh=Date.now()-pending.at<45*60e3
+    if(fresh){closeWelcome();setGuestPay({phase:'wait'})}
+    let stop=false, tries=0
+    const drop=()=>{try{localStorage.removeItem(PENDING_ORDER_KEY)}catch{/* */}}
+    const tick=async()=>{
+      if(stop)return
+      tries++
+      try{
+        const res=await fetch('/api/guest-order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({order:pending.order})})
+        const b=await res.json().catch(()=>({}))
+        if(b.status==='ok'&&b.token_hash){
+          const{error}=await supabase.auth.verifyOtp({token_hash:b.token_hash,type:'magiclink'})
+          if(error)throw error
+          drop();closeWelcome();setGuestPay(null)
+          setPwdSheet({email:b.email,synthetic:!!b.synthetic})
+          setProfileReloadToken(t=>t+1)
+          return
+        }
+        if(b.status==='existing'||b.status==='claimed'){drop();setGuestPay({phase:b.status,email:b.email});return}
+        if(b.status==='unknown'){drop();setGuestPay(null);return}
+      }catch(e){console.error('Вход после оплаты:',e)}
+      if(!fresh){return}
+      if(tries>=45){setGuestPay({phase:'timeout'});return}
+      setTimeout(tick,2000)
+    }
+    tick()
+    return()=>{stop=true}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   },[])
 
   // Второй заход за start_param — уже после того, как Telegram опознан и
@@ -12704,6 +12823,33 @@ export default function App() {
           {chatSoonText}
         </div>
       )}
+      {guestPay&&(
+        <div style={{ position:'fixed', inset:0, zIndex:3200, background:'rgba(0,0,0,0.78)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+          <div style={{ background:SURF, borderRadius:18, padding:'24px 20px', width:'100%', maxWidth:360, textAlign:'center', color:TXT }}>
+            {guestPay.phase==='wait'&&(<>
+              <div style={{ width:44, height:44, margin:'0 auto 14px', borderRadius:'50%', border:`4px solid ${SURF2}`, borderTopColor:ACCENT2, animation:'ptr-spin .8s linear infinite' }} />
+              <div style={{ fontSize:17, fontWeight:800, marginBottom:6 }}>Подтверждаем оплату…</div>
+              <div style={{ fontSize:13.5, color:TXT2, lineHeight:1.5 }}>Обычно это несколько секунд. Сразу после этого откроем тебе клуб.</div>
+            </>)}
+            {guestPay.phase==='timeout'&&(<>
+              <div style={{ fontSize:17, fontWeight:800, marginBottom:8 }}>Оплата ещё подтверждается</div>
+              <div style={{ fontSize:13.5, color:TXT2, lineHeight:1.5, marginBottom:16 }}>Касса пока не прислала подтверждение. Закрой и открой приложение через пару минут — войдём в клуб автоматически. Если не получится, напиши тренеру.</div>
+              <button onClick={()=>setGuestPay(null)} style={{ width:'100%', padding:13, borderRadius:12, border:'none', background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', fontSize:15, fontWeight:800, cursor:'pointer' }}>Понятно</button>
+            </>)}
+            {(guestPay.phase==='existing'||guestPay.phase==='claimed')&&(<>
+              <div style={{ fontSize:32, marginBottom:8 }}>✅</div>
+              <div style={{ fontSize:17, fontWeight:800, marginBottom:8 }}>Оплата прошла</div>
+              <div style={{ fontSize:13.5, color:TXT2, lineHeight:1.5, marginBottom:16 }}>
+                {guestPay.phase==='existing'
+                  ?<>Клуб подключён к аккаунту{guestPay.email?<> с почтой <b style={{color:TXT}}>{guestPay.email}</b></>:null}, который у тебя уже был. Войди в него — всё уже открыто.</>
+                  :<>Клуб подключён{guestPay.email?<> к аккаунту <b style={{color:TXT}}>{guestPay.email}</b></>:null}. Войди в него, чтобы продолжить.</>}
+              </div>
+              <button onClick={()=>{setGuestPay(null);setAuthTabWanted('login');setShowAuth(true)}} style={{ width:'100%', padding:13, borderRadius:12, border:'none', background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', fontSize:15, fontWeight:800, cursor:'pointer' }}>Войти</button>
+            </>)}
+          </div>
+        </div>
+      )}
+      {pwdSheet&&user&&<SetPasswordSheet user={user} email={pwdSheet.email} synthetic={pwdSheet.synthetic} onDone={()=>{setPwdSheet(null);setProfileReloadToken(t=>t+1)}} />}
       {reportReplyToast>0&&(
         <div onClick={()=>{setReportReplyToast(0);handleNav('progress')}} style={{
           position:'fixed', top:14, left:'50%', transform:'translateX(-50%)', cursor:'pointer',
@@ -13044,7 +13190,7 @@ export default function App() {
         * увидит и приветствие: отметку «видел» мы при этом не ставим.
         */}
       {guestMode&&!welcomeSeen&&!authOpen&&!(ПРЯМОЙ_ЧЕЛЛЕНДЖ&&motionOpen)&&(
-        <ClubLanding onLook={closeWelcome} onJoin={()=>{closeWelcome();openPlans()}} />
+        <ClubLanding onLook={closeWelcome} onJoin={()=>{closeWelcome();startClubPayment()}} onTrial={()=>{closeWelcome();openPlans()}} />
       )}
 
       {offer&&(

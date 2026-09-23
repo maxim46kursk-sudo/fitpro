@@ -16,6 +16,7 @@ const LABELS = {
   'screen:club_landing': 'Лендинг клуба',
   'screen:club_look': '«Посмотреть клуб изнутри»',
   'screen:club_join': '«Вступить» на лендинге',
+  'screen:club_trial': '«Хочу пробный период» на лендинге',
   'screen:workouts': 'Тренировки',
   'screen:nutrition': 'Питание',
   'screen:library': 'Упражнения',

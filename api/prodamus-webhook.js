@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import qs from 'qs'
 import { createClient } from '@supabase/supabase-js'
 // Журнал ошибок + мгновенное уведомление тренеру. Файл с подчёркиванием —
@@ -143,6 +144,44 @@ async function resolveTrainerId(supabaseAdmin) {
   return data?.id || null
 }
 
+/**
+ * Гостевой заказ → id пользователя. Почта — из кассы (customer_email). Есть
+ * аккаунт с такой почтой — платёж идёт ему (но входить в него по заказу
+ * НЕЛЬЗЯ: иначе чужой аккаунт можно было бы открыть, заплатив с его почтой;
+ * см. api/guest-order.js). Нет — заводим новый, подтверждённый, со случайным
+ * паролем; пароль человек задаст сам после входа.
+ */
+async function resolveGuestOrder(admin, tagSrc, data) {
+  const m = /^g_([A-Za-z0-9_-]{16,64})__/.exec(String(tagSrc || ''))
+  if (!m) return null
+  const token = m[1]
+  const { data: order } = await admin.from('guest_orders').select('token, user_id').eq('token', token).maybeSingle()
+  if (!order) return null
+  if (order.user_id) return order.user_id   // повтор уведомления
+
+  const rawEmail = String(data.customer_email || '').trim().toLowerCase()
+  const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) ? rawEmail : `g${token.slice(0, 16).toLowerCase()}@guest.fitproapp.ru`
+  const phone = String(data.customer_phone || '').replace(/[^\d+]/g, '').slice(0, 20) || null
+
+  let uid = null, isNew = false
+  const { data: found } = await admin.rpc('auth_user_id_by_email', { em: email })
+  if (found) uid = found
+  if (!uid) {
+    const { data: created, error } = await admin.auth.admin.createUser({
+      email, email_confirm: true,
+      password: crypto.randomBytes(24).toString('base64url'),
+      user_metadata: { name: '', created_via: 'guest_pay' },
+    })
+    if (error) throw new Error(`createUser: ${error.message}`)
+    uid = created.user.id
+    isNew = true
+  }
+  await admin.from('guest_orders').update({
+    user_id: uid, email, phone, new_account: isNew, paid_at: new Date().toISOString(),
+  }).eq('token', token)
+  return uid
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).send('Method not allowed')
 
@@ -233,7 +272,19 @@ export default async function handler(req, res) {
     return UUID_RE.test(candidate) ? candidate : null
   }
   const customerExtra = data.customer_extra != null ? String(data.customer_extra) : null
-  const userId = extractUserId(customerExtra) || extractUserId(orderId)
+  let userId = extractUserId(customerExtra) || extractUserId(orderId)
+
+  // ── ГОСТЕВОЙ ЗАКАЗ (ZMClub): платил человек без аккаунта. Ярлык вида
+  // g_<секрет>__club. Аккаунт находим или заводим по почте из кассы, и дальше
+  // всё идёт обычным путём — начисление, журнал, повторы.
+  if (!userId && paymentStatus === 'success') {
+    try {
+      const guest = await resolveGuestOrder(supabaseAdmin, customerExtra || orderId, data)
+      if (guest) userId = guest
+    } catch (e) {
+      reportError('api:prodamus:guest', ['гостевой заказ не разобран:', e], { message: e?.message, status: 500 })
+    }
+  }
 
   const itemTag = extractItemTag(customerExtra) || extractItemTag(orderId)
   const wantsChallenge = itemTag === CHALLENGE_ITEM

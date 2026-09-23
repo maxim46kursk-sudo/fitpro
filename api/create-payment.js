@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import qs from 'qs'
 import { createClient } from '@supabase/supabase-js'
 import { createSignature, buildPaymentData, STAFF_PLANS, CHALLENGE_ITEM } from './_prodamus.js'
@@ -54,7 +55,31 @@ export default async function handler(req, res) {
   // было бы выписать ссылку с чужим userId в customer_extra.
   const authHeader = req.headers.authorization || ''
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
-  if (!token) return res.status(401).json({ error: 'Требуется авторизация' })
+
+  /**
+   * ОПЛАТА БЕЗ АККАУНТА (ZMClub, сент 2026).
+   *
+   * Человек решился — между ним и кассой не должно быть анкеты. Гость платит
+   * сразу; аккаунт заводит вебхук по почте, которую человек ввёл в кассе
+   * (api/prodamus-webhook.js), а по возвращении приложение входит в него само
+   * (api/guest-order.js). Связывает всё это заказ — случайный секретный номер,
+   * который остаётся в браузере покупателя.
+   *
+   * Только клуб: остальные тарифы и билет по-прежнему требуют входа.
+   */
+  if (!token) {
+    if (req.body?.plan !== 'club') return res.status(401).json({ error: 'Требуется авторизация' })
+    const orderToken = crypto.randomBytes(24).toString('base64url')
+    const admin = createClient(SUPABASE_URL, serviceRoleKey)
+    const { error: gErr } = await admin.from('guest_orders').insert({ token: orderToken, plan: 'club' })
+    if (gErr) {
+      console.error('create-payment: не удалось завести гостевой заказ:', gErr)
+      return res.status(500).json({ error: 'Не удалось открыть оплату, попробуй ещё раз' })
+    }
+    const gData = buildPaymentData({ userId: `g_${orderToken}`, plan: 'club', source: req.body?.source })
+    const gSignature = createSignature(gData, secret)
+    return res.status(200).json({ url: PAYFORM_BASE + '?' + qs.stringify({ ...gData, signature: gSignature }), order: orderToken })
+  }
 
   const supabaseAdmin = createClient(SUPABASE_URL, serviceRoleKey)
   const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(token)

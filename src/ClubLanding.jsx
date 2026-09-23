@@ -176,7 +176,7 @@ function Carousel({ children, count }) {
   )
 }
 
-export default function ClubLanding({ onJoin, onLook }) {
+export default function ClubLanding({ onJoin, onTrial, onLook }) {
   const rootRef = useRef(null)
   const topBtnRef = useRef(null)
   const endRef = useRef(null)
@@ -186,6 +186,9 @@ export default function ClubLanding({ onJoin, onLook }) {
 
   useEffect(() => { track('screen', { name: 'club_landing' }, '/club') }, [])
   const join = () => { track('screen', { name: 'club_join' }, '/club'); onJoin() }
+  // «Хочу пробный период» — сначала короткий экран с условиями (что входит,
+  // гарантия возврата) и кнопкой «Оплатить»; «Вступить» — сразу касса.
+  const trial = () => { track('screen', { name: 'club_trial' }, '/club'); (onTrial || onJoin)() }
   const look = () => { track('screen', { name: 'club_look' }, '/club'); onLook() }
 
   // Появление блоков при прокрутке + запуск счётчика цены + липкая кнопка.
@@ -254,7 +257,7 @@ export default function ClubLanding({ onJoin, onLook }) {
           <div style={{ fontSize: 13, color: T2, marginTop: 4 }}>Первые 7 дней — с гарантией возврата денег</div>
         </div>
         <div ref={topBtnRef} className="zl-in" style={{ animationDelay: '1s' }}>
-          <button data-testid="club-join-top" onClick={join} className="zl-btn">Хочу 7 дней пробного периода</button>
+          <button data-testid="club-join-top" onClick={trial} className="zl-btn">Хочу 7 дней пробного периода</button>
           <button data-testid="club-look" onClick={look} className="zl-ghost">Посмотреть клуб изнутри</button>
           <div style={{ fontSize: 12, color: T3, textAlign: 'center', marginTop: 8 }}>Без регистрации: программы, упражнения, питание</div>
         </div>

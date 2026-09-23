@@ -63,6 +63,8 @@ export const USER_TABLES = [
   { table: 'club_chat_invites',     column: 'user_id' },
   { table: 'club_chat_members',     column: 'user_id' },
   { table: 'club_reports',          column: 'user_id' },
+  // Гостевые заказы клуба (sql/2026-09-23_guest_orders.sql): почта и телефон из кассы.
+  { table: 'guest_orders',          column: 'user_id' },
   { table: 'planned_workouts',      column: 'user_id' },
   { table: 'chat_messages',         column: 'user_id' },
   { table: 'food_diary',            column: 'user_id' },
