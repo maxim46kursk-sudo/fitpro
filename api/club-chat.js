@@ -142,6 +142,15 @@ export async function clubUpdate(u, res, db) {
     db = createClient(SUPABASE_URL, key)
   }
   try {
+    await processUpdate(u, db)
+  } catch (e) {
+    reportError('api:club-chat:hook', ['вебхук чата клуба:', e], { message: e?.message, status: 500 })
+  }
+  return res.status(200).end()
+}
+
+async function processUpdate(u, db) {
+  {
     // 1. Бота сделали админом группы — если это сделал владелец, это чат клуба.
     const mcm = u.my_chat_member
     if (mcm && ['group', 'supergroup'].includes(mcm.chat?.type)) {
@@ -166,14 +175,14 @@ export async function clubUpdate(u, res, db) {
             : `✅ Группа «${mcm.chat.title}» подключена как чат ZMClub. Бот сам впускает оплативших и убирает тех, у кого закончился доступ.`,
         }).catch(() => {})
       }
-      return res.status(200).end()
+      return
     }
 
     // 2. Заявка на вступление.
     const jr = u.chat_join_request
     if (jr) {
       const chat = await clubChat(db)
-      if (!chat || String(jr.chat?.id) !== String(chat.chat_id)) return res.status(200).end()
+      if (!chat || String(jr.chat?.id) !== String(chat.chat_id)) return
       const link = jr.invite_link?.invite_link
       const tgId = jr.from?.id
       let ok = false, inv = null
@@ -185,7 +194,7 @@ export async function clubUpdate(u, res, db) {
       }
       if (!ok) {
         await tg('declineChatJoinRequest', { chat_id: chat.chat_id, user_id: tgId }).catch(() => {})
-        return res.status(200).end()
+        return
       }
       await tg('approveChatJoinRequest', { chat_id: chat.chat_id, user_id: tgId })
       await db.from('club_chat_invites').update({ used_at: new Date().toISOString(), tg_user_id: tgId }).eq('invite_link', link)
@@ -193,13 +202,41 @@ export async function clubUpdate(u, res, db) {
         user_id: inv.user_id, tg_user_id: tgId, chat_id: chat.chat_id, joined_at: new Date().toISOString(), removed_at: null,
       })
       await tg('revokeChatInviteLink', { chat_id: chat.chat_id, invite_link: link }).catch(() => {})
-      return res.status(200).end()
+      return
     }
-    return res.status(200).end()
-  } catch (e) {
-    reportError('api:club-chat:hook', ['вебхук чата клуба:', e], { message: e?.message, status: 500 })
-    return res.status(200).end()
+    return
   }
+}
+
+// ── ?action=poll ────────────────────────────────────────────────────────────
+//
+// ПОЧЕМУ ОПРОС, А НЕ ВЕБХУК. Вебхук требует, чтобы Telegram сам достучался до
+// сервера, а входящие соединения с адресов Telegram до нашего сервера в России
+// не доходят (сент 2026: last_error_message «Connection timed out», в журнале
+// Caddy ни одного запроса от 149.154.*/91.108.*). Исходящие запросы к Telegram
+// при этом работают. Поэтому крон раз в минуту сам забирает обновления
+// (getUpdates) — у бота при этом вебхука быть НЕ должно (иначе 409).
+// Смещение хранится в club_settings.tg_offset, чтобы ничего не обработать дважды.
+async function handlePoll(req, res, db) {
+  const given = (req.query?.secret || req.headers['x-cron-secret'] || '').toString()
+  if (!secretOk(given, process.env.REMINDERS_CRON_SECRET)) return res.status(401).json({ error: 'Unauthorized' })
+  const { data: st } = await db.from('club_settings').select('tg_offset').eq('id', 1).maybeSingle()
+  let offset = st?.tg_offset ?? 0
+  let updates
+  try {
+    updates = await tg('getUpdates', { offset, timeout: 0, limit: 100, allowed_updates: ['my_chat_member', 'chat_join_request'] })
+  } catch (e) {
+    return res.status(200).json({ ok: false, error: e.message })
+  }
+  let handled = 0
+  for (const u of updates || []) {
+    try { await processUpdate(u, db); handled++ } catch (e) {
+      reportError('api:club-chat:poll', ['обновление бота не обработалось:', e], { message: e?.message, status: 500 })
+    }
+    offset = u.update_id + 1
+    await db.from('club_settings').upsert({ id: 1, tg_offset: offset, updated_at: new Date().toISOString() })
+  }
+  return res.status(200).json({ ok: true, got: updates?.length || 0, handled })
 }
 
 // ── ?action=sync ────────────────────────────────────────────────────────────
@@ -242,5 +279,6 @@ export default async function handler(req, res) {
   if (action === 'link') return handleLink(req, res, db)
   if (action === 'hook') return handleHook(req, res, db)
   if (action === 'sync') return handleSync(req, res, db)
+  if (action === 'poll') return handlePoll(req, res, db)
   return res.status(404).json({ error: 'Not Found' })
 }
