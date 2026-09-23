@@ -36,6 +36,7 @@ import { clampNum } from './nutrition.js'
 import FoodDiary, { OPEN_GOALS_EVENT } from './FoodDiary.jsx'
 import HubCard from './HubCard.jsx'
 import ClubLanding from './ClubLanding.jsx'
+import ClubReportSheet, { MyReports } from './ClubReport.jsx'
 import zmclubMark from './assets/zmclub-mark.png'
 import zmclubLogo from './assets/zmclub-logo.png'
 
@@ -2618,6 +2619,8 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
     }
   }
   const [wName,setWName]=useState('Новая тренировка')
+  // ZMClub: видео-отчёт тренеру прямо из тренировки ({exercise,setInfo} | null)
+  const [reportFor,setReportFor]=useState(null)
   // Цвет тренировки убран из интерфейса — всегда фиолетовый. Все места, что его
   // читают (шапка, кнопки, чипы, бейджи, галочка), подхватывают PUR сами.
   const wColor = PUR
@@ -4216,8 +4219,15 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                                   сворачивает Mini App (не закрывает — close() не зовём),
                                   тренировка в памяти переживает переход. Плейсхолдер
                                   <span/> у остальных держит колонку, чтобы ✕ не съехал. */}
-                              {(hasTrainer||(accessLevel>=2&&userRole!=='trainer'))?(
+                              {(hasTrainer||(accessLevel>=1&&userRole!=='trainer'))?(
                                 <button onClick={()=>{
+                                  // ZMClub: участник клуба шлёт видео не уходя из
+                                  // тренировки — в тему «Отчёты» группы клуба.
+                                  if(accessLevel>=1&&userRole!=='trainer'){
+                                    const info=[set.kg!==''&&set.kg!=null?`${set.kg} кг`:null,set.reps?`× ${set.reps}`:null].filter(Boolean).join(' ')
+                                    setReportFor({exercise:labelOf(catalogExercises,ex.n),setInfo:`подход ${si+1}${info?` · ${info}`:''}`})
+                                    return
+                                  }
                                   if(window.Telegram?.WebApp)window.Telegram.WebApp.openTelegramLink(MAX_TELEGRAM_URL)
                                   else window.open(MAX_TELEGRAM_URL,'_blank')
                                 }}
@@ -4311,6 +4321,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
           <button onClick={()=>setShowSendModal(true)} style={{ width:42, height:42, borderRadius:'50%', border:`2px solid ${HAIR}`, background:'none', color:TXT3, fontSize:20, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}><GlassIcon name="share" size={26} /></button>
         </div>
 
+        {reportFor&&<ClubReportSheet exercise={reportFor.exercise} setInfo={reportFor.setInfo} program={wName} onClose={()=>setReportFor(null)} />}
         {/* Модал "Отправить тренеру" */}
         {showSendModal&&(
           <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', zIndex:1200, display:'flex', alignItems:'flex-end', justifyContent:'center' }}
@@ -7613,6 +7624,9 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     />
   }
 
+  if(section==='reports'&&!exercisesLocked){
+    return <MyReports onBack={()=>setSection(null)} />
+  }
   if(section==='onerm'){
     const directRM=oneRepMax(rmWeight,rmReps,'epley')
     const reverseW=weightForReps(rmTargetRM,rmTargetReps,'epley')
@@ -7734,6 +7748,8 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
     // остаётся рабочей — по ней тренер смотрит питание клиента в его карточке
     // (RealClientDetail рендерит этот же DiaryView с readOnly).
     {key:'onerm',ic:'calculator',label:'Калькулятор 1ПМ',color:'#F59E0B',sub:''},
+    // ZMClub: видео-отчёты тренеру и его ответы.
+    ...(readOnly?[]:[{key:'reports',ic:'video',label:'Мои отчёты',color:PUR,sub:'Видео тренеру и его ответы'}]),
   ]
   return(
     <div>
@@ -7751,7 +7767,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
       ):null}
       {FOLDERS_DIARY.map(f=>{
         // Заперт только "Прогресс по упражнениям"; соседние разделы бесплатны.
-        const locked=(f.key==='exercises'||f.key==='workouts')&&exercisesLocked
+        const locked=(f.key==='exercises'||f.key==='workouts'||f.key==='reports')&&exercisesLocked
         return (
         <HubCard key={f.key}
           testId={`diary-section-${f.key}`}
@@ -7760,7 +7776,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           subtitle={locked?'Доступно в ZMClub':f.sub}
           locked={locked}
           onClick={()=>{
-            if(locked){track('paywall',{where:f.key},evPath());(f.key==='workouts'?setShowWkLock:setShowExLock)(true);return}
+            if(locked){track('paywall',{where:f.key},evPath());(f.key==='exercises'?setShowExLock:setShowWkLock)(true);return}
             if(f.key==='exercises'){setExPeriod('all');setExCustomFrom('');setExCustomTo('')}
             setSection(f.key)
           }} />
@@ -11422,6 +11438,15 @@ export default function App() {
     setShowSettingsView(true)
     setSettingsSubPage('plans')
   }
+  // ZMClub: тренер ответил на видео-отчёт, а человек ещё не видел — говорим
+  // при входе в приложение (ответ лежит в «Прогресс → Мои отчёты»).
+  const [reportReplyToast,setReportReplyToast]=useState(0)
+  useEffect(()=>{
+    if(!user?.id)return
+    supabase.from('club_reports').select('id',{count:'exact',head:true})
+      .not('answered_at','is',null).is('seen_at',null)
+      .then(({count})=>{ if(count>0){setReportReplyToast(count);setTimeout(()=>setReportReplyToast(0),6000)} })
+  },[user?.id])
   // Вошёл после «Вступить в клуб» гостем — сразу открываем экран оплаты.
   useEffect(()=>{
     if(!user?.id)return
@@ -12663,6 +12688,16 @@ export default function App() {
           boxShadow:'0 6px 20px rgba(0,0,0,0.28)',
         }}>
           {chatSoonText}
+        </div>
+      )}
+      {reportReplyToast>0&&(
+        <div onClick={()=>{setReportReplyToast(0);handleNav('progress')}} style={{
+          position:'fixed', top:14, left:'50%', transform:'translateX(-50%)', cursor:'pointer',
+          zIndex:3000, padding:'11px 20px', borderRadius:24, maxWidth:340, textAlign:'center',
+          background:PUR, color:'#fff', fontSize:13, fontWeight:700,
+          boxShadow:'0 6px 20px rgba(0,0,0,0.28)',
+        }}>
+          💬 Максим ответил на твой отчёт · Прогресс → Мои отчёты
         </div>
       )}
       {chatLock&&(

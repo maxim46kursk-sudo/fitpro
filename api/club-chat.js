@@ -178,6 +178,13 @@ async function processUpdate(u, db) {
       return
     }
 
+    // 3. Сообщение в группе клуба: команда «сюда отчёты» или ответ тренера на отчёт.
+    const msg = u.message
+    if (msg && msg.chat && ['group', 'supergroup'].includes(msg.chat.type)) {
+      await handleGroupMessage(msg, db)
+      return
+    }
+
     // 2. Заявка на вступление.
     const jr = u.chat_join_request
     if (jr) {
@@ -208,6 +215,144 @@ async function processUpdate(u, db) {
   }
 }
 
+// ── Сообщения в группе ──────────────────────────────────────────────────────
+//
+// Бот в группе с режимом приватности видит только команды и ответы на свои
+// сообщения — ровно то, что здесь нужно.
+//   • /reports (или /отчеты) от владельца в какой-то теме — отчёты будут
+//     публиковаться в эту тему;
+//   • ответ владельца на пост-отчёт бота — запоминаем ответ и сообщаем
+//     участнику: личкой от бота, а если личка закрыта (человек не нажимал
+//     Start у бота) — упоминанием в группе. В приложении ответ виден всегда.
+async function handleGroupMessage(msg, db) {
+  const chat = await clubChat(db)
+  if (!chat || String(msg.chat.id) !== String(chat.chat_id)) return
+  const owner = await ownerChatId(db)
+  if (!owner || String(msg.from?.id) !== String(owner)) return
+
+  const cmd = String(msg.text || '').trim().split(/\s+/)[0].toLowerCase().replace(/@.*$/, '')
+  if (cmd === '/reports' || cmd === '/отчеты' || cmd === '/отчёты') {
+    const thread = msg.is_topic_message ? msg.message_thread_id : null
+    await db.from('club_settings').upsert({ id: 1, reports_thread_id: thread, updated_at: new Date().toISOString() })
+    await tg('sendMessage', {
+      chat_id: chat.chat_id, ...(thread ? { message_thread_id: thread } : {}),
+      text: '✅ Сюда будут приходить видео-отчёты участников. Отвечай на них ответом (reply) — участник получит уведомление.',
+    }).catch(() => {})
+    return
+  }
+
+  const replyTo = msg.reply_to_message?.message_id
+  if (!replyTo) return
+  const { data: rep } = await db.from('club_reports')
+    .select('id, user_id, exercise, answered_at').eq('chat_id', chat.chat_id).eq('tg_message_id', replyTo).maybeSingle()
+  if (!rep) return
+
+  const text = msg.text || msg.caption
+    || (msg.voice ? '🎤 Голосовой ответ — послушай в чате клуба'
+      : msg.video_note ? '🎥 Видео-ответ — посмотри в чате клуба'
+        : msg.video ? '🎥 Видео-ответ — посмотри в чате клуба'
+          : msg.photo ? '🖼 Ответ с фото — посмотри в чате клуба' : 'Ответ в чате клуба')
+  // Несколько ответов подряд — склеиваем, чтобы в приложении было всё.
+  const { data: prev } = await db.from('club_reports').select('reply_text').eq('id', rep.id).maybeSingle()
+  const joined = prev?.reply_text ? `${prev.reply_text}\n\n${text}` : text
+  await db.from('club_reports').update({ answered_at: new Date().toISOString(), reply_text: joined.slice(0, 4000), seen_at: null }).eq('id', rep.id)
+
+  const { data: m } = await db.from('club_chat_members').select('tg_user_id').eq('user_id', rep.user_id).is('removed_at', null).maybeSingle()
+  if (!m?.tg_user_id) return
+  const link = `https://t.me/c/${String(chat.chat_id).replace(/^-100/, '')}/${msg.message_id}`
+  try {
+    await tg('sendMessage', {
+      chat_id: m.tg_user_id,
+      text: `💬 Максим ответил на твой отчёт «${rep.exercise}»:\n\n${String(text).slice(0, 3000)}`,
+      reply_markup: { inline_keyboard: [[{ text: 'Открыть в чате клуба', url: link }]] },
+    })
+  } catch {
+    // Личка закрыта — зовём упоминанием прямо под ответом тренера.
+    await tg('sendMessage', {
+      chat_id: chat.chat_id, reply_to_message_id: msg.message_id, parse_mode: 'HTML',
+      text: `<a href="tg://user?id=${m.tg_user_id}">👆 тренер ответил на твой отчёт</a>`,
+    }).catch(() => {})
+  }
+}
+
+// ── POST ?action=report ─────────────────────────────────────────────────────
+//
+// Видео уже лежит в хранилище (бакет club-reports, папка = id человека) —
+// приложение залило его само, с полосой загрузки. Здесь забираем файл и
+// публикуем в группе клуба, в теме «Отчёты», подписью: кто, упражнение,
+// подход, вопрос. После отправки файл из хранилища удаляем — видео живёт в
+// Телеграме.
+const esc = t => String(t ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))
+
+async function handleReport(req, res, db) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!rateLimit(req, res, { name: 'club-report-ip', limit: 60 })) return
+  const auth = req.headers.authorization || ''
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null
+  if (!token) return res.status(401).json({ error: 'Требуется авторизация' })
+  const { data: a, error: aErr } = await db.auth.getUser(token)
+  if (aErr || !a?.user?.id) return res.status(401).json({ error: 'Требуется авторизация' })
+  const user = a.user
+  if (!rateLimit(req, res, { name: 'club-report', limit: 20, subject: user.id })) return
+  if (!(await hasAccess(db, user.id))) return res.status(403).json({ error: 'Отчёты доступны участникам клуба' })
+
+  const b = req.body || {}
+  const path = String(b.path || '')
+  // Только свой файл: путь обязан начинаться с id человека (так же стережёт
+  // политика хранилища на загрузке).
+  if (!path.startsWith(`${user.id}/`) || path.includes('..')) return res.status(400).json({ error: 'Неверный файл' })
+  const chat = await clubChat(db)
+  if (!chat) return res.status(409).json({ error: 'Чат клуба ещё не подключён' })
+  const { data: st } = await db.from('club_settings').select('reports_thread_id').eq('id', 1).maybeSingle()
+
+  const { data: blob, error: dlErr } = await db.storage.from('club-reports').download(path)
+  if (dlErr || !blob) return res.status(404).json({ error: 'Видео не найдено, загрузи ещё раз' })
+
+  const { data: prof } = await db.from('profiles').select('name').eq('id', user.id).maybeSingle()
+  const { data: mem } = await db.from('club_chat_members').select('tg_user_id').eq('user_id', user.id).is('removed_at', null).maybeSingle()
+  const name = esc(prof?.name || user.user_metadata?.name || 'Участник')
+  const who = mem?.tg_user_id ? `<a href="tg://user?id=${mem.tg_user_id}">${name}</a>` : `<b>${name}</b>`
+  const exercise = String(b.exercise || 'Упражнение').slice(0, 80)
+  const caption = [
+    `📹 Отчёт: ${who}`,
+    `🏋️ <b>${esc(exercise)}</b>${b.setInfo ? ` — ${esc(String(b.setInfo).slice(0, 60))}` : ''}`,
+    b.program ? `Тренировка: ${esc(String(b.program).slice(0, 60))}` : null,
+    b.note ? `💬 ${esc(String(b.note).slice(0, 300))}` : null,
+    '',
+    '<i>Ответь на это сообщение (reply) — участник получит уведомление.</i>',
+  ].filter(v => v !== null).join('\n').slice(0, 1024)
+
+  let sent = null, lastErr = null
+  for (let attempt = 0; attempt < 2 && !sent; attempt++) {
+    try {
+      const form = new FormData()
+      form.append('chat_id', String(chat.chat_id))
+      if (st?.reports_thread_id) form.append('message_thread_id', String(st.reports_thread_id))
+      form.append('caption', caption)
+      form.append('parse_mode', 'HTML')
+      form.append('supports_streaming', 'true')
+      form.append('video', blob, path.split('/').pop())
+      const r = await egressFetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendVideo`, {
+        method: 'POST', body: form, signal: AbortSignal.timeout(30000),
+      })
+      const j = await r.json().catch(() => null)
+      if (!j?.ok) throw new Error(j?.description || `telegram ${r.status}`)
+      sent = j.result
+    } catch (e) { lastErr = e }
+  }
+  if (!sent) {
+    reportError('api:club-chat:report', ['отчёт не ушёл в Телеграм:', lastErr], { message: lastErr?.message, status: 502, userId: user.id })
+    return res.status(502).json({ error: 'Телеграм не ответил, попробуй ещё раз' })
+  }
+
+  await db.from('club_reports').insert({
+    user_id: user.id, chat_id: chat.chat_id, tg_message_id: sent.message_id,
+    exercise, set_info: b.setInfo ? String(b.setInfo).slice(0, 60) : null, note: b.note ? String(b.note).slice(0, 300) : null,
+  })
+  await db.storage.from('club-reports').remove([path]).catch(() => {})
+  return res.status(200).json({ ok: true, tgLinked: !!mem?.tg_user_id })
+}
+
 // ── ?action=poll ────────────────────────────────────────────────────────────
 //
 // ПОЧЕМУ ОПРОС, А НЕ ВЕБХУК. Вебхук требует, чтобы Telegram сам достучался до
@@ -224,7 +369,7 @@ async function handlePoll(req, res, db) {
   let offset = st?.tg_offset ?? 0
   let updates
   try {
-    updates = await tg('getUpdates', { offset, timeout: 0, limit: 100, allowed_updates: ['my_chat_member', 'chat_join_request'] })
+    updates = await tg('getUpdates', { offset, timeout: 0, limit: 100, allowed_updates: ['my_chat_member', 'chat_join_request', 'message'] })
   } catch (e) {
     return res.status(200).json({ ok: false, error: e.message })
   }
@@ -280,5 +425,6 @@ export default async function handler(req, res) {
   if (action === 'hook') return handleHook(req, res, db)
   if (action === 'sync') return handleSync(req, res, db)
   if (action === 'poll') return handlePoll(req, res, db)
+  if (action === 'report') return handleReport(req, res, db)
   return res.status(404).json({ error: 'Not Found' })
 }
