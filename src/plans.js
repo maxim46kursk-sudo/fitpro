@@ -1,17 +1,23 @@
 export const TEST_MODE = false      // true → показываем тестовые цены
 export const TRIAL_DAYS = 5
-export const TRIAL_LEVEL = 2        // пробный открывает уровень ПРОФИТ
+export const TRIAL_LEVEL = 2        // пробный открывает уровень клуба (= прежний ПРОФИТ)
 
 export const PLANS = [
-  { key:'start',  level:0, name:'СТАРТ',  price:0,    testPrice:0,  tagline:'Бесплатно',
+  // ── ZMClub (сент 2026): в продаже ОДИН пакет — участие в клубе, 1000 ₽/мес.
+  // Уровень 2 — тот же, что у ПРОФИТ: открывает все программы, прогресс и
+  // видео-отчёт тренеру. Старые пакеты ниже помечены hidden: купить их нельзя,
+  // но у тех, кто уже купил, доступ продолжает работать до конца срока.
+  { key:'club', level:2, name:'ZMClub', price:1000, testPrice:50, tagline:'Участие в клубе',
+    features:['Все программы тренировок клуба','Прогресс по каждому упражнению','Видео-отчёт тренеру по технике','Общий чат клуба'] },
+  { key:'start',  level:0, name:'СТАРТ',  price:0,    testPrice:0,  tagline:'Бесплатно', hidden:true,
     features:['Дневник тренировок','Рационы питания','Общий тоннаж','Аналитика питания за день и неделю','Библиотека упражнений'] },
   // БАЗА снова в продаже (сент 2026). Признак hidden оставлен в visiblePlans на
   // случай, если какой-то пакет снова надо будет снять с продажи.
-  { key:'base',   level:1, name:'БАЗА',   price:1000, testPrice:50, tagline:'Всё из СТАРТ, плюс:',
+  { key:'base',   level:1, name:'БАЗА',   price:1000, testPrice:50, tagline:'Всё из СТАРТ, плюс:', hidden:true,
     features:['Все тренировки во всех шаблонах','Прогресс по упражнениям'] },
-  { key:'profit', level:2, name:'ПРОФИТ', price:2990, oldPrice:4990, testPrice:60, highlight:true, tagline:'Всё из БАЗЫ, плюс:',
+  { key:'profit', level:2, name:'ПРОФИТ', price:2990, oldPrice:4990, testPrice:60, tagline:'Всё из БАЗЫ, плюс:', hidden:true,
     features:['ИИ-ассистент по тренировкам и питанию','Видео-отчёт тренеру по технике упражнений'] },
-  { key:'premium',level:3, name:'ПРЕМИУМ',price:9990, oldPrice:14990, testPrice:70, tagline:'Всё из ПРОФИТ, плюс:',
+  { key:'premium',level:3, name:'ПРЕМИУМ',price:9990, oldPrice:14990, testPrice:70, tagline:'Всё из ПРОФИТ, плюс:', hidden:true,
     features:['Персональная программа под тебя','Разбор и корректировка питания','Ежедневная проверка отчётов (видео подходов и питание)'] },
   // СЛУЖЕБНЫЙ ТАРИФ ДЛЯ ПРОВЕРКИ ЖИВОЙ ОПЛАТЫ.
   //
@@ -50,17 +56,14 @@ export const VIP = { name:'VIP', desc:'Индивидуальные услови
 // открывается. Один источник для экрана Тарифов: на выбранном тарифе пункты с
 // min <= level горят, остальные гаснут. У VIP горят все (см. VIP_LEVEL).
 export const FEATURES = [
-  { t:'Дневник тренировок и питания', min:0 },
-  { t:'Рационы и аналитика питания', min:0 },
-  { t:'Общий тоннаж', min:0 },
-  { t:'Библиотека упражнений', min:0 },
-  { t:'Доступ ко всем программам тренировок', min:1 },
-  { t:'Прогресс по каждому упражнению', min:1 },
-  { t:'ИИ-ассистент по тренировкам и питанию 24/7', min:2 },
+  { t:'Все программы тренировок клуба', min:1 },
+  { t:'Прогресс и подбор веса по каждому упражнению', min:1 },
   { t:'Видео-отчёт тренеру по технике упражнений', min:2 },
-  { t:'Персональная программа от тренера', min:3 },
-  { t:'Разбор и корректировка питания под цель', min:3 },
-  { t:'Ежедневная проверка отчётов (видео подходов и питание)', min:3 },
+  { t:'Общий чат клуба', min:2 },
+  { t:'Дневник тренировок и питания', min:0 },
+  { t:'Расчёт нормы и аналитика питания', min:0 },
+  { t:'ZMClub Motion — тренировка с камерой', min:0 },
+  { t:'Библиотека упражнений', min:0 },
 ]
 
 // VIP выше всех пакетов — «уровень» нужен только для подсветки списка на
@@ -103,5 +106,5 @@ export function effectiveAccess(profile, now){
     return { level, label:'Пробный период', until:profile.trial_until, isTrial:true, planKey:planByLevel(level).key }
   if (paidActive)
     return { level, label:planByKey(profile.plan).name, until:profile.plan_until, isTrial:false, planKey:profile.plan }
-  return { level:0, label:'СТАРТ (бесплатный)', until:null, isTrial:false, planKey:'start' }
+  return { level:0, label:'Не в клубе', until:null, isTrial:false, planKey:'start' }
 }

@@ -22,7 +22,9 @@ const PAYFORM_BASE = 'https://maximathlete.payform.ru/'
 // ниже стоит проверка роли: спрятанная пилюля на экране Тарифов от прямого
 // POST не защищает, а 50 ₽ за сутки ПРОФИТ — слишком дешёвый способ обойти
 // прайс. Отсюда правило: скрытие в интерфейсе — удобство, отказ здесь — защита.
-const PAID_PLANS = new Set(['base', 'profit', 'premium', 'test50'])
+// ZMClub (сент 2026): в продаже только клуб. Старые пакеты купить нельзя, но
+// уже купленные доступ дают (api/_access.js), а вебхук их суммы узнаёт.
+const PAID_PLANS = new Set(['club', 'test50'])
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')

@@ -35,6 +35,11 @@ import { VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, ef
 import { clampNum } from './nutrition.js'
 import FoodDiary, { OPEN_GOALS_EVENT } from './FoodDiary.jsx'
 import HubCard from './HubCard.jsx'
+import zmclubMark from './assets/zmclub-mark.png'
+import zmclubLogo from './assets/zmclub-logo.png'
+
+// ZMClub (сент 2026): чат с ИИ-ассистентом выключен для всех. true — вернуть.
+const AI_CHAT_ENABLED = false
 
 // Участие в потоке челленджа: прочитанное живёт в памяти модуля, и выход из
 // аккаунта обязан его забыть (см. performLogout).
@@ -729,8 +734,8 @@ function PlanLockModal({ title, text, onClose, onOpenPlans }) {
 // Сент 2026: БАЗА снова в продаже, гейты уровня 1 называют её.
 // «Программа», а не «шаблон»: программы теперь заводятся данными, и их уже не
 // четыре — обещать «все четыре» было бы неправдой.
-const LOCK_SLOTS = { title:'Тренировки доступны с пакета БАЗА', text:'Пакет БАЗА открывает все тренировки во всех программах и прогресс по упражнениям.' }
-const LOCK_EXERCISES = { title:'Прогресс по упражнениям доступен с пакета БАЗА', text:'Покажет динамику весов и повторений по каждому упражнению за любой период.' }
+const LOCK_SLOTS = { title:'Тренировки доступны участникам ZMClub', text:'Вступи в клуб — откроются все тренировки во всех программах, прогресс по упражнениям и видео-отчёты тренеру.' }
+const LOCK_EXERCISES = { title:'Прогресс по упражнениям доступен участникам ZMClub', text:'Покажет динамику весов и повторений по каждому упражнению за любой период.' }
 // Со скольки слотов начинается платная часть шаблона и какой уровень нужен.
 const FREE_SLOTS = 0 // сент 2026: бесплатных тренировок в программах нет, всё с БАЗЫ
 const SLOTS_MIN_LEVEL = 1
@@ -4793,7 +4798,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
                   <div style={{ textAlign:'center', paddingTop:6 }}>
                     <div style={{ fontSize:16, fontWeight:700, color:TXT, marginBottom:4 }}>{slot.title}</div>
                     <div style={{ fontSize:12, color:TXT3 }}>
-                      {locked?'Доступно с пакета БАЗА':(ec===0?'Нет упражнений':`${ec} упр.${vc>0?` · ${vc} видео`:''}`)}
+                      {locked?'Доступно в ZMClub':(ec===0?'Нет упражнений':`${ec} упр.${vc>0?` · ${vc} видео`:''}`)}
                     </div>
                     {completions.length>0&&(
                       <div style={{ fontSize:11.5, color:'#16a34a', fontWeight:600, marginTop:5, display:'flex', alignItems:'center', gap:4 }}>
@@ -4818,7 +4823,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
             Подписка закончилась
           </div>
           <div style={{ fontSize:13, color:TXT2, lineHeight:1.45, marginBottom:12 }}>
-            Доступ к ПРЕМИУМ истёк. Продли, чтобы снова открыть ИИ-ассистента, все тренировки и прогресс по упражнениям.
+            Участие в клубе закончилось. Продли, чтобы снова открыть все тренировки, прогресс по упражнениям и видео-отчёты тренеру.
           </div>
           <button onClick={()=>openPlans?.()}
             style={{ padding:'10px 16px', fontSize:13, fontWeight:700, color:'#fff', background:DANGER, border:'none', borderRadius:10, cursor:'pointer' }}>
@@ -5010,7 +5015,7 @@ function WorkoutsView({ customExercises, setCustomExercises, onWorkoutComplete, 
       <HubCard
         testId="program-folder-motion"
         icon="video"
-        title="FitPro Motion"
+        title="ZMClub Motion"
         subtitle="Тренировка с камерой · бета"
         topRight={
           <span style={{ padding:'2px 8px', borderRadius:999, background:`${ACCENT2}22`, color:ACCENT2, fontSize:11, fontWeight:800, letterSpacing:'0.03em' }}>
@@ -7716,7 +7721,7 @@ function DiaryView({ workoutHistory, onEditWorkout, onDeleteWorkout, onCopyWorko
           testId={`diary-section-${f.key}`}
           icon={f.ic}
           title={f.label}
-          subtitle={locked?'Доступно с пакета БАЗА':f.sub}
+          subtitle={locked?'Доступно в ZMClub':f.sub}
           locked={locked}
           onClick={()=>{
             if(locked){track('paywall',{where:'exercises'},evPath());setShowExLock(true);return}
@@ -7743,12 +7748,14 @@ const NAV=[
   {id:'nutrition',ic:'food',label:'Питание'},
   {id:'library',ic:'book',label:'Упражнения'},
   {id:'progress',ic:'notebook',label:'Прогресс'},
+  {id:'chat',ic:'chat',label:'Чат'},
 ]
 const NAV_MOBILE=[
   {id:'workouts',ic:'dumbbell',label:'Тренировки'},
   {id:'nutrition',ic:'food',label:'Питание'},
   {id:'library',ic:'book',label:'Упражнения'},
   {id:'progress',ic:'notebook',label:'Прогресс'},
+  {id:'chat',ic:'chat',label:'Чат'},
   {id:'clients',ic:'people',label:'Клиенты'},
 ]
 
@@ -7850,7 +7857,7 @@ function WelcomeSheet({ onClose }) {
           padding: '24px 22px 32px', textAlign: 'center',
         }}>
         <div style={{ width: 36, height: 4, borderRadius: 2, background: SURF2, margin: '0 auto 18px' }} />
-        <div style={{ fontSize: 22, fontWeight: 800, color: TXT, lineHeight: 1.25, marginBottom: 10 }}>FitPro</div>
+        <img src={zmclubLogo} alt="ZMClub" style={{ height: 96, width: 'auto', display: 'block', margin: '0 auto 12px' }} />
         <div style={{ fontSize: 14, color: TXT2, lineHeight: 1.5, marginBottom: 22 }}>
           Тренировки, питание и фитнес-игра с камерой. Пробуй всё — бесплатно и без регистрации
         </div>
@@ -8086,8 +8093,7 @@ function LandingPage({ onEnter, isTelegram, accessError, startAtForm = false, st
       {/* ── Шапка */}
       <div style={{ padding:'13px 22px',display:'flex',alignItems:'center',justifyContent:'space-between',borderBottom:'1px solid rgba(255,255,255,0.07)',position:'sticky',top:0,background:'rgba(8,8,15,0.92)',backdropFilter:'blur(12px)',zIndex:20 }}>
         <div style={{ display:'flex',alignItems:'center',gap:9 }}>
-          <GlassIcon name="dumbbell" size={26} />
-          <span style={{ fontSize:18,fontWeight:800,letterSpacing:'-0.5px' }}>FitPro</span>
+          <img src={zmclubMark} alt="ZMClub" style={{ height:36, width:'auto', display:'block' }} />
         </div>
         <div style={{ display:'flex',gap:8,alignItems:'center' }}>
           <button onClick={()=>openForm('login')}
@@ -8116,7 +8122,7 @@ function LandingPage({ onEnter, isTelegram, accessError, startAtForm = false, st
               {/* Было «Первое приложение с AI-ассистентом» — утверждение,
                   которое невозможно подтвердить и легко опровергнуть. Заменено
                   на проверяемое: ассистент действительно обучен тренером. */}
-              <GlassIcon name="bulb" size={18} /> AI-ассистент, обученный тренером
+              <GlassIcon name="bulb" size={18} /> Онлайн-фитнес-клуб maxim_athlete
             </div>
 
             <h1 style={{ fontSize:mobile?32:56,fontWeight:800,lineHeight:1.12,margin:'0 0 32px',background:'linear-gradient(150deg,#fff 45%,#9d97e8)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent' }}>
@@ -8136,53 +8142,14 @@ function LandingPage({ onEnter, isTelegram, accessError, startAtForm = false, st
               Дневник тренировок и питания — бесплатно, без ограничения по времени
             </div>
 
-            {/* ── AI-персонаж */}
-            <div style={{ textAlign:'left',background:'rgba(255,255,255,0.03)',border:`1px solid ${PUR}35`,borderRadius:20,overflow:'hidden',boxShadow:`0 0 48px ${PUR}18` }}>
-
-              {/* Хедер карточки */}
-              <div style={{ background:`linear-gradient(90deg,${PUR}28,transparent)`,borderBottom:`1px solid ${PUR}25`,padding:'16px 20px',display:'flex',alignItems:'center',gap:14 }}>
-                <div style={{ position:'relative',flexShrink:0 }}>
-                  <div style={{ width:52,height:52,borderRadius:'50%',background:`linear-gradient(135deg,${PUR},#4d47b0)`,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:`0 4px 16px ${PUR}50` }}><GlassIcon name="robot" size={40} /></div>
-                  <div style={{ position:'absolute',bottom:2,right:2,width:13,height:13,borderRadius:'50%',background:'#22c55e',border:'2.5px solid #0d0d1a' }} />
-                </div>
-                <div>
-                  <div style={{ fontSize:16,fontWeight:700,color:'#fff' }}>FitPro AI</div>
-                  <div style={{ fontSize:12,color:'rgba(255,255,255,0.4)',marginTop:2 }}>Обучен твоим тренером</div>
-                </div>
-              </div>
-
-              {/* Сообщение AI */}
-              <div style={{ padding:'20px 20px 8px' }}>
-                {/* Сообщение — умения */}
-                <div style={{ display:'flex',gap:10,alignItems:'flex-start' }}>
-                  <div style={{ background:`${PUR}18`,border:`1px solid ${PUR}30`,borderRadius:14,padding:'12px 15px',flex:1 }}>
-                    <p style={{ margin:'0 0 10px',fontSize:13,color:'rgba(255,255,255,0.75)',lineHeight:1.5,fontWeight:600 }}>Вот что я умею:</p>
-                    <div style={{ display:'flex',flexDirection:'column',gap:7 }}>
-                      {[
-                        ['template','Знаю твою программу тренировок — вижу, какой вес был в прошлый раз'],
-                        ['food','Помогу с питанием — спроси, что съесть, что заменить или как вписать любимое'],
-                        ['gear','Скорректирую план, если было слишком тяжело или слишком легко'],
-                        ['chat','Отвечаю так, как ответил бы сам тренер — потому что он меня именно так обучил'],
-                      ].map(([ic,tx],i)=>(
-                        <div key={i} style={{ display:'flex',gap:9,alignItems:'flex-start',background:'rgba(255,255,255,0.04)',borderRadius:9,padding:'8px 11px' }}>
-                          <GlassIcon name={ic} size={22} style={{marginTop:1}} />
-                          <span style={{ fontSize:12,color:'rgba(255,255,255,0.6)',lineHeight:1.6 }}>{tx}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ padding:'6px 0 2px' }} />
-              </div>
-            </div>
+            {/* AI-персонаж убран: чат с ИИ в ZMClub выключен (AI_CHAT_ENABLED). */}
           </div>
 
           {/* ── Карточки функций */}
           <div style={{ display:'grid',gridTemplateColumns:mobile?'1fr':'1fr 1fr',gap:12,marginBottom:32 }}>
             {[
               {icon:'template',title:'Программы тренировок от maxim_athlete',desc:'Готовые программы под твои цели. Просто запусти тренировку — все упражнения, вес и подходы уже внутри'},
-              {icon:'dumbbell',title:'Умный журнал тренировок',desc:'Записывай кг и повторы прямо в процессе тренировки, оставляй заметки для тренера или AI-ассистента'},
+              {icon:'dumbbell',title:'Умный журнал тренировок',desc:'Записывай кг и повторы прямо в процессе тренировки, оставляй заметки для тренера'},
               {icon:'plate',title:'Умный дневник питания',desc:'Умеет не только считать КБЖУ, но и даёт рекомендации — что на что заменить'},
               {icon:'chart',title:'Достижения',desc:'Аналитика общего тоннажа тренировок, прогресс по каждому упражнению и аналитика питания'},
             ].map((f,i)=>(
@@ -8733,7 +8700,7 @@ function AnalyticsView({ userRole }) {
 
         {/* Фильтр по пакету. */}
         <div style={{ display:'flex', gap:8, overflowX:'auto', marginBottom:12, paddingBottom:2 }}>
-          {pill('all','Все')}{pill('start','СТАРТ')}{pill('base','БАЗА')}{pill('profit','ПРОФИТ')}{pill('premium','ПРЕМИУМ')}
+          {pill('all','Все')}{pill('club','ZMClub')}{pill('start','СТАРТ')}{pill('base','БАЗА')}{pill('profit','ПРОФИТ')}{pill('premium','ПРЕМИУМ')}
         </div>
 
         {/* Поиск по имени и нику. */}
@@ -8988,7 +8955,7 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
           display:'block',width:'100%',padding:0,border:'none',background:'none',
           textAlign:'left',cursor:'pointer',minHeight:'unset',
         }}>
-          <Row label="Тарифы и подписка" sub="Пакеты, пробный период и оплата"
+          <Row label="Вступить в клуб" sub="ZMClub — участие, пробный период и оплата"
                right={<span style={{fontSize:16,color:TXT3}}>›</span>}/>
         </button>
       </Section>
@@ -9106,7 +9073,7 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
       </Section>
 
       {/* AI ассистент */}
-      <Section title="AI-ассистент">
+      {AI_CHAT_ENABLED&&<Section title="AI-ассистент">
         <Row label="Стиль AI-ассистента" sub={aiStyle==='ask'?'Уточняет граммовки и детали перед записью еды':'Сам прикидывает и сразу записывает, потом можно поправить'} right={
           <div style={{display:'flex',gap:4}}>
             {[['ask','Спрашивай меня'],['act','Действуй сам']].map(([v,lbl])=>(
@@ -9118,7 +9085,7 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
             ))}
           </div>
         }/>
-      </Section>
+      </Section>}
 
       {/* История чата */}
       <Section title="История чата">
@@ -9268,7 +9235,7 @@ function SettingsView({ user, performLogout, onAccountDeleted, subPage, setSubPa
 // Заголовки под-страниц Настроек — один источник и для самой страницы, и для
 // шапки Настроек, чтобы они не разошлись.
 const SETTINGS_SUBPAGE_TITLES = {
-  plans: 'Тарифы и подписка',
+  plans: 'Вступить в клуб',
   policy: 'Политика конфиденциальности',
   consent: 'Согласие на обработку данных',
   analytics: 'Аналитика',
@@ -9400,7 +9367,7 @@ function PlansView({ user, onClose, hideBack, onChanged, guest, onCreateAccount 
   const [msg,setMsg]=useState('')
   const [msgError,setMsgError]=useState(false)
   // Выбранная пилюля тарифа. По умолчанию ПРОФИТ — он же «Хит».
-  const [selectedKey,setSelectedKey]=useState('profit')
+  const [selectedKey,setSelectedKey]=useState('club')
 
   const flash=(text,isError)=>{
     if(isError)track('error_shown',{kind:'plans'},evPath())
@@ -9565,7 +9532,8 @@ function PlansView({ user, onClose, hideBack, onChanged, guest, onCreateAccount 
   // роли, что открывает тренерские экраны. Клиенту тренера её мало: role у него
   // 'client', и пилюля не появится. Это удобство, не защита: отказ на покупку
   // служебного тарифа стоит на сервере (api/create-payment.js).
-  const planTabs=[...visiblePlans(profile?.role).map(p=>({key:p.key,name:p.name})),{key:'vip',name:VIP.name}]
+  // ZMClub: VIP-пилюли больше нет — в продаже только клуб (+ служебный тест тренеру).
+  const planTabs=visiblePlans(profile?.role).map(p=>({key:p.key,name:p.name}))
   const isVip=selectedKey==='vip'
   const selectedPlan=isVip?null:planByKey(selectedKey)
   // Уровень для подсветки списка. У VIP горят все пункты (VIP_LEVEL выше всех).
@@ -9624,10 +9592,10 @@ function PlansView({ user, onClose, hideBack, onChanged, guest, onCreateAccount 
             boxShadow:`0 10px 30px ${PUR}45`,
           }}>
             <div style={{fontSize:17,fontWeight:800,color:'#fff',marginBottom:6}}>
-              🎁 {TRIAL_DAYS} дней ПРОФИТ — бесплатно
+              🎁 {TRIAL_DAYS} дней в ZMClub — бесплатно
             </div>
             <div style={{fontSize:13,lineHeight:1.5,color:'rgba(255,255,255,0.85)',marginBottom:14}}>
-              Попробуй ИИ-ассистента и все тренировки без оплаты. Карта не нужна.
+              Все программы клуба и видео-отчёты тренеру без оплаты. Карта не нужна.
             </div>
             <button
               data-testid={guest?'plans-create-account':'trial-start'}
@@ -9731,7 +9699,7 @@ function PlansView({ user, onClose, hideBack, onChanged, guest, onCreateAccount 
               width:'100%',padding:'13px',borderRadius:12,border:`1.5px solid ${HAIR}`,
               background:SURF2,color:TXT,fontSize:15,fontWeight:700,cursor:'pointer',minHeight:'unset',
             }}>Написать в личку</button>
-          ):isCurrent?(
+          ):isCurrent&&!access.isTrial?(
             <button disabled style={{
               width:'100%',padding:'13px',borderRadius:12,
               border:`1px solid ${TEA}40`,background:`${TEA}18`,color:TEA,
@@ -9753,7 +9721,7 @@ function PlansView({ user, onClose, hideBack, onChanged, guest, onCreateAccount 
               background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`,color:'#fff',
               fontSize:15,fontWeight:800,cursor:payBusy?'not-allowed':'pointer',minHeight:'unset',
               boxShadow:`0 8px 24px ${PUR}45`,opacity:payBusy?0.7:1,
-            }}>{payBusy?'Готовим оплату…':`Оформить ${selectedPlan.name} · ${priceOf(selectedPlan)} ₽`}</button>
+            }}>{payBusy?'Готовим оплату…':(selectedPlan.key==='club'?`Вступить в клуб · ${priceOf(selectedPlan)} ₽`:`Оформить ${selectedPlan.name} · ${priceOf(selectedPlan)} ₽`)}</button>
           ):null}
         </div>
 
@@ -9761,7 +9729,7 @@ function PlansView({ user, onClose, hideBack, onChanged, guest, onCreateAccount 
             (isCurrent) и только при активной ПЛАТНОЙ подписке. На чужих пилюлях
             и на бесплатном СТАРТЕ кнопки нет. Автосписаний нет — отмена =
             сброс на СТАРТ. */}
-        {isCurrent&&hasActivePaid&&(
+        {hasActivePaid&&(isCurrent||planByKey(access.planKey).hidden)&&(
           <div style={{ marginBottom:18 }}>
             <button onClick={()=>setShowCancelConfirm(true)} disabled={cancelBusy}
               style={{ width:'100%', padding:'12px', borderRadius:12, border:`1px solid ${HAIR}`, background:'none', color:'#ef4444', fontSize:14, fontWeight:600, cursor:cancelBusy?'default':'pointer', minHeight:'unset' }}>
@@ -10443,8 +10411,8 @@ function ProfileView({ user, onClose, onOpenAI, onUserUpdate }) {
             {/* AI баннер — появляется после выбора цели */}
             <div style={{
               overflow:'hidden',
-              maxHeight: profile.goal ? 120 : 0,
-              opacity: profile.goal ? 1 : 0,
+              maxHeight: profile.goal && onOpenAI ? 120 : 0,
+              opacity: profile.goal && onOpenAI ? 1 : 0,
               transition: 'max-height 0.45s cubic-bezier(0.4,0,0.2,1), opacity 0.4s ease',
             }}>
               <style>{`
@@ -11501,6 +11469,7 @@ export default function App() {
   // БОЛЬШЕ НЕ ПРОБУЕМ: если за 15 секунд вебхук не пришёл, дело не в гонке, и
   // бесконечный опрос сервера ничего не исправит — доступ подтянется при
   // следующем открытии приложения.
+  const [chatSoonToast,setChatSoonToast]=useState(false)
   const [paidToast,setPaidToast]=useState(false)
   useEffect(()=>{
     const params=new URLSearchParams(window.location.search)
@@ -12300,6 +12269,8 @@ export default function App() {
   // плане" (см. isWorkoutForeground) — везде показывается плашка
   // свёрнутой тренировки с таймером.
   const handleNav=(id)=>{
+    // Кнопка «Чат» клуба пока не подключена: экрана нет, только подсказка.
+    if(id==='chat'){setChatSoonToast(true);setTimeout(()=>setChatSoonToast(false),2500);return}
     setNav(id)
   }
 
@@ -12597,6 +12568,16 @@ export default function App() {
           Оплата принята, доступ откроется в течение минуты
         </div>
       )}
+      {chatSoonToast&&(
+        <div style={{
+          position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
+          zIndex:3000, padding:'11px 20px', borderRadius:24, maxWidth:340, textAlign:'center',
+          background:SURF2, color:TXT, fontSize:13, fontWeight:700,
+          boxShadow:'0 6px 20px rgba(0,0,0,0.28)',
+        }}>
+          Чат клуба скоро откроется
+        </div>
+      )}
       {inviteToast&&(
         <div style={{
           position:'fixed', top:14, left:'50%', transform:'translateX(-50%)',
@@ -12659,7 +12640,7 @@ export default function App() {
             <div style={{ display:'flex', alignItems:'center', gap:8 }}>
             <button data-testid="guest-plans" onClick={openPlans}
               style={{ padding:'6px 12px', borderRadius:10, border:'none', background:'transparent', color:TXT3, fontSize:13, fontWeight:600, cursor:'pointer', minHeight:'unset' }}>
-              Тарифы
+              Вступить в клуб
             </button>
             <button data-testid="guest-login" onClick={()=>{setAuthTabWanted('login');setShowAuth(true)}}
               style={{ padding:'6px 14px', borderRadius:10, border:`1px solid ${SEP}`, background:'transparent', color:TXT, fontSize:13, fontWeight:700, cursor:'pointer', minHeight:'unset' }}>
@@ -12668,8 +12649,7 @@ export default function App() {
             </div>
             )}
             <div style={{ display:'flex', alignItems:'center', gap:7 }}>
-              <GlassIcon name="dumbbell" size={24} />
-              <span style={{ fontSize:16, fontWeight:800, color:TXT, letterSpacing:'-0.3px' }}>FitPro</span>
+              <img src={zmclubMark} alt="ZMClub" style={{ height:34, width:'auto', display:'block' }} />
             </div>
           </div>
           )}
@@ -12810,7 +12790,7 @@ export default function App() {
         </div>
       )}
       {/* Экран "Мои данные" (mobile + desktop) */}
-      {showProfileView&&user&&<ProfileView user={user} onClose={()=>setShowProfileView(false)} onOpenAI={m=>aiRef.current?.open(m)} onUserUpdate={u=>setUser(u)} />}
+      {showProfileView&&user&&<ProfileView user={user} onClose={()=>setShowProfileView(false)} onOpenAI={AI_CHAT_ENABLED?(m=>aiRef.current?.open(m)):null} onUserUpdate={u=>setUser(u)} />}
 
       {/* Экран "Настройки" (mobile + desktop) */}
       {showSettingsView&&(user||settingsSubPage==='plans')&&(
@@ -12887,7 +12867,10 @@ export default function App() {
         нужен сперва аккаунт, и бесплатный. Показывать человеку не ту дверь хуже,
         чем не показывать никакой, поэтому здесь своя кнопка и общий замок.
       */}
-      {guestMode?(
+      {/* ZMClub: чат с ИИ-ассистентом закрыт для всех (сент 2026). Расчёт в
+          программах и норма питания работают сами по себе, этот блок их не
+          касается. Вернуть чат — поменять false на true. */}
+      {AI_CHAT_ENABLED&&(guestMode?(
         <>
           {!workoutFullscreen&&!trainerSessionActive&&(
             <button data-testid="guest-ai-open" onClick={()=>setGuestLockWhat('ИИ-ассистент доступен после регистрации')} style={{
@@ -12900,7 +12883,7 @@ export default function App() {
         </>
       ):(
       <AIAssistant ref={aiRef} workoutHistory={workoutHistory} isMobile={isMobile} nutritionPlans={NUTRITION_PLANS} userId={user?.id} onGoToWorkoutsDiary={goToDiaryWorkouts} onGoToFoodDiary={goToDiaryFood} hideButton={workoutFullscreen||trainerSessionActive} extraBottomOffset={workoutMinimized?MINIMIZED_BAR_H:0} accessLevel={access.level} openPlans={openPlans} programLabelOf={programLabelOf} />
-      )}
+      ))}
 
       {/*
         ПРЕДЛОЖЕНИЕ ЗАВЕСТИ АККАУНТ. Живёт выше оверлея Motion, потому что заход

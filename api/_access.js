@@ -8,7 +8,7 @@
 //
 // Имя файла с подчёркиванием — Vercel не делает из таких файлов эндпоинты.
 
-export const PLAN_LEVELS = { start: 0, base: 1, profit: 2, premium: 3 }
+export const PLAN_LEVELS = { start: 0, base: 1, profit: 2, premium: 3, club: 2 }  // club — ZMClub (сент 2026)
 export const TRIAL_LEVEL = 2   // пробный открывает уровень ПРОФИТ
 
 // Текущий уровень по строке profiles. Возвращает число 0..3.
