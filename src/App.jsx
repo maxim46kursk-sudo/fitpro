@@ -10990,12 +10990,21 @@ export default function App() {
    * аккаунта. Так и задумано: выход — это чаще всего смена человека за
    * телефоном, а новому приложение представляется заново.
    */
+  // ZMClub: лендинг клуба показывается гостю при КАЖДОМ новом заходе, а не
+  // один раз на телефон — вернувшийся человек, ещё не вступивший в клуб,
+  // должен снова видеть, зачем ему вступать. Помним только в пределах вкладки
+  // (sessionStorage): нажал «Посмотреть изнутри» — до конца этого захода
+  // лендинг не всплывает. Вошедшим в аккаунт лендинг не показывается вовсе.
   const [welcomeSeen,setWelcomeSeen]=useState(()=>{
-    try{return localStorage.getItem(WELCOME_KEY)==='1'}catch{return true}
+    try{return sessionStorage.getItem(WELCOME_KEY)==='1'}catch{return false}
   })
   const closeWelcome=()=>{
-    try{localStorage.setItem(WELCOME_KEY,'1')}catch{/* приватный режим */}
+    try{sessionStorage.setItem(WELCOME_KEY,'1')}catch{/* приватный режим */}
     setWelcomeSeen(true)
+  }
+  const openWelcome=()=>{
+    try{sessionStorage.removeItem(WELCOME_KEY)}catch{/* приватный режим */}
+    setWelcomeSeen(false)
   }
   const [authLoading,setAuthLoading]=useState(true)
   // Сессию не удалось подтвердить из-за временного сбоя (сеть/5xx), при этом
@@ -12769,9 +12778,10 @@ export default function App() {
                гостя нет вовсе: без этой кнопки тарифы на телефоне были бы
                недостижимы иначе как упёршись в платное. */
             <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-            <button data-testid="guest-plans" onClick={openPlans}
+            {/* «О клубе» — снова открыть лендинг: там и описание, и «Вступить». */}
+            <button data-testid="guest-plans" onClick={openWelcome}
               style={{ padding:'6px 12px', borderRadius:10, border:'none', background:'transparent', color:TXT3, fontSize:13, fontWeight:600, cursor:'pointer', minHeight:'unset' }}>
-              Вступить в клуб
+              О клубе
             </button>
             <button data-testid="guest-login" onClick={()=>{setAuthTabWanted('login');setShowAuth(true)}}
               style={{ padding:'6px 14px', borderRadius:10, border:`1px solid ${SEP}`, background:'transparent', color:TXT, fontSize:13, fontWeight:700, cursor:'pointer', minHeight:'unset' }}>
