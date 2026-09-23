@@ -37,6 +37,7 @@ import FoodDiary, { OPEN_GOALS_EVENT } from './FoodDiary.jsx'
 import HubCard from './HubCard.jsx'
 import ClubLanding from './ClubLanding.jsx'
 import ClubReportSheet, { MyReports } from './ClubReport.jsx'
+import TrafficStats from './TrafficStats.jsx'
 import zmclubMark from './assets/zmclub-mark.png'
 import zmclubLogo from './assets/zmclub-logo.png'
 
@@ -8731,6 +8732,8 @@ function AnalyticsView({ userRole }) {
           не грузит до тапа и не должен пропадать, если основная аналитика не
           загрузилась. Внизу экрана он был бы недосягаем — под ним список на
           сотни человек. */}
+      {/* ZMClub: посещаемость — кто пришёл за сутки, куда ходят, где уходят. */}
+      <TrafficStats />
       <ErrorLogBlock userRole={userRole} />
       {loading&&!rows&&<div style={{ color:TXT3, fontSize:13, padding:'20px 0', textAlign:'center' }}>Загрузка…</div>}
       {loadError&&!rows&&(
@@ -11558,6 +11561,7 @@ export default function App() {
    * await, — иначе Safari сочтёт её всплывающим окном (см. pay в PlansView).
    */
   const openClubChat=async()=>{
+    track('screen',{name:'chat'},evPath())
     if(!user||access.level<SLOTS_MIN_LEVEL){track('paywall',{where:'chat'},evPath());setChatLock(true);return}
     const inTelegram=!!window.Telegram?.WebApp?.initData
     const w=inTelegram?null:window.open('about:blank','_blank')
@@ -11810,6 +11814,7 @@ export default function App() {
    *   то есть ровно в ту потерю, ради которой прямой адрес и заводится.
    */
   const openMotion=(startScreen=null,{вИсторию=true}={})=>{
+    track('screen',{name:'motion'},evPath())
     if(motionOpen)return
     if(guestMode)bump('try_motion')
     setMotionStart(startScreen)
