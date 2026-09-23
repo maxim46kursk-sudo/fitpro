@@ -35,6 +35,7 @@ import { VIP, VIP_LEVEL, FEATURES, TEST_MODE, TRIAL_DAYS, planByKey, priceOf, ef
 import { clampNum } from './nutrition.js'
 import FoodDiary, { OPEN_GOALS_EVENT } from './FoodDiary.jsx'
 import HubCard from './HubCard.jsx'
+import ClubLanding from './ClubLanding.jsx'
 import zmclubMark from './assets/zmclub-mark.png'
 import zmclubLogo from './assets/zmclub-logo.png'
 
@@ -9436,7 +9437,9 @@ function PlansView({ user, onClose, hideBack, onChanged, guest, onCreateAccount 
   // Гостю баннер пробного показываем: это и есть довод завести аккаунт, а
   // обещание правдиво — у свежего аккаунта пробный не использован и доступа нет,
   // так что он получит ровно то, что здесь написано.
-  const canStartTrial=guest||(!!profile&&!profile.trial_used&&access.level===0)
+  // ZMClub: бесплатного пробного нет — «7 дней» это первые дни ПОСЛЕ оплаты с
+  // гарантией возврата (так на лендинге). Баннер бесплатного пробного выключен.
+  const canStartTrial=false&&(guest||(!!profile&&!profile.trial_used&&access.level===0))
   // Активная ПЛАТНАЯ подписка (не пробный) — для кнопки отмены.
   const hasActivePaid=access.level>0&&!access.isTrial
   const hasCoach=!!profile?.coach_id
@@ -9690,6 +9693,9 @@ function PlansView({ user, onClose, hideBack, onChanged, guest, onCreateAccount 
               </div>
               {TEST_MODE&&(
                 <div style={{fontSize:11.5,color:COR,marginTop:4}}>тестовая цена на время запуска</div>
+              )}
+              {selectedPlan.key==='club'&&(
+                <div style={{fontSize:13,color:TXT2,marginTop:6,lineHeight:1.45}}>Первые 7 дней — тест-драйв с гарантией: не понравится, вернём деньги.</div>
               )}
             </div>
           )}
@@ -11377,6 +11383,14 @@ export default function App() {
     setShowSettingsView(true)
     setSettingsSubPage('plans')
   }
+  // Вошёл после «Вступить в клуб» гостем — сразу открываем экран оплаты.
+  useEffect(()=>{
+    if(!user?.id)return
+    let want=false
+    try{want=sessionStorage.getItem('zmclub_pay_after_auth')==='1';if(want)sessionStorage.removeItem('zmclub_pay_after_auth')}catch{/* приватный режим */}
+    if(want)openPlans()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[user?.id])
 
   /**
    * Гость решил завести аккаунт с экрана тарифов.
@@ -11388,6 +11402,8 @@ export default function App() {
    */
   const createAccountFromPlans=()=>{
     try{sessionStorage.setItem('fitpro_offer_src','plans')}catch{/* приватный режим */}
+    // ZMClub: после входа сразу вернуть человека к оплате — он шёл вступать.
+    try{sessionStorage.setItem('zmclub_pay_after_auth','1')}catch{/* приватный режим */}
     setShowSettingsView(false)
     setSettingsSubPage(null)
     setAuthTabWanted('register')
@@ -12903,7 +12919,7 @@ export default function App() {
         * увидит и приветствие: отметку «видел» мы при этом не ставим.
         */}
       {guestMode&&!welcomeSeen&&!authOpen&&!(ПРЯМОЙ_ЧЕЛЛЕНДЖ&&motionOpen)&&(
-        <WelcomeSheet onClose={closeWelcome} />
+        <ClubLanding onLook={closeWelcome} onJoin={()=>{closeWelcome();openPlans()}} />
       )}
 
       {offer&&(
