@@ -101,7 +101,7 @@ export function returnUrlFor(source, appUrlOverride) {
 // здесь, у билета — в потоке, и приезжает сюда прочитанной из базы. Число из
 // тела запроса сюда не попадает никогда: сумму подписываем мы, а по ней вебхук
 // потом опознаёт товар — доверить её клиенту значит продать что угодно за рубль.
-export function buildPaymentData({ userId, plan, source, priceRub }) {
+export function buildPaymentData({ userId, plan, source, priceRub, appUrl }) {
   const price = plan === CHALLENGE_ITEM
     ? (Number.isInteger(priceRub) && priceRub > 0 ? priceRub : undefined)
     : (Object.hasOwn(PLAN_PRICE, plan) ? PLAN_PRICE[plan] : undefined)
@@ -110,7 +110,10 @@ export function buildPaymentData({ userId, plan, source, priceRub }) {
   // здесь, чем выписать ссылку в никуда.
   if (price === undefined) throw new Error(`buildPaymentData: неизвестный товар ${plan}`)
   const tag = `${userId}__${plan}`
-  const returnUrl = returnUrlFor(source)
+  // appUrl — сайт, с которого платят (fitproapp.ru или zmclubonline.ru): после
+  // оплаты человек должен вернуться ТУДА ЖЕ — вход после гостевой оплаты
+  // держится на номере заказа в хранилище именно этого сайта.
+  const returnUrl = returnUrlFor(source, appUrl)
   return {
     do: 'pay',
     order_id: tag,

@@ -56,6 +56,12 @@ export default async function handler(req, res) {
   const authHeader = req.headers.authorization || ''
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
 
+  // Куда вернуть после оплаты: на тот же сайт, откуда пришёл запрос, но только
+  // из белого списка — адрес из заголовка без проверки был бы открытым редиректом.
+  const RETURN_ORIGINS = ['https://fitproapp.ru', 'https://zmclubonline.ru', 'https://www.zmclubonline.ru']
+  const origin = String(req.headers.origin || '').replace(/\/+$/, '')
+  const appUrl = RETURN_ORIGINS.includes(origin) ? origin : undefined
+
   /**
    * ОПЛАТА БЕЗ АККАУНТА (ZMClub, сент 2026).
    *
@@ -76,7 +82,7 @@ export default async function handler(req, res) {
       console.error('create-payment: не удалось завести гостевой заказ:', gErr)
       return res.status(500).json({ error: 'Не удалось открыть оплату, попробуй ещё раз' })
     }
-    const gData = buildPaymentData({ userId: `g_${orderToken}`, plan: 'club', source: req.body?.source })
+    const gData = buildPaymentData({ userId: `g_${orderToken}`, plan: 'club', source: req.body?.source, appUrl })
     const gSignature = createSignature(gData, secret)
     return res.status(200).json({ url: PAYFORM_BASE + '?' + qs.stringify({ ...gData, signature: gSignature }), order: orderToken })
   }
@@ -215,7 +221,7 @@ export default async function handler(req, res) {
   // Цену и адрес возврата подставляет buildPaymentData — на сервере, не из
   // тела: сумму доверять клиенту нельзя (по ней вебхук определяет пакет), а
   // адрес возврата тем более.
-  const data = buildPaymentData({ userId, plan, source, priceRub })
+  const data = buildPaymentData({ userId, plan, source, priceRub, appUrl })
 
   // Подпись считается по данным, в которых адрес возврата УЖЕ подставлен —
   // иначе Продамус отклонит ссылку как неподписанную по этим полям.
