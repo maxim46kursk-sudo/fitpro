@@ -12849,7 +12849,7 @@ export default function App() {
             </>)}
             {guestPay.phase==='timeout'&&(<>
               <div style={{ fontSize:17, fontWeight:800, marginBottom:8 }}>Оплата пока не пришла</div>
-              <div style={{ fontSize:13.5, color:TXT2, lineHeight:1.5, marginBottom:16 }}>Если ты оплатил — подтверждение придёт в течение пары минут, и клуб откроется сам, когда снова зайдёшь на сайт. Если не оплатил — просто закрой это окно.</div>
+              <div style={{ fontSize:13.5, color:TXT2, lineHeight:1.5, marginBottom:16 }}>Если ты оплатил — подтверждение придёт в течение пары минут, и клуб откроется сам, когда снова зайдёшь на сайт. Письмо с номером участника тоже придёт на почту — проверь и папку «Спам». Если не оплатил — просто закрой это окно.</div>
               <button onClick={()=>setGuestPay(null)} style={{ width:'100%', padding:13, borderRadius:12, border:'none', background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', fontSize:15, fontWeight:800, cursor:'pointer' }}>Понятно</button>
             </>)}
             {(guestPay.phase==='existing'||guestPay.phase==='claimed')&&(<>
@@ -12859,6 +12859,7 @@ export default function App() {
                 {guestPay.phase==='existing'
                   ?<>Клуб подключён к аккаунту{guestPay.email?<> с почтой <b style={{color:TXT}}>{guestPay.email}</b></>:null}, который у тебя уже был. Войди в него — всё уже открыто.</>
                   :<>Клуб подключён{guestPay.email?<> к аккаунту <b style={{color:TXT}}>{guestPay.email}</b></>:null}. Войди в него, чтобы продолжить.</>}
+                <div style={{ marginTop:10 }}>Номер участника акции отправили на почту. Не видишь письмо — проверь папку «Спам».</div>
               </div>
               <button onClick={()=>{setGuestPay(null);setAuthTabWanted('login');setShowAuth(true)}} style={{ width:'100%', padding:13, borderRadius:12, border:'none', background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', fontSize:15, fontWeight:800, cursor:'pointer' }}>Войти</button>
             </>)}
