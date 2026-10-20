@@ -11685,6 +11685,7 @@ export default function App() {
       const inTelegram=!!window.Telegram?.WebApp?.initData
       const res=await fetch('/api/create-payment',{method:'POST',headers,body:JSON.stringify({plan,source:inTelegram?'telegram':'web'})})
       const body=await res.json().catch(()=>({}))
+      if(body?.reason==='sold_out'){setChatSoonText(body.error);setChatSoonToast(true);setTimeout(()=>setChatSoonToast(false),5000);return}
       if(!res.ok||!body?.url)throw new Error(body?.error||`сервер ответил ${res.status}`)
       if(body.order){try{localStorage.setItem(PENDING_ORDER_KEY,JSON.stringify({order:body.order,at:Date.now()}))}catch{/* приватный режим */}}
       if(inTelegram)window.Telegram.WebApp.openLink(body.url)

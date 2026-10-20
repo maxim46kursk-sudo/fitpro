@@ -98,7 +98,7 @@
         <div class="pr">
           <div class="gt"></div><div class="gb"></div>
           <div style="position:absolute;left:14px;right:14px;top:16px;text-align:center">
-            <div class="tg"><i></i>Приём участников до 10 ноября</div>
+            <div class="tg"><i></i>Всего 600 мест · приём до 10 ноября</div>
             <div class="h">Эта машина<br><span>может быть твоей</span></div>
           </div>
           <div style="position:absolute;left:0;right:0;bottom:16px;text-align:center">
@@ -111,7 +111,7 @@
           <div><img data-src="/club/promo/iphone-17.png" alt=""><s>3 место</s><b>iPhone 17</b></div>
           <div><img data-src="/club/promo/airpods.png" alt=""><s>4–10 место</s><b>AirPods × 7</b></div>
         </div>
-        <div style="text-align:center;font-size:12.5px;color:rgba(255,255,255,.72);margin-top:14px;line-height:1.5">10 призовых мест · каждый участник клуба получает номер<br>Итоги — <b style="color:#fff">12 ноября в прямом эфире</b></div>
+        <div style="text-align:center;font-size:12.5px;color:rgba(255,255,255,.72);margin-top:14px;line-height:1.5"><b style="color:#fff">600 мест — 10 призов.</b> Каждый участник клуба получает номер<br>Приём закроется 10 ноября или раньше, если места закончатся<br>Итоги — <b style="color:#fff">12 ноября в прямом эфире</b></div>
         <div class="pk">
           <button class="on" data-plan="club" data-price="3 000"><div style="font-size:12px;color:rgba(255,255,255,.72)">1 месяц</div><div style="font-size:22px;font-weight:900;margin:2px 0">3 000 ₽</div><div style="font-size:12px;color:#9d96ff;font-weight:700">1 номер участника</div></button>
           <button data-plan="club4" data-price="9 000"><div style="font-size:12px;color:rgba(255,255,255,.72)">3+1 · 4 месяца</div><div style="font-size:22px;font-weight:900;margin:2px 0">9 000 ₽</div><div style="font-size:12px;color:#9d96ff;font-weight:700">4 номера участника</div></button>
@@ -159,12 +159,14 @@
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ plan: plan, source: 'web' })
             }).then(function (r) { return r.json() }).then(function (b) {
+              if (b && b.reason === 'sold_out') { busy = false; pay.style.opacity = '1'; err.textContent = b.error; err.style.display = 'block'; return }
               if (!b || !b.url) throw new Error('no url')
               if (b.order) { try { localStorage.setItem('zmclub_pending_order', JSON.stringify({ order: b.order, at: Date.now() })) } catch (e) {} }
               location.assign(b.url)
             }).catch(function () {
               busy = false
               pay.style.opacity = '1'
+              err.textContent = 'Не удалось открыть оплату. Попробуй ещё раз.'
               err.style.display = 'block'
             })
           })

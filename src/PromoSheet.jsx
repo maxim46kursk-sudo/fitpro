@@ -127,7 +127,7 @@ export default function PromoSheet({ user, blocked }) {
           {!done && !me.complete ? (
             <>
               <div style={{ marginTop: 20, padding: '12px 14px', borderRadius: 12, background: `${PUR}22`, fontSize: 13.5, lineHeight: 1.5 }}>
-                Заполни анкету участника — <b>без неё номер не участвует в розыгрыше.</b> Если победишь, позвоним на этот телефон.
+                Заполни анкету участника — <b>без неё номер не участвует в акции.</b> Если победишь, позвоним на этот телефон.
               </div>
               <div style={lbl}>Фамилия и имя</div>
               <input style={inp} value={form.full_name} placeholder="Иванов Иван" autoComplete="name"
@@ -149,7 +149,7 @@ export default function PromoSheet({ user, blocked }) {
           ) : (
             <>
               <div style={{ marginTop: 20, padding: '14px', borderRadius: 12, background: '#30D15822', fontSize: 14, lineHeight: 1.5, textAlign: 'center' }}>
-                ✅ Анкета заполнена — {many ? 'номера участвуют' : 'номер участвует'} в розыгрыше.
+                ✅ Анкета заполнена — {many ? 'номера участвуют' : 'номер участвует'} в акции.
               </div>
               <div style={{ fontSize: 14, lineHeight: 1.5, marginTop: 16, color: TXT2, textAlign: 'center' }}>Последний шаг — вступи в Telegram-группу клуба: там программы, рационы и ссылка на эфир.</div>
               {err && <div style={{ color: DANGER, fontSize: 13.5, marginTop: 12 }}>{err}</div>}

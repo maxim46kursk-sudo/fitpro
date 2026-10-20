@@ -224,6 +224,19 @@ export default function ClubLanding({ onJoin, onLook }) {
   const [info, setInfo] = useState(null) // null | 'how' | 'rules'
   const videoRef = useRef(null)
   const cur = PKGS.find(p => p.key === pkg) || PKGS[0]
+  // Места акции: 600 номеров. left=null — ещё не знаем (кнопки работают как обычно,
+  // окончательную проверку всё равно делает сервер при открытии кассы).
+  const [left, setLeft] = useState(null)
+  const soldOut = PROMO_ON && left !== null && left <= 0
+  const pkgFits = k => left === null || left >= (k === 'club4' ? 4 : 1)
+  useEffect(() => {
+    if (!PROMO_ON) return
+    fetch('/api/promo?action=status', { method: 'POST' }).then(r => r.json()).then(b => {
+      if (typeof b?.left === 'number') setLeft(b.left)
+    }).catch(() => {})
+  }, [])
+  useEffect(() => { if (!pkgFits(pkg)) setPkg('club') }, [left]) // eslint-disable-line react-hooks/exhaustive-deps
+  const joinLabel = soldOut ? 'Все 600 мест заняты' : `Вступить в клуб · ${rub(cur.price)}`
 
   useEffect(() => {
     track('screen', { name: 'club_landing' }, '/club')
@@ -232,7 +245,7 @@ export default function ClubLanding({ onJoin, onLook }) {
     if (pre) { if (pre.scrollTop > 0 && rootRef.current) rootRef.current.scrollTop = pre.scrollTop; pre.remove() }
   }, [])
   // В кассу уходит выбранный пакет: club (1 месяц) или club4 (3+1).
-  const join = () => { track('screen', { name: 'club_join', plan: pkg }, '/club'); onJoin(pkg) }
+  const join = () => { if (soldOut) return; track('screen', { name: 'club_join', plan: pkg }, '/club'); onJoin(pkg) }
   const look = () => { track('screen', { name: 'club_look' }, '/club'); onLook() }
 
   // Появление блоков при прокрутке + запуск счётчика цены + липкая кнопка.
@@ -285,7 +298,7 @@ export default function ClubLanding({ onJoin, onLook }) {
                 autoPlay muted loop playsInline disablePictureInPicture preload="auto" aria-label="Ролик: Skoda Octavia — главный приз" />
               <div className="gt" /><div className="gb" />
               <div style={{ position: 'absolute', left: 14, right: 14, top: 16, textAlign: 'center' }}>
-                <div className="zl-tag"><i />Приём участников до 10 ноября</div>
+                <div className="zl-tag"><i />{soldOut ? 'Приём участников закрыт' : 'Всего 600 мест · приём до 10 ноября'}</div>
                 <div style={{ marginTop: 12, fontSize: 29, fontWeight: 900, lineHeight: 1.02, textTransform: 'uppercase', letterSpacing: '-.4px', textShadow: '0 2px 20px rgba(0,0,0,.6)' }}>
                   Эта машина<br /><span className="zl-grad">может быть твоей</span>
                 </div>
@@ -310,7 +323,7 @@ export default function ClubLanding({ onJoin, onLook }) {
                 ))}
               </div>
               <div style={{ textAlign: 'center', fontSize: 12.5, color: T2, marginTop: 14, lineHeight: 1.5 }}>
-                10 призовых мест · каждый участник клуба получает номер<br />Итоги — <b style={{ color: '#fff' }}>12 ноября в прямом эфире</b>
+                <b style={{ color: '#fff' }}>600 мест — 10 призов.</b> Каждый участник клуба получает номер<br />Приём закроется 10 ноября или раньше, если места закончатся<br />Итоги — <b style={{ color: '#fff' }}>12 ноября в прямом эфире</b>
               </div>
               <button data-testid="promo-how" onClick={() => { track('screen', { name: 'promo_how' }, '/club'); setInfo('how') }} className="zl-ghost">Как участвовать</button>
             </div>
@@ -321,7 +334,7 @@ export default function ClubLanding({ onJoin, onLook }) {
         <div className="zl-in" style={{ margin: '22px 0 14px', animationDelay: '.45s' }}>
           <div className="zl-pkg">
             {PKGS.map(p => (
-              <button key={p.key} data-testid={`club-pkg-${p.key}`} className={pkg === p.key ? 'on' : ''} onClick={() => setPkg(p.key)}>
+              <button key={p.key} data-testid={`club-pkg-${p.key}`} className={pkg === p.key ? 'on' : ''} disabled={!pkgFits(p.key)} style={pkgFits(p.key) ? undefined : { opacity: .4 }} onClick={() => setPkg(p.key)}>
                 {p.badge && <span className="bd">{p.badge}</span>}
                 <div style={{ fontSize: 12, color: T2 }}>{p.title}</div>
                 <div style={{ fontSize: 22, fontWeight: 900, margin: '2px 0' }}>{rub(p.price)}</div>
@@ -331,7 +344,7 @@ export default function ClubLanding({ onJoin, onLook }) {
           </div>
         </div>
         <div ref={topBtnRef} className="zl-in" style={{ animationDelay: '.6s' }}>
-          <button data-testid="club-join-top" onClick={join} className="zl-btn">Вступить в клуб · {rub(cur.price)}</button>
+          <button data-testid="club-join-top" onClick={join} className="zl-btn" disabled={soldOut} style={soldOut ? { opacity: .5 } : undefined}>{joinLabel}</button>
           <button data-testid="club-look" onClick={look} className="zl-ghost">Посмотреть клуб изнутри</button>
           <div style={{ fontSize: 12, color: T3, textAlign: 'center', marginTop: 8 }}>Без регистрации: программы, упражнения, питание</div>
         </div>
@@ -458,7 +471,7 @@ export default function ClubLanding({ onJoin, onLook }) {
             <>
               <div className="zl-r" style={{ fontSize: 20, fontWeight: 900, textTransform: 'uppercase', marginBottom: 12 }}>Вступай до 10 ноября</div>
               <div className="zl-r" style={{ fontSize: 15, color: T2, lineHeight: 1.55, marginBottom: 22 }}>
-                Каждый, кто вступит в клуб до 10 ноября, получает номер участника. 12 ноября в прямом эфире определим 10 победителей — главный приз Skoda Octavia.
+                Каждый, кто вступит в клуб до 10 ноября, получает номер участника. Мест всего 600 — когда закончатся, приём закроется. 12 ноября в прямом эфире определим 10 победителей — главный приз Skoda Octavia.
               </div>
             </>
           )}
@@ -466,7 +479,7 @@ export default function ClubLanding({ onJoin, onLook }) {
             <span className="zl-grad">ZM Club</span> — для тех, кто хочет тренироваться по науке и видеть результат без срывов и голодовок
           </div>
           <div ref={endRef}>
-            <button data-testid="club-join-bottom" onClick={join} className="zl-btn">Вступить в клуб · {rub(cur.price)}</button>
+            <button data-testid="club-join-bottom" onClick={join} className="zl-btn" disabled={soldOut} style={soldOut ? { opacity: .5 } : undefined}>{joinLabel}</button>
             <button onClick={look} className="zl-ghost">Сначала посмотреть изнутри</button>
           </div>
         </div>
@@ -481,12 +494,12 @@ export default function ClubLanding({ onJoin, onLook }) {
       </div>
 
       <PromoInfo open={!!info} initial={info || 'how'} onClose={() => setInfo(null)}
-        onJoin={() => { setInfo(null); join() }} joinLabel={`Вступить в клуб · ${rub(cur.price)}`} />
+        onJoin={() => { setInfo(null); join() }} joinLabel={joinLabel} />
 
       {/* ── Липкая кнопка: появляется, когда верхняя уехала из виду */}
       <div className={`zl-sticky${sticky ? ' show' : ''}`}>
         <div style={{ maxWidth: 520, margin: '0 auto' }}>
-          <button data-testid="club-join-sticky" onClick={join} className="zl-btn" style={{ padding: '15px 18px', fontSize: 15 }}>Вступить в клуб · {rub(cur.price)}</button>
+          <button data-testid="club-join-sticky" onClick={join} className="zl-btn" disabled={soldOut} style={{ padding: '15px 18px', fontSize: 15, ...(soldOut ? { opacity: .5 } : {}) }}>{joinLabel}</button>
         </div>
       </div>
     </div>

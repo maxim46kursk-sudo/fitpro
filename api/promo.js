@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { rateLimit } from './_ratelimit.js'
-import { PROMO_KEY } from './_promo.js'
+import { PROMO_KEY, PROMO_CAP, promoActive, promoLeft } from './_promo.js'
 
 /**
  * АКЦИЯ «SKODA OCTAVIA»: ручки для участника (окт 2026).
@@ -15,7 +15,7 @@ import { PROMO_KEY } from './_promo.js'
  */
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://api.fitproapp.ru'
-// Совершеннолетие — на день розыгрыша.
+// Совершеннолетие — на день подведения итогов.
 const DRAW_DAY = '2026-11-12'
 
 function adult(birth) {
@@ -50,6 +50,17 @@ export default async function handler(req, res) {
   if (!key) return res.status(500).json({ error: 'Сервер не настроен' })
   const db = createClient(SUPABASE_URL, key)
   const action = String(req.query?.action || '')
+
+  // ── Сколько мест осталось (лендинг; без входа).
+  if (action === 'status') {
+    try {
+      const left = await promoLeft(db)
+      return res.status(200).json({ cap: PROMO_CAP, left, soldOut: promoActive() && left <= 0 })
+    } catch (e) {
+      console.error('promo status:', e)
+      return res.status(200).json({ cap: PROMO_CAP, left: null, soldOut: false })
+    }
+  }
 
   // ── Вход по кнопке из письма.
   if (action === 'login') {

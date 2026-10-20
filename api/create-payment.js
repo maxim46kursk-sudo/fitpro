@@ -1,3 +1,4 @@
+import { promoActive, promoLeft } from './_promo.js'
 import crypto from 'node:crypto'
 import qs from 'qs'
 import { createClient } from '@supabase/supabase-js'
@@ -58,6 +59,27 @@ export default async function handler(req, res) {
   // было бы выписать ссылку с чужим userId в customer_extra.
   const authHeader = req.headers.authorization || ''
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
+
+  /**
+   * ЛИМИТ МЕСТ АКЦИИ (окт 2026): 600 номеров. Пока акция идёт, клуб продаётся
+   * только пока есть номера — иначе мы бы продали «место», которого нет.
+   * Пакет 3+1 даёт 4 номера, поэтому при остатке меньше 4 его не продаём.
+   */
+  const reqPlan = req.body?.plan
+  if ((reqPlan === 'club' || reqPlan === 'club4') && promoActive()) {
+    let left
+    try { left = await promoLeft(createClient(SUPABASE_URL, serviceRoleKey)) } catch (e) {
+      console.error('create-payment: не удалось проверить места акции:', e)
+      return res.status(500).json({ error: 'Не удалось открыть оплату, попробуй ещё раз' })
+    }
+    const need = reqPlan === 'club4' ? 4 : 1
+    if (left < need) {
+      return res.status(409).json({
+        reason: 'sold_out', left,
+        error: left > 0 ? `Осталось мест: ${left} — пакет 3+1 уже не помещается, выбери 1 месяц` : 'Все 600 мест заняты — приём участников закрыт',
+      })
+    }
+  }
 
   // Куда вернуть после оплаты: на тот же сайт, откуда пришёл запрос, но только
   // из белого списка — адрес из заголовка без проверки был бы открытым редиректом.

@@ -26,6 +26,21 @@ export const CLUB_SITE = 'https://zmclubonline.ru'
 // со ссылкой на чужой домен почтовики чаще считают спамом. Приложение то же.
 export const LOGIN_SITE = 'https://fitproapp.ru'
 const LOGIN_TTL_MS = 14 * 24 * 3600 * 1000
+// Мест в акции — 600 номеров. Выдали 600-й — приём закрыт (create-payment
+// больше не выписывает ссылки на клуб до конца акции). Тестовые номера (9001+)
+// не считаются.
+export const PROMO_CAP = 600
+
+/** Акция ещё принимает участников (по дате). */
+export const promoActive = () => Date.now() < PROMO_ENDS_MS
+
+/** Сколько номеров ещё можно выдать. Ошибка базы → бросает. */
+export async function promoLeft(db) {
+  const { count, error } = await db.from('promo_tickets')
+    .select('number', { count: 'exact', head: true }).eq('promo', PROMO_KEY).eq('is_test', false)
+  if (error) throw new Error(`promoLeft: ${error.message}`)
+  return Math.max(0, PROMO_CAP - (count || 0))
+}
 
 export function ticketCount(plan, sum) {
   if (plan === 'club' && sum === 3000) return 1
@@ -60,7 +75,7 @@ export function promoMail({ numbers, loginUrl, until, isTest }) {
     '',
     'Что сделать сейчас:',
     `1. Войти в клуб (вход в один клик, без пароля): ${loginUrl}`,
-    '2. Заполнить анкету участника: ФИО, дата рождения, телефон. Без анкеты номер не участвует в розыгрыше.',
+    '2. Заполнить анкету участника: ФИО, дата рождения, телефон. Без анкеты номер не участвует в акции.',
     '3. Вступить в Telegram-группу клуба — кнопка будет сразу после анкеты.',
     '',
     untilTxt ? `Доступ к клубу открыт до ${untilTxt}.` : '',
@@ -78,7 +93,7 @@ export function promoMail({ numbers, loginUrl, until, isTest }) {
   <div style="font-size:16px;font-weight:800;margin-bottom:10px">Что сделать сейчас — 3 шага:</div>
   <div style="font-size:15px;line-height:1.6;color:#e6e6ee">
     1. Войти в клуб — в один клик, без пароля.<br>
-    2. Заполнить анкету участника: ФИО, дата рождения, телефон. <b>Без анкеты номер не участвует в розыгрыше.</b><br>
+    2. Заполнить анкету участника: ФИО, дата рождения, телефон. <b>Без анкеты номер не участвует в акции.</b><br>
     3. Вступить в Telegram-группу клуба — кнопка будет сразу после анкеты.
   </div>
   <a href="${esc(loginUrl)}" style="display:block;margin:24px 0;padding:17px;border-radius:999px;background:#7c7af0;color:#ffffff;text-align:center;font-size:16px;font-weight:900;text-decoration:none">ВОЙТИ В КЛУБ</a>
@@ -159,6 +174,11 @@ export async function issuePromo(db, { paymentKey, userId, plan, sum, data = {},
     }
   }
 
+  // Перебор лимита возможен только если кассу открыли до 600-го номера, а
+  // оплатили после. Номер выдан (человек заплатил), решение — за владельцем.
+  if (!isTest && Math.max(...numbers) > PROMO_CAP) {
+    await tellOwner(db, `⚠️ Акция: выдан номер сверх лимита ${PROMO_CAP}: ${numbers.map(n => '№' + n).join(', ')}. Реши — оставить или вернуть оплату.`)
+  }
   await tellOwner(db, `🚗 Акция${isTest ? ' [ТЕСТ]' : ''}: оплата ${sum} ₽ → ${numbers.map(n => '№' + n).join(', ')}${to ? '' : ' (почты нет — письмо не отправлено)'}`)
   return numbers
 }
