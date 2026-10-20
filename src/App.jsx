@@ -36,6 +36,7 @@ import { clampNum } from './nutrition.js'
 import FoodDiary, { OPEN_GOALS_EVENT } from './FoodDiary.jsx'
 import HubCard from './HubCard.jsx'
 import ClubLanding from './ClubLanding.jsx'
+import PromoSheet from './PromoSheet.jsx'
 import ClubReportSheet, { MyReports } from './ClubReport.jsx'
 import TrafficStats from './TrafficStats.jsx'
 import zmclubMark from './assets/zmclub-mark.png'
@@ -12835,6 +12836,8 @@ export default function App() {
           {chatSoonText}
         </div>
       )}
+      {/* Акция: номер участника и анкета (окт 2026) */}
+      <PromoSheet user={user} blocked={!!pwdSheet||!!guestPay} />
       {guestPay&&(
         <div style={{ position:'fixed', inset:0, zIndex:3200, background:'rgba(0,0,0,0.78)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
           <div style={{ background:SURF, borderRadius:18, padding:'24px 20px', width:'100%', maxWidth:360, textAlign:'center', color:TXT }}>

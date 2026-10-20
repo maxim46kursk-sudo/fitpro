@@ -10,6 +10,8 @@ import { resolveSeasonFor } from './_challengeSeason.js'
 import { ступеньСервера } from './_challengeLog.js'
 // Продажа билета — событие, о котором владелец узнаёт немедленно, а не из сводки.
 import { сообщитьОбОплате } from './_challengeSale.js'
+// Акция «Skoda Octavia»: номера участников после оплаты клуба (окт 2026).
+import { issuePromo } from './_promo.js'
 
 // Вебхук уведомлений Продамуса. Тело подписано, поэтому НЕ даём Vercel его
 // разобрать — подпись считается по точной сырой форме, любой репарсинг
@@ -516,6 +518,24 @@ export default async function handler(req, res) {
     // доиграть вручную по журналу. 200, чтобы Продамус не слал повторы.
     reportError('api:prodamus:grant', [`Prodamus webhook: платёж ${orderNum} записан, но НЕ удалось начислить пакет пользователю ${userId}:`, updErr], { message: `платёж записан, пакет НЕ начислен: ${updErr?.message}`, status: 500, userId: userId })
     return res.status(200).send('OK')
+  }
+
+  /**
+   * АКЦИЯ: НОМЕРА УЧАСТНИКОВ. Строго после записи в журнал и начисления клуба:
+   * номер — следствие оплаты, а не наоборот. Повтор уведомления сюда не
+   * доходит (отброшен выше по UNIQUE), а сама выдача ещё и идемпотентна по
+   * ключу платежа. Сбой здесь НЕ отменяет начисленный клуб — только громко
+   * сообщает: номер можно выдать руками по журналу.
+   */
+  try {
+    const numbers = await issuePromo(supabaseAdmin, {
+      paymentKey: dedupKey, userId, plan: accruePlan.plan, sum: sumNum, data, planUntil: newUntil,
+    })
+    if (numbers) console.log(`Prodamus webhook: акция — ${userId} получил номера ${numbers.join(', ')}`)
+  } catch (e) {
+    reportError('api:prodamus:promo',
+      [`Prodamus webhook: платёж ${dedupKey} оплачен, клуб начислен, но номер участника НЕ выдан:`, e],
+      { message: `номер акции НЕ выдан: ${e?.message}`, status: 500, userId })
   }
 
   /**
