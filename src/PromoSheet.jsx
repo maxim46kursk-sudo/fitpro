@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from './supabase.js'
 import { track } from './track.js'
 import { BG, SURF, SURF2, HAIR, PUR, ACCENT2, TXT2, DANGER } from './theme.js'
+import PromoInfo from './PromoInfo.jsx'
 
 /**
  * АКЦИЯ «SKODA OCTAVIA»: номер участника и анкета (окт 2026).
@@ -41,6 +42,7 @@ export default function PromoSheet({ user, blocked }) {
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(false)
   const [loginMsg, setLoginMsg] = useState(null)
+  const [rules, setRules] = useState(false)
   const asked = useRef(false)
 
   // ── Вход по кнопке из письма.
@@ -110,6 +112,7 @@ export default function PromoSheet({ user, blocked }) {
   const nums = me.numbers.map(n => `№${n}`).join(', ')
   const many = me.numbers.length > 1
 
+  if (rules) return <PromoInfo open initial="rules" onClose={() => setRules(false)} />
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 3150, background: 'rgba(0,0,0,0.82)', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
       <div style={{ maxWidth: 440, margin: '0 auto', padding: '24px 16px 40px', color: '#fff', fontFamily: 'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif' }}>
@@ -136,7 +139,7 @@ export default function PromoSheet({ user, blocked }) {
                 onChange={e => setForm({ ...form, phone: e.target.value })} />
               <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginTop: 14, fontSize: 13, color: TXT2, lineHeight: 1.45, cursor: 'pointer' }}>
                 <input type="checkbox" checked={form.consent} onChange={e => setForm({ ...form, consent: e.target.checked })} style={{ marginTop: 3, width: 18, height: 18, flex: '0 0 auto' }} />
-                <span>Мне есть 18 лет. Согласен с правилами акции и на обработку моих данных для её проведения: на эфире объявят номер и имя с первой буквой фамилии, телефон не публикуется.</span>
+                <span>Мне есть 18 лет. Согласен с <a href="#" onClick={e => { e.preventDefault(); setRules(true) }} style={{ color: ACCENT2 }}>правилами акции</a> и на обработку моих данных для её проведения: на эфире объявят номер и имя с первой буквой фамилии, телефон не публикуется.</span>
               </label>
               {err && <div style={{ color: DANGER, fontSize: 13.5, marginTop: 12 }}>{err}</div>}
               <button style={{ ...btn, marginTop: 18, opacity: busy ? 0.7 : 1 }} disabled={busy} onClick={save}>{busy ? 'Сохраняем…' : 'Сохранить анкету'}</button>

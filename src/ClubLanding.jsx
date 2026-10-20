@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import hero from './assets/zmclub-hero.jpg'
 import { track } from './track.js'
+import PromoInfo from './PromoInfo.jsx'
 import { BG, SURF, HAIR, PUR, ACCENT2 } from './theme.js'
 
 /**
@@ -222,6 +223,7 @@ export default function ClubLanding({ onJoin, onLook }) {
   const [sticky, setSticky] = useState(false)
   const [pkg, setPkg] = useState('club')
   const [muted, setMuted] = useState(true)
+  const [info, setInfo] = useState(null) // null | 'how' | 'rules'
   const videoRef = useRef(null)
   const cur = PKGS.find(p => p.key === pkg) || PKGS[0]
 
@@ -326,6 +328,7 @@ export default function ClubLanding({ onJoin, onLook }) {
               <div style={{ textAlign: 'center', fontSize: 12.5, color: T2, marginTop: 14, lineHeight: 1.5 }}>
                 10 призовых мест · каждый участник клуба получает номер<br />Итоги — <b style={{ color: '#fff' }}>12 ноября в прямом эфире</b>
               </div>
+              <button data-testid="promo-how" onClick={() => { track('screen', { name: 'promo_how' }, '/club'); setInfo('how') }} className="zl-ghost">Как участвовать</button>
             </div>
           </>
         )}
@@ -486,11 +489,15 @@ export default function ClubLanding({ onJoin, onLook }) {
 
         {/* ── Реквизиты — нужны для приёма оплаты */}
         <div style={{ marginTop: 44, fontSize: 12.5, color: T3, lineHeight: 1.7 }}>
+          {PROMO_ON && <><button onClick={() => setInfo('rules')} style={{ background: 'none', border: 'none', padding: 0, color: T2, fontSize: 12.5, textDecoration: 'underline', cursor: 'pointer' }}>Правила акции «Skoda Octavia»</button><br /></>}
           Завалишин Максим Игоревич<br />
           ИНН 463227811939<br />
           e-mail: maxim-46kursk@mail.ru
         </div>
       </div>
+
+      <PromoInfo open={!!info} initial={info || 'how'} onClose={() => setInfo(null)}
+        onJoin={() => { setInfo(null); join() }} joinLabel={`Вступить в клуб · ${rub(cur.price)}`} />
 
       {/* ── Липкая кнопка: появляется, когда верхняя уехала из виду */}
       <div className={`zl-sticky${sticky ? ' show' : ''}`}>
