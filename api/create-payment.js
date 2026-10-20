@@ -76,7 +76,7 @@ export default async function handler(req, res) {
     if (left < need) {
       return res.status(409).json({
         reason: 'sold_out', left,
-        error: left > 0 ? `Осталось мест: ${left} — пакет 3+1 уже не помещается, выбери 1 месяц` : 'Все 600 мест заняты — приём участников закрыт',
+        error: left > 0 ? `Осталось мест: ${left} — пакет 3+1 уже не помещается, выбери 1 месяц` : 'Места закончились — приём участников закрыт',
       })
     }
   }
