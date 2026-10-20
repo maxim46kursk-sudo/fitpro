@@ -342,20 +342,32 @@ export default function ClubLanding({ onJoin, onLook }) {
           <div style={{ fontSize: 12, color: T3, textAlign: 'center', marginTop: 8 }}>Без регистрации: программы, упражнения, питание</div>
         </div>
 
-        {/* ── О клубе: фото и обещание (на время акции — под роликом) */}
-        <div className="zl-hero zl-r" style={{ position: 'relative', margin: '40px 0 0', borderRadius: 26, overflow: 'hidden', background: '#000', boxShadow: `0 20px 60px ${PUR}33` }}>
-          <img src={hero} alt="Максим Завалишин" loading="lazy" style={{ display: 'block', width: '100%', height: 'auto' }} />
-          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 28%, rgba(0,0,0,0) 45%, rgba(0,0,0,0.92) 88%)' }} />
-          <div style={{ position: 'absolute', top: 22, left: 20, right: 20 }}>
-            <div style={{ fontSize: 30, fontWeight: 900, letterSpacing: '0.5px' }}><span className="zl-grad">ZM CLUB</span></div>
-            <div style={{ fontSize: 17, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Максим Завалишин</div>
-          </div>
-          <div style={{ position: 'absolute', left: 20, right: 20, bottom: 20 }}>
-            <div style={{ fontSize: 25, fontWeight: 900, color: ACC, lineHeight: 1.1, textTransform: 'uppercase' }}>
+        {/* ── О клубе: обещание (окт 2026 — фото Максима убрано, он есть в ролике).
+             При PROMO_ON=false фото возвращается первым экраном — см. блок ниже. */}
+        {PROMO_ON ? (
+          <div className="zl-r" style={{ marginTop: 48, textAlign: 'center' }}>
+            <div style={{ fontSize: 26, fontWeight: 900, color: ACC, lineHeight: 1.1, textTransform: 'uppercase' }}>
               Тренируйся не на глазок, а по научным данным
             </div>
+            <div style={{ fontSize: 14.5, color: T2, lineHeight: 1.5, marginTop: 10 }}>
+              Каждая программа и упражнение в клубе отобраны по показаниям миографа
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="zl-hero zl-r" style={{ position: 'relative', margin: '40px 0 0', borderRadius: 26, overflow: 'hidden', background: '#000', boxShadow: `0 20px 60px ${PUR}33` }}>
+            <img src={hero} alt="Максим Завалишин" loading="lazy" style={{ display: 'block', width: '100%', height: 'auto' }} />
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 28%, rgba(0,0,0,0) 45%, rgba(0,0,0,0.92) 88%)' }} />
+            <div style={{ position: 'absolute', top: 22, left: 20, right: 20 }}>
+              <div style={{ fontSize: 30, fontWeight: 900, letterSpacing: '0.5px' }}><span className="zl-grad">ZM CLUB</span></div>
+              <div style={{ fontSize: 17, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Максим Завалишин</div>
+            </div>
+            <div style={{ position: 'absolute', left: 20, right: 20, bottom: 20 }}>
+              <div style={{ fontSize: 25, fontWeight: 900, color: ACC, lineHeight: 1.1, textTransform: 'uppercase' }}>
+                Тренируйся не на глазок, а по научным данным
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Что внутри */}
         <div style={{ marginTop: 48 }}>
