@@ -136,7 +136,6 @@ const CSS = `
 .zl-tag{display:table;margin:0 auto;padding:7px 14px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase}
 .zl-tag i{display:inline-block;width:7px;height:7px;border-radius:50%;background:#ff4d6d;margin-right:7px;box-shadow:0 0 10px #ff4d6d;vertical-align:1px;animation:zlBlink 1.6s ease-in-out infinite}
 @keyframes zlBlink{50%{opacity:.35}}
-.zl-snd{position:absolute;right:14px;bottom:92px;width:42px;height:42px;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;min-height:unset}
 .zl-prz{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;align-items:end;margin-top:6px}
 .zl-prz .im{height:110px;display:flex;align-items:flex-end;justify-content:center;position:relative}
 .zl-prz .im::before{content:"";position:absolute;bottom:2px;left:50%;width:86px;height:86px;transform:translateX(-50%);background:radial-gradient(closest-side,${PUR}66,transparent)}
@@ -222,7 +221,6 @@ export default function ClubLanding({ onJoin, onLook }) {
   const [valueOn, setValueOn] = useState(false)
   const [sticky, setSticky] = useState(false)
   const [pkg, setPkg] = useState('club')
-  const [muted, setMuted] = useState(true)
   const [info, setInfo] = useState(null) // null | 'how' | 'rules'
   const videoRef = useRef(null)
   const cur = PKGS.find(p => p.key === pkg) || PKGS[0]
@@ -236,14 +234,6 @@ export default function ClubLanding({ onJoin, onLook }) {
   // В кассу уходит выбранный пакет: club (1 месяц) или club4 (3+1).
   const join = () => { track('screen', { name: 'club_join', plan: pkg }, '/club'); onJoin(pkg) }
   const look = () => { track('screen', { name: 'club_look' }, '/club'); onLook() }
-  const toggleSound = () => {
-    const v = videoRef.current
-    if (!v) return
-    v.muted = !v.muted
-    if (!v.muted) v.play?.().catch(() => {})
-    setMuted(v.muted)
-    track('screen', { name: v.muted ? 'club_promo_mute' : 'club_promo_sound' }, '/club')
-  }
 
   // Появление блоков при прокрутке + запуск счётчика цены + липкая кнопка.
   useEffect(() => {
@@ -292,7 +282,7 @@ export default function ClubLanding({ onJoin, onLook }) {
           <>
             <div className="zl-promo zl-in" style={{ animationDelay: '.05s' }}>
               <video ref={videoRef} src={`${PROMO_DIR}/octavia.mp4`} poster={`${PROMO_DIR}/octavia.jpg`}
-                autoPlay muted loop playsInline preload="auto" aria-label="Ролик: Skoda Octavia — главный приз" />
+                autoPlay muted loop playsInline disablePictureInPicture preload="auto" aria-label="Ролик: Skoda Octavia — главный приз" />
               <div className="gt" /><div className="gb" />
               <div style={{ position: 'absolute', left: 14, right: 14, top: 16, textAlign: 'center' }}>
                 <div className="zl-tag"><i />Приём участников до 10 ноября</div>
@@ -300,12 +290,6 @@ export default function ClubLanding({ onJoin, onLook }) {
                   Эта машина<br /><span className="zl-grad">может быть твоей</span>
                 </div>
               </div>
-              <button className="zl-snd" onClick={toggleSound} aria-label={muted ? 'Включить звук' : 'Выключить звук'}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M11 5 6 9H2v6h4l5 4V5z" />
-                  {muted ? <path d="m22 9-6 6M16 9l6 6" /> : <path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14" />}
-                </svg>
-              </button>
               <div style={{ position: 'absolute', left: 0, right: 0, bottom: 16, textAlign: 'center' }}>
                 <div style={{ fontSize: 10.5, letterSpacing: 3, color: ACC, fontWeight: 800 }}>ГЛАВНЫЙ ПРИЗ</div>
                 <div style={{ fontSize: 24, fontWeight: 900, letterSpacing: 1.5, marginTop: 3 }}>SKODA OCTAVIA</div>

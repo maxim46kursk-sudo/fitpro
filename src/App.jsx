@@ -9791,7 +9791,7 @@ function PlansView({ user, onClose, hideBack, onChanged, guest, onCreateAccount 
                 <div style={{fontSize:11.5,color:COR,marginTop:4}}>тестовая цена на время запуска</div>
               )}
               {selectedPlan.key==='club'&&(
-                <div style={{fontSize:13,color:TXT2,marginTop:6,lineHeight:1.45}}>Первые 7 дней — тест-драйв с гарантией: не понравится, вернём деньги.</div>
+                <div style={{fontSize:13,color:TXT2,marginTop:6,lineHeight:1.45}}>Оплата до 10 ноября — номер участника акции: Skoda Octavia и ещё 9 призов, итоги 12 ноября.</div>
               )}
             </div>
           )}
