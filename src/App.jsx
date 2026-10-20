@@ -11705,10 +11705,17 @@ export default function App() {
     try{pending=JSON.parse(localStorage.getItem(PENDING_ORDER_KEY)||'null')}catch{pending=null}
     if(!pending?.order)return
     if(Date.now()-(pending.at||0)>7*864e5){try{localStorage.removeItem(PENDING_ORDER_KEY)}catch{/* */}return}
-    // Свежий заказ (вернулся из кассы только что) — показываем ожидание.
-    // Старый — тихо проверяем один раз: вдруг оплата прошла, а вернуться не вышло.
+    // Окт 2026: окно «Подтверждаем оплату…» показываем ТОЛЬКО тому, кого касса
+    // вернула после успешной оплаты (?paid=1 в адресе). Кто вышел из кассы
+    // «назад», не заплатив, или просто снова открыл сайт, раньше застревал на
+    // этом окне на полторы минуты, и лендинг закрывался. Теперь такой человек
+    // видит сайт как обычно, а заказ проверяется тихо в фоне: если оплата всё
+    // же пришла — входим в клуб сами.
+    const cameBackPaid=new URLSearchParams(window.location.search).get('paid')==='1'
     const fresh=Date.now()-pending.at<45*60e3
-    if(fresh){closeWelcome();setGuestPay({phase:'wait'})}
+    const loud=fresh&&cameBackPaid
+    if(cameBackPaid){try{const u=new URL(window.location.href);u.searchParams.delete('paid');window.history.replaceState(null,'',u.pathname+u.search+u.hash)}catch{/* */}}
+    if(loud){closeWelcome();setGuestPay({phase:'wait'})}
     let stop=false, tries=0
     const drop=()=>{try{localStorage.removeItem(PENDING_ORDER_KEY)}catch{/* */}}
     const tick=async()=>{
@@ -11725,12 +11732,15 @@ export default function App() {
           setProfileReloadToken(t=>t+1)
           return
         }
-        if(b.status==='existing'||b.status==='claimed'){drop();setGuestPay({phase:b.status,email:b.email});return}
+        if(b.status==='existing'||b.status==='claimed'){drop();closeWelcome();setGuestPay({phase:b.status,email:b.email});return}
         if(b.status==='unknown'){drop();setGuestPay(null);return}
       }catch(e){console.error('Вход после оплаты:',e)}
-      if(!fresh){return}
-      if(tries>=45){setGuestPay({phase:'timeout'});return}
-      setTimeout(tick,2000)
+      if(!fresh)return
+      // Громко ждём до 30 секунд, потом честно говорим и отпускаем человека.
+      // Тихо (без окна) проверяем реже и дольше — вдруг касса подтвердит позже.
+      if(loud&&tries===15){setGuestPay({phase:'timeout'})}
+      if(tries>=(loud?40:20))return
+      setTimeout(tick,loud&&tries<15?2000:6000)
     }
     tick()
     return()=>{stop=true}
@@ -12832,10 +12842,11 @@ export default function App() {
               <div style={{ width:44, height:44, margin:'0 auto 14px', borderRadius:'50%', border:`4px solid ${SURF2}`, borderTopColor:ACCENT2, animation:'ptr-spin .8s linear infinite' }} />
               <div style={{ fontSize:17, fontWeight:800, marginBottom:6 }}>Подтверждаем оплату…</div>
               <div style={{ fontSize:13.5, color:TXT2, lineHeight:1.5 }}>Обычно это несколько секунд. Сразу после этого откроем тебе клуб.</div>
+              <button onClick={()=>setGuestPay(null)} style={{ marginTop:16, background:'none', border:'none', color:TXT2, fontSize:13.5, textDecoration:'underline', cursor:'pointer' }}>Закрыть</button>
             </>)}
             {guestPay.phase==='timeout'&&(<>
-              <div style={{ fontSize:17, fontWeight:800, marginBottom:8 }}>Оплата ещё подтверждается</div>
-              <div style={{ fontSize:13.5, color:TXT2, lineHeight:1.5, marginBottom:16 }}>Касса пока не прислала подтверждение. Закрой и открой приложение через пару минут — войдём в клуб автоматически. Если не получится, напиши тренеру.</div>
+              <div style={{ fontSize:17, fontWeight:800, marginBottom:8 }}>Оплата пока не пришла</div>
+              <div style={{ fontSize:13.5, color:TXT2, lineHeight:1.5, marginBottom:16 }}>Если ты оплатил — подтверждение придёт в течение пары минут, и клуб откроется сам, когда снова зайдёшь на сайт. Если не оплатил — просто закрой это окно.</div>
               <button onClick={()=>setGuestPay(null)} style={{ width:'100%', padding:13, borderRadius:12, border:'none', background:`linear-gradient(180deg, ${ACCENT2}, ${PUR})`, color:'#fff', fontSize:15, fontWeight:800, cursor:'pointer' }}>Понятно</button>
             </>)}
             {(guestPay.phase==='existing'||guestPay.phase==='claimed')&&(<>

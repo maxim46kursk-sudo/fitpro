@@ -124,7 +124,9 @@ export function buildPaymentData({ userId, plan, source, priceRub, appUrl }) {
     urlSuccess: returnUrl,
     // Кнопка «вернуться в магазин» на форме. Добавлено ДО подписи — иначе
     // поле уехало бы в ссылку неподписанным и Продамус её отклонил.
-    urlReturn: returnUrl,
+    // Окт 2026: без ?paid=1 — кто ушёл из кассы, не заплатив, не должен
+    // попадать на окно «Подтверждаем оплату…».
+    urlReturn: returnUrl.replace(/\/\?paid=1$/, '/'),
   }
 }
 
