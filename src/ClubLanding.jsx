@@ -225,7 +225,12 @@ export default function ClubLanding({ onJoin, onLook }) {
   const videoRef = useRef(null)
   const cur = PKGS.find(p => p.key === pkg) || PKGS[0]
 
-  useEffect(() => { track('screen', { name: 'club_landing' }, '/club') }, [])
+  useEffect(() => {
+    track('screen', { name: 'club_landing' }, '/club')
+    // Настоящий лендинг на экране — мгновенный (index.html) больше не нужен.
+    const pre = document.getElementById('zl-pre')
+    if (pre) { if (pre.scrollTop > 0 && rootRef.current) rootRef.current.scrollTop = pre.scrollTop; pre.remove() }
+  }, [])
   // В кассу уходит выбранный пакет: club (1 месяц) или club4 (3+1).
   const join = () => { track('screen', { name: 'club_join', plan: pkg }, '/club'); onJoin(pkg) }
   const look = () => { track('screen', { name: 'club_look' }, '/club'); onLook() }
