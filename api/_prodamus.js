@@ -16,8 +16,9 @@ import crypto from 'node:crypto'
 // test50 — служебный тариф для проверки живой оплаты. Он ЗДЕСЬ, среди
 // обычных, намеренно: цена подставляется тем же кодом, подпись считается тем
 // же кодом, ссылка строится тем же кодом. Особый путь проверял бы особый путь.
-export const PLAN_PRICE = { club: 1000, base: 1000, profit: 2990, premium: 9990, test50: 50 }
-export const PLAN_NAME  = { club: 'ZMClub', base: 'БАЗА', profit: 'ПРОФИТ', premium: 'ПРЕМИУМ', test50: 'ТЕСТ 50' }
+// Окт 2026: club — 3000 ₽, club4 (пакет 3+1, 4 месяца) — 9000 ₽.
+export const PLAN_PRICE = { club: 3000, club4: 9000, base: 1000, profit: 2990, premium: 9990, test50: 50 }
+export const PLAN_NAME  = { club: 'ZMClub', club4: 'ZMClub 3+1', base: 'БАЗА', profit: 'ПРОФИТ', premium: 'ПРЕМИУМ', test50: 'ТЕСТ 50' }
 
 // Тарифы, которые вправе купить только тренер. Список здесь, а не в ручке:
 // им пользуется и create-payment (отказ не-тренеру), и тест.
@@ -56,6 +57,7 @@ export const CHALLENGE_TITLE = 'Челлендж FitPro — Поток'
 export function itemTitle(item) {
   if (item === CHALLENGE_ITEM) return CHALLENGE_TITLE
   if (item === 'club') return 'Участие в клубе ZMClub — 30 дней'
+  if (item === 'club4') return 'Участие в клубе ZMClub — 4 месяца (3+1)'
   return `Подписка FitPro — ${PLAN_NAME[item]}`
 }
 

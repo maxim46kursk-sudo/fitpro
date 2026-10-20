@@ -11669,7 +11669,9 @@ export default function App() {
    */
   const PENDING_ORDER_KEY='zmclub_pending_order'
   const [payOpening,setPayOpening]=useState(false)
-  const startClubPayment=async()=>{
+  // plan: 'club' — 1 месяц, 'club4' — пакет 3+1 (4 месяца). Окт 2026.
+  const startClubPayment=async(plan='club')=>{
+    if(plan!=='club'&&plan!=='club4')plan='club'
     if(payOpening)return
     setPayOpening(true)
     try{
@@ -11678,9 +11680,9 @@ export default function App() {
         const{data:{session}}=await supabase.auth.getSession()
         if(session?.access_token)headers.Authorization=`Bearer ${session.access_token}`
       }
-      track('pay_start',{plan:'club',guest:!user},evPath())
+      track('pay_start',{plan,guest:!user},evPath())
       const inTelegram=!!window.Telegram?.WebApp?.initData
-      const res=await fetch('/api/create-payment',{method:'POST',headers,body:JSON.stringify({plan:'club',source:inTelegram?'telegram':'web'})})
+      const res=await fetch('/api/create-payment',{method:'POST',headers,body:JSON.stringify({plan,source:inTelegram?'telegram':'web'})})
       const body=await res.json().catch(()=>({}))
       if(!res.ok||!body?.url)throw new Error(body?.error||`сервер ответил ${res.status}`)
       if(body.order){try{localStorage.setItem(PENDING_ORDER_KEY,JSON.stringify({order:body.order,at:Date.now()}))}catch{/* приватный режим */}}
@@ -13190,7 +13192,7 @@ export default function App() {
         * увидит и приветствие: отметку «видел» мы при этом не ставим.
         */}
       {guestMode&&!welcomeSeen&&!authOpen&&!(ПРЯМОЙ_ЧЕЛЛЕНДЖ&&motionOpen)&&(
-        <ClubLanding onLook={closeWelcome} onJoin={()=>{closeWelcome();startClubPayment()}} onTrial={()=>{closeWelcome();openPlans()}} />
+        <ClubLanding onLook={closeWelcome} onJoin={plan=>{closeWelcome();startClubPayment(plan)}} />
       )}
 
       {offer&&(

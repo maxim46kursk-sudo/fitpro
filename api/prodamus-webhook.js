@@ -38,7 +38,9 @@ const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://api.fitproapp.ru'
 // одни сутки; за 60 и 70 давали месяц, и это была совсем другая история.
 const AMOUNT_TO_PLAN = {
   // 1000 ₽ без ярлыка теперь = ZMClub (БАЗА снята с продажи).
-  1000: 'club', 2990: 'profit', 9990: 'premium', 50: 'test50',
+  // 1000 оставлен: старая статическая ссылка клуба на 1000 ₽ ещё может прийти.
+  // Окт 2026: клуб 3000 ₽ (1 месяц), пакет 3+1 — 9000 ₽ (4 месяца).
+  1000: 'club', 3000: 'club', 9000: 'club4', 2990: 'profit', 9990: 'premium', 50: 'test50',
 }
 
 // ── ЯРЛЫК ПЛАТЕЖА И ПОЧЕМУ ОДНОЙ СУММЫ БОЛЬШЕ НЕ ХВАТАЕТ ────────────────────
@@ -108,7 +110,7 @@ export function resolveItem(tag, sumNum, challengePrice) {
 // копией, а не импортом из src/ — по той же причине, что и цены в
 // _prodamus.js: api/ и src/ собираются раздельно. Расхождение стережёт тест.
 export const PLAN_DAYS_DEFAULT = 30
-export const PLAN_DAYS_BY_KEY = { test50: 1 }
+export const PLAN_DAYS_BY_KEY = { test50: 1, club4: 120 }
 const daysForPlan = key => PLAN_DAYS_BY_KEY[key] || PLAN_DAYS_DEFAULT
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

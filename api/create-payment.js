@@ -25,7 +25,10 @@ const PAYFORM_BASE = 'https://maximathlete.payform.ru/'
 // прайс. Отсюда правило: скрытие в интерфейсе — удобство, отказ здесь — защита.
 // ZMClub (сент 2026): в продаже только клуб. Старые пакеты купить нельзя, но
 // уже купленные доступ дают (api/_access.js), а вебхук их суммы узнаёт.
-const PAID_PLANS = new Set(['club', 'test50'])
+// Окт 2026: + club4 (пакет 3+1, 4 месяца за 9000 ₽).
+const PAID_PLANS = new Set(['club', 'club4', 'test50'])
+// Что можно купить гостем, без аккаунта: только клубные пакеты.
+const GUEST_PLANS = new Set(['club', 'club4'])
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -74,15 +77,16 @@ export default async function handler(req, res) {
    * Только клуб: остальные тарифы и билет по-прежнему требуют входа.
    */
   if (!token) {
-    if (req.body?.plan !== 'club') return res.status(401).json({ error: 'Требуется авторизация' })
+    const gPlan = req.body?.plan
+    if (!GUEST_PLANS.has(gPlan)) return res.status(401).json({ error: 'Требуется авторизация' })
     const orderToken = crypto.randomBytes(24).toString('base64url')
     const admin = createClient(SUPABASE_URL, serviceRoleKey)
-    const { error: gErr } = await admin.from('guest_orders').insert({ token: orderToken, plan: 'club' })
+    const { error: gErr } = await admin.from('guest_orders').insert({ token: orderToken, plan: gPlan })
     if (gErr) {
       console.error('create-payment: не удалось завести гостевой заказ:', gErr)
       return res.status(500).json({ error: 'Не удалось открыть оплату, попробуй ещё раз' })
     }
-    const gData = buildPaymentData({ userId: `g_${orderToken}`, plan: 'club', source: req.body?.source, appUrl })
+    const gData = buildPaymentData({ userId: `g_${orderToken}`, plan: gPlan, source: req.body?.source, appUrl })
     const gSignature = createSignature(gData, secret)
     return res.status(200).json({ url: PAYFORM_BASE + '?' + qs.stringify({ ...gData, signature: gSignature }), order: orderToken })
   }

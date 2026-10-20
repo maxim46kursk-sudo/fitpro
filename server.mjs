@@ -392,8 +392,37 @@ async function serveStatic(req, res, distDir, urlPath) {
   const cache = cacheHeaderFor(urlPath)
   const type = mimeOf(file)
   res.setHeader('Content-Type', type)
-  res.setHeader('Content-Length', stat.size)
   if (cache) res.setHeader('Cache-Control', cache)
+
+  /**
+   * ДИАПАЗОНЫ ДЛЯ ВИДЕО (окт 2026, ролик акции на лендинге клуба).
+   *
+   * Safari на iPhone не играет mp4, если сервер не отвечает на Range кодом 206:
+   * сначала он просит bytes=0-1 и без 206 считает файл неиграбельным. Поэтому
+   * для видео отдаём запрошенный кусок. Остальные файлы — как раньше, целиком.
+   */
+  if (type.startsWith('video/')) {
+    res.setHeader('Accept-Ranges', 'bytes')
+    const m = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || '').trim())
+    if (m && (m[1] !== '' || m[2] !== '')) {
+      let start, end
+      if (m[1] === '') { start = Math.max(0, stat.size - Number(m[2])); end = stat.size - 1 }
+      else { start = Number(m[1]); end = m[2] === '' ? stat.size - 1 : Math.min(Number(m[2]), stat.size - 1) }
+      if (!(start <= end) || start >= stat.size) {
+        res.statusCode = 416
+        res.setHeader('Content-Range', `bytes */${stat.size}`)
+        res.end()
+        return
+      }
+      res.statusCode = 206
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${stat.size}`)
+      res.setHeader('Content-Length', end - start + 1)
+      if (req.method === 'HEAD') { res.end(); return }
+      fs.createReadStream(file, { start, end }).pipe(res)
+      return
+    }
+  }
+  res.setHeader('Content-Length', stat.size)
 
   // CSP имеет смысл только на документе: она управляет тем, что этому документу
   // позволено грузить и выполнять. Вешать её на картинку — лишние байты в каждом

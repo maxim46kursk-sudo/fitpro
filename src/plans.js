@@ -7,8 +7,14 @@ export const PLANS = [
   // Уровень 2 — тот же, что у ПРОФИТ: открывает все программы, прогресс и
   // видео-отчёт тренеру. Старые пакеты ниже помечены hidden: купить их нельзя,
   // но у тех, кто уже купил, доступ продолжает работать до конца срока.
-  { key:'club', level:2, name:'ZMClub', price:1000, testPrice:50, tagline:'Участие в клубе',
+  // Окт 2026: клуб — 3000 ₽/мес (акция с машиной: каждый оплативший получает
+  // номер участника). Старые оплаты по 1000 ₽ вебхук по-прежнему опознаёт как club.
+  { key:'club', level:2, name:'ZMClub', price:3000, testPrice:50, tagline:'Участие в клубе',
     features:['Все программы тренировок клуба','Прогресс по каждому упражнению','Видео-отчёт тренеру по технике','Общий чат клуба'] },
+  // Пакет 3+1: 4 месяца клуба за 9000 ₽. Продаётся только с лендинга
+  // (landingOnly — на экране Тарифов не показываем, сервер принимает).
+  { key:'club4', level:2, name:'ZMClub 3+1', price:9000, testPrice:50, days:120, landingOnly:true, tagline:'4 месяца клуба по цене трёх',
+    features:['Всё из ZMClub на 4 месяца'] },
   { key:'start',  level:0, name:'СТАРТ',  price:0,    testPrice:0,  tagline:'Бесплатно', hidden:true,
     features:['Дневник тренировок','Рационы питания','Общий тоннаж','Аналитика питания за день и неделю','Библиотека упражнений'] },
   // БАЗА снова в продаже (сент 2026). Признак hidden оставлен в visiblePlans на
@@ -82,7 +88,7 @@ export const VIP_LEVEL = 99
 // список тарифов рисуется в одном месте интерфейса — разъехаться нечему.
 export function visiblePlans(role){
   const isStaff = role === 'trainer'
-  return PLANS.filter(p => !p.hidden && (!p.staff || isStaff))
+  return PLANS.filter(p => !p.hidden && !p.landingOnly && (!p.staff || isStaff))
 }
 
 export function planByKey(k){ return PLANS.find(p=>p.key===k) || PLANS[0] }
