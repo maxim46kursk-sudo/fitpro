@@ -112,7 +112,7 @@ export default function PromoSheet({ user, blocked }) {
   const nums = me.numbers.map(n => `№${n}`).join(', ')
   const many = me.numbers.length > 1
 
-  if (rules) return <PromoInfo open initial="rules" onClose={() => setRules(false)} />
+  if (rules) return <PromoInfo open full initial="rules" onClose={() => setRules(false)} />
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 3150, background: 'rgba(0,0,0,0.82)', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
       <div style={{ maxWidth: 440, margin: '0 auto', padding: '24px 16px 40px', color: '#fff', fontFamily: 'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif' }}>
