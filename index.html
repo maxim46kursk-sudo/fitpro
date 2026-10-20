@@ -57,6 +57,120 @@
   </head>
   <body>
     <div id="root"></div>
+    <!--
+      МГНОВЕННЫЙ ЛЕНДИНГ КЛУБА (окт 2026).
+
+      Гость из Instagram на слабом LTE ждал 3–10 секунд, пока доедет код всего
+      приложения, и всё это время видел пустой экран; на 3G сторож ниже успевал
+      показать «Приложение не загрузилось», хотя оно ещё грузилось. Теперь первый
+      экран лендинга (постер ролика, призы, пакеты, кнопка оплаты) нарисован
+      прямо здесь, без React: он виден через долю секунды, и оплатить можно ещё
+      до загрузки приложения. Когда React нарисует свой лендинг, этот слой
+      убирает src/main.jsx.
+
+      Показывается только гостю на главной: без входа в аккаунт (fitpro-auth),
+      не в Telegram, без возврата из кассы (?paid) и без приглашения тренера.
+      Цены и тарифы — копия src/ClubLanding.jsx (PKGS); менять вместе.
+    -->
+    <div id="zl-pre" style="display:none">
+      <style>
+        #zl-pre{position:fixed;inset:0;z-index:2999;overflow-y:auto;background:#0b0b0d;color:#fff;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+        #zl-pre *{box-sizing:border-box}
+        #zl-pre .w{max-width:520px;margin:0 auto;padding:16px 16px 40px}
+        #zl-pre .pr{position:relative;border-radius:26px;overflow:hidden;background:#050508 url(/club/promo/octavia.jpg) center/cover no-repeat;border:1px solid #7c7af055;aspect-ratio:540/840}
+        #zl-pre .gt{position:absolute;left:0;right:0;top:0;height:46%;background:linear-gradient(rgba(5,5,8,.92),rgba(5,5,8,.55) 55%,transparent)}
+        #zl-pre .gb{position:absolute;left:0;right:0;bottom:0;height:32%;background:linear-gradient(transparent,rgba(5,5,8,.85) 60%,#050508)}
+        #zl-pre .tg{display:table;margin:0 auto;padding:7px 14px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase}
+        #zl-pre .tg i{display:inline-block;width:7px;height:7px;border-radius:50%;background:#ff4d6d;margin-right:7px;vertical-align:1px}
+        #zl-pre .h{margin-top:12px;font-size:29px;font-weight:900;line-height:1.02;text-transform:uppercase;letter-spacing:-.4px}
+        #zl-pre .h span{color:#9d96ff}
+        #zl-pre .pz{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;align-items:end;margin-top:18px;text-align:center}
+        #zl-pre .pz img{max-height:104px;max-width:92%}
+        #zl-pre .pz b{display:block;margin-top:3px;font-size:13px;font-weight:900}
+        #zl-pre .pz s{display:block;text-decoration:none;margin-top:10px;font-size:10px;letter-spacing:1.6px;color:#9d96ff;font-weight:800;text-transform:uppercase}
+        #zl-pre .pk{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:22px 0 14px}
+        #zl-pre .pk button{position:relative;text-align:left;padding:13px 14px;border-radius:16px;border:1px solid rgba(255,255,255,.12);background:#1c1c1e;color:#fff;font:inherit;cursor:pointer}
+        #zl-pre .pk button.on{border:2px solid #9d96ff;background:#7c7af022}
+        #zl-pre .bt{display:block;width:100%;padding:17px 18px;border-radius:999px;border:none;cursor:pointer;background:linear-gradient(180deg,#9d96ff,#7c7af0);color:#fff;font:inherit;font-size:16px;font-weight:900;text-transform:uppercase}
+        #zl-pre .er{display:none;margin-top:10px;font-size:13px;color:#ff8a9a;text-align:center}
+      </style>
+      <div class="w">
+        <div class="pr">
+          <div class="gt"></div><div class="gb"></div>
+          <div style="position:absolute;left:14px;right:14px;top:16px;text-align:center">
+            <div class="tg"><i></i>Приём участников до 10 ноября</div>
+            <div class="h">Эта машина<br><span>может быть твоей</span></div>
+          </div>
+          <div style="position:absolute;left:0;right:0;bottom:16px;text-align:center">
+            <div style="font-size:10.5px;letter-spacing:3px;color:#9d96ff;font-weight:800">ГЛАВНЫЙ ПРИЗ</div>
+            <div style="font-size:24px;font-weight:900;letter-spacing:1.5px;margin-top:3px">SKODA OCTAVIA</div>
+          </div>
+        </div>
+        <div class="pz">
+          <div><img data-src="/club/promo/iphone-18-pro-max.png" alt=""><s>2 место</s><b>iPhone 18 Pro Max</b></div>
+          <div><img data-src="/club/promo/iphone-17.png" alt=""><s>3 место</s><b>iPhone 17</b></div>
+          <div><img data-src="/club/promo/airpods.png" alt=""><s>4–10 место</s><b>AirPods × 7</b></div>
+        </div>
+        <div style="text-align:center;font-size:12.5px;color:rgba(255,255,255,.72);margin-top:14px;line-height:1.5">10 призовых мест · каждый участник клуба получает номер<br>Итоги — <b style="color:#fff">12 ноября в прямом эфире</b></div>
+        <div class="pk">
+          <button class="on" data-plan="club" data-price="3 000"><div style="font-size:12px;color:rgba(255,255,255,.72)">1 месяц</div><div style="font-size:22px;font-weight:900;margin:2px 0">3 000 ₽</div><div style="font-size:12px;color:#9d96ff;font-weight:700">1 номер участника</div></button>
+          <button data-plan="club4" data-price="9 000"><div style="font-size:12px;color:rgba(255,255,255,.72)">3+1 · 4 месяца</div><div style="font-size:22px;font-weight:900;margin:2px 0">9 000 ₽</div><div style="font-size:12px;color:#9d96ff;font-weight:700">4 номера участника</div></button>
+        </div>
+        <button class="bt" id="zl-pre-pay">Вступить в клуб · 3 000 ₽</button>
+        <div class="er" id="zl-pre-err">Не удалось открыть оплату. Попробуй ещё раз.</div>
+      </div>
+    </div>
+    <script>
+      (function () {
+        try {
+          var q = new URLSearchParams(location.search)
+          var tg = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData
+          var authed = false
+          try { authed = !!localStorage.getItem('fitpro-auth') } catch (e) {}
+          var seen = false
+          try { seen = sessionStorage.getItem('fitpro_welcome_seen') === '1' } catch (e) {}
+          if (location.pathname !== '/' || tg || authed || seen || q.has('paid') || q.has('coach')) return
+          var pre = document.getElementById('zl-pre')
+          if (!pre) return
+          pre.style.display = 'block'
+          var ims = pre.querySelectorAll('img[data-src]')
+          for (var k = 0; k < ims.length; k++) ims[k].src = ims[k].getAttribute('data-src')
+          window.__zlPre = true
+          var plan = 'club'
+          var btns = pre.querySelectorAll('.pk button')
+          var pay = document.getElementById('zl-pre-pay')
+          var err = document.getElementById('zl-pre-err')
+          for (var i = 0; i < btns.length; i++) {
+            btns[i].addEventListener('click', function () {
+              for (var j = 0; j < btns.length; j++) btns[j].className = ''
+              this.className = 'on'
+              plan = this.getAttribute('data-plan')
+              pay.textContent = 'Вступить в клуб · ' + this.getAttribute('data-price') + ' ₽'
+            })
+          }
+          var busy = false
+          pay.addEventListener('click', function () {
+            if (busy) return
+            busy = true
+            err.style.display = 'none'
+            pay.style.opacity = '.7'
+            fetch('/api/create-payment', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ plan: plan, source: 'web' })
+            }).then(function (r) { return r.json() }).then(function (b) {
+              if (!b || !b.url) throw new Error('no url')
+              if (b.order) { try { localStorage.setItem('zmclub_pending_order', JSON.stringify({ order: b.order, at: Date.now() })) } catch (e) {} }
+              location.assign(b.url)
+            }).catch(function () {
+              busy = false
+              pay.style.opacity = '1'
+              err.style.display = 'block'
+            })
+          })
+        } catch (e) {}
+      })()
+    </script>
     <script type="module" src="/src/main.jsx"></script>
     <!--
       СТРАХОВКА ОТ ЧЁРНОГО ЭКРАНА ПОСЛЕ ВЫКЛАДКИ.
@@ -220,6 +334,9 @@
          */
         setTimeout(function () {
           if (поднялось()) return
+          // Гость уже видит мгновенный лендинг и может оплатить — не пугаем его.
+          var pre = document.getElementById('zl-pre')
+          if (pre && pre.style.display === 'block') return
           var root = document.getElementById('root')
           if (root && root.childElementCount > 0) return
           if (document.getElementById('boot-fail')) return

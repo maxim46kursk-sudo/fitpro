@@ -39,8 +39,30 @@ const ждёмПервыйКадр = (дедлайн = Date.now() + 10000) => {
   const root = document.getElementById('root')
   if (root && root.childElementCount > 0) {
     window.__bootStage?.('react')
+    убратьМгновенныйЛендинг()
     return
   }
   if (Date.now() < дедлайн) requestAnimationFrame(() => ждёмПервыйКадр(дедлайн))
 }
 requestAnimationFrame(() => ждёмПервыйКадр())
+
+/**
+ * МГНОВЕННЫЙ ЛЕНДИНГ (index.html, #zl-pre) уступает место настоящему.
+ *
+ * Убираем, когда React нарисовал свой лендинг клуба — тогда подмена незаметна.
+ * Если приложение решило лендинг не показывать (например, сессия всё-таки
+ * нашлась), ждём не дольше 4 секунд после первого кадра и убираем всё равно,
+ * чтобы слой не закрыл собой приложение.
+ */
+function убратьМгновенныйЛендинг(дедлайн = Date.now() + 4000) {
+  const pre = document.getElementById('zl-pre')
+  if (!pre) return
+  const настоящий = document.querySelector('[data-testid="club-landing"]')
+  if (настоящий || Date.now() > дедлайн) {
+    // Человек мог уже пролистать мгновенный лендинг — оставляем его на том же месте.
+    if (настоящий && pre.scrollTop > 0) настоящий.scrollTop = pre.scrollTop
+    pre.remove()
+    return
+  }
+  requestAnimationFrame(() => убратьМгновенныйЛендинг(дедлайн))
+}

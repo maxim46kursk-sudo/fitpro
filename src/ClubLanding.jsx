@@ -144,6 +144,8 @@ const CSS = `
 .zl-pkg button{position:relative;text-align:left;padding:13px 14px;border-radius:16px;border:1px solid ${HAIR};background:${SURF};color:#fff;cursor:pointer;min-height:unset;transition:border-color .2s,background .2s}
 .zl-pkg button.on{border:2px solid ${ACCENT2};background:${PUR}22}
 .zl-pkg .bd{position:absolute;top:-9px;right:10px;background:linear-gradient(${ACCENT2},${PUR});font-size:10.5px;font-weight:900;padding:3px 8px;border-radius:999px;text-transform:uppercase}
+/* подмена мгновенного лендинга (index.html) — без повторного появления */
+.zl.nofx .zl-in{opacity:1;transform:none;animation:none}
 @media (prefers-reduced-motion: reduce){
   .zl *,.zl *::before,.zl *::after{animation:none!important;transition:none!important}
   .zl-r,.zl-in{opacity:1!important;transform:none!important}
@@ -267,7 +269,7 @@ export default function ClubLanding({ onJoin, onLook }) {
   const d = i => ({ '--d': `${i * 90}ms` })
 
   return (
-    <div ref={rootRef} data-testid="club-landing" className="zl" style={{
+    <div ref={rootRef} data-testid="club-landing" className={`zl${typeof window !== 'undefined' && window.__zlPre ? ' nofx' : ''}`} style={{
       position: 'fixed', inset: 0, zIndex: 3000, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch',
       background: BG, color: '#fff',
       fontFamily: 'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif', textAlign: 'left',
