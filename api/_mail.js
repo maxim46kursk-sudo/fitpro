@@ -24,6 +24,7 @@ function buildMessage({ from, fromName, to, subject, text, html }) {
   return [
     `From: ${encHeader(fromName)} <${from}>`,
     `To: <${to}>`,
+    ...(process.env.SMTP_REPLY_TO ? [`Reply-To: <${process.env.SMTP_REPLY_TO}>`] : []),
     `Subject: ${encHeader(subject)}`,
     `Date: ${new Date().toUTCString()}`,
     `Message-ID: <${crypto.randomBytes(16).toString('hex')}@${domain}>`,

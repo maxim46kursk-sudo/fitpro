@@ -3,7 +3,7 @@
 // с переменными окружения сервиса fitpro-app:
 //   set -a; . <EnvironmentFile fitpro-app>; set +a; /opt/node22/bin/node tools/promo-resend.mjs
 import { createClient } from '@supabase/supabase-js'
-import { promoMail, CLUB_SITE, PROMO_KEY } from '../api/_promo.js'
+import { promoMail, LOGIN_SITE, PROMO_KEY } from '../api/_promo.js'
 import { sendMail } from '../api/_mail.js'
 
 const db = createClient(process.env.VITE_SUPABASE_URL || 'https://api.fitproapp.ru', process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -17,7 +17,7 @@ for (const r of rows || []) {
   if (!t?.length) continue
   const { data: p } = await db.from('profiles').select('plan_until').eq('id', r.user_id).maybeSingle()
   try {
-    await sendMail({ to: r.email, ...promoMail({ numbers: t.map(x => x.number), loginUrl: `${CLUB_SITE}/?promo_login=${r.login_token}`, until: p?.plan_until, isTest: t.some(x => x.is_test) }) })
+    await sendMail({ to: r.email, ...promoMail({ numbers: t.map(x => x.number), loginUrl: `${LOGIN_SITE}/?promo_login=${r.login_token}`, until: p?.plan_until, isTest: t.some(x => x.is_test) }) })
     await db.from('promo_participants').update({ mail_sent_at: new Date().toISOString(), mail_error: null }).eq('user_id', r.user_id)
     ok++
   } catch (e) {

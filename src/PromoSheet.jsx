@@ -121,6 +121,7 @@ export default function PromoSheet({ user, blocked }) {
             <div style={{ fontSize: 11.5, letterSpacing: 2, color: ACCENT2, fontWeight: 800 }}>{many ? 'ТВОИ НОМЕРА УЧАСТНИКА' : 'ТВОЙ НОМЕР УЧАСТНИКА'}{me.test ? ' · ТЕСТ' : ''}</div>
             <div style={{ fontSize: many ? 30 : 46, fontWeight: 900, marginTop: 4 }}>{nums}</div>
             <div style={{ fontSize: 13, color: TXT2, marginTop: 6 }}>Итоги — 12 ноября в прямом эфире</div>
+            <div style={{ fontSize: 12, color: TXT2, marginTop: 6 }}>Письмо с номером отправили на почту. Не видишь — проверь папку «Спам».</div>
           </div>
 
           {!done && !me.complete ? (

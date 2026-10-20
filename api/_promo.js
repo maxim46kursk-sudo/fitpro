@@ -22,6 +22,9 @@ export const PROMO_KEY = 'octavia-2026-11'
 // Приём участников — до конца 10 ноября по Москве.
 export const PROMO_ENDS_MS = Date.parse('2026-11-11T00:00:00+03:00')
 export const CLUB_SITE = 'https://zmclubonline.ru'
+// Ссылка входа в письме — на домене ОТПРАВИТЕЛЯ (noreply@fitproapp.ru): письмо
+// со ссылкой на чужой домен почтовики чаще считают спамом. Приложение то же.
+export const LOGIN_SITE = 'https://fitproapp.ru'
 const LOGIN_TTL_MS = 14 * 24 * 3600 * 1000
 
 export function ticketCount(plan, sum) {
@@ -47,7 +50,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 export function promoMail({ numbers, loginUrl, until, isTest }) {
   const many = numbers.length > 1
   const list = numbers.map(n => `№${n}`).join(', ')
-  const subject = `${isTest ? '[ТЕСТ] ' : ''}Ты в ZM Club — ${many ? 'твои номера участника' : 'твой номер участника'} ${list}`
+  const subject = `ZM Club: ${many ? 'твои номера участника' : 'твой номер участника'} ${list}${isTest ? ' (тест)' : ''}`
   const untilTxt = until ? new Date(until).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Moscow' }) : null
   const text = [
     'Привет! Оплата прошла, добро пожаловать в ZM Club.',
@@ -146,7 +149,7 @@ export async function issuePromo(db, { paymentKey, userId, plan, sum, data = {},
   const to = row.email
   if (to && !upErr) {
     try {
-      const mail = promoMail({ numbers, loginUrl: `${CLUB_SITE}/?promo_login=${loginToken}`, until: planUntil, isTest })
+      const mail = promoMail({ numbers, loginUrl: `${LOGIN_SITE}/?promo_login=${loginToken}`, until: planUntil, isTest })
       await sendMail({ to, ...mail })
       await db.from('promo_participants').update({ mail_sent_at: new Date().toISOString(), mail_error: null }).eq('user_id', userId)
     } catch (e) {
