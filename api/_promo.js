@@ -22,9 +22,11 @@ export const PROMO_KEY = 'octavia-2026-11'
 // Приём участников — до конца 10 ноября по Москве.
 export const PROMO_ENDS_MS = Date.parse('2026-11-11T00:00:00+03:00')
 export const CLUB_SITE = 'https://zmclubonline.ru'
-// Ссылка входа в письме — на домене ОТПРАВИТЕЛЯ (noreply@fitproapp.ru): письмо
-// со ссылкой на чужой домен почтовики чаще считают спамом. Приложение то же.
-export const LOGIN_SITE = 'https://fitproapp.ru'
+// Ссылка входа в письме — на сайт клуба: человек платил на zmclubonline.ru и
+// должен туда же и вернуться (окт 2026, решение владельца). Отправитель пока
+// noreply@fitproapp.ru — когда переедет на адрес в zmclubonline.ru, домены
+// ссылки и отправителя совпадут.
+export const LOGIN_SITE = 'https://zmclubonline.ru'
 const LOGIN_TTL_MS = 14 * 24 * 3600 * 1000
 // Мест в акции — 600 номеров. Выдали 600-й — приём закрыт (create-payment
 // больше не выписывает ссылки на клуб до конца акции). Тестовые номера (9001+)
@@ -136,13 +138,17 @@ export async function issuePromo(db, { paymentKey, userId, plan, sum, data = {},
   }
 
   // ── Анкета и ключ входа. Ошибки дальше номера не отменяют.
-  let email = normEmail(data.customer_email)
-  if (!email) {
-    try {
-      const { data: u } = await db.auth.admin.getUserById(userId)
-      email = normEmail(u?.user?.email)
-    } catch { /* без почты — без письма */ }
-  }
+  // Две почты: та, что ввели в кассе, и та, на которую заведён аккаунт. Они
+  // могут различаться (вошёл в приложение под одной, в кассе ввёл другую) —
+  // тогда письмо уходит на ОБЕ: номер принадлежит аккаунту, а кнопка входа из
+  // любого письма открывает именно его.
+  const checkoutEmail = normEmail(data.customer_email)
+  let accountEmail = null
+  try {
+    const { data: u } = await db.auth.admin.getUserById(userId)
+    accountEmail = normEmail(u?.user?.email)
+  } catch { /* без почты аккаунта — шлём на почту из кассы */ }
+  const email = checkoutEmail || accountEmail
   const phone = normPhone(data.customer_phone)
   const { data: prev } = await db.from('promo_participants')
     .select('email, phone, login_token, login_token_exp').eq('user_id', userId).maybeSingle()
@@ -160,17 +166,21 @@ export async function issuePromo(db, { paymentKey, userId, plan, sum, data = {},
   const { error: upErr } = await db.from('promo_participants').upsert(row, { onConflict: 'user_id' })
   if (upErr) console.error('promo: анкета не записана:', upErr)
 
-  // ── Письмо.
-  const to = row.email
-  if (to && !upErr) {
-    try {
-      const mail = promoMail({ numbers, loginUrl: `${LOGIN_SITE}/?promo_login=${loginToken}`, until: planUntil, isTest })
-      await sendMail({ to, ...mail })
+  // ── Письмо: на почту из кассы, на почту аккаунта и на сохранённую ранее
+  // (без повторов). Хоть одно ушло — считаем отправленным.
+  const recipients = [...new Set([checkoutEmail, accountEmail, row.email].filter(Boolean))]
+  const to = recipients[0] || null
+  if (recipients.length && !upErr) {
+    const mail = promoMail({ numbers, loginUrl: `${LOGIN_SITE}/?promo_login=${loginToken}`, until: planUntil, isTest })
+    let sent = 0, lastErr = null
+    for (const addr of recipients) {
+      try { await sendMail({ to: addr, ...mail }); sent++ } catch (e) { lastErr = e; console.error(`promo: письмо на ${addr} не ушло:`, e?.message) }
+    }
+    if (sent) {
       await db.from('promo_participants').update({ mail_sent_at: new Date().toISOString(), mail_error: null }).eq('user_id', userId)
-    } catch (e) {
-      console.error('promo: письмо не ушло:', e?.message)
-      await db.from('promo_participants').update({ mail_error: String(e?.message || e).slice(0, 300) }).eq('user_id', userId)
-      await tellOwner(db, `⚠️ Акция: письмо участнику ${numbers.map(n => '№' + n).join(', ')} НЕ ушло: ${String(e?.message || e).slice(0, 120)}`)
+    } else {
+      await db.from('promo_participants').update({ mail_error: String(lastErr?.message || lastErr).slice(0, 300) }).eq('user_id', userId)
+      await tellOwner(db, `⚠️ Акция: письмо участнику ${numbers.map(n => '№' + n).join(', ')} НЕ ушло: ${String(lastErr?.message || lastErr).slice(0, 120)}`)
     }
   }
 
