@@ -182,3 +182,40 @@ export async function issuePromo(db, { paymentKey, userId, plan, sum, data = {},
   await tellOwner(db, `🚗 Акция${isTest ? ' [ТЕСТ]' : ''}: оплата ${sum} ₽ → ${numbers.map(n => '№' + n).join(', ')}${to ? '' : ' (почты нет — письмо не отправлено)'}`)
   return numbers
 }
+
+/**
+ * НОМЕР В TELEGRAM (окт 2026). Вызывается из api/club-chat.js, когда участник
+ * по своей личной ссылке подаёт заявку в группу клуба — ДО одобрения заявки:
+ * Telegram разрешает боту написать человеку в личку, пока его заявка не
+ * разобрана (user_chat_id), даже если тот ни разу не нажимал Start.
+ *
+ *   send(chatId, text) — отправка сообщения ботом группы.
+ * Ничего не бросает: номер и вход в группу важнее уведомлений.
+ */
+export async function promoTelegramHello(db, { userId, userChatId, from, send }) {
+  try {
+    const { data: t } = await db.from('promo_tickets')
+      .select('number, is_test').eq('user_id', userId).eq('promo', PROMO_KEY).order('number')
+    if (!t?.length) return
+    const nums = t.map(x => '№' + x.number).join(', ')
+    const many = t.length > 1
+    if (userChatId) {
+      await send(userChatId, [
+        `🚗 ZM Club: ${many ? 'твои номера участника' : 'твой номер участника'} — ${nums}`,
+        '',
+        'Итоги акции — 12 ноября в прямом эфире. Ссылку на эфир пришлём в группу клуба.',
+        'Если победишь — позвоним на телефон из анкеты и напишем сюда.',
+        '',
+        'Сохрани это сообщение 👌',
+      ].join('\n')).catch(() => {})
+    }
+    const { data: p } = await db.from('promo_participants').select('full_name').eq('user_id', userId).maybeSingle()
+    const parts = String(p?.full_name || '').trim().split(/\s+/)
+    // В анкете «Фамилия Имя …»: показываем «Имя Ф.».
+    const who = parts.length >= 2 ? `${parts[1]} ${parts[0][0]}.` : (parts[0] || 'без анкеты')
+    const tgName = from?.username ? '@' + from.username : [from?.first_name, from?.last_name].filter(Boolean).join(' ') || `id ${from?.id}`
+    await tellOwner(db, `✅ ${nums} — ${who}, ${tgName}: вступил в группу, номер получил в Telegram`)
+  } catch (e) {
+    console.error('promo: приветствие в Telegram не ушло:', e?.message)
+  }
+}

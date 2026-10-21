@@ -53,6 +53,9 @@ export const EVENT_NAMES = [
   // что сломалось
   'load_fail',         // что-то не загрузилось; props: { what }
   'error_shown',       // человеку показана ошибка; props: { kind }
+  // акция «Skoda Octavia» (окт 2026): весь путь от лендинга до группы.
+  // props: { s: шаг, src, plan, ms, why, pre, place } — шаги в api/promo.js (funnel)
+  'promo',
 ]
 
 const KNOWN = new Set(EVENT_NAMES)
@@ -211,4 +214,28 @@ export function track(name, props, path) {
 /** Досрочно отправить накопленное — вешается на уход со страницы. */
 export function flush() {
   try { browserTracker().flush() } catch { /* молчим */ }
+}
+
+/**
+ * ОТКУДА ПРИШЁЛ (акция, окт 2026). Короткая метка, одна на вкладку: первый
+ * заход решает. ig — Instagram (метка в ссылке или встроенный браузер
+ * Instagram), tg, vk, yt, direct — без источника, иначе — домен.
+ */
+export function promoSrc() {
+  try {
+    const saved = sessionStorage.getItem('zm_src')
+    if (saved) return saved
+  } catch { /* приватный режим */ }
+  let src = 'direct'
+  try {
+    const q = new URLSearchParams(location.search)
+    const tag = (q.get('utm_source') || q.get('src') || '').toLowerCase()
+    const ua = navigator.userAgent || ''
+    const ref = (() => { try { return document.referrer ? new URL(document.referrer).hostname.replace(/^www\./, '') : '' } catch { return '' } })()
+    const pick = t => /insta|^ig/.test(t) ? 'ig' : /^tg|telegram|t\.me/.test(t) ? 'tg' : /^vk/.test(t) ? 'vk' : /youtu|^yt/.test(t) ? 'yt' : /tiktok/.test(t) ? 'tiktok' : ''
+    src = (/^[a-z]{2,6}_[a-z0-9_]{1,14}$/.test(tag) ? tag : '') || pick(tag) || (/Instagram/i.test(ua) ? 'ig' : '') || (window.Telegram?.WebApp?.initData ? 'tg' : '') || pick(ref) ||
+      (ref && !/zmclubonline\.ru|fitproapp\.ru/.test(ref) ? ref.slice(0, 30) : '') || tag.slice(0, 20) || 'direct'
+  } catch { /* по умолчанию direct */ }
+  try { sessionStorage.setItem('zm_src', src) } catch { /* */ }
+  return src
 }

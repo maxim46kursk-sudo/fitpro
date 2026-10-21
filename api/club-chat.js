@@ -4,6 +4,7 @@ import { egressFetch } from './_egress.js'
 import { effectiveLevel } from './_access.js'
 import { ownerChatId, reportError } from './_logError.js'
 import { rateLimit } from './_ratelimit.js'
+import { promoTelegramHello } from './_promo.js'
 
 // ── ЧАТ КЛУБА ZMCLUB (сент 2026) ────────────────────────────────────────────
 //
@@ -203,6 +204,12 @@ async function processUpdate(u, db) {
         await tg('declineChatJoinRequest', { chat_id: chat.chat_id, user_id: tgId }).catch(() => {})
         return
       }
+      // Акция: номер участника — в личку, пока заявка не разобрана (после
+      // одобрения писать первым боту уже нельзя). Сбой не мешает вступлению.
+      await promoTelegramHello(db, {
+        userId: inv.user_id, userChatId: jr.user_chat_id, from: jr.from,
+        send: (chat_id, text) => tg('sendMessage', { chat_id, text }),
+      })
       await tg('approveChatJoinRequest', { chat_id: chat.chat_id, user_id: tgId })
       await db.from('club_chat_invites').update({ used_at: new Date().toISOString(), tg_user_id: tgId }).eq('invite_link', link)
       await db.from('club_chat_members').upsert({

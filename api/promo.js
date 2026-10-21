@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { rateLimit } from './_ratelimit.js'
 import { PROMO_KEY, PROMO_CAP, promoActive, promoLeft } from './_promo.js'
+import { promoFunnel } from './_promoFunnel.js'
 
 /**
  * АКЦИЯ «SKODA OCTAVIA»: ручки для участника (окт 2026).
@@ -86,6 +87,19 @@ export default async function handler(req, res) {
   const user = await userFrom(req, db)
   if (!user) return res.status(401).json({ error: 'Требуется вход' })
   if (!rateLimit(req, res, { name: 'promo', limit: 30, subject: user.id })) return
+
+  // ── Воронка акции — только владельцу (роль trainer).
+  if (action === 'funnel') {
+    const { data: me } = await db.from('profiles').select('role').eq('id', user.id).maybeSingle()
+    if (me?.role !== 'trainer') return res.status(403).json({ error: 'Нет доступа' })
+    const period = ['today', '7d', 'all'].includes(req.body?.period) ? req.body.period : 'today'
+    try {
+      return res.status(200).json(await promoFunnel(db, period))
+    } catch (e) {
+      console.error('promo funnel:', e)
+      return res.status(500).json({ error: 'Воронка не собралась' })
+    }
+  }
 
   const { data: tickets } = await db.from('promo_tickets')
     .select('number, is_test').eq('user_id', user.id).eq('promo', PROMO_KEY).order('number')

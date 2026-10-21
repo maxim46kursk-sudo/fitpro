@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import hero from './assets/zmclub-hero.jpg'
-import { track } from './track.js'
+import { track, promoSrc } from './track.js'
 import PromoInfo from './PromoInfo.jsx'
 import { BG, SURF, HAIR, PUR, ACCENT2 } from './theme.js'
 
@@ -244,12 +244,22 @@ export default function ClubLanding({ onJoin, onLook }) {
 
   useEffect(() => {
     track('screen', { name: 'club_landing' }, '/club')
+    // Акция: заход и скорость. ms — сколько прошло от начала загрузки страницы
+    // до готового лендинга; pre — успел ли показаться быстрый (index.html).
+    if (PROMO_ON) track('promo', { s: 'land', src: promoSrc(), pre: !!window.__zlPre, ms: Math.round(performance.now()) }, '/club')
     // Настоящий лендинг на экране — мгновенный (index.html) больше не нужен.
     const pre = document.getElementById('zl-pre')
     if (pre) { if (pre.scrollTop > 0 && rootRef.current) rootRef.current.scrollTop = pre.scrollTop; pre.remove() }
   }, [])
   // В кассу уходит выбранный пакет: club (1 месяц) или club4 (3+1).
-  const join = () => { if (soldOut) return; track('screen', { name: 'club_join', plan: pkg }, '/club'); onJoin(pkg) }
+  const join = (place = 'top') => {
+    if (soldOut) return
+    track('screen', { name: 'club_join', plan: pkg }, '/club')
+    track('promo', { s: 'join', plan: pkg, place, src: promoSrc() }, '/club')
+    onJoin(pkg)
+  }
+  const openInfo = what => { track('promo', { s: what }, '/club'); setInfo(what) }
+  const pickPkg = k => { if (k !== pkg) track('promo', { s: 'pkg', plan: k }, '/club'); setPkg(k) }
   const look = () => { track('screen', { name: 'club_look' }, '/club'); onLook() }
 
   // Появление блоков при прокрутке + запуск счётчика цены + липкая кнопка.
@@ -264,6 +274,18 @@ export default function ClubLanding({ onJoin, onLook }) {
     els.forEach(e => io.observe(e))
 
     const vio = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setValueOn(true); vio.disconnect() } }, { root, threshold: 0.4 })
+    // Акция: дошёл ли взгляд до кнопки «Вступить» и до конца страницы (по разу).
+    const seen = new Set()
+    const pio = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (!e.isIntersecting) return
+        const s = e.target === topBtnRef.current ? 'seen_buy' : 'seen_end'
+        if (seen.has(s)) return
+        seen.add(s); if (PROMO_ON) track('promo', { s }, '/club')
+      })
+    }, { root, threshold: 0.6 })
+    if (topBtnRef.current) pio.observe(topBtnRef.current)
+    if (endRef.current) pio.observe(endRef.current)
     if (valueRef.current) vio.observe(valueRef.current)
 
     // Липкая кнопка: видна, когда верхняя кнопка уехала вверх, а нижняя ещё не видна.
@@ -277,7 +299,7 @@ export default function ClubLanding({ onJoin, onLook }) {
     }, { root, threshold: 0 })
     if (topBtnRef.current) sio.observe(topBtnRef.current)
     if (endRef.current) sio.observe(endRef.current)
-    return () => { io.disconnect(); vio.disconnect(); sio.disconnect() }
+    return () => { io.disconnect(); vio.disconnect(); sio.disconnect(); pio.disconnect() }
   }, [])
 
   const d = i => ({ '--d': `${i * 90}ms` })
@@ -331,7 +353,7 @@ export default function ClubLanding({ onJoin, onLook }) {
                 <div className="s">Приём заявок — до 10 ноября.<br />Может закрыться раньше, как только места закончатся.</div>
               </div>
               <div style={{ textAlign: 'center', fontSize: 12.5, color: T2, marginTop: 12 }}>Итоги — <b style={{ color: '#fff' }}>12 ноября в прямом эфире</b></div>
-              <button data-testid="promo-how" onClick={() => { track('screen', { name: 'promo_how' }, '/club'); setInfo('how') }} className="zl-ghost">Как участвовать</button>
+              <button data-testid="promo-how" onClick={() => { track('screen', { name: 'promo_how' }, '/club'); openInfo('how') }} className="zl-ghost">Как участвовать</button>
             </div>
           </>
         )}
@@ -340,7 +362,7 @@ export default function ClubLanding({ onJoin, onLook }) {
         <div className="zl-in" style={{ margin: '22px 0 14px', animationDelay: '.45s' }}>
           <div className="zl-pkg">
             {PKGS.map(p => (
-              <button key={p.key} data-testid={`club-pkg-${p.key}`} className={pkg === p.key ? 'on' : ''} disabled={!pkgFits(p.key)} style={pkgFits(p.key) ? undefined : { opacity: .4 }} onClick={() => setPkg(p.key)}>
+              <button key={p.key} data-testid={`club-pkg-${p.key}`} className={pkg === p.key ? 'on' : ''} disabled={!pkgFits(p.key)} style={pkgFits(p.key) ? undefined : { opacity: .4 }} onClick={() => pickPkg(p.key)}>
                 {p.badge && <span className="bd">{p.badge}</span>}
                 <div style={{ fontSize: 12, color: T2 }}>{p.title}</div>
                 <div style={{ fontSize: 22, fontWeight: 900, margin: '2px 0' }}>{rub(p.price)}</div>
@@ -350,7 +372,7 @@ export default function ClubLanding({ onJoin, onLook }) {
           </div>
         </div>
         <div ref={topBtnRef} className="zl-in" style={{ animationDelay: '.6s' }}>
-          <button data-testid="club-join-top" onClick={join} className="zl-btn" disabled={soldOut} style={soldOut ? { opacity: .5 } : undefined}>{joinLabel}</button>
+          <button data-testid="club-join-top" onClick={() => join('top')} className="zl-btn" disabled={soldOut} style={soldOut ? { opacity: .5 } : undefined}>{joinLabel}</button>
           <button data-testid="club-look" onClick={look} className="zl-ghost">Посмотреть клуб изнутри</button>
           <div style={{ fontSize: 12, color: T3, textAlign: 'center', marginTop: 8 }}>Без регистрации: программы, упражнения, питание</div>
         </div>
@@ -485,14 +507,14 @@ export default function ClubLanding({ onJoin, onLook }) {
             <span className="zl-grad">ZM Club</span> — для тех, кто хочет тренироваться по науке и видеть результат без срывов и голодовок
           </div>
           <div ref={endRef}>
-            <button data-testid="club-join-bottom" onClick={join} className="zl-btn" disabled={soldOut} style={soldOut ? { opacity: .5 } : undefined}>{joinLabel}</button>
+            <button data-testid="club-join-bottom" onClick={() => join('bottom')} className="zl-btn" disabled={soldOut} style={soldOut ? { opacity: .5 } : undefined}>{joinLabel}</button>
             <button onClick={look} className="zl-ghost">Сначала посмотреть изнутри</button>
           </div>
         </div>
 
         {/* ── Реквизиты — нужны для приёма оплаты */}
         <div style={{ marginTop: 44, fontSize: 12.5, color: T3, lineHeight: 1.7 }}>
-          {PROMO_ON && <><button onClick={() => setInfo('rules')} style={{ background: 'none', border: 'none', padding: 0, color: T2, fontSize: 12.5, textDecoration: 'underline', cursor: 'pointer' }}>Правила акции «Skoda Octavia»</button><br /></>}
+          {PROMO_ON && <><button onClick={() => openInfo('rules')} style={{ background: 'none', border: 'none', padding: 0, color: T2, fontSize: 12.5, textDecoration: 'underline', cursor: 'pointer' }}>Правила акции «Skoda Octavia»</button><br /></>}
           Завалишин Максим Игоревич<br />
           ИНН 463227811939<br />
           e-mail: maxim-46kursk@mail.ru
@@ -500,12 +522,12 @@ export default function ClubLanding({ onJoin, onLook }) {
       </div>
 
       <PromoInfo open={!!info} initial={info || 'how'} onClose={() => setInfo(null)}
-        onJoin={() => { setInfo(null); join() }} joinLabel={joinLabel} />
+        onJoin={() => { setInfo(null); join('info') }} joinLabel={joinLabel} />
 
       {/* ── Липкая кнопка: появляется, когда верхняя уехала из виду */}
       <div className={`zl-sticky${sticky ? ' show' : ''}`}>
         <div style={{ maxWidth: 520, margin: '0 auto' }}>
-          <button data-testid="club-join-sticky" onClick={join} className="zl-btn" disabled={soldOut} style={{ padding: '15px 18px', fontSize: 15, ...(soldOut ? { opacity: .5 } : {}) }}>{joinLabel}</button>
+          <button data-testid="club-join-sticky" onClick={() => join('sticky')} className="zl-btn" disabled={soldOut} style={{ padding: '15px 18px', fontSize: 15, ...(soldOut ? { opacity: .5 } : {}) }}>{joinLabel}</button>
         </div>
       </div>
     </div>

@@ -76,7 +76,7 @@ export default function PromoSheet({ user, blocked }) {
     authed('/api/promo?action=me').then(b => {
       setMe(b)
       if (b.anketa) setForm(f => ({ ...f, full_name: b.anketa.full_name || '', birth_date: b.anketa.birth_date || '', phone: b.anketa.phone || '', consent: !!b.anketa.consent }))
-      if (b.numbers?.length && !b.complete) setOpen(true)
+      if (b.numbers?.length && !b.complete) { setOpen(true); track('promo', { s: 'sheet', test: !!b.test }, '/club') }
     }).catch(() => { asked.current = false })
   }, [user])
 
@@ -85,6 +85,7 @@ export default function PromoSheet({ user, blocked }) {
     try {
       await authed('/api/promo?action=save', form)
       track('screen', { name: 'promo_anketa_done' }, '/club')
+      track('promo', { s: 'anketa' }, '/club')
       setDone(true)
       setMe(m => ({ ...m, complete: true }))
     } catch (e) { setErr(e.message) } finally { setBusy(false) }
@@ -92,6 +93,7 @@ export default function PromoSheet({ user, blocked }) {
 
   const joinGroup = async () => {
     try {
+      track('promo', { s: 'group' }, '/club')
       const b = await authed('/api/club-chat?action=link')
       if (b.url) {
         if (window.Telegram?.WebApp?.openTelegramLink && /t\.me/.test(b.url)) window.Telegram.WebApp.openTelegramLink(b.url)
@@ -151,7 +153,7 @@ export default function PromoSheet({ user, blocked }) {
               <div style={{ marginTop: 20, padding: '14px', borderRadius: 12, background: '#30D15822', fontSize: 14, lineHeight: 1.5, textAlign: 'center' }}>
                 ✅ Анкета заполнена — {many ? 'номера участвуют' : 'номер участвует'} в акции.
               </div>
-              <div style={{ fontSize: 14, lineHeight: 1.5, marginTop: 16, color: TXT2, textAlign: 'center' }}>Последний шаг — вступи в Telegram-группу клуба: там программы, рационы и ссылка на эфир.</div>
+              <div style={{ fontSize: 14, lineHeight: 1.5, marginTop: 16, color: TXT2, textAlign: 'center' }}>Последний шаг — вступи в Telegram-группу клуба. Бот сразу пришлёт тебе {many ? 'номера' : 'номер'} в личку Telegram, а в группе будет ссылка на эфир.</div>
               {err && <div style={{ color: DANGER, fontSize: 13.5, marginTop: 12 }}>{err}</div>}
               <button style={{ ...btn, marginTop: 16 }} onClick={joinGroup}>Вступить в группу клуба</button>
               <button onClick={() => setOpen(false)} style={{ display: 'block', margin: '14px auto 0', background: 'none', border: 'none', color: TXT2, fontSize: 13, textDecoration: 'underline', cursor: 'pointer' }}>Перейти в клуб</button>

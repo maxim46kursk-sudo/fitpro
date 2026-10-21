@@ -141,6 +141,31 @@
           var ims = pre.querySelectorAll('img[data-src]')
           for (var k = 0; k < ims.length; k++) ims[k].src = ims[k].getAttribute('data-src')
           window.__zlPre = true
+          // Аналитика акции — те же журнал и метки, что у приложения (src/track.js).
+          var rid = function () { return Math.random().toString(36).slice(2) + Date.now().toString(36) }
+          var mem = function (st, k) { try { var v = st.getItem(k); if (!v) { v = rid(); st.setItem(k, v) } return v } catch (e) { return rid() } }
+          var src = 'direct'
+          try {
+            src = sessionStorage.getItem('zm_src') || ''
+            if (!src) {
+              var tag = (q.get('utm_source') || q.get('src') || '').toLowerCase()
+              var ref = ''
+              try { ref = document.referrer ? new URL(document.referrer).hostname.replace(/^www\./, '') : '' } catch (e) {}
+              var pick = function (t) { return /insta|^ig/.test(t) ? 'ig' : /^tg|telegram|t\.me/.test(t) ? 'tg' : /^vk/.test(t) ? 'vk' : /youtu|^yt/.test(t) ? 'yt' : /tiktok/.test(t) ? 'tiktok' : '' }
+              src = (/^[a-z]{2,6}_[a-z0-9_]{1,14}$/.test(tag) ? tag : '') || pick(tag) || (/Instagram/i.test(navigator.userAgent) ? 'ig' : '') || pick(ref) ||
+                (ref && !/zmclubonline\.ru|fitproapp\.ru/.test(ref) ? ref.slice(0, 30) : '') || tag.slice(0, 20) || 'direct'
+              sessionStorage.setItem('zm_src', src)
+            }
+          } catch (e) {}
+          var ev = function (props) {
+            try {
+              fetch('/api/set-exercise?action=events', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true, credentials: 'omit',
+                body: JSON.stringify({ events: [{ name: 'promo', ts: new Date().toISOString(), anon: mem(localStorage, 'fitpro_anon'), sess: mem(sessionStorage, 'fitpro_sess'), path: '/club', props: props }] })
+              }).catch(function () {})
+            } catch (e) {}
+          }
+          ev({ s: 'land_pre', src: src, ms: Math.round(performance.now()) })
           var plan = 'club'
           var btns = pre.querySelectorAll('.pk button')
           var pay = document.getElementById('zl-pre-pay')
@@ -149,6 +174,7 @@
             btns[i].addEventListener('click', function () {
               for (var j = 0; j < btns.length; j++) btns[j].className = ''
               this.className = 'on'
+              if (plan !== this.getAttribute('data-plan')) ev({ s: 'pkg', plan: this.getAttribute('data-plan') })
               plan = this.getAttribute('data-plan')
               pay.textContent = 'Вступить в клуб · ' + this.getAttribute('data-price') + ' ₽'
             })
@@ -159,16 +185,23 @@
             busy = true
             err.style.display = 'none'
             pay.style.opacity = '.7'
+            ev({ s: 'join', plan: plan, place: 'pre', src: src })
+            var t0 = performance.now()
             fetch('/api/create-payment', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ plan: plan, source: 'web' })
             }).then(function (r) { return r.json() }).then(function (b) {
-              if (b && b.reason === 'sold_out') { busy = false; pay.style.opacity = '1'; err.textContent = b.error; err.style.display = 'block'; return }
+              var ms = Math.round(performance.now() - t0)
+              if (b && b.reason === 'sold_out') {
+                ev({ s: 'pay_fail', plan: plan, why: 'sold_out', ms: ms })
+                busy = false; pay.style.opacity = '1'; err.textContent = b.error; err.style.display = 'block'; return }
               if (!b || !b.url) throw new Error('no url')
+              ev({ s: 'pay_ok', plan: plan, ms: ms, src: src })
               if (b.order) { try { localStorage.setItem('zmclub_pending_order', JSON.stringify({ order: b.order, at: Date.now() })) } catch (e) {} }
               location.assign(b.url)
             }).catch(function () {
+              ev({ s: 'pay_fail', plan: plan, why: 'pre_error', ms: Math.round(performance.now() - t0) })
               busy = false
               pay.style.opacity = '1'
               err.textContent = 'Не удалось открыть оплату. Попробуй ещё раз.'

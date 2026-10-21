@@ -12,7 +12,7 @@ import { logError } from './logError'
 // идёт пачкой и «бросил-забыл». Поэтому его можно ставить прямо в обработчики
 // и эффекты, не думая про await, порядок и сбои сети. flush() досылает
 // накопленное при уходе со страницы.
-import { track, flush as flushEvents, setAuth as setEventsAuth } from './track.js'
+import { track, flush as flushEvents, setAuth as setEventsAuth, promoSrc } from './track.js'
 import { FOLDERS, PROGRAMS_MAP, PROGRAM_ICONS, EXERCISES, EXERCISE_TYPE, isOneSidedExercise, countCompletedProgramSlots, isProgramFullyCompleted } from './programs.js'
 import { oneRepMax, weightForReps, roundToPlate, percentTable, plateStep } from './oneRepMax.js'
 // Движок прогрессии (1ПМ) — врезан в кнопку "▶ Начать тренировку" внутри
@@ -39,6 +39,7 @@ import ClubLanding from './ClubLanding.jsx'
 import PromoSheet from './PromoSheet.jsx'
 import ClubReportSheet, { MyReports } from './ClubReport.jsx'
 import TrafficStats from './TrafficStats.jsx'
+import PromoFunnel from './PromoFunnel.jsx'
 import zmclubMark from './assets/zmclub-mark.png'
 import zmclubLogo from './assets/zmclub-logo.png'
 
@@ -8771,6 +8772,7 @@ function AnalyticsView({ userRole }) {
           загрузилась. Внизу экрана он был бы недосягаем — под ним список на
           сотни человек. */}
       {/* ZMClub: посещаемость — кто пришёл за сутки, куда ходят, где уходят. */}
+      <PromoFunnel />
       <TrafficStats />
       <ErrorLogBlock userRole={userRole} />
       {loading&&!rows&&<div style={{ color:TXT3, fontSize:13, padding:'20px 0', textAlign:'center' }}>Загрузка…</div>}
@@ -11683,10 +11685,16 @@ export default function App() {
       }
       track('pay_start',{plan,guest:!user},evPath())
       const inTelegram=!!window.Telegram?.WebApp?.initData
-      const res=await fetch('/api/create-payment',{method:'POST',headers,body:JSON.stringify({plan,source:inTelegram?'telegram':'web'})})
+      const t0=performance.now()
+      let res
+      try{res=await fetch('/api/create-payment',{method:'POST',headers,body:JSON.stringify({plan,source:inTelegram?'telegram':'web'})})}
+      catch(e){track('promo',{s:'pay_fail',plan,why:'network',ms:Math.round(performance.now()-t0)},evPath());flushEvents();throw e}
       const body=await res.json().catch(()=>({}))
-      if(body?.reason==='sold_out'){setChatSoonText(body.error);setChatSoonToast(true);setTimeout(()=>setChatSoonToast(false),5000);return}
-      if(!res.ok||!body?.url)throw new Error(body?.error||`сервер ответил ${res.status}`)
+      const payMs=Math.round(performance.now()-t0)
+      if(body?.reason==='sold_out'){track('promo',{s:'pay_fail',plan,why:'sold_out',ms:payMs},evPath());setChatSoonText(body.error);setChatSoonToast(true);setTimeout(()=>setChatSoonToast(false),5000);return}
+      if(!res.ok||!body?.url){track('promo',{s:'pay_fail',plan,why:`http_${res.status}`,ms:payMs},evPath());flushEvents();throw new Error(body?.error||`сервер ответил ${res.status}`)}
+      // Касса открывается — отметку отправляем сразу: через миг страница уйдёт.
+      track('promo',{s:'pay_ok',plan,ms:payMs,src:promoSrc()},evPath());flushEvents()
       if(body.order){try{localStorage.setItem(PENDING_ORDER_KEY,JSON.stringify({order:body.order,at:Date.now()}))}catch{/* приватный режим */}}
       if(inTelegram)window.Telegram.WebApp.openLink(body.url)
       else window.location.assign(body.url)
@@ -11718,7 +11726,9 @@ export default function App() {
     const loud=fresh&&cameBackPaid
     if(cameBackPaid){try{const u=new URL(window.location.href);u.searchParams.delete('paid');window.history.replaceState(null,'',u.pathname+u.search+u.hash)}catch{/* */}}
     if(loud){closeWelcome();setGuestPay({phase:'wait'})}
-    let stop=false, tries=0
+    // Акция: вернулся из кассы — с оплатой (касса вернула ?paid=1) или «назад».
+    if(fresh&&cameBackPaid)track('promo',{s:'back_paid'},evPath())
+    let stop=false, tries=0, nopaySent=false
     const drop=()=>{try{localStorage.removeItem(PENDING_ORDER_KEY)}catch{/* */}}
     const tick=async()=>{
       if(stop)return
@@ -11736,6 +11746,7 @@ export default function App() {
         }
         if(b.status==='existing'||b.status==='claimed'){drop();closeWelcome();setGuestPay({phase:b.status,email:b.email});return}
         if(b.status==='unknown'){drop();setGuestPay(null);return}
+        if(b.status==='pending'&&fresh&&!cameBackPaid&&!nopaySent){nopaySent=true;track('promo',{s:'back_nopay'},evPath())}
       }catch(e){console.error('Вход после оплаты:',e)}
       if(!fresh)return
       // Громко ждём до 30 секунд, потом честно говорим и отпускаем человека.
