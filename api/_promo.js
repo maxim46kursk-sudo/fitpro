@@ -39,7 +39,7 @@ export const promoActive = () => Date.now() < PROMO_ENDS_MS
 /** Сколько номеров ещё можно выдать. Ошибка базы → бросает. */
 export async function promoLeft(db) {
   const { count, error } = await db.from('promo_tickets')
-    .select('number', { count: 'exact', head: true }).eq('promo', PROMO_KEY).eq('is_test', false)
+    .select('number', { count: 'exact', head: true }).eq('promo', PROMO_KEY).eq('is_test', false).is('annulled_at', null)
   if (error) throw new Error(`promoLeft: ${error.message}`)
   return Math.max(0, PROMO_CAP - (count || 0))
 }
@@ -205,7 +205,7 @@ export async function issuePromo(db, { paymentKey, userId, plan, sum, data = {},
 export async function promoTelegramHello(db, { userId, userChatId, from, send }) {
   try {
     const { data: t } = await db.from('promo_tickets')
-      .select('number, is_test').eq('user_id', userId).eq('promo', PROMO_KEY).order('number')
+      .select('number, is_test').eq('user_id', userId).eq('promo', PROMO_KEY).is('annulled_at', null).order('number')
     if (!t?.length) return
     const nums = t.map(x => '№' + x.number).join(', ')
     const many = t.length > 1
@@ -228,4 +228,33 @@ export async function promoTelegramHello(db, { userId, userChatId, from, send })
   } catch (e) {
     console.error('promo: приветствие в Telegram не ушло:', e?.message)
   }
+}
+
+/**
+ * АННУЛИРОВАТЬ НОМЕРА ПО ВОЗВРАТУ (окт 2026). Либо все номера одной оплаты
+ * (paymentKey = номер заказа Продамуса), либо оплату, к которой относится
+ * номер участника (ticket). Возвращает { numbers, already } — какие номера
+ * аннулированы сейчас и какие были аннулированы раньше. Пишет владельцу.
+ */
+export async function annulPromo(db, { paymentKey = null, ticket = null, reason = 'возврат' }) {
+  let key = paymentKey ? String(paymentKey) : null
+  if (!key && ticket != null) {
+    const { data: t } = await db.from('promo_tickets').select('payment_key').eq('number', Number(ticket)).maybeSingle()
+    key = t?.payment_key || null
+  }
+  if (!key) return { numbers: [], already: [], found: false }
+  const { data: rows, error } = await db.from('promo_tickets')
+    .select('number, annulled_at').eq('payment_key', key).order('number')
+  if (error) throw new Error(`annulPromo: ${error.message}`)
+  if (!rows?.length) return { numbers: [], already: [], found: false }
+  const fresh = rows.filter(r => !r.annulled_at).map(r => r.number)
+  const already = rows.filter(r => r.annulled_at).map(r => r.number)
+  if (fresh.length) {
+    const { error: upErr } = await db.from('promo_tickets')
+      .update({ annulled_at: new Date().toISOString(), annul_reason: String(reason).slice(0, 100) })
+      .eq('payment_key', key).is('annulled_at', null)
+    if (upErr) throw new Error(`annulPromo: ${upErr.message}`)
+    await tellOwner(db, `↩️ Акция: возврат по заказу ${key} — ${fresh.length > 1 ? 'номера' : 'номер'} ${fresh.map(n => '№' + n).join(', ')} аннулирован${fresh.length > 1 ? 'ы' : ''}, в итогах не участву${fresh.length > 1 ? 'ют' : 'ет'}.`)
+  }
+  return { numbers: fresh, already, found: true, key }
 }
