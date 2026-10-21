@@ -76,7 +76,7 @@ export default function PromoSheet({ user, blocked }) {
     authed('/api/promo?action=me').then(b => {
       setMe(b)
       if (b.anketa) setForm(f => ({ ...f, full_name: b.anketa.full_name || '', birth_date: b.anketa.birth_date || '', phone: b.anketa.phone || '', consent: !!b.anketa.consent }))
-      if (b.numbers?.length && !b.complete) { setOpen(true); track('promo', { s: 'sheet', test: !!b.test }, '/club') }
+      if (b.numbers?.length && !b.complete && !b.anketaClosed) { setOpen(true); track('promo', { s: 'sheet', test: !!b.test }, '/club') }
     }).catch(() => { asked.current = false })
   }, [user])
 

@@ -64,7 +64,13 @@ const normPhone = p => {
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 
-export function promoMail({ numbers, loginUrl, until, isTest }) {
+export function promoMail({ numbers, loginUrl, until, isTest, accountHint = null }) {
+  // Без loginUrl — письмо на почту из кассы, которая НЕ совпадает с почтой
+  // аккаунта: кнопку входа туда не кладём (опечатка в адресе отдала бы чужому
+  // человеку вход в аккаунт). Номер то же, войти — под почтой аккаунта.
+  const enter = loginUrl
+    ? `Войти в клуб (вход в один клик, без пароля): ${loginUrl}`
+    : `Войти в клуб: открой ${CLUB_SITE} и войди под почтой своего аккаунта${accountHint ? ` (${accountHint})` : ''}.`
   const many = numbers.length > 1
   const list = numbers.map(n => `№${n}`).join(', ')
   const subject = `ZM Club: ${many ? 'твои номера участника' : 'твой номер участника'} ${list}${isTest ? ' (тест)' : ''}`
@@ -76,7 +82,7 @@ export function promoMail({ numbers, loginUrl, until, isTest }) {
     'Итоги — 12 ноября в прямом эфире. Ссылку на эфир пришлём заранее.',
     '',
     'Что сделать сейчас:',
-    `1. Войти в клуб (вход в один клик, без пароля): ${loginUrl}`,
+    `1. ${enter}`,
     '2. Заполнить анкету участника: ФИО, дата рождения, телефон. Без анкеты номер не участвует в акции.',
     '3. Вступить в Telegram-группу клуба — кнопка будет сразу после анкеты.',
     '',
@@ -94,11 +100,11 @@ export function promoMail({ numbers, loginUrl, until, isTest }) {
   </div>
   <div style="font-size:16px;font-weight:800;margin-bottom:10px">Что сделать сейчас — 3 шага:</div>
   <div style="font-size:15px;line-height:1.6;color:#e6e6ee">
-    1. Войти в клуб — в один клик, без пароля.<br>
+    1. ${loginUrl ? 'Войти в клуб — в один клик, без пароля.' : esc(enter)}<br>
     2. Заполнить анкету участника: ФИО, дата рождения, телефон. <b>Без анкеты номер не участвует в акции.</b><br>
     3. Вступить в Telegram-группу клуба — кнопка будет сразу после анкеты.
   </div>
-  <a href="${esc(loginUrl)}" style="display:block;margin:24px 0;padding:17px;border-radius:999px;background:#7c7af0;color:#ffffff;text-align:center;font-size:16px;font-weight:900;text-decoration:none">ВОЙТИ В КЛУБ</a>
+  ${loginUrl ? `<a href="${esc(loginUrl)}" style="display:block;margin:24px 0;padding:17px;border-radius:999px;background:#7c7af0;color:#ffffff;text-align:center;font-size:16px;font-weight:900;text-decoration:none">ВОЙТИ В КЛУБ</a>` : ''}
   ${untilTxt ? `<div style="font-size:13px;color:#b9b9c4">Доступ к клубу открыт до ${esc(untilTxt)}.</div>` : ''}
   <div style="font-size:13px;color:#b9b9c4;margin-top:6px">Если победишь — позвоним на телефон из анкеты.</div>
   <div style="font-size:12px;color:#77777f;margin-top:28px">Кнопка входа личная, не пересылай это письмо. Если кнопка не работает, открой ${esc(CLUB_SITE)} и войди по этой почте.</div>
@@ -171,9 +177,16 @@ export async function issuePromo(db, { paymentKey, userId, plan, sum, data = {},
   const recipients = [...new Set([checkoutEmail, accountEmail, row.email].filter(Boolean))]
   const to = recipients[0] || null
   if (recipients.length && !upErr) {
-    const mail = promoMail({ numbers, loginUrl: `${LOGIN_SITE}/?promo_login=${loginToken}`, until: planUntil, isTest })
+    // Кнопка входа — только на почту самого аккаунта (у гостя это и есть
+    // почта из кассы). На другие адреса — тот же номер, но без кнопки.
+    const loginAddr = accountEmail || checkoutEmail
+    const hint = loginAddr ? loginAddr.replace(/^(.{2})[^@]*/, '$1***') : null
     let sent = 0, lastErr = null
     for (const addr of recipients) {
+      const mail = promoMail({
+        numbers, until: planUntil, isTest, accountHint: hint,
+        loginUrl: addr === loginAddr ? `${LOGIN_SITE}/?promo_login=${loginToken}` : null,
+      })
       try { await sendMail({ to: addr, ...mail }); sent++ } catch (e) { lastErr = e; console.error(`promo: письмо на ${addr} не ушло:`, e?.message) }
     }
     if (sent) {

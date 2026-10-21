@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { rateLimit } from './_ratelimit.js'
-import { PROMO_KEY, PROMO_CAP, promoActive, promoLeft } from './_promo.js'
+import { PROMO_KEY, promoActive, promoLeft } from './_promo.js'
 import { promoFunnel } from './_promoFunnel.js'
 
 /**
@@ -18,6 +18,7 @@ import { promoFunnel } from './_promoFunnel.js'
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://api.fitproapp.ru'
 // Совершеннолетие — на день подведения итогов.
 const DRAW_DAY = '2026-11-12'
+const ANKETA_ENDS_MS = Date.parse('2026-11-12T00:00:00+03:00')
 
 function adult(birth) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(birth || ''))
@@ -53,13 +54,16 @@ export default async function handler(req, res) {
   const action = String(req.query?.action || '')
 
   // ── Сколько мест осталось (лендинг; без входа).
+  // Точный остаток наружу НЕ отдаём: владелец не хочет публичного счётчика
+  // мест (по нему видно, сколько продано). Только то, что нужно лендингу.
   if (action === 'status') {
+    const closed = !promoActive()
     try {
       const left = await promoLeft(db)
-      return res.status(200).json({ cap: PROMO_CAP, left, soldOut: promoActive() && left <= 0 })
+      return res.status(200).json({ soldOut: !closed && left <= 0, club4Ok: closed || left >= 4, closed })
     } catch (e) {
       console.error('promo status:', e)
-      return res.status(200).json({ cap: PROMO_CAP, left: null, soldOut: false })
+      return res.status(200).json({ soldOut: false, club4Ok: true, closed })
     }
   }
 
@@ -112,11 +116,15 @@ export default async function handler(req, res) {
       test: (tickets || []).some(t => t.is_test),
       anketa: p ? { full_name: p.full_name || '', birth_date: p.birth_date || '', phone: p.phone || '', consent: !!p.consent_at } : null,
       complete: complete(p),
+      anketaClosed: Date.now() >= ANKETA_ENDS_MS,
     })
   }
 
   if (action === 'save') {
     if (!tickets?.length) return res.status(403).json({ error: 'У тебя пока нет номера участника' })
+    // Правила: анкета — до 23:59 МСК 11 ноября. Позже менять данные нельзя:
+    // список на эфир собирается по анкетам на этот момент.
+    if (Date.now() >= ANKETA_ENDS_MS) return res.status(403).json({ error: 'Приём анкет завершён 11 ноября в 23:59 (МСК)' })
     const full_name = String(req.body?.full_name || '').replace(/\s+/g, ' ').trim().slice(0, 120)
     const birth_date = String(req.body?.birth_date || '').trim()
     const phoneRaw = String(req.body?.phone || '').replace(/[^\d+]/g, '')

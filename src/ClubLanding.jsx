@@ -25,6 +25,8 @@ import { BG, SURF, HAIR, PUR, ACCENT2 } from './theme.js'
 
 // Акция с машиной. Выключить после итогов — false, и лендинг вернётся к фото.
 const PROMO_ON = true
+// Конец приёма участников — 23:59 МСК 10 ноября (как в api/_promo.js PROMO_ENDS_MS).
+const PROMO_ENDS = Date.parse('2026-11-11T00:00:00+03:00')
 const PROMO_DIR = '/club/promo'
 const PRIZES = [
   ['2 место', 'iPhone 18 Pro Max', `${PROMO_DIR}/iphone-18-pro-max.png`],
@@ -230,17 +232,18 @@ export default function ClubLanding({ onJoin, onLook }) {
   const cur = PKGS.find(p => p.key === pkg) || PKGS[0]
   // Места акции: 600 номеров. left=null — ещё не знаем (кнопки работают как обычно,
   // окончательную проверку всё равно делает сервер при открытии кассы).
-  const [left, setLeft] = useState(null)
-  const soldOut = PROMO_ON && left !== null && left <= 0
-  const pkgFits = k => left === null || left >= (k === 'club4' ? 4 : 1)
+  // st — ответ сервера (soldOut, club4Ok, closed); точного остатка сервер не отдаёт.
+  const [st, setSt] = useState(null)
+  // Приём закрыт по дате (после 10 ноября) — по серверу или, пока он не ответил, по часам телефона.
+  const closed = PROMO_ON && (!!st?.closed || Date.now() >= PROMO_ENDS)
+  const soldOut = PROMO_ON && (closed || !!st?.soldOut)
+  const pkgFits = k => k !== 'club4' || st?.club4Ok !== false
   useEffect(() => {
     if (!PROMO_ON) return
-    fetch('/api/promo?action=status', { method: 'POST' }).then(r => r.json()).then(b => {
-      if (typeof b?.left === 'number') setLeft(b.left)
-    }).catch(() => {})
+    fetch('/api/promo?action=status', { method: 'POST' }).then(r => r.json()).then(b => { if (b && typeof b === 'object') setSt(b) }).catch(() => {})
   }, [])
-  useEffect(() => { if (!pkgFits(pkg)) setPkg('club') }, [left]) // eslint-disable-line react-hooks/exhaustive-deps
-  const joinLabel = soldOut ? 'Места закончились' : `Вступить в клуб · ${rub(cur.price)}`
+  useEffect(() => { if (!pkgFits(pkg)) setPkg('club') }, [st]) // eslint-disable-line react-hooks/exhaustive-deps
+  const joinLabel = closed ? 'Приём участников завершён' : soldOut ? 'Места закончились' : `Вступить в клуб · ${rub(cur.price)}`
 
   useEffect(() => {
     track('screen', { name: 'club_landing' }, '/club')
@@ -324,7 +327,7 @@ export default function ClubLanding({ onJoin, onLook }) {
                 autoPlay muted loop playsInline disablePictureInPicture preload="auto" aria-label="Ролик: Skoda Octavia — главный приз" />
               <div className="gt" /><div className="gb" />
               <div style={{ position: 'absolute', left: 14, right: 14, top: 16, textAlign: 'center' }}>
-                <div className="zl-tag"><i />{soldOut ? 'Приём участников закрыт' : 'Приём участников до 10 ноября'}</div>
+                <div className="zl-tag"><i />{closed ? 'Приём завершён · итоги 12 ноября' : soldOut ? 'Приём участников закрыт' : 'Приём участников до 10 ноября'}</div>
                 <div style={{ marginTop: 12, fontSize: 29, fontWeight: 900, lineHeight: 1.02, textTransform: 'uppercase', letterSpacing: '-.4px', textShadow: '0 2px 20px rgba(0,0,0,.6)' }}>
                   Эта машина<br /><span className="zl-grad">может быть твоей</span>
                 </div>

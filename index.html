@@ -135,6 +135,8 @@
           var seen = false
           try { seen = sessionStorage.getItem('fitpro_welcome_seen') === '1' } catch (e) {}
           if (location.pathname !== '/' || tg || authed || seen || q.has('paid') || q.has('coach') || q.has('promo_login')) return
+          // После конца приёма (23:59 МСК 10 ноября) быстрый лендинг с кнопкой оплаты не показываем.
+          if (Date.now() >= Date.parse('2026-11-11T00:00:00+03:00')) return
           var pre = document.getElementById('zl-pre')
           if (!pre) return
           pre.style.display = 'block'
