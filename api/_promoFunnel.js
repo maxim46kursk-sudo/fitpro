@@ -83,7 +83,7 @@ export async function promoFunnel(db, period) {
   // ── База: оплаты за период, анкеты, письма, группа.
   const { data: tix, error: tErr } = await db.from('promo_tickets')
     .select('number, payment_key, user_id, amount, created_at')
-    .eq('promo', PROMO_KEY).eq('is_test', false).gte('created_at', from)
+    .eq('promo', PROMO_KEY).eq('is_test', false).is('annulled_at', null).gte('created_at', from)
   if (tErr) throw new Error(`promo_tickets: ${tErr.message}`)
   const pays = new Map()
   for (const t of tix || []) if (!pays.has(t.payment_key)) pays.set(t.payment_key, t)
@@ -103,7 +103,7 @@ export async function promoFunnel(db, period) {
   const mailBad = part.filter(p => !p.mail_sent_at && p.mail_error).length
 
   const { count: issued } = await db.from('promo_tickets')
-    .select('number', { count: 'exact', head: true }).eq('promo', PROMO_KEY).eq('is_test', false)
+    .select('number', { count: 'exact', head: true }).eq('promo', PROMO_KEY).eq('is_test', false).is('annulled_at', null)
 
   // ── Источники: заход → «Вступить» → касса.
   const bySrc = {}

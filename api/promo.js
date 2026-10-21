@@ -102,7 +102,7 @@ export default async function handler(req, res) {
   }
 
   const { data: tickets } = await db.from('promo_tickets')
-    .select('number, is_test').eq('user_id', user.id).eq('promo', PROMO_KEY).order('number')
+    .select('number, is_test').eq('user_id', user.id).eq('promo', PROMO_KEY).is('annulled_at', null).order('number')
   const { data: p } = await db.from('promo_participants')
     .select('full_name, birth_date, phone, email, consent_at').eq('user_id', user.id).maybeSingle()
 

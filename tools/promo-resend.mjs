@@ -13,7 +13,7 @@ if (error) { console.error(error); process.exit(1) }
 let ok = 0, bad = 0
 for (const r of rows || []) {
   if (!r.email || !r.login_token) continue
-  const { data: t } = await db.from('promo_tickets').select('number, is_test').eq('user_id', r.user_id).order('number')
+  const { data: t } = await db.from('promo_tickets').select('number, is_test').eq('user_id', r.user_id).is('annulled_at', null).order('number')
   if (!t?.length) continue
   const { data: p } = await db.from('profiles').select('plan_until').eq('id', r.user_id).maybeSingle()
   try {
