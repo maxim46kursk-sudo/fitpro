@@ -91,12 +91,6 @@ const WHY_GET = [
   'Чат клуба с разбором твоей техники',
   'Номер участника — автоматически',
 ]
-const HOW_GOES = [
-  'Оплатил и заполнил анкету — номер приходит в Telegram и на почту',
-  'Тренируешься в клубе по программам и ждёшь эфира',
-  '12 ноября — прямой эфир в Zoom: победителей определяем вживую и звоним им прямо в эфире',
-  'Запись эфира остаётся в группе клуба. Машина не нужна — можно забрать деньгами',
-]
 
 const rub = n => n.toLocaleString('ru-RU').replace(/\s/g, ' ') + ' ₽'
 
@@ -186,6 +180,16 @@ const CSS = `
 .zl-step{display:flex;gap:12px;align-items:flex-start;font-size:14px;line-height:1.45;color:rgba(255,255,255,.9)}
 .zl-step .n{flex:0 0 26px;height:26px;border-radius:50%;background:${PUR}33;color:var(--acc);display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:900;transition:background .5s,color .5s;transition-delay:calc(var(--d,0ms) + 300ms)}
 .zl-step.on .n{background:linear-gradient(${ACCENT2},${PUR});color:#fff}
+/* кнопка «Как всё пройдёт»: бегущая рамка, блик и стрелка */
+.zl-how{position:relative;overflow:hidden;display:flex;align-items:center;gap:12px;width:100%;padding:16px 18px;border-radius:999px;cursor:pointer;min-height:unset;border:none;color:#fff;font:inherit;font-size:16px;font-weight:900;text-transform:uppercase;letter-spacing:.4px;text-align:left;background:${SURF};isolation:isolate;transition:transform .15s}
+.zl-how::before{content:"";position:absolute;inset:-60%;z-index:-2;background:conic-gradient(from 0deg,transparent 0 55%,${ACCENT2} 70%,#fff 75%,${PUR} 82%,transparent 95%);animation:zlSpin 3.2s linear infinite}
+.zl-how::after{content:"";position:absolute;inset:2px;z-index:-1;border-radius:999px;background:${BG}}
+.zl-how:active{transform:scale(.97)}
+.zl-how .q{flex:0 0 28px;height:28px;border-radius:50%;background:linear-gradient(${ACCENT2},${PUR});display:flex;align-items:center;justify-content:center;font-size:15px;animation:zlBeat 2.4s ease-in-out infinite}
+.zl-how .ar{color:var(--acc);font-size:20px;animation:zlNudge 1.4s ease-in-out infinite}
+@keyframes zlSpin{to{transform:rotate(360deg)}}
+@keyframes zlBeat{0%,100%{transform:scale(1)}15%{transform:scale(1.18)}30%{transform:scale(1)}}
+@keyframes zlNudge{0%,100%{transform:none}50%{transform:translateX(5px)}}
 /* подмена мгновенного лендинга (index.html) — без повторного появления */
 .zl.nofx .zl-in{opacity:1;transform:none;animation:none}
 @media (prefers-reduced-motion: reduce){
@@ -427,12 +431,6 @@ export default function ClubLanding({ onJoin, onLook }) {
                   </div>
                 ))}
               </div>
-              <div className="zl-lim">
-                <div className="t"><i />Количество мест ограничено</div>
-                <div className="s">Приём заявок — до 10 ноября.<br />Может закрыться раньше, как только места закончатся.</div>
-              </div>
-              <div style={{ textAlign: 'center', fontSize: 12.5, color: T2, marginTop: 12 }}>Итоги — <b style={{ color: '#fff' }}>12 ноября в прямом эфире</b></div>
-              <button data-testid="promo-how" onClick={() => { track('screen', { name: 'promo_how' }, '/club'); openInfo('how') }} className="zl-ghost">Как участвовать</button>
             </div>
           </>
         )}
@@ -440,8 +438,7 @@ export default function ClubLanding({ onJoin, onLook }) {
         {/* ── Почему это выгодно: шансы, «ничего не теряешь», 3+1, как пройдёт */}
         {PROMO_ON && !soldOut && (
           <div data-blk="why" style={{ marginTop: 44 }}>
-            <div className="zl-r zl-kick" style={{ textAlign: 'center' }}>Почему это выгодно</div>
-            <h2 className="zl-r" style={{ textAlign: 'center', margin: '8px 0 16px' }}>Всего 600 мест<br /><span style={{ color: ACC }}>Вот твои шансы</span></h2>
+            <h2 className="zl-r" style={{ textAlign: 'center', margin: '0 0 16px' }}>Всего 600 мест<br /><span style={{ color: ACC }}>Вот твои шансы</span></h2>
             <div className="zl-odds">
               <div className="zl-r card zl-odd" style={d(0)}><div className="l">Шанс на Октавию</div><div className="v">1 из 600</div></div>
               <div className="zl-r card zl-odd hot" style={d(1)}><div className="l">Шанс на любой приз</div><div className="v">1 из 60</div></div>
@@ -468,9 +465,12 @@ export default function ClubLanding({ onJoin, onLook }) {
               </button>
             )}
 
-            <div className="zl-r zl-kick" style={{ marginTop: 36, marginBottom: 12 }}>Как всё пройдёт</div>
-            <div style={{ display: 'grid', gap: 14 }}>
-              {HOW_GOES.map((t, i) => <div key={i} className="zl-r zl-step" style={d(i)}><span className="n">{i + 1}</span><span>{t}</span></div>)}
+            <div className="zl-r" style={{ marginTop: 24 }}>
+              <button data-testid="promo-how" onClick={() => { track('screen', { name: 'promo_how' }, '/club'); openInfo('how') }} className="zl-how">
+                <span className="q">?</span>
+                <span style={{ flex: 1 }}>Как всё пройдёт</span>
+                <span className="ar">→</span>
+              </button>
             </div>
           </div>
         )}

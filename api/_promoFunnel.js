@@ -34,7 +34,7 @@ const BLOCKS = [
   ['pre', 'Не дождались полной страницы'],
   ['video', 'Ролик с машиной'],
   ['prizes', 'Призы'],
-  ['why', 'Почему это выгодно'],
+  ['why', 'Шансы, выгода, 3+1, «Как всё пройдёт»'],
   ['buy', 'Пакеты и кнопка «Вступить»'],
   ['about', '«Тренируйся по научным данным»'],
   ['inside', 'Что внутри клуба'],
@@ -178,7 +178,8 @@ export async function promoFunnel(db, period) {
       { key: 'group', label: 'В группе, номер получили в Telegram', n: inGroup, db: true },
     ],
     side: [
-      { label: 'Открыли «Как участвовать»', n: cnt('how') },
+      { label: 'Открыли «Как всё пройдёт»', n: cnt('how') },
+      { label: '…из них потом нажали «Вступить»', n: visitors.filter(r => has(r, 'how') && has(r, 'join')).length },
       { label: 'Открыли «Правила»', n: cnt('rules') },
       { label: 'Долистали до конца страницы', n: cnt('seen_end') },
       { label: 'Выбирали пакет 3+1', n: cnt('pkg4') },
