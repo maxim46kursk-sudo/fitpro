@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import hero from './assets/zmclub-hero.jpg'
-import { track, promoSrc } from './track.js'
+import { track, flush, promoSrc } from './track.js'
 import PromoInfo from './PromoInfo.jsx'
 import { BG, SURF, HAIR, PUR, ACCENT2 } from './theme.js'
 
@@ -83,6 +83,21 @@ const REVIEWS = [
   // Отзыв Даши («1000₽ в месяц — это дёшево…») снят в окт 2026: называет старую цену.
 ]
 
+// Блок «Почему это выгодно» (окт 2026): шансы, «ничего не теряешь», 3+1, как пройдёт.
+// Слово «лотерея» и «розыгрыш» здесь не использовать — только «номер участника», «приз», «эфир».
+const WHY_GET = [
+  'Программы тренировок по миографу',
+  'Норма питания и готовые рационы',
+  'Чат клуба с разбором твоей техники',
+  'Номер участника — автоматически',
+]
+const HOW_GOES = [
+  'Оплатил и заполнил анкету — номер приходит в Telegram и на почту',
+  'Тренируешься в клубе по программам и ждёшь эфира',
+  '12 ноября — прямой эфир в Zoom: победителей определяем вживую и звоним им прямо в эфире',
+  'Запись эфира остаётся в группе клуба. Машина не нужна — можно забрать деньгами',
+]
+
 const rub = n => n.toLocaleString('ru-RU').replace(/\s/g, ' ') + ' ₽'
 
 const CSS = `
@@ -150,6 +165,27 @@ const CSS = `
 .zl-pkg button{position:relative;text-align:left;padding:13px 14px;border-radius:16px;border:1px solid ${HAIR};background:${SURF};color:#fff;cursor:pointer;min-height:unset;transition:border-color .2s,background .2s}
 .zl-pkg button.on{border:2px solid ${ACCENT2};background:${PUR}22}
 .zl-pkg .bd{position:absolute;top:-9px;right:10px;background:linear-gradient(${ACCENT2},${PUR});font-size:10.5px;font-weight:900;padding:3px 8px;border-radius:999px;text-transform:uppercase}
+/* блок «Почему это выгодно» */
+.zl-kick{font-size:11px;letter-spacing:2.4px;color:var(--acc);font-weight:800;text-transform:uppercase}
+.zl-odds{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.zl-odd{text-align:center;padding:16px 10px}
+.zl-odd .l{font-size:12px;color:${T2}}
+.zl-odd .v{font-size:30px;font-weight:900;margin-top:4px;letter-spacing:-.5px;line-height:1.05}
+.zl-odd.hot{background:linear-gradient(180deg,${ACCENT2},${PUR});border-color:transparent;box-shadow:0 12px 34px ${PUR}66}
+.zl-odd.hot .l{color:rgba(255,255,255,.88)}
+.zl-odd.on .v{animation:zlPop .75s cubic-bezier(.2,1.6,.4,1) both;animation-delay:calc(var(--d,0ms) + 220ms)}
+@keyframes zlPop{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}
+.zl-chk{display:flex;gap:11px;align-items:center;font-size:14px;color:#fff;line-height:1.35}
+.zl-chk::before{content:"✓";flex:0 0 22px;height:22px;border-radius:50%;background:${PUR}33;color:var(--acc);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900}
+.zl-deal{position:relative;display:block;width:100%;text-align:left;margin-top:24px;padding:18px 16px 16px;border-radius:18px;border:2px solid ${ACCENT2};background:${PUR}1f;color:#fff;cursor:pointer;min-height:unset;font:inherit}
+.zl-deal.on{animation:zlPulse 2.6s ease-in-out infinite}
+.zl-deal .bd{position:absolute;top:-10px;left:14px;background:linear-gradient(${ACCENT2},${PUR});font-size:10.5px;font-weight:900;padding:3px 9px;border-radius:999px;text-transform:uppercase;letter-spacing:.6px}
+.zl-deal .t{font-size:19px;font-weight:900;text-transform:uppercase}
+.zl-deal .s{font-size:13.5px;color:${T2};line-height:1.5;margin-top:5px}
+.zl-deal .go{margin-top:10px;font-size:13px;font-weight:800;color:var(--acc)}
+.zl-step{display:flex;gap:12px;align-items:flex-start;font-size:14px;line-height:1.45;color:rgba(255,255,255,.9)}
+.zl-step .n{flex:0 0 26px;height:26px;border-radius:50%;background:${PUR}33;color:var(--acc);display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:900;transition:background .5s,color .5s;transition-delay:calc(var(--d,0ms) + 300ms)}
+.zl-step.on .n{background:linear-gradient(${ACCENT2},${PUR});color:#fff}
 /* подмена мгновенного лендинга (index.html) — без повторного появления */
 .zl.nofx .zl-in{opacity:1;transform:none;animation:none}
 @media (prefers-reduced-motion: reduce){
@@ -263,7 +299,44 @@ export default function ClubLanding({ onJoin, onLook }) {
   }
   const openInfo = what => { track('promo', { s: what }, '/club'); setInfo(what) }
   const pickPkg = k => { if (k !== pkg) track('promo', { s: 'pkg', plan: k }, '/club'); setPkg(k) }
-  const look = () => { track('screen', { name: 'club_look' }, '/club'); onLook() }
+  const look = () => { track('screen', { name: 'club_look' }, '/club'); if (PROMO_ON) track('promo', { s: 'look' }, '/club'); onLook() }
+  const pickDeal = () => {
+    track('promo', { s: 'deal' }, '/club')
+    pickPkg('club4')
+    topBtnRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
+  // АНАЛИТИКА ПО БЛОКАМ (окт 2026): до какого блока долистал и на каком ушёл.
+  // Блок считается увиденным, когда пересёк середину экрана (подходит и для
+  // длинных блоков). При уходе (свернул, закрыл, ушёл в кассу) — событие leave:
+  // последний блок и секунды на странице с начала загрузки. Сервер берёт
+  // последний leave человека. Список блоков — api/_promoFunnel.js (BLOCKS).
+  useEffect(() => {
+    if (!PROMO_ON) return
+    const root = rootRef.current
+    if (!root || !('IntersectionObserver' in window)) return
+    let last = 'video'
+    const seenB = new Set()
+    const bio = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (!e.isIntersecting) return
+        const b = e.target.getAttribute('data-blk')
+        last = b
+        if (seenB.has(b)) return
+        seenB.add(b)
+        track('promo', { s: 'blk', b }, '/club')
+      })
+    }, { root, threshold: 0, rootMargin: '-40% 0px -40% 0px' })
+    root.querySelectorAll('[data-blk]').forEach(el => bio.observe(el))
+    const leave = () => {
+      track('promo', { s: 'leave', b: last, t: Math.round(performance.now() / 1000) }, '/club')
+      flush()
+    }
+    const onVis = () => { if (document.visibilityState === 'hidden') leave() }
+    document.addEventListener('visibilitychange', onVis)
+    window.addEventListener('pagehide', leave)
+    return () => { bio.disconnect(); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pagehide', leave) }
+  }, [])
 
   // Появление блоков при прокрутке + запуск счётчика цены + липкая кнопка.
   useEffect(() => {
@@ -291,18 +364,21 @@ export default function ClubLanding({ onJoin, onLook }) {
     if (endRef.current) pio.observe(endRef.current)
     if (valueRef.current) vio.observe(valueRef.current)
 
-    // Липкая кнопка: видна, когда верхняя кнопка уехала вверх, а нижняя ещё не видна.
-    const vis = { top: true, end: false }
+    // Липкая кнопка: видна после первого экрана (ролика), пока ни верхняя, ни
+    // нижняя кнопка не на экране — купить можно с любого места страницы.
+    const vis = { top: false, end: false }
+    const upd = () => setSticky(!vis.top && !vis.end && root.scrollTop > 420)
     const sio = new IntersectionObserver(entries => {
       entries.forEach(e => {
-        if (e.target === topBtnRef.current) vis.top = e.isIntersecting || e.boundingClientRect.top > 0
+        if (e.target === topBtnRef.current) vis.top = e.isIntersecting
         if (e.target === endRef.current) vis.end = e.isIntersecting
       })
-      setSticky(!vis.top && !vis.end)
+      upd()
     }, { root, threshold: 0 })
+    root.addEventListener('scroll', upd, { passive: true })
     if (topBtnRef.current) sio.observe(topBtnRef.current)
     if (endRef.current) sio.observe(endRef.current)
-    return () => { io.disconnect(); vio.disconnect(); sio.disconnect(); pio.disconnect() }
+    return () => { io.disconnect(); vio.disconnect(); sio.disconnect(); pio.disconnect(); root.removeEventListener('scroll', upd) }
   }, [])
 
   const d = i => ({ '--d': `${i * 90}ms` })
@@ -322,7 +398,7 @@ export default function ClubLanding({ onJoin, onLook }) {
         {/* ── Акция: ролик с машиной и призы (первый экран на время акции) */}
         {PROMO_ON && (
           <>
-            <div className="zl-promo zl-in" style={{ animationDelay: '.05s' }}>
+            <div data-blk="video" className="zl-promo zl-in" style={{ animationDelay: '.05s' }}>
               <video ref={videoRef} src={`${PROMO_DIR}/octavia.mp4`} poster={`${PROMO_DIR}/octavia.jpg`}
                 autoPlay muted loop playsInline disablePictureInPicture preload="auto" aria-label="Ролик: Skoda Octavia — главный приз" />
               <div className="gt" /><div className="gb" />
@@ -338,7 +414,7 @@ export default function ClubLanding({ onJoin, onLook }) {
               </div>
             </div>
 
-            <div className="zl-in" style={{ animationDelay: '.3s', marginTop: 18 }}>
+            <div data-blk="prizes" className="zl-in" style={{ animationDelay: '.3s', marginTop: 18 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 10.5, letterSpacing: 2.6, color: T3, fontWeight: 700 }}>
                 <span style={{ flex: 1, height: 1, background: 'rgba(255,255,255,.14)' }} />А ТАКЖЕ<span style={{ flex: 1, height: 1, background: 'rgba(255,255,255,.14)' }} />
               </div>
@@ -361,8 +437,46 @@ export default function ClubLanding({ onJoin, onLook }) {
           </>
         )}
 
+        {/* ── Почему это выгодно: шансы, «ничего не теряешь», 3+1, как пройдёт */}
+        {PROMO_ON && !soldOut && (
+          <div data-blk="why" style={{ marginTop: 44 }}>
+            <div className="zl-r zl-kick" style={{ textAlign: 'center' }}>Почему это выгодно</div>
+            <h2 className="zl-r" style={{ textAlign: 'center', margin: '8px 0 16px' }}>Всего 600 мест<br /><span style={{ color: ACC }}>Вот твои шансы</span></h2>
+            <div className="zl-odds">
+              <div className="zl-r card zl-odd" style={d(0)}><div className="l">Шанс на Октавию</div><div className="v">1 из 600</div></div>
+              <div className="zl-r card zl-odd hot" style={d(1)}><div className="l">Шанс на любой приз</div><div className="v">1 из 60</div></div>
+            </div>
+            <div className="zl-r" style={{ textAlign: 'center', fontSize: 13.5, color: T2, lineHeight: 1.5, marginTop: 12 }}>
+              Обычно за машину в таких акциях борются десятки тысяч человек. Здесь максимум 600 — и каждый 60-й уходит с призом.
+            </div>
+
+            <div className="zl-r zl-kick" style={{ marginTop: 36 }}>Ты ничего не теряешь</div>
+            <div className="zl-r" style={{ fontSize: 20, fontWeight: 900, textTransform: 'uppercase', lineHeight: 1.2, marginTop: 6 }}>
+              {rub(PRICE)} — это цена <span style={{ color: ACC }}>месяца в клубе</span>
+            </div>
+            <div className="zl-r" style={{ fontSize: 13.5, color: T2, marginTop: 6 }}>Призы идут сверху, бесплатно.</div>
+            <div className="zl-r card" style={{ marginTop: 12, display: 'grid', gap: 12 }}>
+              {WHY_GET.map((t, i) => <div key={t} className="zl-r zl-chk" style={d(i + 1)}>{t}</div>)}
+            </div>
+
+            {pkgFits('club4') && (
+              <button data-testid="promo-deal" className="zl-r zl-deal" onClick={pickDeal}>
+                <span className="bd">Выгоднее</span>
+                <div className="t">3+1 · <span style={{ color: ACC }}>шанс ×4</span></div>
+                <div className="s">4 номера и 4 месяца клуба за {rub(9000)}. Выходит {rub(2250)} в месяц — один месяц в подарок.</div>
+                <div className="go">Выбрать 3+1 →</div>
+              </button>
+            )}
+
+            <div className="zl-r zl-kick" style={{ marginTop: 36, marginBottom: 12 }}>Как всё пройдёт</div>
+            <div style={{ display: 'grid', gap: 14 }}>
+              {HOW_GOES.map((t, i) => <div key={i} className="zl-r zl-step" style={d(i)}><span className="n">{i + 1}</span><span>{t}</span></div>)}
+            </div>
+          </div>
+        )}
+
         {/* ── Цена, выбор пакета и кнопка */}
-        <div className="zl-in" style={{ margin: '22px 0 14px', animationDelay: '.45s' }}>
+        <div data-blk="buy" className="zl-in" style={{ margin: '22px 0 14px', animationDelay: '.45s' }}>
           <div className="zl-pkg">
             {PKGS.map(p => (
               <button key={p.key} data-testid={`club-pkg-${p.key}`} className={pkg === p.key ? 'on' : ''} disabled={!pkgFits(p.key)} style={pkgFits(p.key) ? undefined : { opacity: .4 }} onClick={() => pickPkg(p.key)}>
@@ -374,7 +488,7 @@ export default function ClubLanding({ onJoin, onLook }) {
             ))}
           </div>
         </div>
-        <div ref={topBtnRef} className="zl-in" style={{ animationDelay: '.6s' }}>
+        <div ref={topBtnRef} data-blk="buy" className="zl-in" style={{ animationDelay: '.6s' }}>
           <button data-testid="club-join-top" onClick={() => join('top')} className="zl-btn" disabled={soldOut} style={soldOut ? { opacity: .5 } : undefined}>{joinLabel}</button>
           <button data-testid="club-look" onClick={look} className="zl-ghost">Посмотреть клуб изнутри</button>
           <div style={{ fontSize: 12, color: T3, textAlign: 'center', marginTop: 8 }}>Без регистрации: программы, упражнения, питание</div>
@@ -383,7 +497,7 @@ export default function ClubLanding({ onJoin, onLook }) {
         {/* ── О клубе: обещание (окт 2026 — фото Максима убрано, он есть в ролике).
              При PROMO_ON=false фото возвращается первым экраном — см. блок ниже. */}
         {PROMO_ON ? (
-          <div className="zl-r" style={{ marginTop: 48, textAlign: 'center' }}>
+          <div data-blk="about" className="zl-r" style={{ marginTop: 48, textAlign: 'center' }}>
             <div style={{ fontSize: 26, fontWeight: 900, color: ACC, lineHeight: 1.1, textTransform: 'uppercase' }}>
               Тренируйся не на глазок, а по научным данным
             </div>
@@ -408,7 +522,7 @@ export default function ClubLanding({ onJoin, onLook }) {
         )}
 
         {/* ── Что внутри */}
-        <div style={{ marginTop: 48 }}>
+        <div data-blk="inside" style={{ marginTop: 48 }}>
           <h2 className="zl-r">Что внутри <span style={{ color: ACC }}>ZM Club</span></h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {INSIDE.map(([t, txt], i) => (
@@ -421,7 +535,7 @@ export default function ClubLanding({ onJoin, onLook }) {
         </div>
 
         {/* ── Для кого */}
-        <div style={{ marginTop: 48 }}>
+        <div data-blk="goals" style={{ marginTop: 48 }}>
           <h2 className="zl-r" style={{ color: ACC }}>Это для тебя, если ты хочешь результат, а не протоколы</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             {GOALS.map(([t, txt], i) => (
@@ -434,7 +548,7 @@ export default function ClubLanding({ onJoin, onLook }) {
         </div>
 
         {/* ── Стоимость по отдельности */}
-        <div ref={valueRef} style={{ marginTop: 48 }}>
+        <div ref={valueRef} data-blk="value" style={{ marginTop: 48 }}>
           <h2 className="zl-r">Давай оценим этот подход в деньгах по отдельности</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {VALUE.map(([t, p, monthly], i) => (
@@ -453,7 +567,7 @@ export default function ClubLanding({ onJoin, onLook }) {
         </div>
 
         {/* ── Почему так недорого */}
-        <div style={{ marginTop: 48 }}>
+        <div data-blk="price" style={{ marginTop: 48 }}>
           <h2 className="zl-r" style={{ textAlign: 'center' }}>Почему я даю доступ к своей методике за <span style={{ color: ACC }}>{rub(PRICE)}?</span></h2>
           <div className="zl-r" style={{ fontSize: 14.5, color: T2, lineHeight: 1.55, textAlign: 'center', marginBottom: 14 }}>
             Потому что я продаю не свои часы, а свою систему. Мой капитал — это экспертиза, подтверждённая аппаратурой.
@@ -472,8 +586,8 @@ export default function ClubLanding({ onJoin, onLook }) {
 
         {/* ── Результаты и отзывы. Только настоящие участницы (подтвердил Максим). */}
         <div style={{ marginTop: 48 }}>
-          <h2 className="zl-r">Результаты участниц</h2>
-          <div className="zl-r">
+          <h2 data-blk="results" className="zl-r">Результаты участниц</h2>
+          <div data-blk="results" className="zl-r">
             <Carousel count={RESULTS.length}>
               {RESULTS.map(src => (
                 <img key={src} src={src} alt="До и после" loading="lazy"
@@ -483,8 +597,8 @@ export default function ClubLanding({ onJoin, onLook }) {
             </Carousel>
           </div>
 
-          <h2 className="zl-r" style={{ marginTop: 36 }}>Что говорят участницы</h2>
-          <div className="zl-r">
+          <h2 data-blk="reviews" className="zl-r" style={{ marginTop: 36 }}>Что говорят участницы</h2>
+          <div data-blk="reviews" className="zl-r">
             <Carousel count={REVIEWS.length}>
               {REVIEWS.map(([name, text]) => (
                 <div key={name} className="card" style={{ flex: '0 0 82%', maxWidth: 380, scrollSnapAlign: 'center' }}>
@@ -497,7 +611,7 @@ export default function ClubLanding({ onJoin, onLook }) {
         </div>
 
         {/* ── Финальная кнопка (окт 2026: пробный период и гарантия возврата сняты) */}
-        <div style={{ marginTop: 48, textAlign: 'center' }}>
+        <div data-blk="final" style={{ marginTop: 48, textAlign: 'center' }}>
           {PROMO_ON && (
             <>
               <div className="zl-r" style={{ fontSize: 20, fontWeight: 900, textTransform: 'uppercase', marginBottom: 12 }}>Вступай до 10 ноября</div>

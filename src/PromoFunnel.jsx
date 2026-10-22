@@ -120,6 +120,36 @@ export default function PromoFunnel() {
         <H sub="Каждый шаг — сколько людей до него дошло и сколько отвалилось. Зелёные — из базы (точные), фиолетовые — действия на сайте.">Путь человека</H>
         {f.map((s, i) => <Step key={s.key} i={i + 1} label={s.label} n={s.n} prev={i ? f[i - 1].n : null} first={first} db={s.db} />)}
 
+        {d.exits && (<>
+          <H sub={`По ${d.exits.tracked} посетителям с разметкой блоков. Полоса — сколько долистали до блока, красным — сколько дальше него не пошли и не нажали «Вступить».`}>Где уходят</H>
+          {d.exits.tracked === 0 ? <div style={{ fontSize: 13, color: TXT3 }}>Пока нет данных — появятся с новыми заходами.</div> : (<>
+            {(() => { const pre = d.exits.blocks[0]; return pre.left > 0 && (
+              <div style={{ fontSize: 13, color: COR, marginBottom: 10 }}>Ушли, не дождавшись загрузки страницы: <b>{pre.left}</b> ({pct(pre.left, d.exits.tracked)}%)</div>
+            ) })()}
+            {d.exits.blocks.slice(1).map(b => (
+              <div key={b.key} style={{ marginBottom: 9 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 13, color: TXT2, marginBottom: 4 }}>
+                  <span>{b.label}</span>
+                  <span style={{ flexShrink: 0 }}>
+                    <b style={{ color: TXT }}>{b.reached}</b><span style={{ color: TXT3 }}> · {pct(b.reached, d.exits.tracked)}%</span>
+                    {b.left > 0 && <b style={{ color: COR, marginLeft: 8 }}>−{b.left}</b>}
+                  </span>
+                </div>
+                <div style={{ height: 8, borderRadius: 5, background: SURF2, overflow: 'hidden', display: 'flex' }}>
+                  <div style={{ height: '100%', width: `${pct(b.reached - b.left, d.exits.tracked)}%`, background: PUR }} />
+                  <div style={{ height: '100%', width: `${pct(b.left, d.exits.tracked)}%`, background: COR }} />
+                </div>
+              </div>
+            ))}
+            <H sub="Только те, кто не нажал «Вступить». Время — с начала загрузки страницы до ухода.">Сколько пробыли на странице</H>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 8 }}>
+              <Tile v={d.exits.time.med == null ? '—' : `${d.exits.time.med} с`} l="Медиана времени" c={COR} />
+              {d.exits.time.buckets.slice(0, 2).map(b => <Tile key={b.label} v={b.n} l={b.label} c={TXT2} />)}
+              {d.exits.time.buckets.slice(2).map(b => <Tile key={b.label} v={b.n} l={b.label} c={TXT2} />)}
+            </div>
+          </>)}
+        </>)}
+
         <H>Что ещё делали</H>
         <div style={{ background: SURF, border: `1px solid ${HAIR}`, borderRadius: 12 }}>
           {d.side.map((s, i) => (

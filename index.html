@@ -168,6 +168,11 @@
             } catch (e) {}
           }
           ev({ s: 'land_pre', src: src, ms: Math.round(performance.now()) })
+          // Ушёл, пока полный лендинг ещё не загрузился (быстрый слой ещё на экране) —
+          // блок 'pre' в аналитике «Где уходят».
+          var preLeave = function () { if (document.getElementById('zl-pre')) ev({ s: 'leave', b: 'pre', t: Math.round(performance.now() / 1000) }) }
+          document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') preLeave() })
+          window.addEventListener('pagehide', preLeave)
           var plan = 'club'
           var btns = pre.querySelectorAll('.pk button')
           var pay = document.getElementById('zl-pre-pay')

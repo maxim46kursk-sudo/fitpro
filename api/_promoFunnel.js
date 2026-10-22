@@ -28,6 +28,26 @@ function since(period) {
   return new Date(PROMO_START).toISOString()
 }
 
+// Блоки лендинга сверху вниз — как data-blk в src/ClubLanding.jsx. 'pre' — быстрый
+// первый экран (index.html), пока не загрузился полный лендинг.
+const BLOCKS = [
+  ['pre', 'Не дождались полной страницы'],
+  ['video', 'Ролик с машиной'],
+  ['prizes', 'Призы'],
+  ['why', 'Почему это выгодно'],
+  ['buy', 'Пакеты и кнопка «Вступить»'],
+  ['about', '«Тренируйся по научным данным»'],
+  ['inside', 'Что внутри клуба'],
+  ['goals', 'Для кого'],
+  ['value', 'Стоимость по отдельности'],
+  ['price', 'Почему так недорого'],
+  ['results', 'Результаты участниц'],
+  ['reviews', 'Отзывы'],
+  ['final', 'Финальная кнопка'],
+]
+const BIDX = Object.fromEntries(BLOCKS.map(([k], i) => [k, i]))
+const TIME = [[10, 'до 10 с'], [30, '10–30 с'], [60, '30 с – 1 мин'], [180, '1–3 мин'], [Infinity, 'больше 3 мин']]
+
 const mskDay = iso => new Date(new Date(iso).getTime() + 3 * 3600e3).toISOString().slice(0, 10)
 
 function speed(arr) {
@@ -67,7 +87,10 @@ export async function promoFunnel(db, period) {
     if (!s) continue
     const who = e.anon_id || e.session_id
     let rec = people.get(who)
-    if (!rec) { rec = { src: null, steps: new Set(), day: mskDay(e.ts) }; people.set(who, rec) }
+    if (!rec) { rec = { src: null, steps: new Set(), day: mskDay(e.ts), far: -1, blk: false, leave: null }; people.set(who, rec) }
+    if (s === 'blk' && p.b in BIDX) { rec.blk = true; rec.far = Math.max(rec.far, BIDX[p.b]) }
+    if (s === 'leave' && p.b in BIDX) rec.leave = { b: p.b, t: Number(p.t) }
+    if (s === 'seen_end') rec.far = Math.max(rec.far, BIDX.final)
     if (!rec.src && p.src) rec.src = String(p.src)
     if (s === 'pkg' && p.plan === 'club4') rec.steps.add('pkg4')
     else rec.steps.add(s)
@@ -79,6 +102,23 @@ export async function promoFunnel(db, period) {
   const has = (r, s) => r.steps.has(s)
   const visitors = [...people.values()].filter(r => has(r, 'land') || has(r, 'land_pre'))
   const cnt = s => visitors.filter(r => has(r, s)).length
+
+  // ── Где уходят: до какого блока долистали и на каком остановились.
+  // Считаем только тех, у кого есть разметка блоков (заходы после её выкладки)
+  // или кто ушёл с быстрого экрана.
+  const tracked = visitors.filter(r => r.blk || r.leave?.b === 'pre')
+  const exits = BLOCKS.map(([key, label], i) => {
+    const reached = i === 0 ? tracked.length : tracked.filter(r => r.far >= i).length
+    const left = tracked.filter(r => !has(r, 'join') && (i === 0 ? r.far < 1 : r.far === i)).length
+    return { key, label, reached, left }
+  })
+  const noJoin = tracked.filter(r => !has(r, 'join') && r.leave && Number.isFinite(r.leave.t))
+  const secs = noJoin.map(r => r.leave.t).sort((a, b) => a - b)
+  const time = {
+    n: secs.length,
+    med: secs.length ? secs[Math.floor(secs.length / 2)] : null,
+    buckets: TIME.map(([lim, label], i) => ({ label, n: secs.filter(t => t < lim && (i === 0 || t >= TIME[i - 1][0])).length })),
+  }
 
   // ── База: оплаты за период, анкеты, письма, группа.
   const { data: tix, error: tErr } = await db.from('promo_tickets')
@@ -142,6 +182,8 @@ export async function promoFunnel(db, period) {
       { label: 'Открыли «Правила»', n: cnt('rules') },
       { label: 'Долистали до конца страницы', n: cnt('seen_end') },
       { label: 'Выбирали пакет 3+1', n: cnt('pkg4') },
+      { label: 'Нажали карточку «3+1 · шанс ×4»', n: cnt('deal') },
+      { label: 'Ушли смотреть клуб изнутри', n: cnt('look') },
       { label: 'Вернулись из кассы, не оплатив', n: cnt('back_nopay'), bad: true },
       { label: 'Касса не открылась (раз)', n: failN, bad: true, why: fails },
       { label: 'Увидели окно с номером', n: cnt('sheet') },
@@ -151,6 +193,7 @@ export async function promoFunnel(db, period) {
     ],
     money: { payments: pays.size, sum: money, numbers: (tix || []).length },
     places: { cap: PROMO_CAP, issued: issued || 0, left: Math.max(0, PROMO_CAP - (issued || 0)) },
+    exits: { tracked: tracked.length, blocks: exits, time },
     speed: { pre: speed(loads.pre), app: speed(loads.app), appAfterPre: speed(loads.appAfterPre), pay: speed(loads.pay) },
     sources: Object.values(bySrc).sort((a, b) => b.visitors - a.visitors).slice(0, 12),
     days: Object.values(byDay).sort((a, b) => b.day.localeCompare(a.day)),
