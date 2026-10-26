@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import { egressFetch } from './_egress.js'
+import { sendMail } from './_mail.js'
 import { ownerChatId, reportError } from './_logError.js'
 import { issuePromo, annulPromo, promoActive, promoLeft, LOGIN_SITE, CLUB_SITE, PROMO_KEY } from './_promo.js'
 import { PLAN_DAYS_BY_KEY, PLAN_DAYS_DEFAULT } from './prodamus-webhook.js'
@@ -77,10 +78,14 @@ async function botUsername() {
 }
 
 export async function paySettings(db) {
-  const { data } = await db.from('club_settings').select('pay_requisites, pay_via_bot, pay_auto, pay_hours, pay_night, pay_reminded_on, chat_id').eq('id', 1).maybeSingle()
+  const { data } = await db.from('club_settings').select('pay_requisites, pay_via_bot, pay_mode, pay_auto, pay_hours, pay_night, pay_reminded_on, chat_id').eq('id', 1).maybeSingle()
   const [from, to] = parseHours(data?.pay_hours)
+  // Режим оплаты: 'transfer' — на сайте, 'bot' — через бота, 'prodamus' — касса.
+  const mode = data?.pay_mode && data.pay_mode !== 'prodamus' ? data.pay_mode : (data?.pay_via_bot ? 'bot' : 'prodamus')
+  const has = !!data?.pay_requisites
   return {
-    requisites: data?.pay_requisites || null, viaBot: !!data?.pay_via_bot && !!data?.pay_requisites,
+    requisites: data?.pay_requisites || null, mode,
+    viaBot: has && mode === 'bot', viaSite: has && mode === 'transfer',
     autoAlways: data?.pay_auto === true, chatId: data?.chat_id || null,
     hoursFrom: from, hoursTo: to, remindedOn: data?.pay_reminded_on || null,
     night: parseNight(data?.pay_night ?? 'off'),
@@ -112,8 +117,8 @@ function parseHours(v) {
 }
 const mskNow = () => new Date(Date.now() + 3 * 3600e3) // поля getUTC* = московское время
 const mskDate = () => mskNow().toISOString().slice(0, 10)
-const workingNow = st => { const h = mskNow().getUTCHours(); return h >= st.hoursFrom && h < st.hoursTo }
-const hh = h => `${String(h % 24).padStart(2, '0')}:00`
+export const workingNow = st => { const h = mskNow().getUTCHours(); return h >= st.hoursFrom && h < st.hoursTo }
+export const hh = h => `${String(h % 24).padStart(2, '0')}:00`
 
 /** Что сказать покупателю, пока чек ждёт менеджера. */
 function waitText(st, again) {
@@ -315,8 +320,14 @@ async function readReceipt({ fileId, isPhoto, mime, requisites, expected }) {
   const { buf, path } = await downloadTgFile(fileId)
   const ext = String(path).split('.').pop().toLowerCase()
   const isPdf = !isPhoto && (mime === 'application/pdf' || ext === 'pdf')
-  if (!isPdf && buf.length > 4.5 * 1024 * 1024) throw new Error('картинка чека слишком большая')
   const imgType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg'
+  return readReceiptBuf({ buf, isPdf, imgType, requisites, expected })
+}
+
+/** То же по готовому файлу (чек, загруженный на сайте). */
+async function readReceiptBuf({ buf, isPdf, imgType, requisites, expected }) {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY не настроен')
+  if (!isPdf && buf.length > 4.5 * 1024 * 1024) throw new Error('картинка чека слишком большая')
   const media = isPdf
     ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: buf.toString('base64') } }
     : { type: 'image', source: { type: 'base64', media_type: imgType, data: buf.toString('base64') } }
@@ -477,8 +488,13 @@ async function annulOrder(db, id) {
     }
   }
   await db.from('payments').update({ status: 'annulled' }).eq('provider_order_num', key)
-  const b = await buyer(db, o.tg_user_id)
-  await send(b?.chat_id || o.tg_user_id, '⚠️ Перевод по твоему чеку не поступил, поэтому доступ к клубу и номер участника аннулированы. Если это ошибка — пришли сюда чек ещё раз или напиши.').catch(() => {})
+  const annulTxt = '⚠️ Перевод по твоему чеку не поступил, поэтому доступ к клубу и номер участника аннулированы.'
+  if (o.source === 'site') {
+    if (o.email) await mailBuyer(o.email, 'ZM Club: оплата не поступила', [annulTxt, '', `Если это ошибка — напиши нам: ${SUPPORT_EMAIL} или в Telegram ${SUPPORT_TG}, приложи чек.`]).catch(() => {})
+  } else {
+    const b = await buyer(db, o.tg_user_id)
+    await send(b?.chat_id || o.tg_user_id, `${annulTxt} Если это ошибка — пришли сюда чек ещё раз или напиши.`).catch(() => {})
+  }
   return { done: true, numbers }
 }
 
@@ -494,6 +510,35 @@ async function findOrCreateTgUser(db, tgId, name) {
   })
   if (error) throw new Error(`createUser: ${error.message}`)
   return created.user.id
+}
+
+/** Аккаунт по почте (заказ с сайта): есть — платёж ему, нет — новый. */
+async function findOrCreateEmailUser(db, email, name) {
+  const { data: found } = await db.rpc('auth_user_id_by_email', { em: email })
+  if (found) return { id: found, isNew: false }
+  const { data: created, error } = await db.auth.admin.createUser({
+    email, email_confirm: true,
+    password: crypto.randomBytes(24).toString('base64url'),
+    user_metadata: { name: name || '', created_via: 'site_transfer' },
+  })
+  if (error) throw new Error(`createUser: ${error.message}`)
+  return { id: created.user.id, isNew: true }
+}
+
+const SUPPORT_EMAIL = 'maxim-46kursk@mail.ru'
+const SUPPORT_TG = '@maxim_athlete'
+const escH = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+
+/** Простое письмо покупателю в стиле писем акции. lines — строки текста. */
+async function mailBuyer(to, subject, lines, button = null) {
+  const text = [...lines, button ? `\n${button.text}: ${button.url}` : ''].join('\n')
+  const html = `<!doctype html><html><body style="margin:0;background:#0b0b0d;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#fff">
+<div style="max-width:520px;margin:0 auto;padding:28px 20px">
+  <div style="font-size:22px;font-weight:900;color:#9d96ff;letter-spacing:.5px">ZM CLUB</div>
+  <div style="font-size:15px;line-height:1.6;margin-top:18px;color:#e6e6ee">${lines.map(l => l ? escH(l) : '<br>').join('<br>')}</div>
+  ${button ? `<a href="${escH(button.url)}" style="display:block;margin:24px 0;padding:17px;border-radius:999px;background:#7c7af0;color:#fff;text-align:center;font-size:16px;font-weight:900;text-decoration:none">${escH(button.text.toUpperCase())}</a>` : ''}
+</div></body></html>`
+  await sendMail({ to, subject, text, html })
 }
 
 async function inviteLink(db, userId, chatId) {
@@ -523,13 +568,18 @@ async function confirmOrder(db, id, { auto = false } = {}) {
   }
   const key = `bot:${o.id}`
   try {
-    const userId = o.user_id || await findOrCreateTgUser(db, o.tg_user_id, String(o.tg_name || '').replace(/\s@.*$/, ''))
+    const isSite = o.source === 'site'
+    let userId = o.user_id, isNew = false
+    if (!userId) {
+      if (isSite) ({ id: userId, isNew } = await findOrCreateEmailUser(db, o.email, o.buyer_name))
+      else userId = await findOrCreateTgUser(db, o.tg_user_id, String(o.tg_name || '').replace(/\s@.*$/, ''))
+    }
 
     // Клуб: продлеваем от максимума (сейчас, текущий срок) — как вебхук Продамуса.
     let newUntil = null
     const { error: payErr } = await db.from('payments').insert({
       provider_order_num: key, order_id: key, user_id: userId, plan: o.plan, amount: o.amount,
-      status: 'success', raw: { via: 'bot', tg_user_id: o.tg_user_id, order: o.id },
+      status: 'success', raw: { via: isSite ? 'site' : 'bot', tg_user_id: o.tg_user_id, email: o.email, order: o.id },
     })
     if (payErr && payErr.code !== '23505') throw new Error(`payments: ${payErr.message}`)
     const { data: prof } = await db.from('profiles').select('plan_until').eq('id', userId).maybeSingle()
@@ -543,18 +593,40 @@ async function confirmOrder(db, id, { auto = false } = {}) {
       newUntil = prof?.plan_until || null // повтор: клуб уже начислен
     }
 
-    const b = await buyer(db, o.tg_user_id)
+    const b = isSite ? null : await buyer(db, o.tg_user_id)
+    // Сайт: письмо с номером и кнопкой входа шлёт сама выдача номеров (почта из заказа).
     const numbers = await issuePromo(db, {
       paymentKey: key, userId, plan: o.plan, sum: o.amount, planUntil: newUntil,
-      data: { customer_phone: b?.phone || null, via: 'bot' },
+      data: isSite ? { customer_email: o.email, customer_phone: o.phone, via: 'site' } : { customer_phone: b?.phone || null, via: 'bot' },
     }) || []
 
-    await db.from('bot_orders').update({ status: 'confirmed', user_id: userId, numbers, auto, decided_at: new Date().toISOString() }).eq('id', o.id)
-    await syncAnketa(db, o.tg_user_id)
+    await db.from('bot_orders').update({ status: 'confirmed', user_id: userId, numbers, auto, decided_at: new Date().toISOString(), ...(isNew ? { new_account: true } : {}) }).eq('id', o.id)
+    if (isSite) {
+      // Анкета заполнена вместе с чеком — переносим в анкету акции.
+      const { error: aErr } = await db.from('promo_participants').upsert({
+        user_id: userId, promo: PROMO_KEY, full_name: o.buyer_name, birth_date: o.birth_date, phone: o.phone,
+        email: o.email, consent_at: o.consent_at || new Date().toISOString(), updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' })
+      if (aErr) console.error('botPay: анкета с сайта не перенесена:', aErr.message)
+    } else {
+      await syncAnketa(db, o.tg_user_id)
+    }
 
     try {
-      await db.from('app_events').insert({ user_id: userId, anon_id: null, session_id: key, name: 'pay_done', path: null, props: { plan: o.plan, via: 'bot' } })
+      await db.from('app_events').insert({ user_id: userId, anon_id: null, session_id: key, name: 'pay_done', path: null, props: { plan: o.plan, via: isSite ? 'site' : 'bot' } })
     } catch { /* аналитика не важнее денег */ }
+
+    if (isSite) {
+      // После акции номеров нет — письмо о доступе шлём сами.
+      if (!numbers.length && o.email) {
+        const { data: pp } = await db.from('promo_participants').select('login_token').eq('user_id', userId).maybeSingle()
+        await mailBuyer(o.email, 'ZM Club: оплата подтверждена', [
+          'Привет! Оплата подтверждена, добро пожаловать в ZM Club.',
+          newUntil ? `Доступ к клубу открыт до ${new Date(newUntil).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Moscow' })}.` : '',
+        ], { text: 'Войти в клуб', url: pp?.login_token && isNew ? `${LOGIN_SITE}/?promo_login=${pp.login_token}` : LOGIN_SITE }).catch(e => console.error('botPay: письмо не ушло:', e?.message))
+      }
+      return { done: true, numbers }
+    }
 
     // Покупателю: номер, группа, вход на сайт.
     const st = await paySettings(db)
@@ -599,6 +671,14 @@ async function rejectOrder(db, id) {
   const { data: o } = await db.from('bot_orders').update({ status: 'rejected', decided_at: new Date().toISOString() })
     .eq('id', id).eq('status', 'receipt').select('*').maybeSingle()
   if (!o) return { done: false, msg: 'заказ уже обработан' }
+  if (o.source === 'site') {
+    if (o.email) await mailBuyer(o.email, 'ZM Club: перевод не найден', [
+      `Мы не нашли перевод на ${rub(o.amount)} по присланному чеку.`,
+      '',
+      `Проверь сумму и реквизиты и отправь чек ещё раз на сайте — или напиши нам: ${SUPPORT_EMAIL}, Telegram ${SUPPORT_TG}.`,
+    ], { text: 'Открыть сайт', url: CLUB_SITE }).catch(() => {})
+    return { done: true }
+  }
   const b = await buyer(db, o.tg_user_id)
   await send(b?.chat_id || o.tg_user_id, `😕 Не нашёл перевод по этому чеку (${rub(o.amount)}). Проверь сумму и реквизиты и пришли чек ещё раз — или напиши, если что-то не так.`).catch(() => {})
   return { done: true }
@@ -616,22 +696,20 @@ async function ownerCommand(db, msg) {
       await send(chatId, st.requisites ? `Текущие реквизиты:\n\n${st.requisites}\n\nЗаменить: /реквизиты и новый текст.` : 'Напиши так:\n/реквизиты\nСБП по номеру +7 900 000-00-00\nБанк: Т-Банк\nПолучатель: Максим З.')
       return true
     }
-    await db.from('club_settings').upsert({ id: 1, pay_requisites: text.slice(0, 1500), pay_via_bot: true, updated_at: new Date().toISOString() })
-    await send(chatId, `✅ Реквизиты сохранены, оплата на сайте теперь идёт через бота.\n\nПокупатель увидит:\n\n${text}\n\nВернуть Продамус — /касса\nДнём подтверждаешь чеки ты (ИИ подсказывает), ночью — автопилот (/ночь). Режим работы — /часы`)
+    await db.from('club_settings').upsert({ id: 1, pay_requisites: text.slice(0, 1500), updated_at: new Date().toISOString() })
+    await send(chatId, `✅ Реквизиты сохранены (по ним ИИ сверяет получателя в чеках):\n\n${text}\n\n⚠️ На странице оплаты сайта реквизиты прописаны в коде (src/PayTransfer.jsx) — если поменялся номер или банк, скажи разработчику.`)
     return true
   }
-  if (cmd === '/касса' || cmd === '/kassa') {
-    await db.from('club_settings').upsert({ id: 1, pay_via_bot: false, updated_at: new Date().toISOString() })
-    await send(chatId, '✅ Кнопка «Вступить» снова ведёт в Продамус. Через бота — /бот')
-    return true
-  }
-  if (cmd === '/бот' || cmd === '/bot') {
+  const setMode = async (mode, txt) => {
     const st = await paySettings(db)
-    if (!st.requisites) { await send(chatId, 'Сначала задай реквизиты: /реквизиты <текст>'); return true }
-    await db.from('club_settings').upsert({ id: 1, pay_via_bot: true, updated_at: new Date().toISOString() })
-    await send(chatId, '✅ Кнопка «Вступить» ведёт в бота. Вернуть Продамус — /касса')
+    if (mode !== 'prodamus' && !st.requisites) { await send(chatId, 'Сначала задай реквизиты: /реквизиты <текст>'); return true }
+    await db.from('club_settings').upsert({ id: 1, pay_mode: mode, pay_via_bot: mode === 'bot', updated_at: new Date().toISOString() })
+    await send(chatId, txt)
     return true
   }
+  if (cmd === '/касса' || cmd === '/kassa') return setMode('prodamus', '✅ Кнопка «Вступить» снова ведёт в Продамус. Оплата переводом на сайте — /сайт')
+  if (cmd === '/сайт' || cmd === '/site') return setMode('transfer', '✅ Оплата переводом на сайте: реквизиты → чек → твоё подтверждение. Вернуть Продамус — /касса')
+  if (cmd === '/бот' || cmd === '/bot') return setMode('bot', '✅ Кнопка «Вступить» ведёт в Telegram-бота. Оплата на сайте — /сайт, Продамус — /касса')
   if (cmd === '/часы' || cmd === '/hours') {
     const arg = raw.replace(/^\S+\s*/, '').trim()
     if (!arg) {
@@ -821,26 +899,26 @@ export async function botPayTick(db) {
     const owner = await ownerChatId(db)
     if (!owner) return
     // Выданные ночным автопилотом за последние 14 часов — списком, сверить с банком.
-    const { data: autos } = await db.from('bot_orders').select('id, amount, tg_name, numbers, receipt_ai')
+    const { data: autos } = await db.from('bot_orders').select('id, amount, tg_name, buyer_name, numbers, receipt_ai')
       .eq('status', 'confirmed').eq('auto', true).gte('decided_at', new Date(Date.now() - 14 * 3600e3).toISOString()).order('decided_at').limit(60)
     if (autos?.length) {
       const sum = autos.reduce((a, o) => a + (o.amount || 0), 0)
       await send(owner, [
         `🌙 Ночью автопилот выдал доступ: ${autos.length} (на ${rub(sum)}). Сверь с поступлениями в банке:`,
-        ...autos.map(o => `#${o.id} · ${rub(o.amount)} · ${o.receipt_ai?.datetime?.slice(11, 16) || '?'} · ${o.tg_name || ''} → ${(o.numbers || []).map(n => '№' + n).join(', ')}`),
+        ...autos.map(o => `#${o.id} · ${rub(o.amount)} · ${o.receipt_ai?.datetime?.slice(11, 16) || '?'} · ${o.buyer_name || o.tg_name || ''} → ${(o.numbers || []).map(n => '№' + n).join(', ')}`),
         '',
         'Если какого-то перевода нет — кнопка «↩️ Аннулировать» под его чеком выше, или /возврат №номер.',
       ].join('\n').slice(0, 4000))
     }
     const { data: list } = await db.from('bot_orders')
-      .select('id, plan, amount, tg_name, tg_user_id, receipt_file_id, receipt_type, receipt_check, receipt_ai').eq('status', 'receipt').order('receipt_at').limit(40)
+      .select('id, plan, amount, tg_name, tg_user_id, source, buyer_name, email, phone, receipt_file_id, receipt_type, receipt_check, receipt_ai').eq('status', 'receipt').order('receipt_at').limit(40)
     if (!list?.length) return
     await send(owner, `☀️ Доброе утро! Ждут твоего подтверждения: ${list.length}. Пересылаю — проверь поступления и подтверди.`)
     for (const o of list) {
       const ai = o.receipt_ai
       const caption = [
         `🧾 Заказ #${o.id} · ${PLANS[o.plan]?.title || o.plan} · ${rub(o.amount)}`,
-        `От: ${o.tg_name || 'без имени'} (id ${o.tg_user_id})`,
+        o.source === 'site' ? `🌐 Сайт: ${o.buyer_name || ''} · ${o.phone || ''} · ${o.email || ''}` : `От: ${o.tg_name || 'без имени'} (id ${o.tg_user_id})`,
         ai ? `🤖 ${ai.amount ?? '?'} ₽ · ${ai.datetime || '?'} · ${ai.recipient || '?'} · оп. ${ai.operation_id || '?'}` : null,
         o.receipt_check && o.receipt_check !== 'ok' ? `⚠️ ИИ: ${o.receipt_check}` : (o.receipt_check === 'ok' ? '🤖 ИИ: всё сходится' : null),
       ].filter(Boolean).join('\n')
@@ -858,4 +936,119 @@ export async function botPayTick(db) {
   } catch (e) {
     console.error('botPayTick:', e?.message)
   }
+}
+
+// ── ОПЛАТА НА САЙТЕ (api/pay-transfer.js) ───────────────────────────────────
+//
+// Покупатель прикрепил чек и анкету на странице оплаты. Заказ сразу в статусе
+// «чек на проверке», чек — владельцу в Telegram с кнопками ✅/❌ (дальше всё
+// как у бота: confirmOrder/rejectOrder/annulOrder, утренняя пересылка). ИИ
+// читает чек уже после ответа покупателю и дописывает подсказку в подпись.
+
+export class PayError extends Error { constructor(status, msg) { super(msg); this.status = status } }
+
+export async function siteSubmit(db, { plan, userId = null, email, phone, name, birth, file }) {
+  if (!PLANS[plan]) throw new PayError(400, 'Неизвестный пакет')
+  const st = await paySettings(db)
+  if (!st.viaSite) throw new PayError(409, 'Оплата переводом сейчас недоступна — обнови страницу')
+  const seats = await seatsProblem(db, plan)
+  if (seats) throw new PayError(409, seats)
+
+  const isPdf = file.mime === 'application/pdf'
+  const isImg = /^image\/(jpeg|png|webp)$/.test(file.mime)
+  const uniqueId = crypto.createHash('sha256').update(file.buf).digest('hex').slice(0, 40)
+  const token = crypto.randomBytes(18).toString('base64url')
+  const { data: o, error } = await db.from('bot_orders').insert({
+    token, plan, amount: PLANS[plan].amount, user_id: userId, source: 'site',
+    email, phone, buyer_name: name, birth_date: birth, consent_at: new Date().toISOString(),
+    status: 'receipt', receipt_type: isImg ? 'photo' : 'document', receipt_unique_id: uniqueId, receipt_at: new Date().toISOString(),
+  }).select('*').single()
+  if (error) throw new Error(`bot_orders: ${error.message}`)
+
+  // ── Чек владельцу (без него заказ не существует — при сбое просим повторить).
+  const head = [
+    `🌐 Сайт · Заказ #${o.id} · ${PLANS[plan].title} · ${rub(o.amount)}`,
+    `${name} · ${phone}`,
+    email,
+  ]
+  const kb = { inline_keyboard: [[
+    { text: `✅ Подтвердить ${rub(o.amount)}`, callback_data: `ok:${o.id}` },
+    { text: '❌ Нет оплаты', callback_data: `no:${o.id}` },
+  ]] }
+  let sent
+  try {
+    const owner = await ownerChatId(db)
+    if (!owner) throw new Error('не найден Telegram-id владельца')
+    const form = new FormData()
+    form.append('chat_id', String(owner))
+    form.append('caption', [...head, '', '🤖 ИИ читает чек…'].join('\n').slice(0, 1024))
+    form.append('reply_markup', JSON.stringify(kb))
+    const ext = isPdf ? 'pdf' : file.mime.split('/')[1] || 'bin'
+    form.append(isImg ? 'photo' : 'document', new Blob([file.buf], { type: file.mime }), `check-${o.id}.${ext}`)
+    const r = await egressFetch(`https://api.telegram.org/bot${payToken()}/${isImg ? 'sendPhoto' : 'sendDocument'}`, { method: 'POST', body: form })
+    const j = await r.json().catch(() => null)
+    if (!j?.ok) throw new Error(j?.description || `telegram ${r.status}`)
+    sent = j.result
+  } catch (e) {
+    await db.from('bot_orders').update({ status: 'rejected', receipt_check: `чек не доставлен владельцу: ${String(e?.message).slice(0, 120)}` }).eq('id', o.id)
+    reportError('api:botpay:site', ['чек с сайта не ушёл владельцу:', e], { message: `чек с сайта не ушёл: ${e?.message}`, status: 502 })
+    throw new PayError(502, 'Не удалось отправить чек — попробуй ещё раз через минуту')
+  }
+  const fileId = isImg ? sent.photo?.[sent.photo.length - 1]?.file_id : sent.document?.file_id
+  await db.from('bot_orders').update({ receipt_file_id: fileId || null, owner_msg_id: sent.message_id }).eq('id', o.id)
+
+  // ── ИИ — после ответа покупателю.
+  setTimeout(() => { siteAiCheck(db, o, file, { isPdf, isImg, uniqueId, head, kb, msgId: sent.message_id, chatId: sent.chat.id }).catch(e => console.error('botPay site ai:', e?.message)) }, 0)
+
+  return { token, id: o.id, working: workingNow(st), hoursFrom: st.hoursFrom, hoursTo: st.hoursTo }
+}
+
+async function siteAiCheck(db, o, file, { isPdf, isImg, uniqueId, head, kb, msgId, chatId }) {
+  const st = await paySettings(db)
+  let ai = null, problem = null
+  if (!isPdf && !isImg) problem = 'формат файла ИИ не читает — проверь глазами'
+  else {
+    try {
+      ai = await readReceiptBuf({ buf: file.buf, isPdf, imgType: file.mime, requisites: st.requisites || '', expected: o.amount })
+      problem = await autoProblem(db, o, ai, uniqueId)
+    } catch (e) {
+      problem = `ИИ не смог прочитать чек (${String(e?.message || e).slice(0, 80)})`
+    }
+  }
+  await db.from('bot_orders').update({
+    receipt_ai: ai, receipt_op_id: ai?.operation_id ? String(ai.operation_id).replace(/\s+/g, '').slice(0, 80) : null,
+    receipt_check: problem ? problem.slice(0, 200) : 'ok',
+  }).eq('id', o.id)
+  const aiLine = ai ? `🤖 ${ai.amount ?? '?'} ₽ · ${ai.datetime || '?'} · ${ai.recipient || '?'} · оп. ${ai.operation_id || '?'}` : null
+  const edit = (lines, markup) => tgCall('editMessageCaption', { chat_id: chatId, message_id: msgId, caption: lines.filter(Boolean).join('\n').slice(0, 1024), reply_markup: markup }).catch(() => {})
+
+  if (!problem && st.auto) {
+    const r = await confirmOrder(db, o.id, { auto: true })
+    if (r.done) {
+      await edit([...head, aiLine, '', `✅ АВТО: доступ выдан → ${r.numbers?.length ? r.numbers.map(n => '№' + n).join(', ') : 'клуб'}`, 'Если денег в банке нет — жми «Аннулировать».'],
+        { inline_keyboard: [[{ text: '↩️ Аннулировать', callback_data: `an:${o.id}` }]] })
+      return
+    }
+  }
+  // Заказ могли уже подтвердить, пока ИИ читал, — тогда подпись не трогаем.
+  const { data: cur } = await db.from('bot_orders').select('status').eq('id', o.id).maybeSingle()
+  if (cur?.status !== 'receipt') return
+  await edit([...head, aiLine, problem ? `⚠️ ИИ: ${problem}` : '🤖 ИИ: сумма, получатель и дата сходятся, чек новый', '', 'Проверь поступление в банке и нажми кнопку.'], kb)
+}
+
+/** Статус заказа с сайта — для страницы «Платёж принят». */
+export async function siteStatus(db, token) {
+  const { data: o } = await db.from('bot_orders').select('id, status, numbers, email, user_id, new_account, plan')
+    .eq('token', token).eq('source', 'site').maybeSingle()
+  if (!o) return null
+  const status = o.status === 'confirming' ? 'receipt' : o.status
+  let login = null
+  // Ссылку входа отдаём только в новый аккаунт, заведённый этим заказом: иначе,
+  // оплатив с чужой почтой, можно было бы войти в чужой аккаунт.
+  if (status === 'confirmed' && o.new_account && o.user_id) {
+    const { data: pp } = await db.from('promo_participants').select('login_token').eq('user_id', o.user_id).maybeSingle()
+    login = pp?.login_token || null
+  }
+  const st = await paySettings(db)
+  return { id: o.id, status, numbers: o.numbers || [], email: o.email, login, plan: o.plan, working: workingNow(st), hoursFrom: st.hoursFrom, hoursTo: st.hoursTo }
 }

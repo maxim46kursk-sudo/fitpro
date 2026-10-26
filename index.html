@@ -201,6 +201,14 @@
               if (b && b.reason === 'sold_out') {
                 ev({ s: 'pay_fail', plan: plan, why: 'sold_out', ms: ms })
                 busy = false; pay.style.opacity = '1'; err.textContent = b.error; err.style.display = 'block'; return }
+              // Оплата переводом на сайте: страницу оплаты откроет приложение, как только загрузится.
+              if (b && b.via === 'transfer') {
+                ev({ s: 'pay_ok', plan: plan, ms: ms, src: src, via: 'transfer' })
+                window.__zlPay = { plan: b.plan || plan, working: b.working, hoursFrom: b.hoursFrom, hoursTo: b.hoursTo }
+                try { window.dispatchEvent(new Event('zl-pay')) } catch (e) {}
+                pay.textContent = 'Открываем оплату…'
+                return
+              }
               if (!b || !b.url) throw new Error('no url')
               ev({ s: 'pay_ok', plan: plan, ms: ms, src: src, via: b.via || undefined })
               if (b.order) { try { localStorage.setItem('zmclub_pending_order', JSON.stringify({ order: b.order, at: Date.now() })) } catch (e) {} }

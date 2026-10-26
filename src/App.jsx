@@ -37,6 +37,7 @@ import FoodDiary, { OPEN_GOALS_EVENT } from './FoodDiary.jsx'
 import HubCard from './HubCard.jsx'
 import ClubLanding from './ClubLanding.jsx'
 import PromoSheet from './PromoSheet.jsx'
+import PayTransfer,{savedOrder,clearOrder} from './PayTransfer.jsx'
 import ClubReportSheet, { MyReports } from './ClubReport.jsx'
 import TrafficStats from './TrafficStats.jsx'
 import PromoFunnel from './PromoFunnel.jsx'
@@ -11673,6 +11674,21 @@ export default function App() {
   const PENDING_ORDER_KEY='zmclub_pending_order'
   const [payOpening,setPayOpening]=useState(false)
   // plan: 'club' — 1 месяц, 'club4' — пакет 3+1 (4 месяца). Окт 2026.
+  // Оплата переводом на сайте (окт 2026): страница с реквизитами и чеком (src/PayTransfer.jsx).
+  // payTr — {plan,working,hoursFrom,hoursTo} или {token} (вернулся к своему заказу).
+  const [payTr,setPayTr]=useState(null)
+  useEffect(()=>{
+    // Кнопка быстрого первого экрана (index.html) нажата до загрузки приложения.
+    const fromPre=()=>{if(window.__zlPay){setPayTr(window.__zlPay);window.__zlPay=null}}
+    fromPre();window.addEventListener('zl-pay',fromPre)
+    // Вернулся на сайт, а заказ уже подтвердили — показываем номер и вход.
+    const o=savedOrder()
+    if(o?.token){
+      fetch('/api/pay-transfer?action=status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:o.token})})
+        .then(r=>r.status===404?(clearOrder(),null):r.json()).then(b=>{if(b?.status==='confirmed'||b?.status==='rejected')setPayTr(p=>p||{token:o.token})}).catch(()=>{})
+    }
+    return()=>window.removeEventListener('zl-pay',fromPre)
+  },[])
   const startClubPayment=async(plan='club')=>{
     if(plan!=='club'&&plan!=='club4')plan='club'
     if(payOpening)return
@@ -11692,6 +11708,7 @@ export default function App() {
       const body=await res.json().catch(()=>({}))
       const payMs=Math.round(performance.now()-t0)
       if(body?.reason==='sold_out'){track('promo',{s:'pay_fail',plan,why:'sold_out',ms:payMs},evPath());setChatSoonText(body.error);setChatSoonToast(true);setTimeout(()=>setChatSoonToast(false),5000);return}
+      if(res.ok&&body?.via==='transfer'){track('promo',{s:'pay_ok',plan,ms:payMs,src:promoSrc(),via:'transfer'},evPath());flushEvents();setPayTr({plan:body.plan||plan,working:body.working,hoursFrom:body.hoursFrom,hoursTo:body.hoursTo});return}
       if(!res.ok||!body?.url){track('promo',{s:'pay_fail',plan,why:`http_${res.status}`,ms:payMs},evPath());flushEvents();throw new Error(body?.error||`сервер ответил ${res.status}`)}
       // Касса открывается — отметку отправляем сразу: через миг страница уйдёт.
       track('promo',{s:'pay_ok',plan,ms:payMs,src:promoSrc(),...(body.via==='bot'?{via:'bot'}:{})},evPath());flushEvents()
@@ -12851,7 +12868,8 @@ export default function App() {
         </div>
       )}
       {/* Акция: номер участника и анкета (окт 2026) */}
-      <PromoSheet user={user} blocked={!!pwdSheet||!!guestPay} />
+      <PromoSheet user={user} blocked={!!pwdSheet||!!guestPay||!!payTr} />
+      {payTr&&<PayTransfer {...payTr} user={user} onClose={()=>setPayTr(null)} />}
       {guestPay&&(
         <div style={{ position:'fixed', inset:0, zIndex:3200, background:'rgba(0,0,0,0.78)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
           <div style={{ background:SURF, borderRadius:18, padding:'24px 20px', width:'100%', maxWidth:360, textAlign:'center', color:TXT }}>

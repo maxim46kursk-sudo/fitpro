@@ -1,6 +1,6 @@
 import { promoActive, promoLeft } from './_promo.js'
 // Оплата переводом через бота (окт 2026): включается командой владельца боту.
-import { payViaBot, createBotOrder } from './_botPay.js'
+import { paySettings, workingNow, createBotOrder } from './_botPay.js'
 import crypto from 'node:crypto'
 import qs from 'qs'
 import { createClient } from '@supabase/supabase-js'
@@ -84,7 +84,8 @@ export default async function handler(req, res) {
   }
 
   /**
-   * ОПЛАТА ЧЕРЕЗ БОТА (окт 2026). Если владелец включил её (/реквизиты боту),
+   * ОПЛАТА ПЕРЕВОДОМ (окт 2026): на сайте (/сайт) или через бота (/бот).
+   * Через бота: если владелец включил его,
    * клуб продаётся не через Продамус, а переводом: отдаём ссылку в бота с
    * ключом заказа. Вошедший в приложение — заказ привязан к его аккаунту;
    * гость — аккаунт заведётся по Telegram при подтверждении оплаты.
@@ -92,7 +93,14 @@ export default async function handler(req, res) {
    */
   if (reqPlan === 'club' || reqPlan === 'club4') {
     const adminDb = createClient(SUPABASE_URL, serviceRoleKey)
-    if (await payViaBot(adminDb)) {
+    let st = null
+    try { st = await paySettings(adminDb) } catch { st = null }
+    // Оплата переводом НА САЙТЕ: касса не нужна — клиент открывает страницу
+    // оплаты (src/PayTransfer.jsx) с реквизитами и формой чека.
+    if (st?.viaSite) {
+      return res.status(200).json({ via: 'transfer', plan: reqPlan, working: workingNow(st), hoursFrom: st.hoursFrom, hoursTo: st.hoursTo })
+    }
+    if (st?.viaBot) {
       let botUserId = null
       if (token) {
         const { data: a } = await adminDb.auth.getUser(token)
