@@ -1,4 +1,6 @@
 import { promoActive, promoLeft } from './_promo.js'
+// Оплата переводом через бота (окт 2026): включается командой владельца боту.
+import { payViaBot, createBotOrder } from './_botPay.js'
 import crypto from 'node:crypto'
 import qs from 'qs'
 import { createClient } from '@supabase/supabase-js'
@@ -78,6 +80,31 @@ export default async function handler(req, res) {
         reason: 'sold_out', left,
         error: left > 0 ? `Осталось мест: ${left} — пакет 3+1 уже не помещается, выбери 1 месяц` : 'Места закончились — приём участников закрыт',
       })
+    }
+  }
+
+  /**
+   * ОПЛАТА ЧЕРЕЗ БОТА (окт 2026). Если владелец включил её (/реквизиты боту),
+   * клуб продаётся не через Продамус, а переводом: отдаём ссылку в бота с
+   * ключом заказа. Вошедший в приложение — заказ привязан к его аккаунту;
+   * гость — аккаунт заведётся по Telegram при подтверждении оплаты.
+   * Вернуть Продамус — команда /касса боту, без деплоя.
+   */
+  if (reqPlan === 'club' || reqPlan === 'club4') {
+    const adminDb = createClient(SUPABASE_URL, serviceRoleKey)
+    if (await payViaBot(adminDb)) {
+      let botUserId = null
+      if (token) {
+        const { data: a } = await adminDb.auth.getUser(token)
+        botUserId = a?.user?.id || null
+      }
+      try {
+        const { url } = await createBotOrder(adminDb, { plan: reqPlan, userId: botUserId })
+        return res.status(200).json({ url, via: 'bot' })
+      } catch (e) {
+        console.error('create-payment: заказ через бота не завёлся:', e)
+        return res.status(500).json({ error: 'Не удалось открыть оплату, попробуй ещё раз' })
+      }
     }
   }
 

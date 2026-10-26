@@ -5,6 +5,8 @@ import { effectiveLevel } from './_access.js'
 import { ownerChatId, reportError } from './_logError.js'
 import { rateLimit } from './_ratelimit.js'
 import { promoTelegramHello } from './_promo.js'
+// Оплата переводом через бота: личка покупателей и кнопки ✅/❌ владельца (окт 2026).
+import { botPayUpdate, botPayTick, tgCall, separatePayBot } from './_botPay.js'
 
 // ── ЧАТ КЛУБА ZMCLUB (сент 2026) ────────────────────────────────────────────
 //
@@ -151,6 +153,9 @@ export async function clubUpdate(u, res, db) {
 }
 
 async function processUpdate(u, db) {
+  // Личные сообщения и кнопки — оплата через бота (api/_botPay.js).
+  // Если оплата вынесена в отдельного бота — этот бот её не обрабатывает.
+  if (!separatePayBot() && await botPayUpdate(u, db)) return
   {
     // 1. Бота сделали админом группы — если это сделал владелец, это чат клуба.
     const mcm = u.my_chat_member
@@ -369,26 +374,65 @@ async function handleReport(req, res, db) {
 // при этом работают. Поэтому крон раз в минуту сам забирает обновления
 // (getUpdates) — у бота при этом вебхука быть НЕ должно (иначе 409).
 // Смещение хранится в club_settings.tg_offset, чтобы ничего не обработать дважды.
+// ДЛИННЫЙ ОПРОС (окт 2026): с оплатой через бота покупатель ждёт ответа на
+// Start, и «раз в минуту» выглядело бы как сломанный бот. Поэтому за один
+// вызов крона держим getUpdates с timeout до 25 с, пока не выйдет ~45 с, —
+// Telegram отдаёт сообщение сразу, как оно пришло. Следующий крон начинает
+// новый круг. Два опроса одновременно Telegram не разрешает (409), поэтому
+// пока идёт один, второй вызов сразу выходит.
+let polling = false
+const POLL_BUDGET_MS = 45_000
+
 async function handlePoll(req, res, db) {
   const given = (req.query?.secret || req.headers['x-cron-secret'] || '').toString()
   if (!secretOk(given, process.env.REMINDERS_CRON_SECRET)) return res.status(401).json({ error: 'Unauthorized' })
-  const { data: st } = await db.from('club_settings').select('tg_offset').eq('id', 1).maybeSingle()
-  let offset = st?.tg_offset ?? 0
-  let updates
+  if (polling) return res.status(200).json({ ok: true, busy: true })
+  polling = true
+  const t0 = Date.now()
   try {
-    updates = await tg('getUpdates', { offset, timeout: 0, limit: 100, allowed_updates: ['my_chat_member', 'chat_join_request', 'message'] })
-  } catch (e) {
-    return res.status(200).json({ ok: false, error: e.message })
-  }
-  let handled = 0
-  for (const u of updates || []) {
-    try { await processUpdate(u, db); handled++ } catch (e) {
-      reportError('api:club-chat:poll', ['обновление бота не обработалось:', e], { message: e?.message, status: 500 })
+    // Утром — ночные чеки менеджеру (раз в день, см. api/_botPay.js).
+    await botPayTick(db)
+    const loops = [pollLoop(db, t0, {
+      token: process.env.TELEGRAM_BOT_TOKEN, offsetCol: 'tg_offset', onUpdate: u => processUpdate(u, db),
+      allowed: ['my_chat_member', 'chat_join_request', 'message', 'callback_query'],
+    })]
+    // Отдельный бот оплаты (PAY_BOT_TOKEN) — свой опрос и своё смещение.
+    if (separatePayBot()) {
+      loops.push(pollLoop(db, t0, {
+        token: process.env.PAY_BOT_TOKEN, offsetCol: 'pay_tg_offset', onUpdate: u => botPayUpdate(u, db),
+        allowed: ['message', 'callback_query'],
+      }))
     }
-    offset = u.update_id + 1
-    await db.from('club_settings').upsert({ id: 1, tg_offset: offset, updated_at: new Date().toISOString() })
+    const r = await Promise.all(loops)
+    return res.status(200).json({ ok: r.every(x => x.ok), club: r[0], pay: r[1] || null })
+  } finally {
+    polling = false
   }
-  return res.status(200).json({ ok: true, got: updates?.length || 0, handled })
+}
+
+async function pollLoop(db, t0, { token, offsetCol, onUpdate, allowed }) {
+  let got = 0, handled = 0
+  const { data: st } = await db.from('club_settings').select(offsetCol).eq('id', 1).maybeSingle()
+  let offset = st?.[offsetCol] ?? 0
+  while (Date.now() - t0 < POLL_BUDGET_MS) {
+    const wait = Math.max(0, Math.min(25, Math.floor((POLL_BUDGET_MS - (Date.now() - t0)) / 1000) - 2))
+    let updates
+    try {
+      updates = await tgCall('getUpdates', { offset, timeout: wait, limit: 100, allowed_updates: allowed }, token)
+    } catch (e) {
+      return { ok: false, error: e.message, got, handled }
+    }
+    for (const u of updates || []) {
+      got++
+      try { await onUpdate(u); handled++ } catch (e) {
+        reportError('api:club-chat:poll', ['обновление бота не обработалось:', e], { message: e?.message, status: 500 })
+      }
+      offset = u.update_id + 1
+      await db.from('club_settings').upsert({ id: 1, [offsetCol]: offset, updated_at: new Date().toISOString() })
+    }
+    if (wait === 0) break
+  }
+  return { ok: true, got, handled }
 }
 
 // ── ?action=sync ────────────────────────────────────────────────────────────

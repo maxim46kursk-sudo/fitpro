@@ -202,7 +202,7 @@
                 ev({ s: 'pay_fail', plan: plan, why: 'sold_out', ms: ms })
                 busy = false; pay.style.opacity = '1'; err.textContent = b.error; err.style.display = 'block'; return }
               if (!b || !b.url) throw new Error('no url')
-              ev({ s: 'pay_ok', plan: plan, ms: ms, src: src })
+              ev({ s: 'pay_ok', plan: plan, ms: ms, src: src, via: b.via || undefined })
               if (b.order) { try { localStorage.setItem('zmclub_pending_order', JSON.stringify({ order: b.order, at: Date.now() })) } catch (e) {} }
               location.assign(b.url)
             }).catch(function () {

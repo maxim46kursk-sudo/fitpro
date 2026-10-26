@@ -11694,7 +11694,9 @@ export default function App() {
       if(body?.reason==='sold_out'){track('promo',{s:'pay_fail',plan,why:'sold_out',ms:payMs},evPath());setChatSoonText(body.error);setChatSoonToast(true);setTimeout(()=>setChatSoonToast(false),5000);return}
       if(!res.ok||!body?.url){track('promo',{s:'pay_fail',plan,why:`http_${res.status}`,ms:payMs},evPath());flushEvents();throw new Error(body?.error||`сервер ответил ${res.status}`)}
       // Касса открывается — отметку отправляем сразу: через миг страница уйдёт.
-      track('promo',{s:'pay_ok',plan,ms:payMs,src:promoSrc()},evPath());flushEvents()
+      track('promo',{s:'pay_ok',plan,ms:payMs,src:promoSrc(),...(body.via==='bot'?{via:'bot'}:{})},evPath());flushEvents()
+      // Оплата через бота (окт 2026): ссылка t.me — открываем Telegram, заказа в браузере не храним.
+      if(body.via==='bot'){if(inTelegram)window.Telegram.WebApp.openTelegramLink(body.url);else window.location.assign(body.url);return}
       if(body.order){try{localStorage.setItem(PENDING_ORDER_KEY,JSON.stringify({order:body.order,at:Date.now()}))}catch{/* приватный режим */}}
       if(inTelegram)window.Telegram.WebApp.openLink(body.url)
       else window.location.assign(body.url)

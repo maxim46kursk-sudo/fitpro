@@ -55,6 +55,8 @@ const normEmail = e => {
   const s = String(e || '').trim().toLowerCase()
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) return null
   if (s.endsWith('@guest.fitproapp.ru')) return null
+  // Технический адрес Telegram-аккаунта (оплата через бота) — писем туда не шлём.
+  if (s.endsWith('@telegram.fitpro')) return null
   return s
 }
 const normPhone = p => {
@@ -202,7 +204,7 @@ export async function issuePromo(db, { paymentKey, userId, plan, sum, data = {},
   if (!isTest && Math.max(...numbers) > PROMO_CAP) {
     await tellOwner(db, `⚠️ Акция: выдан номер сверх лимита ${PROMO_CAP}: ${numbers.map(n => '№' + n).join(', ')}. Реши — оставить или вернуть оплату.`)
   }
-  await tellOwner(db, `🚗 Акция${isTest ? ' [ТЕСТ]' : ''}: оплата ${sum} ₽ → ${numbers.map(n => '№' + n).join(', ')}${to ? '' : ' (почты нет — письмо не отправлено)'}`)
+  await tellOwner(db, `🚗 Акция${isTest ? ' [ТЕСТ]' : ''}: оплата ${sum} ₽ → ${numbers.map(n => '№' + n).join(', ')}${data.via === 'bot' ? ' (через бота, номер ушёл в Telegram)' : to ? '' : ' (почты нет — письмо не отправлено)'}`)
   return numbers
 }
 
