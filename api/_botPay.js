@@ -46,7 +46,7 @@ import { PLAN_DAYS_BY_KEY, PLAN_DAYS_DEFAULT } from './prodamus-webhook.js'
  */
 
 const PLANS = {
-  club: { title: '1 месяц клуба', amount: 3000, tickets: 1 },
+  club: { title: '1 месяц клуба', amount: 1000 },
   club4: { title: 'Пакет 3+1 · 4 месяца клуба', amount: 9000, tickets: 4 },
 }
 const rub = n => n.toLocaleString('ru-RU').replace(/ /g, ' ') + ' ₽'
@@ -144,7 +144,7 @@ export async function payViaBot(db) {
 
 /** Заказ с сайта → ссылка в бота. */
 export async function createBotOrder(db, { plan, userId = null }) {
-  if (!PLANS[plan]) throw new Error('неизвестный пакет')
+  if (plan !== 'club') throw new Error('неизвестный пакет')
   const token = crypto.randomBytes(12).toString('base64url')
   const { error } = await db.from('bot_orders').insert({ token, plan, amount: PLANS[plan].amount, user_id: userId })
   if (error) throw new Error(`bot_orders: ${error.message}`)
@@ -153,7 +153,7 @@ export async function createBotOrder(db, { plan, userId = null }) {
 
 // ── Места акции ─────────────────────────────────────────────────────────────
 async function seatsProblem(db, plan) {
-  if (!promoActive()) return null // после акции клуб продаётся как обычно
+  if (plan !== 'club4' || !promoActive()) return null // после акции клуб продаётся как обычно
   let left
   try { left = await promoLeft(db) } catch { return null }
   const need = PLANS[plan].tickets
@@ -163,8 +163,7 @@ async function seatsProblem(db, plan) {
 
 // ── Сообщения покупателю ────────────────────────────────────────────────────
 const pkgButtons = () => ({ inline_keyboard: [[
-  { text: '1 месяц · 3 000 ₽', callback_data: 'pk:club' },
-  { text: '3+1 · 9 000 ₽', callback_data: 'pk:club4' },
+  { text: `1 месяц · ${rub(PLANS.club.amount)}`, callback_data: 'pk:club' },
 ]] })
 
 async function sendPayInfo(db, chatId, order) {
@@ -178,16 +177,16 @@ async function sendPayInfo(db, chatId, order) {
   const seats = await seatsProblem(db, order.plan)
   if (seats) { await send(chatId, seats, order.plan === 'club4' ? { reply_markup: pkgButtons() } : {}); return }
   await send(chatId, [
-    `🚗 ZM Club — ${p.title}`,
-    `Сумма: ${rub(p.amount)}${p.tickets > 1 ? ` · ${p.tickets} номера участника` : ' · 1 номер участника'}`,
+    `ZM Club — ${p.title}`,
+    `Сумма: ${rub(order.amount)}`,
     '',
-    `Переведи ровно ${rub(p.amount)} по реквизитам:`,
+    `Переведи ровно ${rub(order.amount)} по реквизитам:`,
     '',
     st.requisites,
     '',
     '📎 После перевода пришли сюда чек — скриншот или PDF из банка.',
-    'Как только оплата подтвердится, я пришлю твой номер участника и доступ в клуб.',
-  ].join('\n'), { reply_markup: { inline_keyboard: [[{ text: 'Сменить пакет', callback_data: 'chg' }]] } })
+    'Как только оплата подтвердится, я пришлю информацию о доступе в клуб.',
+  ].join('\n'))
 }
 
 async function tellOwner(db, text, extra = {}) {
@@ -294,7 +293,7 @@ async function onStart(db, msg) {
   }
   await saveBuyer(db, from.id, { chat_id: chatId })
   if (!order) {
-    return send(chatId, '🚗 ZM Club. Выбери пакет — каждый месяц клуба даёт номер участника акции:', { reply_markup: pkgButtons() })
+    return send(chatId, 'ZM Club — доступ на месяц:', { reply_markup: pkgButtons() })
   }
   await sendPayInfo(db, chatId, order)
 }
@@ -468,7 +467,7 @@ async function onReceipt(db, msg) {
       { text: '❌ Нет оплаты', callback_data: `no:${order.id}` },
     ]] })
   if (st.auto) await send(chatId, waitText(st, again)).catch(() => {})
-  if (!anketaDone(b)) await askNext(db, chatId, from.id)
+  if (order.amount !== PLANS.club.amount && !anketaDone(b)) await askNext(db, chatId, from.id)
 }
 
 // ── Аннулирование автовыдачи владельцем ─────────────────────────────────────
@@ -601,14 +600,14 @@ async function confirmOrder(db, id, { auto = false } = {}) {
     }) || []
 
     await db.from('bot_orders').update({ status: 'confirmed', user_id: userId, numbers, auto, decided_at: new Date().toISOString(), ...(isNew ? { new_account: true } : {}) }).eq('id', o.id)
-    if (isSite) {
+    if (isSite && numbers.length) {
       // Анкета заполнена вместе с чеком — переносим в анкету акции.
       const { error: aErr } = await db.from('promo_participants').upsert({
         user_id: userId, promo: PROMO_KEY, full_name: o.buyer_name, birth_date: o.birth_date, phone: o.phone,
         email: o.email, consent_at: o.consent_at || new Date().toISOString(), updated_at: new Date().toISOString(),
       }, { onConflict: 'user_id' })
       if (aErr) console.error('botPay: анкета с сайта не перенесена:', aErr.message)
-    } else {
+    } else if (!isSite && numbers.length) {
       await syncAnketa(db, o.tg_user_id)
     }
 
@@ -619,11 +618,18 @@ async function confirmOrder(db, id, { auto = false } = {}) {
     if (isSite) {
       // После акции номеров нет — письмо о доступе шлём сами.
       if (!numbers.length && o.email) {
-        const { data: pp } = await db.from('promo_participants').select('login_token').eq('user_id', userId).maybeSingle()
+        let loginUrl = LOGIN_SITE
+        if (isNew) {
+          const { data, error } = await db.auth.admin.generateLink({
+            type: 'recovery', email: o.email, options: { redirectTo: LOGIN_SITE },
+          })
+          if (error) console.error('botPay: ссылка установки пароля не создана:', error.message)
+          loginUrl = data?.properties?.action_link || LOGIN_SITE
+        }
         await mailBuyer(o.email, 'ZM Club: оплата подтверждена', [
           'Привет! Оплата подтверждена, добро пожаловать в ZM Club.',
           newUntil ? `Доступ к клубу открыт до ${new Date(newUntil).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Moscow' })}.` : '',
-        ], { text: 'Войти в клуб', url: pp?.login_token && isNew ? `${LOGIN_SITE}/?promo_login=${pp.login_token}` : LOGIN_SITE }).catch(e => console.error('botPay: письмо не ушло:', e?.message))
+        ], { text: 'Войти в клуб', url: loginUrl }).catch(e => console.error('botPay: письмо не ушло:', e?.message))
       }
       return { done: true, numbers }
     }
@@ -632,7 +638,7 @@ async function confirmOrder(db, id, { auto = false } = {}) {
     const st = await paySettings(db)
     const link = await inviteLink(db, userId, st.chatId)
     const { data: pp } = await db.from('promo_participants').select('login_token').eq('user_id', userId).maybeSingle()
-    const loginUrl = pp?.login_token ? `${LOGIN_SITE}/?promo_login=${pp.login_token}` : LOGIN_SITE
+    const loginUrl = numbers.length && pp?.login_token ? `${LOGIN_SITE}/?promo_login=${pp.login_token}` : LOGIN_SITE
     const many = numbers.length > 1
     const untilTxt = newUntil ? new Date(newUntil).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Moscow' }) : null
     const fresh = await buyer(db, o.tg_user_id)
@@ -644,8 +650,8 @@ async function confirmOrder(db, id, { auto = false } = {}) {
       numbers.length ? '' : null,
       'Что дальше:',
       `1. ${link ? 'Вступи в группу клуба — кнопка ниже.' : 'Ссылку в группу клуба пришлю отдельно.'}`,
-      '2. Открой клуб на сайте — кнопка ниже, вход без пароля (кнопка личная, не пересылай).',
-      anketaDone(fresh) ? null : '3. Допиши анкету участника — без неё номер не участвует в акции.',
+      numbers.length && pp?.login_token ? '2. Открой клуб по личной кнопке ниже.' : '2. Открой клуб на сайте и войди через Telegram.',
+      (!numbers.length || anketaDone(fresh)) ? null : '3. Допиши анкету участника — без неё номер не участвует в акции.',
       untilTxt ? `\nДоступ к клубу открыт до ${untilTxt}.` : null,
       numbers.length ? 'Сохрани это сообщение 👌' : null,
     ].filter(v => v !== null).join('\n')
@@ -656,7 +662,7 @@ async function confirmOrder(db, id, { auto = false } = {}) {
     try { await send(chat, text, { reply_markup: { inline_keyboard: buttons } }) } catch (e) {
       await tellOwner(db, `⚠️ Заказ #${o.id} подтверждён, но бот не смог написать покупателю: ${e?.message}`)
     }
-    if (!anketaDone(fresh)) await askNext(db, chat, o.tg_user_id).catch(() => {})
+    if (numbers.length && !anketaDone(fresh)) await askNext(db, chat, o.tg_user_id).catch(() => {})
     return { done: true, numbers }
   } catch (e) {
     // Шаги повторяемы (журнал платежей и выдача номеров — по ключу заказа),
@@ -803,7 +809,7 @@ export async function botPayUpdate(u, db) {
     }
     if (data === 'pk:club' || data === 'pk:club4' || data === 'chg') {
       await answer()
-      if (data === 'chg') { await send(chatId, 'Выбери пакет:', { reply_markup: pkgButtons() }); return true }
+      if (data !== 'pk:club') { await send(chatId, 'Сейчас доступен клуб на месяц:', { reply_markup: pkgButtons() }); return true }
       const plan = data.slice(3)
       const seats = await seatsProblem(db, plan)
       if (seats) { await send(chatId, seats); return true }
@@ -875,11 +881,11 @@ export async function botPayUpdate(u, db) {
 
   const open = await openOrder(db, from.id)
   if (open?.status === 'receipt') {
-    await send(msg.chat.id, 'Чек на проверке — номер придёт сюда, как только оплата подтвердится 👌')
+    await send(msg.chat.id, 'Чек на проверке — здесь появится подтверждение оплаты 👌')
   } else if (open) {
     await send(msg.chat.id, 'Жду чек об оплате — пришли скриншот или PDF из банка 📎')
   } else {
-    await send(msg.chat.id, 'Чтобы вступить в ZM Club и получить номер участника, выбери пакет:', { reply_markup: pkgButtons() })
+    await send(msg.chat.id, 'Чтобы вступить в ZM Club, выбери доступ на месяц:', { reply_markup: pkgButtons() })
   }
   return true
 }
@@ -948,7 +954,7 @@ export async function botPayTick(db) {
 export class PayError extends Error { constructor(status, msg) { super(msg); this.status = status } }
 
 export async function siteSubmit(db, { plan, userId = null, email, phone, name, birth, file }) {
-  if (!PLANS[plan]) throw new PayError(400, 'Неизвестный пакет')
+  if (plan !== 'club') throw new PayError(400, 'Неизвестный пакет')
   const st = await paySettings(db)
   if (!st.viaSite) throw new PayError(409, 'Оплата переводом сейчас недоступна — обнови страницу')
   const seats = await seatsProblem(db, plan)

@@ -1,4 +1,3 @@
-import { promoActive, promoLeft } from './_promo.js'
 // Оплата переводом через бота (окт 2026): включается командой владельца боту.
 import { paySettings, workingNow, createBotOrder } from './_botPay.js'
 import crypto from 'node:crypto'
@@ -28,10 +27,9 @@ const PAYFORM_BASE = 'https://maximathlete.payform.ru/'
 // прайс. Отсюда правило: скрытие в интерфейсе — удобство, отказ здесь — защита.
 // ZMClub (сент 2026): в продаже только клуб. Старые пакеты купить нельзя, но
 // уже купленные доступ дают (api/_access.js), а вебхук их суммы узнаёт.
-// Окт 2026: + club4 (пакет 3+1, 4 месяца за 9000 ₽).
-const PAID_PLANS = new Set(['club', 'club4', 'test50'])
-// Что можно купить гостем, без аккаунта: только клубные пакеты.
-const GUEST_PLANS = new Set(['club', 'club4'])
+const PAID_PLANS = new Set(['club', 'test50'])
+// Что можно купить гостем, без аккаунта: только месячный клуб.
+const GUEST_PLANS = new Set(['club'])
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -62,26 +60,7 @@ export default async function handler(req, res) {
   const authHeader = req.headers.authorization || ''
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
 
-  /**
-   * ЛИМИТ МЕСТ АКЦИИ (окт 2026): 600 номеров. Пока акция идёт, клуб продаётся
-   * только пока есть номера — иначе мы бы продали «место», которого нет.
-   * Пакет 3+1 даёт 4 номера, поэтому при остатке меньше 4 его не продаём.
-   */
   const reqPlan = req.body?.plan
-  if ((reqPlan === 'club' || reqPlan === 'club4') && promoActive()) {
-    let left
-    try { left = await promoLeft(createClient(SUPABASE_URL, serviceRoleKey)) } catch (e) {
-      console.error('create-payment: не удалось проверить места акции:', e)
-      return res.status(500).json({ error: 'Не удалось открыть оплату, попробуй ещё раз' })
-    }
-    const need = reqPlan === 'club4' ? 4 : 1
-    if (left < need) {
-      return res.status(409).json({
-        reason: 'sold_out', left,
-        error: left > 0 ? `Осталось мест: ${left} — пакет 3+1 уже не помещается, выбери 1 месяц` : 'Места закончились — приём участников закрыт',
-      })
-    }
-  }
 
   /**
    * ОПЛАТА ПЕРЕВОДОМ (окт 2026): на сайте (/сайт) или через бота (/бот).
@@ -91,7 +70,7 @@ export default async function handler(req, res) {
    * гость — аккаунт заведётся по Telegram при подтверждении оплаты.
    * Вернуть Продамус — команда /касса боту, без деплоя.
    */
-  if (reqPlan === 'club' || reqPlan === 'club4') {
+  if (reqPlan === 'club') {
     const adminDb = createClient(SUPABASE_URL, serviceRoleKey)
     let st = null
     try { st = await paySettings(adminDb) } catch { st = null }

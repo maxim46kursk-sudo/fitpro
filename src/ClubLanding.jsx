@@ -1,19 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import hero from './assets/zmclub-hero.jpg'
-import { track, flush, promoSrc } from './track.js'
-import PromoInfo from './PromoInfo.jsx'
+import { track } from './track.js'
 import { BG, SURF, HAIR, PUR, ACCENT2 } from './theme.js'
 
 /**
  * ЛЕНДИНГ ZMCLUB — первый экран гостя (сент 2026, заменил WelcomeSheet).
- *
- * Окт 2026 — АКЦИЯ С МАШИНОЙ: каждый, кто оплатил клуб до 10 ноября, получает
- * номер участника; 12 ноября в эфире определяем 10 призовых мест (Skoda Octavia,
- * iPhone 18 Pro Max, iPhone 17, 7 × AirPods). На время акции первым экраном
- * идёт ролик с машиной (сюда приходят из Instagram ради неё), фото Максима со
- * слоганом — ниже. Пробного периода и гарантии возврата больше нет. Клуб —
- * 3000 ₽ за месяц (тариф club) или 3+1 = 4 месяца за 9000 ₽ (тариф club4).
- * После акции блок PROMO выключается флагом PROMO_ON, фото снова наверху.
  *
  * Движение (по просьбе Максима — «статичная страница выглядит дёшево»): всё на
  * CSS + IntersectionObserver, без библиотек. При «уменьшить движение» в
@@ -23,23 +14,7 @@ import { BG, SURF, HAIR, PUR, ACCENT2 } from './theme.js'
  * приложению гостем. Оба помечают приветствие увиденным (см. App).
  */
 
-// Акция с машиной. Выключить после итогов — false, и лендинг вернётся к фото.
-const PROMO_ON = true
-// Конец приёма участников — 23:59 МСК 10 ноября (как в api/_promo.js PROMO_ENDS_MS).
-const PROMO_ENDS = Date.parse('2026-11-11T00:00:00+03:00')
-const PROMO_DIR = '/club/promo'
-const PRIZES = [
-  ['2 место', 'iPhone 18 Pro Max', `${PROMO_DIR}/iphone-18-pro-max.png`],
-  ['3 место', 'iPhone 17', `${PROMO_DIR}/iphone-17.png`],
-  ['4–10 место', 'AirPods × 7', `${PROMO_DIR}/airpods.png`],
-]
-
-// Пакеты клуба. Цены синхронны с src/plans.js (club, club4) и api/_prodamus.js.
-const PKGS = [
-  { key: 'club', title: '1 месяц', price: 3000, note: '1 номер участника' },
-  { key: 'club4', title: '3+1 · 4 месяца', price: 9000, note: '4 номера участника', badge: 'Выгоднее' },
-]
-const PRICE = 3000
+const PRICE = 1000
 
 // Палитра — та же, что внутри приложения (theme.js).
 const ACC = ACCENT2
@@ -139,59 +114,6 @@ const CSS = `
 /* липкая кнопка снизу */
 .zl-sticky{position:fixed;left:0;right:0;bottom:0;z-index:5;padding:10px 16px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(180deg,transparent,${BG} 40%);transform:translateY(110%);transition:transform .45s cubic-bezier(.2,.8,.2,1)}
 .zl-sticky.show{transform:none}
-/* акция: ролик с машиной */
-.zl-promo{position:relative;margin:16px 0 0;border-radius:26px;overflow:hidden;background:#050508;border:1px solid ${PUR}55;box-shadow:0 20px 60px ${PUR}40;aspect-ratio:540/840}
-.zl-promo video,.zl-promo>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
-.zl-promo .gt{position:absolute;left:0;right:0;top:0;height:46%;background:linear-gradient(rgba(5,5,8,.92),rgba(5,5,8,.55) 55%,transparent)}
-.zl-promo .gb{position:absolute;left:0;right:0;bottom:0;height:32%;background:linear-gradient(transparent,rgba(5,5,8,.85) 60%,#050508)}
-.zl-lim{margin:18px 0 0;padding:16px 14px;border-radius:18px;text-align:center;background:linear-gradient(180deg,#ff4d6d1f,#ff4d6d0a);border:1px solid #ff4d6d66}
-.zl-lim .t{font-size:19px;font-weight:900;text-transform:uppercase;letter-spacing:.3px;line-height:1.15}
-.zl-lim .t i{display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff4d6d;margin-right:9px;box-shadow:0 0 12px #ff4d6d;vertical-align:2px;animation:zlBlink 1.6s ease-in-out infinite}
-.zl-lim .s{margin-top:7px;font-size:13.5px;color:rgba(255,255,255,.78);line-height:1.45}
-.zl-tag{display:table;margin:0 auto;padding:7px 14px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase}
-.zl-tag i{display:inline-block;width:7px;height:7px;border-radius:50%;background:#ff4d6d;margin-right:7px;box-shadow:0 0 10px #ff4d6d;vertical-align:1px;animation:zlBlink 1.6s ease-in-out infinite}
-@keyframes zlBlink{50%{opacity:.35}}
-.zl-prz{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;align-items:end;margin-top:6px}
-.zl-prz .im{height:110px;display:flex;align-items:flex-end;justify-content:center;position:relative}
-.zl-prz .im::before{content:"";position:absolute;bottom:2px;left:50%;width:86px;height:86px;transform:translateX(-50%);background:radial-gradient(closest-side,${PUR}66,transparent)}
-.zl-prz img{position:relative;max-height:104px;max-width:92%;filter:drop-shadow(0 10px 14px rgba(0,0,0,.8))}
-.zl-pkg{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.zl-pkg button{position:relative;text-align:left;padding:13px 14px;border-radius:16px;border:1px solid ${HAIR};background:${SURF};color:#fff;cursor:pointer;min-height:unset;transition:border-color .2s,background .2s}
-.zl-pkg button.on{border:2px solid ${ACCENT2};background:${PUR}22}
-.zl-pkg .bd{position:absolute;top:-9px;right:10px;background:linear-gradient(${ACCENT2},${PUR});font-size:10.5px;font-weight:900;padding:3px 8px;border-radius:999px;text-transform:uppercase}
-/* блок «Почему это выгодно» */
-.zl-kick{font-size:11px;letter-spacing:2.4px;color:var(--acc);font-weight:800;text-transform:uppercase}
-.zl-odds{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.zl-odd{text-align:center;padding:16px 10px}
-.zl-odd .l{font-size:12px;color:${T2}}
-.zl-odd .v{font-size:30px;font-weight:900;margin-top:4px;letter-spacing:-.5px;line-height:1.05}
-.zl-odd.hot{background:linear-gradient(180deg,${ACCENT2},${PUR});border-color:transparent;box-shadow:0 12px 34px ${PUR}66}
-.zl-odd.hot .l{color:rgba(255,255,255,.88)}
-.zl-odd.on .v{animation:zlPop .75s cubic-bezier(.2,1.6,.4,1) both;animation-delay:calc(var(--d,0ms) + 220ms)}
-@keyframes zlPop{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}
-.zl-chk{display:flex;gap:11px;align-items:center;font-size:14px;color:#fff;line-height:1.35}
-.zl-chk::before{content:"✓";flex:0 0 22px;height:22px;border-radius:50%;background:${PUR}33;color:var(--acc);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900}
-.zl-deal{position:relative;display:block;width:100%;text-align:left;margin-top:24px;padding:18px 16px 16px;border-radius:18px;border:2px solid ${ACCENT2};background:${PUR}1f;color:#fff;cursor:pointer;min-height:unset;font:inherit}
-.zl-deal.on{animation:zlPulse 2.6s ease-in-out infinite}
-.zl-deal .bd{position:absolute;top:-10px;left:14px;background:linear-gradient(${ACCENT2},${PUR});font-size:10.5px;font-weight:900;padding:3px 9px;border-radius:999px;text-transform:uppercase;letter-spacing:.6px}
-.zl-deal .t{font-size:19px;font-weight:900;text-transform:uppercase}
-.zl-deal .s{font-size:13.5px;color:${T2};line-height:1.5;margin-top:5px}
-.zl-deal .go{margin-top:10px;font-size:13px;font-weight:800;color:var(--acc)}
-.zl-step{display:flex;gap:12px;align-items:flex-start;font-size:14px;line-height:1.45;color:rgba(255,255,255,.9)}
-.zl-step .n{flex:0 0 26px;height:26px;border-radius:50%;background:${PUR}33;color:var(--acc);display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:900;transition:background .5s,color .5s;transition-delay:calc(var(--d,0ms) + 300ms)}
-.zl-step.on .n{background:linear-gradient(${ACCENT2},${PUR});color:#fff}
-/* кнопка «Как всё пройдёт»: бегущая рамка, блик и стрелка */
-.zl-how{position:relative;overflow:hidden;display:flex;align-items:center;gap:12px;width:100%;padding:16px 18px;border-radius:999px;cursor:pointer;min-height:unset;border:none;color:#fff;font:inherit;font-size:16px;font-weight:900;text-transform:uppercase;letter-spacing:.4px;text-align:left;background:${SURF};isolation:isolate;transition:transform .15s}
-.zl-how::before{content:"";position:absolute;inset:-60%;z-index:-2;background:conic-gradient(from 0deg,transparent 0 55%,${ACCENT2} 70%,#fff 75%,${PUR} 82%,transparent 95%);animation:zlSpin 3.2s linear infinite}
-.zl-how::after{content:"";position:absolute;inset:2px;z-index:-1;border-radius:999px;background:${BG}}
-.zl-how:active{transform:scale(.97)}
-.zl-how .q{flex:0 0 28px;height:28px;border-radius:50%;background:linear-gradient(${ACCENT2},${PUR});display:flex;align-items:center;justify-content:center;font-size:15px;animation:zlBeat 2.4s ease-in-out infinite}
-.zl-how .ar{color:var(--acc);font-size:20px;animation:zlNudge 1.4s ease-in-out infinite}
-@keyframes zlSpin{to{transform:rotate(360deg)}}
-@keyframes zlBeat{0%,100%{transform:scale(1)}15%{transform:scale(1.18)}30%{transform:scale(1)}}
-@keyframes zlNudge{0%,100%{transform:none}50%{transform:translateX(5px)}}
-/* подмена мгновенного лендинга (index.html) — без повторного появления */
-.zl.nofx .zl-in{opacity:1;transform:none;animation:none}
 @media (prefers-reduced-motion: reduce){
   .zl *,.zl *::before,.zl *::after{animation:none!important;transition:none!important}
   .zl-r,.zl-in{opacity:1!important;transform:none!important}
@@ -266,81 +188,16 @@ export default function ClubLanding({ onJoin, onLook }) {
   const valueRef = useRef(null)
   const [valueOn, setValueOn] = useState(false)
   const [sticky, setSticky] = useState(false)
-  const [pkg, setPkg] = useState('club')
-  const [info, setInfo] = useState(null) // null | 'how' | 'rules'
-  const videoRef = useRef(null)
-  const cur = PKGS.find(p => p.key === pkg) || PKGS[0]
-  // Места акции: 600 номеров. left=null — ещё не знаем (кнопки работают как обычно,
-  // окончательную проверку всё равно делает сервер при открытии кассы).
-  // st — ответ сервера (soldOut, club4Ok, closed); точного остатка сервер не отдаёт.
-  const [st, setSt] = useState(null)
-  // Приём закрыт по дате (после 10 ноября) — по серверу или, пока он не ответил, по часам телефона.
-  const closed = PROMO_ON && (!!st?.closed || Date.now() >= PROMO_ENDS)
-  const soldOut = PROMO_ON && (closed || !!st?.soldOut)
-  const pkgFits = k => k !== 'club4' || st?.club4Ok !== false
-  useEffect(() => {
-    if (!PROMO_ON) return
-    fetch('/api/promo?action=status', { method: 'POST' }).then(r => r.json()).then(b => { if (b && typeof b === 'object') setSt(b) }).catch(() => {})
-  }, [])
-  useEffect(() => { if (!pkgFits(pkg)) setPkg('club') }, [st]) // eslint-disable-line react-hooks/exhaustive-deps
-  const joinLabel = closed ? 'Приём участников завершён' : soldOut ? 'Места закончились' : `Вступить в клуб · ${rub(cur.price)}`
+  const joinLabel = `Вступить в клуб · ${rub(PRICE)}`
 
   useEffect(() => {
     track('screen', { name: 'club_landing' }, '/club')
-    // Акция: заход и скорость. ms — сколько прошло от начала загрузки страницы
-    // до готового лендинга; pre — успел ли показаться быстрый (index.html).
-    if (PROMO_ON) track('promo', { s: 'land', src: promoSrc(), pre: !!window.__zlPre, ms: Math.round(performance.now()) }, '/club')
-    // Настоящий лендинг на экране — мгновенный (index.html) больше не нужен.
-    const pre = document.getElementById('zl-pre')
-    if (pre) { if (pre.scrollTop > 0 && rootRef.current) rootRef.current.scrollTop = pre.scrollTop; pre.remove() }
   }, [])
-  // В кассу уходит выбранный пакет: club (1 месяц) или club4 (3+1).
-  const join = (place = 'top') => {
-    if (soldOut) return
-    track('screen', { name: 'club_join', plan: pkg }, '/club')
-    track('promo', { s: 'join', plan: pkg, place, src: promoSrc() }, '/club')
-    onJoin(pkg)
+  const join = () => {
+    track('screen', { name: 'club_join', plan: 'club' }, '/club')
+    onJoin('club')
   }
-  const openInfo = what => { track('promo', { s: what }, '/club'); setInfo(what) }
-  const pickPkg = k => { if (k !== pkg) track('promo', { s: 'pkg', plan: k }, '/club'); setPkg(k) }
-  const look = () => { track('screen', { name: 'club_look' }, '/club'); if (PROMO_ON) track('promo', { s: 'look' }, '/club'); onLook() }
-  const pickDeal = () => {
-    track('promo', { s: 'deal' }, '/club')
-    pickPkg('club4')
-    topBtnRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }
-
-  // АНАЛИТИКА ПО БЛОКАМ (окт 2026): до какого блока долистал и на каком ушёл.
-  // Блок считается увиденным, когда пересёк середину экрана (подходит и для
-  // длинных блоков). При уходе (свернул, закрыл, ушёл в кассу) — событие leave:
-  // последний блок и секунды на странице с начала загрузки. Сервер берёт
-  // последний leave человека. Список блоков — api/_promoFunnel.js (BLOCKS).
-  useEffect(() => {
-    if (!PROMO_ON) return
-    const root = rootRef.current
-    if (!root || !('IntersectionObserver' in window)) return
-    let last = 'video'
-    const seenB = new Set()
-    const bio = new IntersectionObserver(entries => {
-      entries.forEach(e => {
-        if (!e.isIntersecting) return
-        const b = e.target.getAttribute('data-blk')
-        last = b
-        if (seenB.has(b)) return
-        seenB.add(b)
-        track('promo', { s: 'blk', b }, '/club')
-      })
-    }, { root, threshold: 0, rootMargin: '-40% 0px -40% 0px' })
-    root.querySelectorAll('[data-blk]').forEach(el => bio.observe(el))
-    const leave = () => {
-      track('promo', { s: 'leave', b: last, t: Math.round(performance.now() / 1000) }, '/club')
-      flush()
-    }
-    const onVis = () => { if (document.visibilityState === 'hidden') leave() }
-    document.addEventListener('visibilitychange', onVis)
-    window.addEventListener('pagehide', leave)
-    return () => { bio.disconnect(); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pagehide', leave) }
-  }, [])
+  const look = () => { track('screen', { name: 'club_look' }, '/club'); onLook() }
 
   // Появление блоков при прокрутке + запуск счётчика цены + липкая кнопка.
   useEffect(() => {
@@ -354,18 +211,6 @@ export default function ClubLanding({ onJoin, onLook }) {
     els.forEach(e => io.observe(e))
 
     const vio = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setValueOn(true); vio.disconnect() } }, { root, threshold: 0.4 })
-    // Акция: дошёл ли взгляд до кнопки «Вступить» и до конца страницы (по разу).
-    const seen = new Set()
-    const pio = new IntersectionObserver(entries => {
-      entries.forEach(e => {
-        if (!e.isIntersecting) return
-        const s = e.target === topBtnRef.current ? 'seen_buy' : 'seen_end'
-        if (seen.has(s)) return
-        seen.add(s); if (PROMO_ON) track('promo', { s }, '/club')
-      })
-    }, { root, threshold: 0.6 })
-    if (topBtnRef.current) pio.observe(topBtnRef.current)
-    if (endRef.current) pio.observe(endRef.current)
     if (valueRef.current) vio.observe(valueRef.current)
 
     // Липкая кнопка: видна после первого экрана (ролика), пока ни верхняя, ни
@@ -382,13 +227,13 @@ export default function ClubLanding({ onJoin, onLook }) {
     root.addEventListener('scroll', upd, { passive: true })
     if (topBtnRef.current) sio.observe(topBtnRef.current)
     if (endRef.current) sio.observe(endRef.current)
-    return () => { io.disconnect(); vio.disconnect(); sio.disconnect(); pio.disconnect(); root.removeEventListener('scroll', upd) }
+    return () => { io.disconnect(); vio.disconnect(); sio.disconnect(); root.removeEventListener('scroll', upd) }
   }, [])
 
   const d = i => ({ '--d': `${i * 90}ms` })
 
   return (
-    <div ref={rootRef} data-testid="club-landing" className={`zl${typeof window !== 'undefined' && window.__zlPre ? ' nofx' : ''}`} style={{
+    <div ref={rootRef} data-testid="club-landing" className="zl" style={{
       position: 'fixed', inset: 0, zIndex: 3000, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch',
       background: BG, color: '#fff',
       fontFamily: 'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif', textAlign: 'left',
@@ -400,114 +245,8 @@ export default function ClubLanding({ onJoin, onLook }) {
       <div style={{ position: 'relative', zIndex: 1, maxWidth: 520, margin: '0 auto', padding: '0 16px 96px' }}>
 
         {/* ── Акция: ролик с машиной и призы (первый экран на время акции) */}
-        {PROMO_ON && (
-          <>
-            <div data-blk="video" className="zl-promo zl-in" style={{ animationDelay: '.05s' }}>
-              <video ref={videoRef} src={`${PROMO_DIR}/octavia.mp4`} poster={`${PROMO_DIR}/octavia.jpg`}
-                autoPlay muted loop playsInline disablePictureInPicture preload="auto" aria-label="Ролик: Skoda Octavia — главный приз" />
-              <div className="gt" /><div className="gb" />
-              <div style={{ position: 'absolute', left: 14, right: 14, top: 16, textAlign: 'center' }}>
-                <div className="zl-tag"><i />{closed ? 'Приём завершён · итоги 12 ноября' : soldOut ? 'Приём участников закрыт' : 'Приём участников до 10 ноября'}</div>
-                <div style={{ marginTop: 12, fontSize: 29, fontWeight: 900, lineHeight: 1.02, textTransform: 'uppercase', letterSpacing: '-.4px', textShadow: '0 2px 20px rgba(0,0,0,.6)' }}>
-                  Эта машина<br /><span className="zl-grad">может быть твоей</span>
-                </div>
-              </div>
-              <div style={{ position: 'absolute', left: 0, right: 0, bottom: 16, textAlign: 'center' }}>
-                <div style={{ fontSize: 10.5, letterSpacing: 3, color: ACC, fontWeight: 800 }}>ГЛАВНЫЙ ПРИЗ</div>
-                <div style={{ fontSize: 24, fontWeight: 900, letterSpacing: 1.5, marginTop: 3 }}>SKODA OCTAVIA</div>
-              </div>
-            </div>
-
-            <div data-blk="prizes" className="zl-in" style={{ animationDelay: '.3s', marginTop: 18 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 10.5, letterSpacing: 2.6, color: T3, fontWeight: 700 }}>
-                <span style={{ flex: 1, height: 1, background: 'rgba(255,255,255,.14)' }} />А ТАКЖЕ<span style={{ flex: 1, height: 1, background: 'rgba(255,255,255,.14)' }} />
-              </div>
-              <div className="zl-prz">
-                {PRIZES.map(([place, name, src]) => (
-                  <div key={name} style={{ textAlign: 'center' }}>
-                    <div className="im"><img src={src} alt={name} loading="eager" /></div>
-                    <div style={{ marginTop: 10, fontSize: 10, letterSpacing: 1.6, color: ACC, fontWeight: 800, textTransform: 'uppercase' }}>{place}</div>
-                    <div style={{ marginTop: 3, fontSize: 13, fontWeight: 900, lineHeight: 1.15 }}>{name}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* ── Почему это выгодно: шансы, «ничего не теряешь», 3+1, как пройдёт */}
-        {PROMO_ON && !soldOut && (
-          <div data-blk="why" style={{ marginTop: 44 }}>
-            <h2 className="zl-r" style={{ textAlign: 'center', margin: '0 0 16px' }}>Всего 600 мест<br /><span style={{ color: ACC }}>Вот твои шансы</span></h2>
-            <div className="zl-odds">
-              <div className="zl-r card zl-odd" style={d(0)}><div className="l">Шанс на Октавию</div><div className="v">1 из 600</div></div>
-              <div className="zl-r card zl-odd hot" style={d(1)}><div className="l">Шанс на любой приз</div><div className="v">1 из 60</div></div>
-            </div>
-            <div className="zl-r" style={{ textAlign: 'center', fontSize: 13.5, color: T2, lineHeight: 1.5, marginTop: 12 }}>
-              Обычно за машину в таких акциях борются десятки тысяч человек. Здесь максимум 600 — и каждый 60-й уходит с призом.
-            </div>
-
-            <div className="zl-r zl-kick" style={{ marginTop: 36 }}>Ты ничего не теряешь</div>
-            <div className="zl-r" style={{ fontSize: 20, fontWeight: 900, textTransform: 'uppercase', lineHeight: 1.2, marginTop: 6 }}>
-              {rub(PRICE)} — это цена <span style={{ color: ACC }}>месяца в клубе</span>
-            </div>
-            <div className="zl-r" style={{ fontSize: 13.5, color: T2, marginTop: 6 }}>Призы идут сверху, бесплатно.</div>
-            <div className="zl-r card" style={{ marginTop: 12, display: 'grid', gap: 12 }}>
-              {WHY_GET.map((t, i) => <div key={t} className="zl-r zl-chk" style={d(i + 1)}>{t}</div>)}
-            </div>
-
-            {pkgFits('club4') && (
-              <button data-testid="promo-deal" className="zl-r zl-deal" onClick={pickDeal}>
-                <span className="bd">Выгоднее</span>
-                <div className="t">3+1 · <span style={{ color: ACC }}>шанс ×4</span></div>
-                <div className="s">4 номера и 4 месяца клуба за {rub(9000)}. Выходит {rub(2250)} в месяц — один месяц в подарок.</div>
-                <div className="go">Выбрать 3+1 →</div>
-              </button>
-            )}
-
-            <div className="zl-r" style={{ marginTop: 24 }}>
-              <button data-testid="promo-how" onClick={() => { track('screen', { name: 'promo_how' }, '/club'); openInfo('how') }} className="zl-how">
-                <span className="q">?</span>
-                <span style={{ flex: 1 }}>Как всё пройдёт</span>
-                <span className="ar">→</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ── Цена, выбор пакета и кнопка */}
-        <div data-blk="buy" className="zl-in" style={{ margin: '22px 0 14px', animationDelay: '.45s' }}>
-          <div className="zl-pkg">
-            {PKGS.map(p => (
-              <button key={p.key} data-testid={`club-pkg-${p.key}`} className={pkg === p.key ? 'on' : ''} disabled={!pkgFits(p.key)} style={pkgFits(p.key) ? undefined : { opacity: .4 }} onClick={() => pickPkg(p.key)}>
-                {p.badge && <span className="bd">{p.badge}</span>}
-                <div style={{ fontSize: 12, color: T2 }}>{p.title}</div>
-                <div style={{ fontSize: 22, fontWeight: 900, margin: '2px 0' }}>{rub(p.price)}</div>
-                <div style={{ fontSize: 12, color: ACC, fontWeight: 700 }}>{p.note}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-        <div ref={topBtnRef} data-blk="buy" className="zl-in" style={{ animationDelay: '.6s' }}>
-          <button data-testid="club-join-top" onClick={() => join('top')} className="zl-btn" disabled={soldOut} style={soldOut ? { opacity: .5 } : undefined}>{joinLabel}</button>
-          <button data-testid="club-look" onClick={look} className="zl-ghost">Посмотреть клуб изнутри</button>
-          <div style={{ fontSize: 12, color: T3, textAlign: 'center', marginTop: 8 }}>Без регистрации: программы, упражнения, питание</div>
-        </div>
-
-        {/* ── О клубе: обещание (окт 2026 — фото Максима убрано, он есть в ролике).
-             При PROMO_ON=false фото возвращается первым экраном — см. блок ниже. */}
-        {PROMO_ON ? (
-          <div data-blk="about" className="zl-r" style={{ marginTop: 48, textAlign: 'center' }}>
-            <div style={{ fontSize: 26, fontWeight: 900, color: ACC, lineHeight: 1.1, textTransform: 'uppercase' }}>
-              Тренируйся не на глазок, а по научным данным
-            </div>
-            <div style={{ fontSize: 14.5, color: T2, lineHeight: 1.5, marginTop: 10 }}>
-              Каждая программа и упражнение в клубе отобраны по показаниям миографа
-            </div>
-          </div>
-        ) : (
-          <div className="zl-hero zl-r" style={{ position: 'relative', margin: '40px 0 0', borderRadius: 26, overflow: 'hidden', background: '#000', boxShadow: `0 20px 60px ${PUR}33` }}>
-            <img src={hero} alt="Максим Завалишин" loading="lazy" style={{ display: 'block', width: '100%', height: 'auto' }} />
+          <div className="zl-hero zl-r" style={{ position: 'relative', margin: '16px 0 0', borderRadius: 26, overflow: 'hidden', background: '#000', boxShadow: `0 20px 60px ${PUR}33` }}>
+            <img src={hero} alt="Максим Завалишин" style={{ display: 'block', width: '100%', height: 'auto' }} />
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 28%, rgba(0,0,0,0) 45%, rgba(0,0,0,0.92) 88%)' }} />
             <div style={{ position: 'absolute', top: 22, left: 20, right: 20 }}>
               <div style={{ fontSize: 30, fontWeight: 900, letterSpacing: '0.5px' }}><span className="zl-grad">ZM CLUB</span></div>
@@ -519,7 +258,12 @@ export default function ClubLanding({ onJoin, onLook }) {
               </div>
             </div>
           </div>
-        )}
+
+        <div ref={topBtnRef} data-blk="buy" className="zl-in" style={{ animationDelay: '.6s' }}>
+          <button data-testid="club-join-top" onClick={join} className="zl-btn">{joinLabel}</button>
+          <button data-testid="club-look" onClick={look} className="zl-ghost">Посмотреть клуб изнутри</button>
+          <div style={{ fontSize: 12, color: T3, textAlign: 'center', marginTop: 8 }}>Без регистрации: программы, упражнения, питание</div>
+        </div>
 
         {/* ── Что внутри */}
         <div data-blk="inside" style={{ marginTop: 48 }}>
@@ -612,39 +356,28 @@ export default function ClubLanding({ onJoin, onLook }) {
 
         {/* ── Финальная кнопка (окт 2026: пробный период и гарантия возврата сняты) */}
         <div data-blk="final" style={{ marginTop: 48, textAlign: 'center' }}>
-          {PROMO_ON && (
-            <>
-              <div className="zl-r" style={{ fontSize: 20, fontWeight: 900, textTransform: 'uppercase', marginBottom: 12 }}>Вступай до 10 ноября</div>
-              <div className="zl-r" style={{ fontSize: 15, color: T2, lineHeight: 1.55, marginBottom: 22 }}>
-                Каждый, кто вступит в клуб до 10 ноября, получает номер участника. Количество мест ограничено — приём может закрыться раньше. 12 ноября в прямом эфире определим 10 победителей — главный приз Skoda Octavia.
-              </div>
-            </>
-          )}
           <div className="zl-r" style={{ fontSize: 17, fontWeight: 900, textTransform: 'uppercase', marginBottom: 18, lineHeight: 1.35 }}>
             <span className="zl-grad">ZM Club</span> — для тех, кто хочет тренироваться по науке и видеть результат без срывов и голодовок
           </div>
           <div ref={endRef}>
-            <button data-testid="club-join-bottom" onClick={() => join('bottom')} className="zl-btn" disabled={soldOut} style={soldOut ? { opacity: .5 } : undefined}>{joinLabel}</button>
+            <button data-testid="club-join-bottom" onClick={join} className="zl-btn">{joinLabel}</button>
             <button onClick={look} className="zl-ghost">Сначала посмотреть изнутри</button>
           </div>
         </div>
 
         {/* ── Реквизиты — нужны для приёма оплаты */}
         <div style={{ marginTop: 44, fontSize: 12.5, color: T3, lineHeight: 1.7 }}>
-          {PROMO_ON && <><button onClick={() => openInfo('rules')} style={{ background: 'none', border: 'none', padding: 0, color: T2, fontSize: 12.5, textDecoration: 'underline', cursor: 'pointer' }}>Правила акции «Skoda Octavia»</button><br /></>}
           Завалишин Максим Игоревич<br />
           ИНН 463227811939<br />
           e-mail: maxim-46kursk@mail.ru
         </div>
       </div>
 
-      <PromoInfo open={!!info} initial={info || 'how'} onClose={() => setInfo(null)}
-        onJoin={() => { setInfo(null); join('info') }} joinLabel={joinLabel} />
 
       {/* ── Липкая кнопка: появляется, когда верхняя уехала из виду */}
       <div className={`zl-sticky${sticky ? ' show' : ''}`}>
         <div style={{ maxWidth: 520, margin: '0 auto' }}>
-          <button data-testid="club-join-sticky" onClick={() => join('sticky')} className="zl-btn" disabled={soldOut} style={{ padding: '15px 18px', fontSize: 15, ...(soldOut ? { opacity: .5 } : {}) }}>{joinLabel}</button>
+          <button data-testid="club-join-sticky" onClick={join} className="zl-btn" style={{ padding: '15px 18px', fontSize: 15 }}>{joinLabel}</button>
         </div>
       </div>
     </div>

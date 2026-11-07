@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './supabase.js'
 import { track, flush } from './track.js'
-import PromoInfo from './PromoInfo.jsx'
 import { BG, SURF, SURF2, HAIR, PUR, ACCENT2, DANGER, TEA } from './theme.js'
 
 /**
@@ -26,8 +25,7 @@ const REQ = {
   email: 'maxim-46kursk@mail.ru',
 }
 const PKGS = {
-  club: { title: '1 месяц клуба', price: 3000, note: '1 номер участника' },
-  club4: { title: '3+1 · 4 месяца клуба', price: 9000, note: '4 номера участника' },
+  club: { title: '1 месяц клуба', price: 1000 },
 }
 const ORDER_KEY = 'zm_transfer_order'
 const MAX_IMG_SIDE = 1800
@@ -188,19 +186,17 @@ function Confetti() {
 
 export default function PayTransfer({ plan: plan0 = 'club', working: working0 = true, hoursFrom: hf0 = 9, hoursTo: ht0 = 24, token: token0 = null, user, onClose }) {
   const [step, setStep] = useState(token0 ? 3 : 1)
-  const [plan, setPlan] = useState(plan0 === 'club4' ? 'club4' : 'club')
+  const plan = 'club'
   const [hours, setHours] = useState({ working: working0, from: hf0, to: ht0 })
   const [file, setFile] = useState(null)        // { mime, data, preview, name }
   const [fileBusy, setFileBusy] = useState(false)
   const uEmail = user?.email && !/@(telegram\.fitpro|guest\.fitproapp\.ru|clients\.fitproapp\.ru)$/i.test(user.email) ? user.email : ''
-  const [f, setF] = useState({ name: '', birth: '', phone: '', email: uEmail, consent: false })
+  const [f, setF] = useState({ name: '', phone: '', email: uEmail, consent: false })
   const [err, setErr] = useState(null)
   const [busy, setBusy] = useState(false)
   const [busyText, setBusyText] = useState('')
   const [order, setOrder] = useState(token0 ? { token: token0 } : null)  // { token, id, email }
   const [status, setStatus] = useState(null)    // ответ api status
-  const [rules, setRules] = useState(false)
-  const [sumPop, setSumPop] = useState(0)
   const fileRef = useRef(null)
   const rootRef = useRef(null)
   const pkg = PKGS[plan]
@@ -231,7 +227,6 @@ export default function PayTransfer({ plan: plan0 = 'club', working: working0 = 
     return () => { stop = true; clearTimeout(timer); document.removeEventListener('visibilitychange', onVis) }
   }, [step, order?.token]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pickPlan = k => { if (k === plan) return; setPlan(k); setSumPop(x => x + 1); track('promo', { s: 'tr_pkg', plan: k }, '/club') }
 
   const onFile = async e => {
     const fl = e.target.files?.[0]
@@ -245,10 +240,9 @@ export default function PayTransfer({ plan: plan0 = 'club', working: working0 = 
     setErr(null)
     if (!file) return setErr({ text: 'Прикрепи чек об оплате', field: 'file' })
     if (f.name.trim().split(/\s+/).length < 2) return setErr({ text: 'Укажи фамилию и имя', field: 'name' })
-    if (!f.birth) return setErr({ text: 'Укажи дату рождения', field: 'birth' })
     if (f.phone.replace(/\D/g, '').length < 10) return setErr({ text: 'Проверь номер телефона', field: 'phone' })
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.email.trim())) return setErr({ text: 'Проверь почту — на неё придёт номер участника', field: 'email' })
-    if (!f.consent) return setErr({ text: 'Нужно согласие с правилами акции', field: 'consent' })
+    if (!f.consent) return setErr({ text: 'Нужно согласие на обработку персональных данных', field: 'consent' })
     setBusy(true); setBusyText('Загружаем чек…')
     const t2 = setTimeout(() => setBusyText('Передаём менеджеру…'), 2500)
     track('promo', { s: 'tr_submit', plan }, '/club')
@@ -257,7 +251,7 @@ export default function PayTransfer({ plan: plan0 = 'club', working: working0 = 
       try { const { data: { session } } = await supabase.auth.getSession(); if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}` } catch { /* гость */ }
       const r = await fetch('/api/pay-transfer?action=submit', {
         method: 'POST', headers,
-        body: JSON.stringify({ plan, name: f.name.trim(), birth: f.birth, phone: f.phone.trim(), email: f.email.trim(), consent: true, file: { mime: file.mime, data: file.data } }),
+        body: JSON.stringify({ plan, name: f.name.trim(), phone: f.phone.trim(), email: f.email.trim(), consent: true, file: { mime: file.mime, data: file.data } }),
       })
       const b = await r.json().catch(() => ({}))
       if (!r.ok || !b.token) { setErr({ text: b.error || 'Не удалось отправить, попробуй ещё раз', field: b.field }); track('promo', { s: 'tr_fail', why: `http_${r.status}` }, '/club'); return }
@@ -307,16 +301,8 @@ export default function PayTransfer({ plan: plan0 = 'club', working: working0 = 
           <div key="s1">
             <div className="zt-card sweep zt-in" style={{ '--d': '0ms', textAlign: 'center', padding: '18px 16px', border: `1px solid ${PUR}55`, boxShadow: `0 18px 50px ${PUR}33` }}>
               <div style={{ fontSize: 11, letterSpacing: 2.4, color: ACCENT2, fontWeight: 800, textTransform: 'uppercase' }}>Сумма к оплате</div>
-              <div key={sumPop} className={`zt-sum zt-grad${sumPop ? ' pop' : ''}`}>{rub(pkg.price)}</div>
-              <div style={{ fontSize: 13, color: T2, marginTop: 6 }}>{pkg.title} · {pkg.note}</div>
-              <div className="zt-pkg">
-                {Object.entries(PKGS).map(([k, p]) => (
-                  <button key={k} className={plan === k ? 'on' : ''} onClick={() => pickPlan(k)}>
-                    <div style={{ fontSize: 11.5, color: T2 }}>{k === 'club' ? '1 месяц' : '3+1 · 4 месяца'}</div>
-                    <div style={{ fontSize: 17, fontWeight: 900 }}>{rub(p.price)}</div>
-                  </button>
-                ))}
-              </div>
+              <div className="zt-sum zt-grad">{rub(pkg.price)}</div>
+              <div style={{ fontSize: 13, color: T2, marginTop: 6 }}>{pkg.title}</div>
             </div>
 
             <div className="zt-in" style={{ '--d': '120ms', fontSize: 11, letterSpacing: 2.4, color: ACCENT2, fontWeight: 800, textTransform: 'uppercase', margin: '24px 0 10px' }}>Реквизиты для перевода</div>
@@ -343,7 +329,7 @@ export default function PayTransfer({ plan: plan0 = 'club', working: working0 = 
 
             <div className="zt-in" style={{ '--d': '260ms', display: 'grid', gap: 12, margin: '16px 4px 0' }}>
               <div className="zt-note"><span>✅</span><span>Перевод по СБП — <b>без комиссии</b>. В банке выбери «Перевод по номеру телефона» → {REQ.bank}.</span></div>
-              <div className="zt-note"><span>✍️</span><span>Комментарий к переводу <b>не пиши</b> — номер участника привяжем по чеку.</span></div>
+              <div className="zt-note"><span>✍️</span><span>Комментарий к переводу <b>не пиши</b> — для подтверждения нужен чек.</span></div>
               <div className="zt-note"><span>📸</span><span>После перевода <b>сохрани чек</b> (скриншот или PDF) — прикрепишь его на следующем шаге.</span></div>
             </div>
 
@@ -395,17 +381,15 @@ export default function PayTransfer({ plan: plan0 = 'club', working: working0 = 
             <div className="zt-card zt-in" style={{ '--d': '160ms', marginTop: 16, paddingTop: 4 }}>
               <div className="zt-lbl">Фамилия и имя</div>
               <input className={`zt-inp${bad('name')}`} value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Иванова Анна" autoComplete="name" />
-              <div className="zt-lbl">Дата рождения</div>
-              <input className={`zt-inp${bad('birth')}`} type="date" value={f.birth} max="2008-11-12" onChange={e => setF({ ...f, birth: e.target.value })} style={{ colorScheme: 'dark' }} />
-              <div className="zt-lbl">Телефон — позвоним, если победишь</div>
+              <div className="zt-lbl">Телефон</div>
               <input className={`zt-inp${bad('phone')}`} type="tel" inputMode="tel" value={f.phone} onChange={e => setF({ ...f, phone: e.target.value })} placeholder="+7 900 000-00-00" autoComplete="tel" />
-              <div className="zt-lbl">Почта — сюда придёт номер участника и вход в клуб</div>
+              <div className="zt-lbl">Почта — сюда придёт информация о доступе в клуб</div>
               <input className={`zt-inp${bad('email')}`} type="email" inputMode="email" value={f.email} onChange={e => setF({ ...f, email: e.target.value })} placeholder="you@mail.ru" autoComplete="email" autoCapitalize="none" />
               <div className="zt-chk" role="checkbox" aria-checked={f.consent} onClick={() => setF({ ...f, consent: !f.consent })}>
                 <span className={`bx${f.consent ? ' on' : ''}`} style={err?.field === 'consent' ? { borderColor: DANGER } : undefined}>
                   {f.consent && <svg width="13" height="13" viewBox="0 0 13 13"><path d="M2 7l3 3 6-7" stroke="#fff" strokeWidth="2.4" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                 </span>
-                <span>Согласен(на) с <a href="#rules" onClick={e => { e.preventDefault(); e.stopPropagation(); setRules(true) }} style={{ color: ACCENT2 }}>правилами акции</a> и обработкой персональных данных, мне есть 18 лет</span>
+                <span>Согласен(на) на обработку персональных данных</span>
               </div>
             </div>
 
@@ -438,7 +422,7 @@ export default function PayTransfer({ plan: plan0 = 'club', working: working0 = 
                   </div>
                 )}
                 <div className="zt-in" style={{ '--d': '360ms', fontSize: 14, color: T2, lineHeight: 1.5, marginTop: 16 }}>
-                  Номер и кнопку входа мы также отправили на <b style={{ color: '#fff' }}>{status?.email}</b>.
+                  Информацию о доступе мы отправили на <b style={{ color: '#fff' }}>{status?.email}</b>.
                 </div>
                 <div className="zt-in" style={{ '--d': '460ms', marginTop: 20 }}>
                   {status?.login ? (
@@ -478,9 +462,9 @@ export default function PayTransfer({ plan: plan0 = 'club', working: working0 = 
                 </div>
                 <div className="zt-card zt-in" style={{ '--d': '1100ms', marginTop: 18, textAlign: 'left', fontSize: 14.5, color: T2, lineHeight: 1.55 }}>
                   {hours.working ? (
-                    <>Менеджер проверит перевод — <b style={{ color: '#fff' }}>обычно в течение 30 минут</b>. Номер участника и вход в клуб придут на почту <b style={{ color: '#fff' }}>{status?.email || order?.email}</b> и появятся на этой странице.</>
+                    <>Менеджер проверит перевод — <b style={{ color: '#fff' }}>обычно в течение 30 минут</b>. Информация о доступе придёт на почту <b style={{ color: '#fff' }}>{status?.email || order?.email}</b>.</>
                   ) : (
-                    <>Номера выдаём <b style={{ color: '#fff' }}>с {hh(hours.from)} до {hh(hours.to)} по Москве</b>. Утром, после {hh(hours.from)}, менеджер проверит перевод и выдаст номер участника — он придёт на почту <b style={{ color: '#fff' }}>{status?.email || order?.email}</b> и появится на этой странице.</>
+                    <>Проверяем переводы <b style={{ color: '#fff' }}>с {hh(hours.from)} до {hh(hours.to)} по Москве</b>. Утром, после {hh(hours.from)}, менеджер проверит перевод — информация о доступе придёт на почту <b style={{ color: '#fff' }}>{status?.email || order?.email}</b>.</>
                   )}
                   <div style={{ marginTop: 10, fontSize: 13, color: T3 }}>Можно закрыть сайт — ничего больше делать не нужно. Если письма нет, проверь «Спам».</div>
                 </div>
@@ -493,7 +477,6 @@ export default function PayTransfer({ plan: plan0 = 'club', working: working0 = 
         )}
       </div>
 
-      <PromoInfo open={rules} initial="rules" onClose={() => setRules(false)} />
     </div>
   )
 }
