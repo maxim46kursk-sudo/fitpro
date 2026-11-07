@@ -487,7 +487,7 @@ async function annulOrder(db, id) {
     }
   }
   await db.from('payments').update({ status: 'annulled' }).eq('provider_order_num', key)
-  const annulTxt = '⚠️ Перевод по твоему чеку не поступил, поэтому доступ к клубу и номер участника аннулированы.'
+  const annulTxt = '⚠️ Перевод по твоему чеку не поступил, поэтому доступ к клубу отменён.'
   if (o.source === 'site') {
     if (o.email) await mailBuyer(o.email, 'ZM Club: оплата не поступила', [annulTxt, '', `Если это ошибка — напиши нам: ${SUPPORT_EMAIL} или в Telegram ${SUPPORT_TG}, приложи чек.`]).catch(() => {})
   } else {
@@ -1028,14 +1028,6 @@ async function siteAiCheck(db, o, file, { isPdf, isImg, uniqueId, head, kb, msgI
   const aiLine = ai ? `🤖 ${ai.amount ?? '?'} ₽ · ${ai.datetime || '?'} · ${ai.recipient || '?'} · оп. ${ai.operation_id || '?'}` : null
   const edit = (lines, markup) => tgCall('editMessageCaption', { chat_id: chatId, message_id: msgId, caption: lines.filter(Boolean).join('\n').slice(0, 1024), reply_markup: markup }).catch(() => {})
 
-  if (!problem && st.auto) {
-    const r = await confirmOrder(db, o.id, { auto: true })
-    if (r.done) {
-      await edit([...head, aiLine, '', `✅ АВТО: доступ выдан → ${r.numbers?.length ? r.numbers.map(n => '№' + n).join(', ') : 'клуб'}`, 'Если денег в банке нет — жми «Аннулировать».'],
-        { inline_keyboard: [[{ text: '↩️ Аннулировать', callback_data: `an:${o.id}` }]] })
-      return
-    }
-  }
   // Заказ могли уже подтвердить, пока ИИ читал, — тогда подпись не трогаем.
   const { data: cur } = await db.from('bot_orders').select('status').eq('id', o.id).maybeSingle()
   if (cur?.status !== 'receipt') return

@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { egressFetch } from './_egress.js'
+import { sendMail } from './_mail.js'
 import { effectiveLevel } from './_access.js'
 import { ownerChatId, reportError } from './_logError.js'
 import { rateLimit } from './_ratelimit.js'
@@ -443,12 +444,39 @@ async function handleSync(req, res, db) {
   if (!chat) return res.status(200).json({ ok: true, skipped: 'no_chat' })
 
   const { data: members, error } = await db.from('club_chat_members')
-    .select('user_id, tg_user_id').eq('chat_id', chat.chat_id).is('removed_at', null)
+    .select('user_id, tg_user_id, expiry_notified_for').eq('chat_id', chat.chat_id).is('removed_at', null)
   if (error) return res.status(500).json({ error: error.message })
 
-  let removed = 0
+  let removed = 0, reminded = 0
   for (const m of members || []) {
-    if (await hasAccess(db, m.user_id)) continue
+    const { data: profile, error: profileError } = await db.from('profiles')
+      .select('role, plan, plan_until, trial_until').eq('id', m.user_id).maybeSingle()
+    if (profileError) continue
+    if (profile && effectiveLevel(profile) >= CLUB_MIN_LEVEL) {
+      const until = Date.parse(profile.plan_until)
+      if (profile.role === 'trainer' || !['club', 'club4'].includes(profile.plan) ||
+          !(until > Date.now() && until - Date.now() <= 3 * 864e5) ||
+          Date.parse(m.expiry_notified_for) === until) continue
+      const date = new Date(until).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', dateStyle: 'long', timeStyle: 'short' })
+      const text = `Твой доступ к ZMClub заканчивается ${date} (МСК). Чтобы остаться в клубе, продли доступ на https://zmclubonline.ru/.`
+      try {
+        try {
+          await tg('sendMessage', { chat_id: m.tg_user_id, text })
+        } catch {
+          const { data, error } = await db.auth.admin.getUserById(m.user_id)
+          const email = data?.user?.email
+          if (error || !email || /@(telegram\.fitpro|guest\.fitproapp\.ru|clients\.fitproapp\.ru)$/i.test(email)) continue
+          await sendMail({ to: email, subject: 'ZMClub: срок доступа заканчивается', text })
+        }
+        const { error } = await db.from('club_chat_members')
+          .update({ expiry_notified_for: profile.plan_until }).eq('user_id', m.user_id).eq('chat_id', chat.chat_id)
+        if (error) throw error
+        reminded++
+      } catch (e) {
+        reportError('api:club-chat:sync', ['не удалось напомнить о продлении:', e], { userId: m.user_id })
+      }
+      continue
+    }
     try {
       await tg('banChatMember', { chat_id: chat.chat_id, user_id: m.tg_user_id, until_date: Math.floor(Date.now() / 1000) + 60 })
       await tg('unbanChatMember', { chat_id: chat.chat_id, user_id: m.tg_user_id, only_if_banned: true })
@@ -458,7 +486,7 @@ async function handleSync(req, res, db) {
       reportError('api:club-chat:sync', ['не удалось убрать из чата клуба:', e], { message: e?.message, status: 500, userId: m.user_id })
     }
   }
-  return res.status(200).json({ ok: true, checked: members?.length || 0, removed })
+  return res.status(200).json({ ok: true, checked: members?.length || 0, removed, reminded })
 }
 
 export default async function handler(req, res) {

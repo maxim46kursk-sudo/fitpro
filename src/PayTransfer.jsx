@@ -154,12 +154,10 @@ const CSS = `
 .zt-pill.ok i{background:${TEA};box-shadow:0 0 10px ${TEA};animation:none}
 .zt-pill.bad i{background:${DANGER};box-shadow:0 0 10px ${DANGER};animation:none}
 @keyframes ztBlink{50%{opacity:.3}}
-.zt-num{display:inline-block;padding:10px 18px;margin:5px;border-radius:16px;font-size:30px;font-weight:900;background:linear-gradient(180deg,${ACCENT2},${PUR});box-shadow:0 12px 34px ${PUR}66;opacity:0;animation:ztNum .7s cubic-bezier(.2,1.6,.4,1) forwards;animation-delay:var(--d,0ms)}
-@keyframes ztNum{from{transform:scale(.3) rotate(-8deg);opacity:0}to{transform:none;opacity:1}}
 .zt-conf{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .zt-conf i{position:absolute;top:-12px;width:8px;height:14px;border-radius:2px;opacity:0;animation:ztFall 2.6s ease-in forwards}
 @keyframes ztFall{0%{opacity:1;transform:translateY(0) rotate(0)}100%{opacity:0;transform:translateY(560px) rotate(540deg)}}
-@media (prefers-reduced-motion: reduce){.zt *,.zt *::before,.zt *::after{animation:none!important;transition:none!important}.zt-in,.zt-num{opacity:1;transform:none}.zt-ok .c,.zt-ok .t{stroke-dashoffset:0}}
+@media (prefers-reduced-motion: reduce){.zt *,.zt *::before,.zt *::after{animation:none!important;transition:none!important}.zt-in{opacity:1;transform:none}.zt-ok .c,.zt-ok .t{stroke-dashoffset:0}}
 `
 
 function Copy({ value, label = 'Скопировать', what }) {
@@ -412,15 +410,6 @@ export default function PayTransfer({ plan: plan0 = 'club', working: working0 = 
                 <div className="zt-in" style={{ '--d': '120ms', fontSize: 26, fontWeight: 900, textTransform: 'uppercase', lineHeight: 1.1, marginTop: 6 }}>
                   Оплата <span className="zt-grad">подтверждена</span>
                 </div>
-                {status?.numbers?.length > 0 && (
-                  <div className="zt-card zt-in" style={{ '--d': '240ms', marginTop: 20, border: `1px solid ${PUR}66` }}>
-                    <div style={{ fontSize: 11, letterSpacing: 2.4, color: ACCENT2, fontWeight: 800 }}>{status.numbers.length > 1 ? 'ТВОИ НОМЕРА УЧАСТНИКА' : 'ТВОЙ НОМЕР УЧАСТНИКА'}</div>
-                    <div style={{ marginTop: 8 }}>
-                      {status.numbers.map((n, i) => <span key={n} className="zt-num" style={{ '--d': `${450 + i * 140}ms` }}>№{n}</span>)}
-                    </div>
-                    <div style={{ fontSize: 13, color: T2, marginTop: 10 }}>Итоги — 12 ноября в прямом эфире</div>
-                  </div>
-                )}
                 <div className="zt-in" style={{ '--d': '360ms', fontSize: 14, color: T2, lineHeight: 1.5, marginTop: 16 }}>
                   Информацию о доступе мы отправили на <b style={{ color: '#fff' }}>{status?.email}</b>.
                 </div>
