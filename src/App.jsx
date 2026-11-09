@@ -12829,6 +12829,7 @@ export default function App() {
     </>
   )
 
+  const showGuestJoin = guestMode && welcomeSeen && !authOpen && !payTr && !guestPay && !workoutFullscreen && !motionOpen
   const BOTTOM_NAV_H = 62
   const MOBILE_TOP_H = 48
   const MINIMIZED_BAR_H = 56
@@ -12948,7 +12949,7 @@ export default function App() {
         /* Safe area под iPhone (notch/home bar) */
         @supports (padding-bottom: env(safe-area-inset-bottom)) {
           .bottom-nav { padding-bottom: env(safe-area-inset-bottom); }
-          .mobile-content { padding-bottom: calc(${BOTTOM_NAV_H}px + env(safe-area-inset-bottom)); }
+          .mobile-content { padding-bottom: calc(${BOTTOM_NAV_H+(showGuestJoin?60:0)}px + env(safe-area-inset-bottom)); }
         }
 
         @keyframes ptr-spin { to { transform: rotate(360deg); } }
@@ -12990,7 +12991,7 @@ export default function App() {
           </div>
           )}
 
-          <div ref={mobileContentRef} data-screen={nav} className="mobile-content" style={{ flex:1, overflowY:'auto', padding:`${workoutFullscreen?14:MOBILE_TOP_H+14}px 16px ${BOTTOM_NAV_H+16}px`, position:'relative' }}>
+          <div ref={mobileContentRef} data-screen={nav} className="mobile-content" style={{ flex:1, overflowY:'auto', padding:`${workoutFullscreen?14:MOBILE_TOP_H+14}px 16px ${BOTTOM_NAV_H+(showGuestJoin?60:0)+16}px`, position:'relative' }}>
             <PullToRefreshIndicator pull={ptrPull} refreshing={ptrRefreshing} />
             {renderMain()}
           </div>
@@ -13239,7 +13240,15 @@ export default function App() {
         * увидит и приветствие: отметку «видел» мы при этом не ставим.
         */}
       {guestMode&&!welcomeSeen&&!authOpen&&!(ПРЯМОЙ_ЧЕЛЛЕНДЖ&&motionOpen)&&(
-        <ClubLanding onLook={closeWelcome} onJoin={plan=>{closeWelcome();startClubPayment(plan)}} />
+        <ClubLanding onLook={closeWelcome} />
+      )}
+
+      {showGuestJoin&&(
+        <div className="zm-guest-join" style={isMobile?{bottom:`calc(${BOTTOM_NAV_H}px + env(safe-area-inset-bottom, 0px))`}:undefined}>
+          <button className="zm-action" data-testid="club-join-sticky" disabled={payOpening} onClick={()=>startClubPayment('club')}>
+            {payOpening?'Открываем оплату…':'Вступить в клуб за 1 000 ₽'}
+          </button>
+        </div>
       )}
 
       {offer&&(
