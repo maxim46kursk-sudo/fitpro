@@ -89,7 +89,6 @@ export default function ClubLanding({ onLook }) {
           <Artwork key={name} name={name} description={alt} eager={index === 0} />
         ))}
         <section className="zm-tier">
-          <p className="zm-kicker">Что внутри клуба</p>
           <h2>Онлайн фитнес-клуб ZMClub</h2>
           <dl className="zm-features">
             <div><dt>Тренировки</dt><dd>Готовые программы для дома и зала.</dd></div>
